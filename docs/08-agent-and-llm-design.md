@@ -2,12 +2,12 @@
 
 ## Core principle
 
-The AI agent is an advisor and parser assistant. It is not the ledger owner.
+The AI agent is a parser, normalizer, reviewer assistant, and explanation layer. It is not the final ledger owner.
 
 ```text
 LLM may propose.
 Rules validate.
-User or deterministic policy commits.
+Policy or user commits.
 ```
 
 ## Recommended role of LLM
@@ -16,10 +16,12 @@ LLM can help with:
 
 ```text
 document classification
-schema-based extraction from messy text/OCR
+schema-based extraction from native text and OCR bundles
 merchant/counterparty normalization
+record/event type classification
 ambiguous account mapping suggestions
-match candidate explanation
+duplicate candidate explanation
+cross-source link candidate explanation
 fuzzy description understanding
 parser template generation
 review summaries
@@ -28,11 +30,11 @@ review summaries
 LLM should not:
 
 ```text
+read secrets
+access full filesystem
 write committed ledger events directly
 delete records
 ignore records permanently
-read secrets
-access full filesystem
 send emails
 make payments
 place trades
@@ -48,8 +50,8 @@ Reasons:
 
 ```text
 matches React stack
-AI coding tools generate/review TS well
 types can be shared between UI and core
+AI coding tools generate/review TS well
 future mobile React Native can reuse domain code
 simpler than maintaining Python as primary ledger engine
 ```
@@ -111,23 +113,25 @@ Candidate libraries later:
 Vercel AI SDK
 OpenAI Agents SDK TypeScript
 Mastra
-LangGraph, mainly if Python sidecar workflows become useful
-Pydantic AI, only for Python extraction workers
+LangGraph only if Python sidecar workflows become useful
+Pydantic AI only for Python extraction workers
 ```
 
 ## Internal tool registry
 
-Build an internal MCP-like tool registry with narrow tools.
+Build narrow internal tools.
 
 Allowed tools:
 
 ```text
 read_document_text(document_id)
 read_document_page_image(document_id, page)
+read_ocr_output(document_id)
 get_candidate_accounts(provider)
 get_existing_records(account_id, date_range)
 propose_parsed_records(parse_run_id, records)
 propose_match_edges(candidate_edges)
+explain_review_item(review_item_id)
 ```
 
 Disallowed tools:
@@ -142,61 +146,7 @@ place_trade()
 withdraw_crypto()
 ```
 
-## Structured extraction contract
-
-LLM output must be strict JSON.
-
-Example parser prompt output:
-
-```json
-{
-  "document_type": "bank_statement",
-  "provider": "DBS",
-  "account_hint": "1234",
-  "records": [
-    {
-      "record_type": "transaction",
-      "posted_at": "2026-06-12",
-      "description_raw": "WISE TOP UP",
-      "amount": -1000,
-      "currency": "SGD",
-      "confidence": 0.94,
-      "source_reference": "page 2 row 14"
-    }
-  ]
-}
-```
-
-Then deterministic code validates:
-
-```text
-schema
-dates
-amount signs
-currency
-period boundaries
-row counts
-balance math
-possible duplicates
-```
-
-## Prompt/version logging
-
-Every AI call should record:
-
-```text
-provider
-model
-prompt template version
-prompt hash
-input hash
-output hash
-token/cost estimate
-schema validation result
-created_at
-```
-
-## Agent safety levels
+## Safety levels
 
 ### Level 0: no AI
 
@@ -206,9 +156,9 @@ Deterministic parser only.
 
 LLM extracts structured records, but cannot commit.
 
-### Level 2: AI match explanation
+### Level 2: AI normalization and match explanation
 
-LLM explains and reranks candidate matches.
+LLM normalizes records and explains/reranks candidate matches.
 
 ### Level 3: AI parser repair
 

@@ -7,13 +7,31 @@ CanCan is a reconciliation console and financial evidence vault.
 The main question is:
 
 ```text
-What do I own, where is it, what changed, and which source proves it?
+What do I own, where is it, what changed, which source proves it, and what needs review?
 ```
+
+## Visual direction
+
+CanCan should feel like a polished finance operations console, not a generic fintech landing dashboard.
+
+Design attributes:
+
+```text
+calm
+precise
+dense but readable
+auditable
+trustworthy
+fast to scan
+beautiful without decorative noise
+```
+
+Avoid relying on oversized hero metrics, glossy cards, decorative gradients, or consumer-fintech fluff. Use strong table design, clear hierarchy, crisp source/status indicators, and restrained accent color.
 
 ## Main navigation
 
 ```text
-Home
+Command Center
 Sources
 Assets
 Transactions
@@ -24,18 +42,28 @@ Jobs
 Settings
 ```
 
-## Home
+## Command Center
+
+The MVP home screen should be an operational command center with asset summary embedded, not a pure dashboard.
 
 Purpose:
 
 ```text
-high-level financial status and operational health
+show financial status, evidence pipeline health, and next actions
 ```
 
-Cards:
+Primary zones:
 
 ```text
-Total net worth
+left: source rail with freshness/status
+center: needs review, new evidence, failed parses, suggested links
+right: compact asset snapshot and backup/vault health
+```
+
+Key metrics:
+
+```text
+Total net worth in base currency
 Cash
 Investments
 Crypto
@@ -43,18 +71,10 @@ Insurance value
 Liabilities
 Unreconciled amount
 Needs review count
+New evidence count
 Data freshness
-Last sync
+Last Gmail scan
 Last backup
-```
-
-Filters/toggles:
-
-```text
-By source
-By money type
-By currency
-By account
 ```
 
 ## Sources
@@ -62,29 +82,28 @@ By account
 Purpose:
 
 ```text
-view each finance source and its current status
+view each money source and its sub-accounts
 ```
 
-Source card fields:
+Source fields:
 
 ```text
 source name
 source type
 total value in base currency
 native balances
-last sync
-last statement date
+last sync/statement date
 unmatched count
 parser errors
 credential status
-backup/document count
+document count
 ```
 
 Source detail tabs:
 
 ```text
 Overview
-Accounts
+Sub-accounts
 Transactions
 Holdings
 Documents
@@ -114,7 +133,7 @@ Other assets
 Other liabilities
 ```
 
-Each asset row should show:
+Each row should show:
 
 ```text
 instrument
@@ -122,7 +141,7 @@ quantity or balance
 native currency
 value in base currency
 source
-account
+sub-account
 last valuation time
 source document/API snapshot
 confidence/freshness
@@ -141,7 +160,7 @@ Columns:
 ```text
 date
 source
-account
+sub-account
 event type
 money type
 instrument
@@ -152,25 +171,6 @@ ledger impact
 match status
 source document
 confidence
-```
-
-Event types:
-
-```text
-purchase
-income
-bank transfer
-card payment
-top-up
-FX conversion
-broker deposit
-trade
-crypto deposit/withdrawal
-insurance premium
-balance snapshot
-valuation snapshot
-fee
-interest
 ```
 
 ## Reconciliation
@@ -194,9 +194,10 @@ Refunds/reimbursements
 Insurance premiums
 Unmatched records
 Parser warnings
+Account mapping suggestions
 ```
 
-Candidate card:
+Candidate card/table detail:
 
 ```text
 left record
@@ -253,6 +254,7 @@ email
 CSV/XLSX export
 screenshot
 API JSON snapshot
+native text extraction
 OCR output
 parsed table
 parse run
@@ -273,38 +275,20 @@ Validation
 Audit Log
 ```
 
-## Jobs
-
-Purpose:
-
-```text
-operational visibility for sync, parse, import, backup
-```
-
-Shows:
-
-```text
-running jobs
-paused jobs
-failed jobs
-completed jobs
-job timeline
-retry buttons
-continue parsing button
-```
-
 ## Settings
 
 Sections:
 
 ```text
 Vault
+Base currency
 AI providers
+Gmail rules
 Sources/plugins
-Accounts
+Money sources and sub-accounts
 Security
 Backup
-iCloud
+iCloud / folder backup
 Parser versions
 Developer tools
 ```
@@ -315,12 +299,14 @@ Build in this order:
 
 ```text
 1. Vault setup/unlock
-2. Library import and document list
-3. Parser run detail
-4. Staged records table
-5. Review inbox
-6. Accounts and source detail
-7. Assets dashboard
-8. Money flow graph
-9. Backup settings
+2. Money source and sub-account setup
+3. Manual import test harness
+4. Gmail rule setup and scan status
+5. Library document list/detail
+6. Parser run detail
+7. Staged records table
+8. Review inbox
+9. Source detail and asset summary
+10. Money Flow graph
+11. Backup settings
 ```

@@ -15,21 +15,16 @@ But CanCan's target product is different:
 ```text
 local-first desktop app
 SQLite vault
-iCloud backup
+iCloud/folder backup
 no server
 no Postgres
 no Redis
 no hosted web deployment
 reconciliation-first model
+Gmail/local evidence automation
 ```
 
-Rails/Sure is a web/server app shape. CanCan is a local encrypted vault.
-
 Use Sure as product/domain inspiration, not as the direct codebase.
-
-## Why not SwiftUI?
-
-SwiftUI is strong for Apple-native apps, but the current developer skillset favors React, backend frameworks, and Flutter. The project also expects heavy coding-AI usage, where TypeScript/React tends to be easier to generate, review, and refactor for this team.
 
 ## Why Tauri over Electron?
 
@@ -69,7 +64,7 @@ can share packages with future React Native mobile app
 can keep parsers and reconciliation rules readable
 ```
 
-## Why SQLite?
+## Why SQLite + SQLCipher?
 
 ```text
 local-first
@@ -78,23 +73,20 @@ single-user desktop app
 works well with snapshot backup
 easy export/inspection
 no server required
+encrypted at rest for sensitive financial data
 ```
-
-## Why SQLCipher or equivalent encryption?
-
-Financial records, statements, account balances, PDFs, and API snapshots are highly sensitive. The default should be encrypted local storage.
 
 ## Why not make Agent the main engine?
 
 Financial ledger mutation must be deterministic and auditable.
 
-LLM output can be useful but is probabilistic. Therefore:
+LLM output is useful but probabilistic. Therefore:
 
 ```text
 Agent proposes.
 Schema validates.
 Rules score.
-Review confirms.
+Policy/review confirms.
 Ledger commits.
 ```
 
@@ -110,12 +102,3 @@ batch experiments
 ```
 
 Python should be a sidecar worker with a strict input/output contract, not the primary ledger engine.
-
-## Initial architecture decision records
-
-See:
-
-```text
-adr/0001-local-first-tauri-react-sqlite.md
-adr/0002-agent-is-advisor-not-ledger-owner.md
-```

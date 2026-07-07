@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-The product is a personal finance reconciliation vault. It should be local-first, desktop-first, and store data in a local encrypted SQLite vault with file attachments and iCloud backup snapshots.
+CanCan is a personal finance reconciliation vault. It should be local-first, desktop-first, and store data in a local encrypted SQLite vault with file attachments and encrypted backup snapshots.
 
 The developer is comfortable with React, backend frameworks, and Flutter, but not Swift/SwiftUI. The app will rely heavily on coding AI tools, so the main business code should be easy to generate, review, and refactor.
 

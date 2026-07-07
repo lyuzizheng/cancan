@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-The app will parse highly sensitive financial data and generate reconciliation suggestions. LLMs are useful for messy PDFs, OCR, merchant normalization, and ambiguous matches, but financial ledger mutation must be deterministic and auditable.
+The app will parse highly sensitive financial data and generate reconciliation suggestions. LLMs are useful for messy PDFs, OCR output, merchant normalization, duplicate detection, and ambiguous matches, but financial ledger mutation must be deterministic and auditable.
 
 ## Decision
 
@@ -18,17 +18,23 @@ The commit path is:
 AI/rule proposal
 -> schema validation
 -> deterministic financial validation
--> review policy
--> user confirmation or safe auto-policy
+-> review or auto-policy
+-> user confirmation when required
 -> ledger commit
 ```
+
+Low-risk standalone purchases may auto-commit only after schema validation, deterministic validation, confidence threshold checks, account mapping, and duplicate/link checks.
+
+Transfers, credit card repayments, top-ups, FX conversions, broker deposits, crypto movements, trades, and ambiguous duplicates default to review unless a future explicit auto-policy is approved.
 
 ## Allowed AI capabilities
 
 ```text
 document classification
 structured extraction
+record normalization
 merchant/counterparty normalization
+account mapping suggestions
 match explanation
 candidate reranking
 parse repair suggestions
@@ -65,5 +71,5 @@ Negative:
 ```text
 slower than fully autonomous workflow
 more engineering around review and validation
-some low-risk actions may need explicit policy design before auto-accept
+some low-risk actions need explicit policy design before auto-accept
 ```

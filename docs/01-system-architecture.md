@@ -7,10 +7,10 @@ App shell:        Tauri
 UI:               React + TypeScript
 Core engine:      TypeScript packages
 Privileged layer: Rust/Tauri commands
-Database:         SQLite, preferably SQLCipher
+Database:         SQLite, preferably SQLCipher from v1
 File vault:       Content-addressed encrypted local files
 Secrets:          OS secret storage / Tauri Stronghold / platform keychain
-Backup:           Encrypted snapshot bundle to iCloud Drive folder
+Backup:           Encrypted snapshot bundle to iCloud Drive or user-selected folder
 LLM layer:         TypeScript-first provider adapters and parser tools
 Optional worker:  Python sidecar only for OCR/table extraction if needed
 ```
@@ -23,28 +23,31 @@ React UI
   | typed commands only
   v
 Local Application Services
-  - SyncRunService
+  - SourceSetupService
+  - GmailCollectorService
   - ImportService
+  - ExtractionService
   - ParserService
   - ReconciliationService
   - ReviewService
+  - LedgerCommitService
   - BackupService
   |
   v
 Core Domain Engine, TypeScript
-  - source models
+  - source/account models
   - parser orchestration
-  - normalization
-  - dedupe
-  - matching
-  - validation
+  - AI normalization contracts
+  - deterministic validation
+  - dedupe and matching rules
+  - ledger event/leg construction
   - money-flow graph
   |
   v
 Privileged Runtime, Tauri/Rust
-  - SQLite open/backup
-  - filesystem access
-  - encryption helpers
+  - SQLite open/backup/encryption
+  - controlled filesystem access
+  - file vault read/write
   - secret storage
   - native dialogs
   - optional sidecar execution
@@ -58,16 +61,20 @@ Local Vault
 
 ## Boundary rule
 
-React is the UI only. It must not directly access arbitrary filesystem paths, secrets, or raw SQL.
+React is the UI only. It must not directly access arbitrary filesystem paths, secrets, raw SQL, Gmail tokens, or ledger mutation primitives.
 
 Allowed UI actions:
 
 ```text
-getHomeSummary()
+getCommandCenter()
 listSources()
-runPluginScan(pluginId)
+createMoneySource()
+createSubAccount()
+configureGmailSearchRule()
+runGmailScan(ruleId)
+importDocumentManually(fileHandle)
 openDocument(documentId)
-createImportPreview(sourceDocumentId)
+createParsePreview(sourceDocumentId)
 confirmReviewItem(reviewItemId)
 rejectReviewItem(reviewItemId)
 createBackupSnapshot()
@@ -77,26 +84,31 @@ Disallowed UI actions:
 
 ```text
 readSecret("OPENAI_API_KEY")
+readSecret("GMAIL_REFRESH_TOKEN")
 fs.readFile("/any/path")
-db.execute("DELETE FROM transactions")
-commitLedgerWithoutReview()
+db.execute("DELETE FROM ledger_events")
+commitLedgerWithoutValidation()
+placeTrade()
+makePayment()
 ```
 
-## Runtime model
+## Local-first and Gmail
 
-CanCan is a local app, not a server.
+Gmail collection does not make CanCan a hosted service. The app talks directly from the local desktop app to Google's read-only Gmail API after user consent. CanCan does not run a server, proxy, or remote database for MVP.
 
-It still has a backend-like local engine, but there is no external backend, no hosted API, and no remote database.
+Local-first means:
 
-```text
-React -> local command API -> local engine -> SQLite/FileVault/Secrets
-```
+- parsed financial data lives in the encrypted local vault;
+- attachments and extraction outputs are stored locally;
+- Gmail tokens are stored in local OS secret storage;
+- source documents are not sent to CanCan-owned servers;
+- cloud AI usage is opt-in and controlled by user/provider settings.
+
+Do not use computer-use/browser automation for Gmail in MVP unless the official API is blocked. Use read-only OAuth and explicit user-configured search rules.
 
 ## Job execution
 
-Use a SQLite-backed job engine instead of Redis or remote queue systems.
-
-Jobs should be idempotent and resumable.
+Use a SQLite-backed job engine instead of Redis or remote queue systems. Jobs must be idempotent and resumable.
 
 ```text
 jobs
@@ -119,12 +131,12 @@ On app start:
 
 ```text
 1. unlock vault
-2. load settings and enabled plugins
+2. load settings, source definitions, and enabled plugins
 3. find unfinished jobs
 4. mark expired running jobs as queued
-5. build a run plan
-6. show Continue Parsing / Run Scan options
-7. execute jobs step by step with checkpoints
+5. build run plan
+6. show Continue / Run Gmail Scan / Review options
+7. execute jobs with checkpoints
 ```
 
 ## Package layout
@@ -137,15 +149,13 @@ cancan/
       src-tauri/            # Tauri/Rust privileged layer
   packages/
     core/                   # pure TypeScript domain engine
-    connectors/             # plugin implementations and shared interfaces
-    parsers/                # statement parsers and AI prompts
+    connectors/             # Gmail/manual/API plugin implementations
+    parsers/                # extraction, parser contracts, prompts
     ui/                     # shared UI components
   docs/
+    agent/                  # AI coding agent memory and consistency protocol
 ```
 
-## Local-first assumptions
+## Documentation consistency rule
 
-- The user's local encrypted vault is the source of truth.
-- iCloud is used for encrypted backup snapshots first, not live sync.
-- Multi-device sync should be deferred until the desktop vault and backup format are stable.
-- A future mobile app can initially be a read-only viewer for the latest iCloud backup snapshot.
+Any code change that changes product behavior, data model, source plugin behavior, parser output, AI authority, review policy, or roadmap state must update the relevant docs in the same PR/commit. The AI coding agent protocol in `docs/agent/` is part of the source of truth.

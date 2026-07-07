@@ -2,59 +2,66 @@
 
 ## Core concepts
 
-CanCan should model financial data across four primary dimensions:
+CanCan models financial data across these dimensions:
 
 ```text
-Finance Source: DBS, UOB, Wise, Moomoo, Bitget, Manulife
-Account:        specific bank account, card, wallet, broker account, policy
+Money Source:   DBS, UOB, Wise, Moomoo, Bitget, Manulife
+Sub-account:    bank account, credit card, wallet balance, broker account, policy
 Money Type:     cash, liability, stock, ETF, crypto, insurance, fund
 Instrument:     SGD, USD, AAPL, BTC, ETH, policy identifier
+Evidence:       PDF, CSV, Gmail email, API snapshot, OCR/text output
+Ledger Event:   canonical financial event or snapshot
+Ledger Leg:     account/instrument-level effect of an event
+Match Edge:     duplicate/link/transfer relationship between records/events
 ```
 
-## Why this matters
+## Money sources and sub-accounts
 
-A single source can contain multiple money types.
+The user manually creates Money Sources and sub-accounts. Parsers may propose mappings, but should not silently create official accounts.
 
-Examples:
+Example:
 
 ```text
 DBS
-- SGD cash account
-- SGD credit card liability
+- Multiplier Account / deposit / SGD
+- DBS Visa Card / credit_card / SGD
+
+UOB
+- One Account / deposit / SGD
+- UOB Credit Card / credit_card / SGD
 
 Wise
-- SGD cash balance
-- USD cash balance
-- FX conversion events
+- Wise SGD Balance / wallet / SGD
+- Wise USD Balance / wallet / USD
 
 Moomoo
-- USD cash
-- stock positions
-- trades
-
-Bitget
-- USDT balance
-- BTC/ETH crypto positions
-- deposits and withdrawals
-
-Manulife
-- insurance policy value
-- premium payments
+- Moomoo Brokerage / broker / USD
 ```
 
-The UI should allow pivoting by source, account, money type, currency, and instrument.
+When a statement is parsed, CanCan should identify the likely source, sub-account, account type, and account hint. If ambiguous, create a review item.
+
+## Base currency and native values
+
+Default base currency is `SGD`, configurable in vault settings.
+
+Always preserve native values:
+
+- native amount/currency for cash and liabilities;
+- native quantity/instrument for stocks, ETFs, funds, and crypto;
+- valuation amount and valuation currency for position values;
+- exchange rate and valuation timestamp when known.
+
+Base-currency values are derived views, not replacements for native records.
 
 ## Entities
 
-### finance_sources
-
-Represents a provider or source family.
+### money_sources
 
 ```text
-finance_sources
+money_sources
 - id
 - name                    -- DBS, UOB, Wise, Moomoo, Bitget
-- source_type             -- bank, card, payment_app, broker, crypto, insurance, email, manual
+- source_type             -- bank, card_provider, wallet, broker, crypto, insurance, email, manual
 - status                  -- active, disabled, archived
 - created_at
 - updated_at
@@ -62,12 +69,10 @@ finance_sources
 
 ### accounts
 
-Represents a container at a source.
-
 ```text
 accounts
 - id
-- finance_source_id
+- money_source_id
 - name
 - account_type            -- deposit, credit_card, wallet, broker, crypto_wallet, insurance_policy
 - base_currency
@@ -78,8 +83,6 @@ accounts
 ```
 
 ### instruments
-
-Represents a money/capital object.
 
 ```text
 instruments
@@ -93,28 +96,24 @@ instruments
 
 ### source_documents
 
-Represents raw evidence.
-
 ```text
 source_documents
 - id
-- finance_source_id
+- money_source_id
 - source_type             -- gmail, api, pdf, csv, screenshot, manual_upload, watched_folder
-- external_id             -- Gmail message id, API response id, file import id
+- external_id             -- Gmail message id, attachment id, API response id, file import id
 - file_hash
 - file_path
 - mime_type
 - received_at
 - statement_period_start
 - statement_period_end
-- document_status         -- raw, classified, extracted, parsed, staged, committed, failed
+- document_status         -- raw, extracted, parsed, staged, committed, failed
 - created_at
 - updated_at
 ```
 
 ### parse_runs
-
-Every parse attempt is recorded.
 
 ```text
 parse_runs
@@ -125,6 +124,7 @@ parse_runs
 - ai_provider
 - model
 - prompt_hash
+- extraction_bundle_hash
 - status
 - input_hash
 - output_hash
@@ -135,7 +135,7 @@ parse_runs
 
 ### external_records
 
-Represents extracted rows or structured records before ledger commit.
+Extracted rows or structured records before ledger commit.
 
 ```text
 external_records
@@ -155,25 +155,32 @@ external_records
 
 ### ledger_events
 
-Represents a canonical financial event.
+A `ledger_event` is CanCan's canonical representation of a financial event or proof point.
+
+It is used because raw financial sources are inconsistent. One provider may call something a transaction, another calls it a movement, another gives only statement rows, and another gives a valuation snapshot. CanCan needs a common model to power assets, transactions, review, reconciliation, and audit.
 
 ```text
 ledger_events
 - id
-- event_type              -- purchase, transfer, topup, fx_conversion, trade, balance_snapshot, premium
+- event_type              -- purchase, income, transfer, card_payment, topup, fx_conversion, trade, balance_snapshot, valuation_snapshot, premium, fee, interest
 - event_date
 - source_document_id
 - external_record_id
 - description
 - status                  -- staged, committed, reversed
 - confidence
+- affects_spending        -- true/false
+- affects_income          -- true/false
+- affects_net_worth       -- true/false/derived
 - created_at
 - updated_at
 ```
 
+A snapshot can be a ledger event, but it is not a transaction. It proves a balance or valuation and is used for freshness and validation.
+
 ### ledger_legs
 
-Represents the impact of an event on an account and instrument.
+A `ledger_leg` represents the effect of an event on one account and one instrument.
 
 ```text
 ledger_legs
@@ -181,55 +188,51 @@ ledger_legs
 - ledger_event_id
 - account_id
 - instrument_id
-- amount                  -- for fiat/cash value movement
-- quantity                -- for stock/crypto/fund units
+- amount                  -- fiat/cash movement
+- quantity                -- stock/crypto/fund units
 - currency
 - direction               -- debit, credit, in, out
 - balance_after
 - valuation_amount
 - valuation_currency
+- valuation_at
 - metadata_json
 ```
 
-## Why ledger_legs are needed
-
-A normal single-bank purchase has one leg:
+Examples:
 
 ```text
-DBS Visa purchase
-- SGD -25.60
-```
+Credit card purchase
+- DBS Visa SGD liability +25.60
 
-A Wise FX conversion has two legs:
+UOB pays DBS credit card
+- UOB One Account SGD cash -1000
+- DBS Visa SGD liability -1000
 
-```text
-Wise conversion
-- SGD -1000
-- USD +740
-```
+Wise FX conversion
+- Wise SGD balance -1000 SGD
+- Wise USD balance +740 USD
 
-A Moomoo trade has at least two legs:
+Buy AAPL in Moomoo
+- Moomoo USD cash -740 USD
+- Moomoo AAPL position +1 share
 
-```text
-Buy AAPL
-- USD cash -740
-- AAPL quantity +1
-```
+Moomoo daily position value
+- Moomoo AAPL position valuation 1 share at 760 USD
 
-A balance snapshot may have one valuation leg:
-
-```text
 Manulife policy value snapshot
-- policy value SGD 20,000
+- Manulife policy valuation 20000 SGD
 ```
 
 ## match_edges
 
-Links events or records together.
+Links records or events together.
 
 ```text
 match_edges
 - id
+- left_record_id
+- right_record_id
 - left_event_id
 - right_event_id
 - match_type              -- duplicate, transfer, topup, cc_payment, fx_conversion, broker_deposit
@@ -241,14 +244,14 @@ match_edges
 - confirmed_at
 ```
 
-## review_items
+`match_edges` may link external records before commit and ledger events after commit. This supports review before mutation and audit after mutation.
 
-Represents human review tasks.
+## review_items
 
 ```text
 review_items
 - id
-- review_type             -- parse_warning, possible_duplicate, possible_transfer, unmatched_record
+- review_type             -- parse_warning, possible_duplicate, possible_transfer, unmatched_record, account_mapping
 - related_ids_json
 - priority
 - status                  -- open, accepted, rejected, snoozed
@@ -258,17 +261,16 @@ review_items
 - resolved_at
 ```
 
-## Important distinction
+## Key distinction
 
 Duplicate is not the same as transfer.
 
 ```text
 Duplicate:
 Same real-world event imported twice.
-One record should be ignored or merged.
+Keep one canonical event and retain the duplicate as evidence.
 
 Transfer/link:
-Two real-world records are both true.
-They represent two sides of the same internal movement.
-Both should remain in the ledger, but be linked.
+Two records are both true. They represent different sides of the same internal movement.
+Keep both and link them so spending/income is not double-counted.
 ```

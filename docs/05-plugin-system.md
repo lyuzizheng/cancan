@@ -2,49 +2,64 @@
 
 ## Goal
 
-Plugins allow CanCan to collect data from different financial sources without hardcoding every source into the core app.
+Plugins allow CanCan to collect financial evidence from different sources without hardcoding every source into the core app.
 
-A plugin can discover documents, fetch API records, parse files, create staged records, and report sync status.
+A plugin may discover documents, fetch read-only API records, ingest files, parse source-specific formats, normalize records, and report sync status.
 
-## Plugin categories
+## MVP plugin priority
 
-### API connector plugins
-
-Examples:
+The MVP order is now automation-first:
 
 ```text
-Wise
-Moomoo
-Bitget
-future Revolut/Bank API
+1. Manual PDF/CSV upload as test harness
+2. Gmail read-only collector with user-configured search rules
+3. DBS bank account statement parser
+4. DBS credit card statement parser
+5. UOB bank account statement parser
+6. UOB credit card statement parser
+7. Wise PDF/CSV/export parser
+8. Watched folder import
+9. Wise API, then Moomoo/Bitget read-only APIs later
 ```
+
+Manual import can be built first for testing, but Gmail automation is part of MVP success.
+
+## Gmail collector plugin
 
 Responsibilities:
 
 ```text
-read credentials through secret manager
-fetch incremental data with cursor/overlap window
-save raw API JSON snapshots
-normalize API records into external_records
-never perform write/payment/trade operations
-```
-
-### Gmail connector plugin
-
-Responsibilities:
-
-```text
-search finance emails
-filter by sender/subject/date/attachment
+OAuth read-only Gmail access
+store refresh token in OS secret storage
+let user configure sender/subject/keyword/search rules
+support has:attachment and filename/provider filters
+support scan start date
+support incremental search since last successful scan with overlap window
 save email metadata
-save attachments into file vault
-route attachments to provider parsers
-resume from Gmail history/cursor when possible
+save attachments into encrypted file vault
+route attachments to classifier/parser jobs
+never delete or modify emails
 ```
 
 The Gmail plugin is a collector, not a bank parser. Provider-specific parsing happens later.
 
-### Manual upload plugin
+Recommended Gmail rule shape:
+
+```text
+gmail_search_rules
+- id
+- name
+- query
+- required_keywords_json
+- excluded_keywords_json
+- start_after
+- overlap_days
+- enabled
+- last_success_at
+- cursor_json
+```
+
+## Manual upload plugin
 
 Responsibilities:
 
@@ -53,7 +68,7 @@ allow drag/drop files
 compute file hash
 dedupe already-imported files
 classify document
-start parse job
+start extraction/parse job
 ```
 
 Supported initial file types:
@@ -66,26 +81,25 @@ PNG/JPEG screenshots
 JSON exports
 ```
 
-### Watched folder plugin
+## API connector plugins
 
-Responsibilities:
+Examples:
 
 ```text
-scan a user-selected folder
-import new files by hash
-ignore unchanged files
-support one-click rescan
+Wise
+Moomoo
+Bitget
+future bank APIs
 ```
 
-### Screenshot/image plugin
-
 Responsibilities:
 
 ```text
-OCR image
-classify screenshot
-extract visible rows/amounts
-stage records with low-confidence default
+read credentials through secret manager
+fetch incremental read-only data with cursor/overlap window
+save raw API JSON snapshots
+normalize API records into external_records
+never perform write/payment/trade operations
 ```
 
 ## Plugin interface
@@ -121,51 +135,19 @@ export interface PluginContext {
 }
 ```
 
-A plugin should not get raw SQL access unless scoped and audited.
-
-## Plugin lifecycle
-
-```text
-installed
--> configured
--> enabled
--> scheduled/manual run
--> discover
--> ingest
--> parse
--> normalize
--> stage
--> reconcile
--> review/commit
-```
-
 ## Incremental sync
 
-Each plugin stores sync state.
+Use overlap windows because financial data arrives late.
+
+Suggested defaults:
 
 ```text
-plugin_sync_states
-- plugin_id
-- finance_source_id
-- cursor_json
-- last_success_at
-- last_overlap_start
-- last_error_json
-```
-
-Use overlap windows for financial data because statements and posted transactions can arrive late.
-
-Suggested default:
-
-```text
+Gmail sources: search since last successful scan minus 7 days
 API sources: re-fetch last 30-60 days
-Email sources: search since last successful scan minus 7 days
 Manual/watched folders: hash-based dedupe
 ```
 
 ## Read-only rule
-
-Plugins must be read-only for financial institutions.
 
 Allowed:
 
@@ -188,19 +170,4 @@ withdraw crypto
 delete emails
 change bank settings
 bypass MFA/CAPTCHA
-```
-
-## Initial plugin priority
-
-MVP plugin order:
-
-```text
-1. Manual PDF/CSV upload
-2. Generic PDF text/table parser
-3. Gmail finance attachment collector
-4. Wise export/API
-5. Moomoo export/API
-6. Bitget read-only API
-7. One bank statement parser, then expand bank coverage
-8. Manulife PDF/policy statement parser
 ```

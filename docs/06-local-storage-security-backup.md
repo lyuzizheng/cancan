@@ -14,17 +14,19 @@ files/
   CSV/XLSX exports
   raw email snapshots
   API JSON snapshots
+  native text extraction output
   OCR/text/layout outputs
 backups/
 ```
 
 ## SQLite strategy
 
-Use SQLite as the local source of truth. Prefer SQLCipher or another full-database encryption strategy.
+Use SQLite as the local source of truth. SQLCipher or equivalent encryption should be mandatory from v1, even if the first implementation is simple.
 
 SQLite stores:
 
 ```text
+money_sources
 accounts
 instruments
 source_documents metadata
@@ -42,7 +44,7 @@ Avoid storing large PDFs/images as SQLite BLOBs unless there is a clear reason.
 
 ## File vault strategy
 
-Use content-addressed storage.
+Use content-addressed storage:
 
 ```text
 files/
@@ -51,16 +53,7 @@ files/
   ee/ff/<sha256>.json
 ```
 
-SQLite stores:
-
-```text
-file_hash
-file_path
-mime_type
-size
-created_at
-source metadata
-```
+SQLite stores file metadata and hashes.
 
 Advantages:
 
@@ -74,7 +67,7 @@ less database bloat
 
 ## Secret storage
 
-Do not store API keys or OAuth refresh tokens in SQLite.
+Do not store API keys, OAuth refresh tokens, or vault keys in plain SQLite.
 
 Secrets should be stored in OS secret storage / Tauri Stronghold / platform keychain.
 
@@ -83,44 +76,28 @@ Examples:
 ```text
 OpenAI API key
 Anthropic API key
-GLM/Kimi/DeepSeek provider keys
+Gemini/DeepSeek/GLM/Kimi provider keys
 Gmail OAuth refresh token
 Wise API token
 Bitget read-only API token
-Moomoo credentials/token metadata
+Moomoo token metadata
 vault encryption key
 ```
 
 React UI should only know whether a secret is configured, not the actual secret value.
 
-## AI provider keys
+## AI provider consent
 
-The app may support:
+AI providers are disabled by default until explicit setup.
 
-```text
-OpenAI-compatible API
-OpenAI
-Anthropic
-Gemini
-DeepSeek
-GLM
-Kimi
-local model endpoint
-Ollama/OpenAI-compatible local endpoint
-```
-
-Config table can store non-secret metadata:
+Raw document upload to cloud AI should require a clear consent model. Recommended v1 policy:
 
 ```text
-provider_name
-base_url
-model_name
-enabled
-rate_limit
-cost_tracking_enabled
+user configures provider key
+user enables AI parsing for source or document type
+app shows that source evidence may be sent to that provider
+parse outputs and prompt/version logs remain local
 ```
-
-Secret store keeps keys.
 
 ## Backup strategy
 
@@ -133,7 +110,7 @@ local live vault
 -> checkpoint/consistent SQLite backup snapshot
 -> manifest + checksums
 -> encrypted .financevault bundle
--> copy to iCloud backup folder
+-> copy to iCloud backup folder or user-selected folder
 ```
 
 ## Backup bundle shape
@@ -144,70 +121,11 @@ local live vault
   finance.sqlite
   files/
     aa/bb/<sha256>.pdf
-    cc/dd/<sha256>.png
-    ee/ff/<sha256>.json
+    cc/dd/<sha256>.json
   audit.log
 ```
 
-Example manifest:
-
-```json
-{
-  "vault_version": 1,
-  "created_at": "2026-07-07T23:15:00+08:00",
-  "app_version": "0.1.0",
-  "schema_version": 12,
-  "device_id": "macbook-pro",
-  "sqlite_sha256": "...",
-  "file_count": 328,
-  "encrypted": true
-}
-```
-
-## Backup modes
-
-### MVP: backup/restore
-
-```text
-Mac app is the primary writer.
-iCloud stores encrypted snapshots.
-Mobile app can later read latest snapshot.
-No multi-writer conflict resolution yet.
-```
-
-### Future: command sync
-
-Mobile can write small review commands:
-
-```json
-{
-  "device": "iphone",
-  "commands": [
-    {
-      "type": "confirm_match",
-      "match_edge_id": "abc",
-      "confirmed_at": "2026-07-07T12:00:00+08:00"
-    }
-  ]
-}
-```
-
-Desktop app merges commands later.
-
-### Future: true sync
-
-Requires:
-
-```text
-event log
-record versions
-conflict resolution
-soft delete
-merge rules
-CloudKit or custom sync
-```
-
-This is not MVP.
+Backups should not include OAuth/API secrets by default. Restore should force re-authentication unless a future explicit encrypted-secret backup design is approved.
 
 ## Security posture
 
