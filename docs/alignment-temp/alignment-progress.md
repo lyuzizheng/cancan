@@ -26,7 +26,7 @@ blocked       cannot decide until external info/sample/code exists
 | Extraction/OCR/AI parser | partial | Native text + OCR + AI normalization; schemas need exact detail | `docs/specs/0004-parser-contract.md` |
 | AI SDK | aligned | Vercel AI SDK allowed behind CanCan adapters | `docs/09-technology-decisions.md` |
 | SQL/ORM | aligned | Hand-written SQL; no Prisma; indexes/benchmarks required | `docs/specs/0002-database-schema.md` |
-| Ledger events/legs | partial | Canonical model accepted; trades/gains need deeper detail; source-type stats differ | `docs/02-domain-model.md` |
+| Ledger/assets/valuation | partial | Fact-based; no market price fetch; multi-currency; source snapshots first; no tax; trade table deferred | `docs/02-domain-model.md`, `docs/specs/0013-ledger-assets-valuation.md` |
 | Reconciliation policy | partial | Review-first for links; auto policies need thresholds | `docs/specs/0005-review-and-commit-policy.md` |
 | Review interaction | partial | Simple inbox + expandable side-by-side details | `docs/specs/0006-command-center-ui.md` |
 | AI Assistant | partial | Backend APIs/skills only; exact tools need spec | `docs/01-system-architecture.md`, `docs/specs/0006-command-center-ui.md` |
@@ -39,8 +39,8 @@ blocked       cannot decide until external info/sample/code exists
 
 ## Next Discussion Priority
 
-1. Exact design token values and Figma prototype decision.
-2. Database/ledger details for trades, positions, valuations, gains.
-3. Job engine and error model.
-4. Testing/fixtures and AI agent automation gates.
-5. Evidence Library detail UX.
+1. Clarify base-currency/net-worth behavior under no-derived-FX principle.
+2. Job engine and error model.
+3. Testing/fixtures and AI agent automation gates.
+4. Evidence Library detail UX.
+5. Exact design token values and Figma prototype decision.

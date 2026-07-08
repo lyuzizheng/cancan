@@ -15,6 +15,12 @@ Ledger Leg:     account/instrument-level effect of an event
 Match Edge:     duplicate/link/transfer relationship between records/events
 ```
 
+## Product data philosophy
+
+CanCan is fact-based.
+
+It should preserve and organize source evidence rather than invent financial truth. It should not fetch market prices or external FX rates in MVP. It should not do tax-grade realized gain calculations. It should show native values, source-provided values, timestamps, and evidence links.
+
 ## Money sources and sub-accounts
 
 The user manually creates Money Sources and sub-accounts. Parsers may propose mappings, but should not silently create official accounts.
@@ -44,14 +50,16 @@ When a statement is parsed, CanCan should identify the likely source, sub-accoun
 
 Default base currency is `SGD`, configurable in vault settings.
 
+Base currency is a UI preference, not permission to invent FX conversions.
+
 Always preserve native values:
 
 - native amount/currency for cash and liabilities;
 - native quantity/instrument for stocks, ETFs, funds, and crypto;
-- valuation amount and valuation currency for position values;
-- exchange rate and valuation timestamp when known.
+- source-provided valuation amount/currency when available;
+- valuation timestamp when known.
 
-Base-currency values are derived views, not replacements for native records.
+If no source provides conversion, show separate currency buckets rather than inventing conversion.
 
 ## Entities
 
@@ -60,7 +68,7 @@ Base-currency values are derived views, not replacements for native records.
 ```text
 money_sources
 - id
-- name                    -- DBS, UOB, Wise, Moomoo, Bitget
+- name
 - source_type             -- bank, card_provider, wallet, broker, crypto, insurance, email, manual
 - status                  -- active, disabled, archived
 - created_at
@@ -76,7 +84,7 @@ accounts
 - name
 - account_type            -- deposit, credit_card, wallet, broker, crypto_wallet, insurance_policy
 - base_currency
-- external_hint           -- last4, masked account number, provider account id
+- external_hint
 - status
 - created_at
 - updated_at
@@ -87,10 +95,10 @@ accounts
 ```text
 instruments
 - id
-- symbol                  -- SGD, USD, AAPL, BTC, MANULIFE_POLICY_123
+- symbol
 - name
 - instrument_type         -- fiat, stock, etf, crypto, fund, insurance_policy
-- currency                -- valuation currency if applicable
+- currency                -- native/valuation currency if applicable
 - metadata_json
 ```
 
@@ -101,7 +109,7 @@ source_documents
 - id
 - money_source_id
 - source_type             -- gmail, api, pdf, csv, screenshot, manual_upload, watched_folder
-- external_id             -- Gmail message id, attachment id, API response id, file import id
+- external_id
 - file_hash
 - file_path
 - mime_type
@@ -157,12 +165,10 @@ external_records
 
 A `ledger_event` is CanCan's canonical representation of a financial event or proof point.
 
-It is used because raw financial sources are inconsistent. One provider may call something a transaction, another calls it a movement, another gives only statement rows, and another gives a valuation snapshot. CanCan needs a common model to power assets, transactions, review, reconciliation, and audit.
-
 ```text
 ledger_events
 - id
-- event_type              -- purchase, income, transfer, card_payment, topup, fx_conversion, trade, balance_snapshot, valuation_snapshot, premium, fee, interest
+- event_type              -- purchase, income, transfer, card_payment, topup, fx_conversion, trade_execution, balance_snapshot, valuation_snapshot, premium, fee, interest
 - event_date
 - source_document_id
 - external_record_id
@@ -176,7 +182,7 @@ ledger_events
 - updated_at
 ```
 
-A snapshot can be a ledger event, but it is not a transaction. It proves a balance or valuation and is used for freshness and validation.
+A snapshot can be a ledger event, but it is not a transaction. It proves a balance or valuation and is used for display, timestamps, and validation.
 
 ### ledger_legs
 
@@ -193,36 +199,26 @@ ledger_legs
 - currency
 - direction               -- debit, credit, in, out
 - balance_after
-- valuation_amount
+- valuation_amount        -- source-provided valuation only
 - valuation_currency
 - valuation_at
 - metadata_json
 ```
 
-Examples:
+## Trade table stance
+
+MVP does not require a specialized `trades` table immediately.
+
+Use:
 
 ```text
-Credit card purchase
-- DBS Visa SGD liability +25.60
-
-UOB pays DBS credit card
-- UOB One Account SGD cash -1000
-- DBS Visa SGD liability -1000
-
-Wise FX conversion
-- Wise SGD balance -1000 SGD
-- Wise USD balance +740 USD
-
-Buy AAPL in Moomoo
-- Moomoo USD cash -740 USD
-- Moomoo AAPL position +1 share
-
-Moomoo daily position value
-- Moomoo AAPL position valuation 1 share at 760 USD
-
-Manulife policy value snapshot
-- Manulife policy valuation 20000 SGD
+external_records.raw_json for provider-specific trade details
+ledger_events.event_type = trade_execution
+ledger_legs for cash/instrument impacts when confidently parsed
+position/valuation snapshots for current source-provided facts
 ```
+
+A specialized `trades` table can be added later referencing `ledger_event_id` and `external_record_id` if brokerage reporting, lot accounting, or richer trade analytics require it.
 
 ## match_edges
 
@@ -244,14 +240,12 @@ match_edges
 - confirmed_at
 ```
 
-`match_edges` may link external records before commit and ledger events after commit. This supports review before mutation and audit after mutation.
-
 ## review_items
 
 ```text
 review_items
 - id
-- review_type             -- parse_warning, possible_duplicate, possible_transfer, unmatched_record, account_mapping
+- review_type             -- parse_warning, possible_duplicate, possible_transfer, unmatched_record, account_mapping, valuation_conflict
 - related_ids_json
 - priority
 - status                  -- open, accepted, rejected, snoozed

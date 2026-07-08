@@ -34,17 +34,21 @@ Gmail-first local finance evidence automation
 - AI-assisted parsing is core from early phases.
 - App may offer a default AI path, but should strongly prompt bring-your-own AI provider/key.
 - Vercel AI SDK may be used for provider routing and structured generation.
+- CanCan is fact-based: do not fetch market prices or external FX rates in MVP.
+- Multi-currency display is preferred over invented base-currency conversion.
+- Source/provider snapshots are current facts; parsed events explain changes.
+- No tax-grade realized gains or lot accounting in MVP.
+- Specialized trades table is deferred; preserve trade details in external records and represent canonical facts through ledger events/legs/snapshots.
 - Low-risk standalone purchases may auto-commit after deterministic validation and threshold checks.
 - Transfers, repayments, top-ups, FX conversions, broker deposits, and ambiguous links default to review.
-- Default base currency is SGD, configurable.
+- Default base currency is SGD, configurable, but base currency is a UI preference and not permission to invent FX conversions.
 - SQLCipher/equivalent encryption is required from v1.
 - Use hand-written SQL migrations and typed repository functions. Do not use Prisma.
 - SQL performance matters: add indexes deliberately and benchmark important queries.
 - JSON fields are acceptable for provider-specific/evolving metadata when not hiding core query dimensions.
 - Command Center should use left sidebar + main body, modern Warm Off-White + green polished finance app style, and future AI Assistant entry.
-- Command Center should be multi-dimensional: overview, money source flows, snapshot freshness, AI insight, and review status without excessive density.
+- Command Center should show user-facing facts, source activity, snapshot timestamps, AI insight, and review status without noisy metrics/tags.
 - Money source types need tailored stats/display modes.
-- Preferred component strategy is Hero UI-style app components plus CanCan-owned wrappers and centralized tokens; avoid default library look.
 - Money Flow should preserve backend graph capability, but first UI can be chain-first.
 - Backup should support generic folder first, with iCloud as a possible folder target, and must include version compatibility metadata.
 - Repo-local `.agents/` workflows/skills should be created later once real build/test/UI commands exist.
@@ -65,11 +69,11 @@ remove temp workspace after alignment is complete
 
 ## Immediate next design tasks
 
-1. Decide exact design token values and whether to generate a Figma prototype.
-2. Align database/ledger details for trades, positions, valuations, and gains.
-3. Align job engine and error model.
-4. Align testing/fixtures and AI agent automation gates.
-5. Align Evidence Library detail UX.
+1. Clarify base-currency/net-worth behavior under no-derived-FX principle.
+2. Align job engine and error model.
+3. Align testing/fixtures and AI agent automation gates.
+4. Align Evidence Library detail UX.
+5. Decide exact design token values and whether to generate a Figma prototype.
 
 ## Do not start yet
 

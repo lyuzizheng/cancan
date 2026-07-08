@@ -16,6 +16,7 @@ Read order:
 10. `0010-agentic-development-workflow.md`
 11. `0011-visual-design-tokens.md`
 12. `0012-repo-agent-workflows.md`
+13. `0013-ledger-assets-valuation.md`
 
 Rules:
 

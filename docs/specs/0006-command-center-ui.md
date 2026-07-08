@@ -25,7 +25,7 @@ Main body:
 - top status/header
 - money source activity overview
 - compact asset snapshot
-- evidence freshness
+- evidence freshness/timestamps
 - AI insight
 - review/action modules
 ```
@@ -39,8 +39,8 @@ Main body:
 │ Sidebar       │ Command Center                                │ Right Rail   │
 │               │                                               │              │
 │ ● Overview    │ ┌───────────────────────────────────────────┐ │ AI Insight   │
-│ Sources       │ │ Net Worth      Freshness      Last Backup │ │ ┌──────────┐ │
-│ Assets        │ │ SGD xxx        92% fresh      Today       │ │ │Monthly   │ │
+│ Sources       │ │ Overview: native totals, last updates     │ │ ┌──────────┐ │
+│ Assets        │ │ SGD cash | USD cash | liabilities | etc.  │ │ │Monthly   │ │
 │ Transactions  │ └───────────────────────────────────────────┘ │ │summary   │ │
 │ Reconcile     │                                               │ └──────────┘ │
 │ Money Flow    │ ┌───────────────────────────────────────────┐ │              │
@@ -48,7 +48,7 @@ Main body:
 │ Jobs          │ │                                           │ │ ┌──────────┐ │
 │ Settings      │ │ DBS Bank      balance / latest movement   │ │ │Needs 8   │ │
 │               │ │ DBS Card      liability / payment status  │ │ │Failed 1  │ │
-│ AI Assistant  │ │ UOB Bank      inflow / outflow / freshness│ │ │New 12    │ │
+│ AI Assistant  │ │ UOB Bank      inflow / outflow / updated  │ │ │New 12    │ │
 │               │ │ Wise          SGD/USD / FX / top-ups      │ │ └──────────┘ │
 │               │ └───────────────────────────────────────────┘ │              │
 │               │                                               │ Backup       │
@@ -64,6 +64,21 @@ Main body:
 │               │ └───────────────────────────────────────────┘ │              │
 └───────────────┴───────────────────────────────────────────────┴──────────────┘
 ```
+
+## Dashboard philosophy
+
+Do not overcomplicate the dashboard with too many generated metrics, tags, or AI-invented labels.
+
+Show user-facing facts:
+
+- source-native balances;
+- source-provided valuations;
+- last updated/imported/parsed timestamps;
+- clear unresolved/review states;
+- recent money flows;
+- AI insight only when grounded in source data.
+
+Avoid confusing aggregate scores like `92% fresh` unless later backed by a clear definition. Prefer `Updated 2h ago`, `Statement through Jun 30`, `Missing July statement`, or `Needs review`.
 
 ## Design register
 
@@ -128,7 +143,7 @@ The first viewport should be multi-dimensional but not too dense.
 Recommended priority:
 
 ```text
-1. Top overview: net worth, freshness, last scan, vault/backup health
+1. Top overview: native totals, timestamps, vault/backup health
 2. Main stream: money source activity and recent flows
 3. Source snapshots: tailored status per source type
 4. AI insight: monthly/weekly summary or missing statement prompt
@@ -143,11 +158,11 @@ Different source types should not all render the same generic card.
 Examples:
 
 ```text
-Bank account: balance, inflow/outflow, statement freshness
-Credit card: liability, statement period, repayment status, spending trend
-Wise/wallet: balances by currency, top-ups, FX conversions
-Brokerage: cash, positions, valuation, estimated P/L
-Crypto: token balances, valuation, deposits/withdrawals
+Bank account: balance, inflow/outflow, statement updated at
+Credit card: liability, statement period, repayment status, spending trend if source-backed
+Wise/wallet: balances by currency, top-ups, FX conversions from source evidence
+Brokerage: cash, positions, source-provided valuation/P&L if present
+Crypto: token balances, source-provided valuation if present
 Insurance: policy value, premium history, valuation date
 ```
 
@@ -163,7 +178,7 @@ get_monthly_summary(month)
 list_review_items(status)
 explain_money_flow(chain_id)
 search_transactions(query)
-get_source_freshness()
+get_source_updated_at()
 list_missing_statements()
 ```
 
@@ -190,8 +205,8 @@ A Figma prototype can be generated after visual tokens are accepted. The Figma o
 ## Acceptance criteria
 
 - First screen has left sidebar and main body.
-- Source activity, overview, freshness, AI insight, and review status are all represented.
-- Asset snapshot is present but not the only focus.
+- Source activity, overview, timestamps, AI insight, and review status are all represented.
 - Different money source types can display different stats.
+- UI avoids overcomplicated freshness scores or noisy tags.
 - Empty states guide the user to create sources, configure Gmail, or import files.
 - AI Assistant is represented as a future-ready surface/tool entry, but cannot bypass safety boundaries.

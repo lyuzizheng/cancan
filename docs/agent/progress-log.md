@@ -27,13 +27,14 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added visual design tokens spec for Warm Off-White + green semantic direction.
 - Recorded component strategy: prefer Hero UI-style foundation with CanCan wrappers and centralized tokens.
 - Added repo agent workflows spec for future `.agents/` rules/workflows/skills after real commands exist.
+- Added ledger/assets/valuation spec: fact-based, no market price fetch, no external FX rates, multi-currency first, source snapshots as facts, no tax/lot accounting in MVP, trade table deferred.
 
 ### Next
 
-- Decide exact design token values and whether to generate a Figma prototype.
-- Align ledger details for trades, positions, valuations, and gains.
+- Clarify base-currency/net-worth behavior under no-derived-FX principle.
 - Align job engine and error model.
 - Align testing/fixtures and AI agent automation gates.
+- Align Evidence Library detail UX.
 
 ## 2026-07-07
 
