@@ -10,13 +10,13 @@ Before implementation, read in this order:
 
 ```text
 1. docs/README.md
-2. docs/agent/current-state.md
-3. docs/agent/reading-order.md
-4. docs/agent/iteration-protocol.md
-5. docs/agent/consistency-checklist.md
-6. docs/adr/*.md relevant to the task
-7. docs/specs/* relevant to the task
-8. numbered product/architecture docs relevant to the task
+2. docs/STRUCTURE.md
+3. docs/agent/current-state.md
+4. docs/agent/reading-order.md
+5. docs/agent/iteration-protocol.md
+6. docs/agent/consistency-checklist.md
+7. docs/adr/*.md relevant to the task
+8. docs/specs/* relevant to the task
 9. docs/alignment-temp/* only when active alignment decisions are needed
 ```
 
@@ -29,9 +29,8 @@ When documents conflict, use this order:
 2. docs/agent/current-state.md
 3. docs/specs/*.md for implementation-grade detail
 4. docs/adr/*.md for architecture decisions
-5. numbered docs/00-*.md through docs/11-*.md for broad product context
-6. docs/alignment-temp/* for temporary unresolved discussion only
-7. existing code behavior, only when docs are silent
+5. docs/alignment-temp/* for temporary unresolved discussion only
+6. existing code behavior, only when docs are silent
 ```
 
 ## Canonical specs by topic

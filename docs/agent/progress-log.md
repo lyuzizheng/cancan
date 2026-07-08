@@ -29,15 +29,18 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added repo agent workflows spec for future `.agents/` rules/workflows/skills after real commands exist.
 - Added ledger/assets/valuation spec: fact-based, no market price fetch, no external FX rates, multi-currency first, source snapshots as facts, no tax/lot accounting in MVP, trade table deferred.
 - Added Money Overview/source taxonomy spec: no base currency in MVP, no default Net Worth, two-level source model, source/account/instrument taxonomy.
-- Started consistency cleanup across first-run, domain model, valuation, Gmail collector, and storage/security docs.
 - Added support for password-protected statement PDFs: local unlock, optional secure save, secret references only in SQLite.
+- Reworked documentation structure so `docs/specs/` is the canonical implementation source of truth.
+- Removed old numbered docs layer (`00-product-vision.md` through `11-open-questions.md`) to prevent duplicate and conflicting product truth.
+- Added `docs/STRUCTURE.md` and `docs/specs/README.md`.
+- Updated AI agent reading order and source-of-truth hierarchy after cleanup.
 
 ### Next
 
-- Finish doc consistency audit and remove stale duplicates.
 - Align job engine and error model.
 - Align testing/fixtures and AI agent automation gates.
 - Align Evidence Library detail UX.
+- Continue deleting or rewriting temporary alignment files once stable decisions move into specs.
 
 ## 2026-07-07
 

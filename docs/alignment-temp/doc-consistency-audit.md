@@ -4,7 +4,18 @@ Status: active temporary audit.
 
 Purpose: track duplicate/conflicting documentation while the product spec is still being aligned. Delete this file when the permanent docs are clean and stable.
 
-## Current resolved conflicts
+## Resolved in permanent docs
+
+### Old numbered docs layer
+
+Resolution:
+
+```text
+Removed docs/00-product-vision.md through docs/11-open-questions.md from the canonical docs tree.
+Canonical implementation truth now lives in docs/specs/.
+Project-level navigation lives in docs/README.md and docs/STRUCTURE.md.
+AI memory lives in docs/agent/.
+```
 
 ### Base currency
 
@@ -17,12 +28,11 @@ Values are shown as native buckets and source-provided valuations.
 Estimated totals require future explicit network activity settings.
 ```
 
-Permanent docs:
+Canonical docs:
 
 ```text
 docs/specs/0014-money-overview-source-taxonomy.md
 docs/specs/0013-ledger-assets-valuation.md
-docs/02-domain-model.md
 docs/specs/0007-first-run-onboarding.md
 ```
 
@@ -46,6 +56,12 @@ Child container/account = account, card, balance, policy, wallet, portfolio sect
 Instrument = thing held or valued.
 ```
 
+Canonical doc:
+
+```text
+docs/specs/0014-money-overview-source-taxonomy.md
+```
+
 ### Password-protected statement PDFs
 
 Resolution:
@@ -58,21 +74,19 @@ Store only secret references in SQLite.
 Do not send passwords to AI or include them in backups by default.
 ```
 
-Permanent docs:
+Canonical docs:
 
 ```text
 docs/specs/0003-gmail-collector.md
 docs/specs/0007-first-run-onboarding.md
-docs/06-local-storage-security-backup.md
+docs/specs/0009-backup-restore-versioning.md
 ```
 
 ## Audit still needed
 
-- Check numbered docs for stale `base currency`, `net worth`, or `freshness score` wording.
-- Check roadmap for phase order drift after Gmail/AI/parser decisions.
-- Check `docs/specs/0002-database-schema.md` after real SQL migrations exist.
-- Check whether crypto/Bitget remains future-scope only or becomes an explicit supported source.
-- Check whether `.agents/` should be created after scripts exist.
+- Check roadmap assumptions once job engine and testing specs are aligned.
+- Check whether future `.agents/` folder should be created after real scripts exist.
+- Delete this temp audit after all temporary alignment docs are either removed or replaced by canonical specs.
 
 ## Rule for future cleanup
 
@@ -82,6 +96,7 @@ When a temporary alignment decision becomes stable:
 1. Update the canonical spec.
 2. Update current-state.
 3. Update progress-log.
-4. Remove or rewrite stale conflicting language in older docs.
-5. Move the item from this file to resolved, then delete this file when all items are resolved.
+4. Remove or rewrite stale conflicting language.
+5. Move the item from this file to resolved.
+6. Delete this file when no unresolved audit items remain.
 ```

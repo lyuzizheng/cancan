@@ -17,6 +17,12 @@ Gmail-first local finance evidence automation
 + future AI assistant backed by narrow backend APIs/skills
 ```
 
+## Documentation state
+
+`docs/specs/` is now the canonical implementation source of truth.
+
+The old numbered docs layer (`00-product-vision.md` through `11-open-questions.md`) has been removed to avoid duplicate/conflicting guidance. Use `docs/README.md`, `docs/STRUCTURE.md`, this file, and the relevant specs instead.
+
 ## Current MVP decisions
 
 - Manual import is a test harness and fallback.
@@ -73,11 +79,11 @@ remove temp workspace after alignment is complete
 
 ## Immediate next design tasks
 
-1. Finish doc consistency audit and remove stale duplicates.
-2. Align job engine and error model.
-3. Align testing/fixtures and AI agent automation gates.
-4. Align Evidence Library detail UX.
-5. Decide exact design token values and whether to generate a Figma prototype.
+1. Align job engine and error model.
+2. Align testing/fixtures and AI agent automation gates.
+3. Align Evidence Library detail UX.
+4. Decide exact design token values and whether to generate a Figma prototype.
+5. Continue deleting or rewriting temporary alignment files once stable decisions move into specs.
 
 ## Do not start yet
 

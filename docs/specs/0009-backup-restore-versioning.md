@@ -83,12 +83,23 @@ Choose backup bundle
 
 ## Secrets policy
 
-Backups should not include OAuth/API secrets by default.
+Backups should not include secrets by default.
+
+Excluded by default:
+
+```text
+Gmail OAuth refresh token
+AI provider keys
+statement PDF passwords
+future read-only API tokens
+vault key material
+```
 
 After restore:
 
 - Gmail reconnect required;
-- AI provider key re-entry required;
+- AI provider key re-entry required unless a future explicit secret-backup design exists;
+- statement PDF password re-entry required unless a future explicit secret-backup design exists;
 - API connector token re-entry required.
 
 ## Acceptance criteria

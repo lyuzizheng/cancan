@@ -4,12 +4,16 @@ This folder exists so future AI coding agents can keep product docs, implementat
 
 Before making code changes, an agent must read:
 
-1. `docs/README.md`
-2. `docs/agent/current-state.md`
-3. `docs/agent/reading-order.md`
-4. `docs/agent/iteration-protocol.md`
-5. `docs/agent/consistency-checklist.md`
-6. The feature-specific specs and product/architecture docs touched by the task
+```text
+1. docs/README.md
+2. docs/STRUCTURE.md
+3. docs/agent/current-state.md
+4. docs/agent/reading-order.md
+5. docs/agent/iteration-protocol.md
+6. docs/agent/consistency-checklist.md
+7. task-relevant docs/specs/*.md
+8. task-relevant docs/adr/*.md
+```
 
 ## Source-of-truth hierarchy
 
@@ -19,7 +23,7 @@ Use this order when resolving conflicts:
 2. `docs/agent/current-state.md` for current implementation focus.
 3. `docs/specs/*.md` for implementation-grade detail.
 4. ADRs in `docs/adr/` for accepted architecture decisions.
-5. Product/architecture docs in `docs/00-*.md` through `docs/11-*.md`.
+5. `docs/alignment-temp/*` only for active unresolved alignment.
 6. Existing code behavior, only when docs are silent.
 
 If code and docs disagree, do not silently choose one. Update docs and code together or record the discrepancy in `docs/agent/progress-log.md`.
@@ -34,4 +38,4 @@ iteration-protocol.md     how AI agents should plan, implement, validate, and up
 consistency-checklist.md  checks before a task is considered complete
 ```
 
-Do not put large design essays here. Put product design in numbered docs/specs and use this folder as the working memory layer.
+Do not put large design essays here. Put product design in `docs/specs/` and use this folder as the working memory layer.
