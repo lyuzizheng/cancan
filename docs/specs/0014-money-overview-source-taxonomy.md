@@ -25,7 +25,7 @@ Do not auto-convert native values into one total.
 
 The Command Center should use Money Overview, Source Overview, or Your Money Sources instead of defaulting to one large Net Worth number.
 
-The overview should display source-native facts such as SGD cash, USD cash, card liabilities, Wise balances, brokerage cash, positions from statement, insurance policy value, and token balances from source evidence.
+The overview should display source-native facts such as SGD cash, USD cash, card liabilities, Wise balances, brokerage cash, positions from statement, insurance policy value, and other source-backed balances or valuations.
 
 Single-currency subtotal cards are allowed when the underlying values are compatible.
 
@@ -107,6 +107,8 @@ insurance
 manual
 ```
 
+Future source types may include more platform categories, such as `crypto_exchange`, after provider specs, fixtures, parser contracts, and source stats are defined.
+
 `account_type` or child container type describes the lower-level object:
 
 ```text
@@ -121,6 +123,8 @@ manual_asset
 manual_liability
 ```
 
+Future account/container types may be added when a new supported provider requires them.
+
 `instrument_type` describes what is being held or valued:
 
 ```text
@@ -132,11 +136,29 @@ insurance_policy
 liability
 ```
 
+Future instrument types may include provider-backed token or alternative asset units when needed.
+
 ## Display principle
 
 UI should be user-facing, not schema-facing.
 
 Render human language such as DBS Multiplier Account, DBS Visa Card, Wise USD Balance, Moomoo Positions, and Manulife Policy Value.
+
+## Parser mapping principle
+
+Parser output should map evidence to the most specific known user container.
+
+Examples:
+
+```text
+DBS bank statement -> DBS / Multiplier Account
+DBS credit card statement -> DBS / DBS Visa Card
+Wise export -> Wise / currency balance or source-backed FX event
+Moomoo statement -> Moomoo / Brokerage Account plus sections from the statement
+Manulife statement -> Manulife / Policy
+```
+
+If the parser can identify the source but not the child container, create a review item rather than silently committing.
 
 ## Acceptance criteria
 
@@ -148,3 +170,4 @@ Render human language such as DBS Multiplier Account, DBS Visa Card, Wise USD Ba
 - Source model remains two-level from the user's perspective.
 - Source type, account or container type, and instrument type are distinct.
 - Product copy avoids defensive limitation messaging.
+- Parser mapping targets the child container/account whenever possible.

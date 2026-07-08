@@ -28,10 +28,13 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Recorded component strategy: prefer Hero UI-style foundation with CanCan wrappers and centralized tokens.
 - Added repo agent workflows spec for future `.agents/` rules/workflows/skills after real commands exist.
 - Added ledger/assets/valuation spec: fact-based, no market price fetch, no external FX rates, multi-currency first, source snapshots as facts, no tax/lot accounting in MVP, trade table deferred.
+- Added Money Overview/source taxonomy spec: no base currency in MVP, no default Net Worth, two-level source model, source/account/instrument taxonomy.
+- Started consistency cleanup across first-run, domain model, valuation, Gmail collector, and storage/security docs.
+- Added support for password-protected statement PDFs: local unlock, optional secure save, secret references only in SQLite.
 
 ### Next
 
-- Clarify base-currency/net-worth behavior under no-derived-FX principle.
+- Finish doc consistency audit and remove stale duplicates.
 - Align job engine and error model.
 - Align testing/fixtures and AI agent automation gates.
 - Align Evidence Library detail UX.

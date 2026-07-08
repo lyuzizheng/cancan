@@ -5,10 +5,9 @@
 CanCan models financial data across these dimensions:
 
 ```text
-Money Source:   DBS, UOB, Wise, Moomoo, Bitget, Manulife
-Sub-account:    bank account, credit card, wallet balance, broker account, policy
-Money Type:     cash, liability, stock, ETF, crypto, insurance, fund
-Instrument:     SGD, USD, AAPL, BTC, ETH, policy identifier
+Money Source:   DBS, UOB, Wise, Moomoo, Manulife
+Container:      bank account, credit card, currency balance, brokerage account, policy
+Instrument:     SGD, USD, AAPL, ETF, fund, policy identifier
 Evidence:       PDF, CSV, Gmail email, API snapshot, OCR/text output
 Ledger Event:   canonical financial event or snapshot
 Ledger Leg:     account/instrument-level effect of an event
@@ -19,47 +18,54 @@ Match Edge:     duplicate/link/transfer relationship between records/events
 
 CanCan is fact-based.
 
-It should preserve and organize source evidence rather than invent financial truth. It should not fetch market prices or external FX rates in MVP. It should not do tax-grade realized gain calculations. It should show native values, source-provided values, timestamps, and evidence links.
+It preserves and organizes source evidence, native values, source-provided valuations, timestamps, and evidence links. MVP should not fetch market prices, fetch external FX rates, or calculate tax-grade realized gains.
 
-## Money sources and sub-accounts
+## Money sources and containers
 
-The user manually creates Money Sources and sub-accounts. Parsers may propose mappings, but should not silently create official accounts.
+The user manually creates Money Sources and child containers/accounts. Parsers may propose mappings, but should not silently create official accounts.
 
-Example:
+A Money Source represents the platform or institution in the user's mental model. It is not a currency or asset type.
+
+Examples:
 
 ```text
 DBS
-- Multiplier Account / deposit / SGD
+- Multiplier Account / deposit_account / SGD
 - DBS Visa Card / credit_card / SGD
 
 UOB
-- One Account / deposit / SGD
+- One Account / deposit_account / SGD
 - UOB Credit Card / credit_card / SGD
 
 Wise
-- Wise SGD Balance / wallet / SGD
-- Wise USD Balance / wallet / USD
+- Wise SGD Balance / currency_balance / SGD
+- Wise USD Balance / currency_balance / USD
 
 Moomoo
-- Moomoo Brokerage / broker / USD
+- Brokerage Account / brokerage_account
+  - USD cash section
+  - positions from statement
+
+Manulife
+- Policy / insurance_policy
 ```
 
-When a statement is parsed, CanCan should identify the likely source, sub-account, account type, and account hint. If ambiguous, create a review item.
+When a statement is parsed, CanCan should identify the likely source, child container/account, account type, and account hint. If ambiguous, create a review item.
 
-## Base currency and native values
+## Multi-currency and native values
 
-Default base currency is `SGD`, configurable in vault settings.
-
-Base currency is a UI preference, not permission to invent FX conversions.
+MVP does not have a required base currency setting.
 
 Always preserve native values:
 
 - native amount/currency for cash and liabilities;
-- native quantity/instrument for stocks, ETFs, funds, and crypto;
+- native quantity/instrument for stocks, ETFs, funds, and similar instruments;
 - source-provided valuation amount/currency when available;
 - valuation timestamp when known.
 
 If no source provides conversion, show separate currency buckets rather than inventing conversion.
+
+The Command Center should use Money Overview / Source Overview language, not a default single Net Worth number.
 
 ## Entities
 
@@ -69,7 +75,8 @@ If no source provides conversion, show separate currency buckets rather than inv
 money_sources
 - id
 - name
-- source_type             -- bank, card_provider, wallet, broker, crypto, insurance, email, manual
+- source_type             -- bank, card_provider, wallet, brokerage, insurance, manual
+- provider_key            -- dbs, uob, wise, moomoo, manulife, etc.
 - status                  -- active, disabled, archived
 - created_at
 - updated_at
@@ -77,13 +84,15 @@ money_sources
 
 ### accounts
 
+`accounts` is the implementation table for user-visible child containers. UI may render them as accounts, balances, cards, policies, wallets, or portfolio sections depending on source type.
+
 ```text
 accounts
 - id
 - money_source_id
 - name
-- account_type            -- deposit, credit_card, wallet, broker, crypto_wallet, insurance_policy
-- base_currency
+- account_type            -- deposit_account, credit_card, currency_balance, brokerage_account, cash_balance, position_group, insurance_policy, manual_asset, manual_liability
+- native_currency         -- nullable when the container is not one currency
 - external_hint
 - status
 - created_at
@@ -97,7 +106,7 @@ instruments
 - id
 - symbol
 - name
-- instrument_type         -- fiat, stock, etf, crypto, fund, insurance_policy
+- instrument_type         -- fiat_currency, stock, etf, fund, insurance_policy, liability
 - currency                -- native/valuation currency if applicable
 - metadata_json
 ```
@@ -116,7 +125,7 @@ source_documents
 - received_at
 - statement_period_start
 - statement_period_end
-- document_status         -- raw, extracted, parsed, staged, committed, failed
+- document_status         -- raw, locked, extracted, parsed, staged, committed, failed
 - created_at
 - updated_at
 ```
@@ -177,7 +186,6 @@ ledger_events
 - confidence
 - affects_spending        -- true/false
 - affects_income          -- true/false
-- affects_net_worth       -- true/false/derived
 - created_at
 - updated_at
 ```
@@ -195,7 +203,7 @@ ledger_legs
 - account_id
 - instrument_id
 - amount                  -- fiat/cash movement
-- quantity                -- stock/crypto/fund units
+- quantity                -- stock/fund units when present
 - currency
 - direction               -- debit, credit, in, out
 - balance_after
@@ -245,7 +253,7 @@ match_edges
 ```text
 review_items
 - id
-- review_type             -- parse_warning, possible_duplicate, possible_transfer, unmatched_record, account_mapping, valuation_conflict
+- review_type             -- locked_document, parse_warning, possible_duplicate, possible_transfer, unmatched_record, account_mapping, valuation_conflict
 - related_ids_json
 - priority
 - status                  -- open, accepted, rejected, snoozed

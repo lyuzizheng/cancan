@@ -6,15 +6,16 @@ Define how CanCan represents assets, liabilities, positions, snapshots, valuatio
 
 ## Core principle: fact-based finance
 
-CanCan is a record, reconciliation, and evidence dashboard. It should not invent financial data.
+CanCan is a record, reconciliation, and evidence dashboard. It should preserve and organize source evidence as user-facing financial memory.
 
-Rules:
+Implementation rules:
 
 ```text
 Do not fetch market prices in MVP.
+Do not fetch external FX rates in MVP.
 Do not calculate tax or tax-grade realized gains.
 Do not create analytics that imply unsupported truth.
-Do not derive values without source evidence or explicit user-approved rules.
+Do not derive values without source evidence or explicit user-approved settings.
 Prefer statement/export/API facts over inferred calculations.
 Show source, timestamp, and evidence for displayed financial facts.
 ```
@@ -30,17 +31,22 @@ bank/card statements
 Wise export/statement
 broker statement/API/export snapshot
 insurance policy statement
-crypto exchange export/API snapshot
 manual import evidence
 ```
 
 If no source evidence provides current value, CanCan should not fetch market price or estimate live value.
 
+## No base currency in MVP
+
+CanCan should not ask the user to choose a base currency during MVP onboarding or vault settings.
+
+CanCan is a multi-currency factual overview. User assets may naturally exist across SGD, USD, CNY, HKD, securities, policies, and other native units. A base currency setting can incorrectly imply that CanCan will convert everything into one total.
+
+MVP should show native values and source-provided valuations without forcing a single synthetic total.
+
 ## Multi-currency model
 
 CanCan should be multi-currency first.
-
-Do not force all values into SGD using app-generated FX rates.
 
 Store and show native values:
 
@@ -48,7 +54,6 @@ Store and show native values:
 SGD cash
 USD cash
 AAPL shares
-BTC quantity
 policy value in stated currency
 credit card liability in stated currency
 ```
@@ -57,17 +62,48 @@ If a statement/source provides a valuation in another currency, store that valua
 
 If no source provides conversion, show separate currency buckets rather than inventing conversion.
 
-## Base currency meaning
+## Money Overview instead of default Net Worth
 
-Base currency is a UI preference, not permission to invent FX conversions.
+The Command Center should not default to a single `Net Worth` number unless the source evidence already supports compatible aggregation.
 
-Use base currency when:
+Preferred MVP language:
 
-- the source evidence already provides base-currency valuation;
-- the user explicitly configures an approved valuation/conversion source later;
-- a future feature intentionally adds market/FX data with clear consent.
+```text
+Money Overview
+Source Overview
+Your Money Sources
+```
 
-Until then, Command Center should be comfortable showing multi-currency totals and source-native values.
+Single-currency subtotal cards are allowed when the underlying values are compatible.
+
+## Source-provided equivalent values
+
+If a statement provides an equivalent value, CanCan may display it.
+
+Rules:
+
+```text
+Store the provider/source valuation amount.
+Store the valuation currency.
+Store the source document / external record reference.
+Store valuation_at or statement date when available.
+Do not relabel source-provided values as app-calculated values.
+```
+
+## Optional network activity for future estimated totals
+
+A future user setting may enable network activity for external FX rates, market prices, or estimated total views.
+
+MVP default:
+
+```text
+network activity for valuation = off
+market price fetch = off
+external FX fetch = off
+estimated total = unavailable unless source-backed
+```
+
+If added later, network activity must be explicitly enabled by the user, visible in Settings, reversible, versioned, and separate from source-provided facts.
 
 ## FX events
 
@@ -82,7 +118,7 @@ Wise statement:
 - fee if present
 ```
 
-CanCan records this as a source-backed FX conversion. It does not need to invent an external FX rate. If the implied rate is useful, it can be calculated as an explanatory derived field tied to the source event, not as a market price.
+CanCan records this as a source-backed FX conversion. It does not need to invent an external FX rate. If the implied rate is useful, it can be calculated as an explanation tied to the source event, not as a market price.
 
 ## Trades table decision
 
@@ -127,9 +163,7 @@ MVP display priority:
 
 Do not calculate complex unrealized gains in MVP.
 
-If the source statement provides cost basis, P/L, or unrealized gain, CanCan may display it as source-provided.
-
-If not provided, do not invent it.
+If the source statement provides cost basis, P/L, or unrealized gain, CanCan may display it as source-provided. If not provided, do not invent it.
 
 ## Realized gains and tax
 
@@ -163,7 +197,7 @@ credit card purchases increase liability
 credit card repayment reduces liability and cash
 repayment is not spending
 liabilities are shown in a Liabilities section
-net worth only aggregates values that have compatible source-backed valuation
+single-currency totals only aggregate compatible source-backed values
 ```
 
 ## Updated-at and freshness
@@ -201,8 +235,7 @@ sourceTypeStatsRegistry
 - bank_account
 - credit_card
 - wallet
-- broker
-- crypto
+- brokerage
 - insurance
 ```
 
@@ -219,12 +252,21 @@ supported event types
 
 This keeps frontend/backend behavior consistent and avoids scattered if/else logic.
 
+## Product copy guardrail
+
+User-facing copy should emphasize what CanCan helps users see and organize. Avoid defensive wording that lists product limitations.
+
+Docs may state technical constraints clearly for implementation safety, but product UI should stay simple, confident, and user-centered.
+
 ## Acceptance criteria
 
+- MVP does not ask for base currency.
 - MVP does not fetch market prices or external FX rates.
 - Native values are preserved and displayed.
-- Base currency does not imply automatic conversion.
 - Statement/source snapshots can drive current position/value display.
+- Source-provided equivalent values can be shown with evidence.
+- Single totals are only shown when source evidence supports compatible aggregation.
+- Future estimated totals require explicit network activity settings.
 - Trades can be represented without a specialized table in MVP.
 - Future specialized trade table remains possible without data loss.
 - Insurance policy values are snapshots.

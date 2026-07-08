@@ -77,17 +77,6 @@ delete email
 change mailbox settings
 ```
 
-Gmail read scopes are often restricted scopes. Public distribution will likely require Google OAuth verification. Documentation/privacy copy must emphasize:
-
-```text
-data is processed locally
-no CanCan server receives Gmail data
-refresh token is stored in local Keychain/secret storage
-user can revoke Google access
-user can delete local cached data
-only minimum read-only scope is requested
-```
-
 ## UX model
 
 Use guided rules plus expert query editing.
@@ -95,8 +84,8 @@ Use guided rules plus expert query editing.
 Top section: guided builder.
 
 ```text
-Provider: DBS | UOB | Wise | Custom supported source
-Document type: bank statement | credit card statement | export | custom supported type
+Provider: DBS | UOB | Wise | supported source
+Document type: bank statement | credit card statement | export | supported type
 Required keywords
 Excluded keywords
 Sender/from hint
@@ -162,6 +151,21 @@ gmail_sync_states
 - updated_at
 ```
 
+```text
+statement_secret_refs
+- id
+- provider_key
+- money_source_id
+- account_id nullable
+- document_type_hint
+- secret_storage_key
+- hint_label
+- created_at
+- updated_at
+```
+
+`statement_secret_refs` stores only references and hints. Actual statement passwords must live in OS secret storage / Keychain / Stronghold.
+
 ## Storage policy
 
 Use minimum storage.
@@ -180,6 +184,33 @@ store file hash and source document metadata
 ```
 
 Do not store full email body by default unless needed for evidence/parser behavior or explicitly enabled.
+
+## Protected PDF statements
+
+Some statement PDFs are password protected.
+
+Flow:
+
+```text
+Attachment downloaded
+-> file hash dedupe
+-> detect password-protected PDF
+-> source_document.document_status = locked
+-> create review/job prompt: password needed
+-> user enters password
+-> app tests unlock locally
+-> user may save password for matching provider/account/document type
+-> extraction resumes
+```
+
+Rules:
+
+- password entry is optional;
+- password unlock happens locally;
+- passwords must not be sent to AI providers;
+- passwords must not be written to logs, parse payloads, raw_json, normalized_json, or backups by default;
+- saved passwords are referenced by `statement_secret_refs` and stored in OS secret storage;
+- users can delete saved statement passwords from Settings.
 
 ## Sync strategy
 
@@ -218,7 +249,7 @@ Before enabling a rule, provide `Test rule`:
 show recent matching messages
 show attachment names and mime types
 show provider/document classification hints
-show whether each attachment would import, skip, or dedupe
+show whether each attachment would import, skip, unlock, or dedupe
 ```
 
 ## Error handling
@@ -232,6 +263,8 @@ Gmail rule settings with reconnect CTA
 ```
 
 Do not only show a transient toast.
+
+Protected PDF errors should appear as locked document jobs with a clear unlock action.
 
 ## Tests
 
@@ -252,6 +285,7 @@ OAuth/token error
 restricted/insufficient scope error
 no matching emails
 PDF attachment import
+password-protected PDF attachment import
 CSV attachment import
 message body not stored by default
 ```
@@ -266,4 +300,5 @@ message body not stored by default
 - User can test a rule before enabling it.
 - App supports startup/wake/manual/configurable polling sync.
 - Re-running sync does not duplicate already imported attachments.
+- Password-protected PDFs can be detected, unlocked locally, and optionally tied to a saved secret reference.
 - Errors are visible and actionable.
