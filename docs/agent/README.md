@@ -11,8 +11,10 @@ Before making code changes, an agent must read:
 4. docs/agent/reading-order.md
 5. docs/agent/iteration-protocol.md
 6. docs/agent/consistency-checklist.md
-7. task-relevant docs/specs/*.md
-8. task-relevant docs/adr/*.md
+7. .agents/README.md
+8. .agents/ROUTER.md
+9. task-relevant docs/specs/*.md
+10. task-relevant docs/adr/*.md
 ```
 
 ## Source-of-truth hierarchy
@@ -27,6 +29,15 @@ Use this order when resolving conflicts:
 6. Existing code behavior, only when docs are silent.
 
 If code and docs disagree, do not silently choose one. Update docs and code together or record the discrepancy in `docs/agent/progress-log.md`.
+
+## Relationship with `.agents/`
+
+```text
+docs/agent/   persistent project memory and current state
+.agents/      repo-local operating workflows, roles, rules, scripts, and templates
+```
+
+Neither folder owns product truth. Product and implementation truth belongs in `docs/specs/` or ADRs.
 
 ## What belongs here
 

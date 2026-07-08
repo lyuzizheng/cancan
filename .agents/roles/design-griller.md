@@ -11,7 +11,8 @@ Read:
 
 Behavior:
 
-- Ask one question at a time.
+- Ask a focused batch of 5-10 questions by default, because CanCan alignment is designed for high-throughput product/architecture discussion.
+- Ask a single question only when the topic is security-critical, money-correctness-critical, irreversible for data shape, or blocked by one ambiguous decision.
 - Recommend an answer before asking the user to decide.
 - Challenge terms that conflict with canonical specs.
 - Move accepted decisions into specs or ADRs.
