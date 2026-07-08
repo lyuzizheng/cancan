@@ -8,10 +8,11 @@ UI:               React + TypeScript
 Core engine:      TypeScript packages
 Privileged layer: Rust/Tauri commands
 Database:         SQLite, preferably SQLCipher from v1
+SQL layer:        Hand-written SQL migrations + typed repositories, no Prisma
 File vault:       Content-addressed encrypted local files
 Secrets:          OS secret storage / Tauri Stronghold / platform keychain
 Backup:           Encrypted snapshot bundle to iCloud Drive or user-selected folder
-LLM layer:         TypeScript-first provider adapters and parser tools
+LLM layer:         TypeScript-first provider adapters, Vercel AI SDK allowed
 Optional worker:  Python sidecar only for OCR/table extraction if needed
 ```
 
@@ -22,7 +23,7 @@ React UI
   |
   | typed commands only
   v
-Local Application Services
+Local Application Services / Assistant Skills
   - SourceSetupService
   - GmailCollectorService
   - ImportService
@@ -31,6 +32,8 @@ Local Application Services
   - ReconciliationService
   - ReviewService
   - LedgerCommitService
+  - AssetSummaryService
+  - AssistantSkillService
   - BackupService
   |
   v
@@ -78,6 +81,7 @@ createParsePreview(sourceDocumentId)
 confirmReviewItem(reviewItemId)
 rejectReviewItem(reviewItemId)
 createBackupSnapshot()
+askAssistant(question)
 ```
 
 Disallowed UI actions:
@@ -92,17 +96,27 @@ placeTrade()
 makePayment()
 ```
 
+## Assistant APIs / skills
+
+The future AI Assistant should access app data through narrow backend APIs/skills, not raw DB/files/secrets.
+
+Examples:
+
+```text
+get_asset_summary()
+get_monthly_summary(month)
+list_review_items(status)
+explain_money_flow(chain_id)
+search_transactions(query)
+get_source_freshness()
+list_missing_statements()
+```
+
+Assistant APIs must enforce the same permission model as UI commands.
+
 ## Local-first and Gmail
 
 Gmail collection does not make CanCan a hosted service. The app talks directly from the local desktop app to Google's read-only Gmail API after user consent. CanCan does not run a server, proxy, or remote database for MVP.
-
-Local-first means:
-
-- parsed financial data lives in the encrypted local vault;
-- attachments and extraction outputs are stored locally;
-- Gmail tokens are stored in local OS secret storage;
-- source documents are not sent to CanCan-owned servers;
-- cloud AI usage is opt-in and controlled by user/provider settings.
 
 Do not use computer-use/browser automation for Gmail in MVP unless the official API is blocked. Use read-only OAuth and explicit user-configured search rules.
 
@@ -127,34 +141,9 @@ jobs
 - updated_at
 ```
 
-On app start:
-
-```text
-1. unlock vault
-2. load settings, source definitions, and enabled plugins
-3. find unfinished jobs
-4. mark expired running jobs as queued
-5. build run plan
-6. show Continue / Run Gmail Scan / Review options
-7. execute jobs with checkpoints
-```
-
 ## Package layout
 
-```text
-cancan/
-  apps/
-    desktop/
-      src/                  # React UI
-      src-tauri/            # Tauri/Rust privileged layer
-  packages/
-    core/                   # pure TypeScript domain engine
-    connectors/             # Gmail/manual/API plugin implementations
-    parsers/                # extraction, parser contracts, prompts
-    ui/                     # shared UI components
-  docs/
-    agent/                  # AI coding agent memory and consistency protocol
-```
+See `docs/specs/0001-repo-structure.md`.
 
 ## Documentation consistency rule
 

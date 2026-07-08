@@ -2,7 +2,7 @@
 
 ## Product UI principle
 
-CanCan is a reconciliation console and financial evidence vault.
+CanCan is a polished asset-management and reconciliation app.
 
 The main question is:
 
@@ -12,21 +12,29 @@ What do I own, where is it, what changed, which source proves it, and what needs
 
 ## Visual direction
 
-CanCan should feel like a polished finance operations console, not a generic fintech landing dashboard.
+Use the `impeccable` design mindset for a production-grade desktop finance app: restrained, precise, trustworthy, visually polished, and operationally useful.
 
-Design attributes:
+CanCan should have:
 
 ```text
-calm
-precise
-dense but readable
-auditable
-trustworthy
-fast to scan
-beautiful without decorative noise
+left sidebar navigation
+right main content area
+compact but beautiful asset summaries
+strong tables and review surfaces
+source/account freshness indicators
+clear action queues
+future AI Assistant entry point
 ```
 
-Avoid relying on oversized hero metrics, glossy cards, decorative gradients, or consumer-fintech fluff. Use strong table design, clear hierarchy, crisp source/status indicators, and restrained accent color.
+Avoid:
+
+```text
+giant fintech hero cards
+decorative gradients
+glassmorphism as default
+busy card grids
+cute illustrations
+```
 
 ## Main navigation
 
@@ -39,6 +47,7 @@ Reconciliation
 Money Flow
 Library
 Jobs
+AI Assistant
 Settings
 ```
 
@@ -46,18 +55,13 @@ Settings
 
 The MVP home screen should be an operational command center with asset summary embedded, not a pure dashboard.
 
-Purpose:
-
-```text
-show financial status, evidence pipeline health, and next actions
-```
-
 Primary zones:
 
 ```text
-left: source rail with freshness/status
-center: needs review, new evidence, failed parses, suggested links
-right: compact asset snapshot and backup/vault health
+left: persistent sidebar
+main top: vault/source/sync status
+main center: needs review, new evidence, failed parses, suggested links
+main side/right rail: compact asset snapshot, freshness, backup status, assistant entry
 ```
 
 Key metrics:
@@ -77,221 +81,63 @@ Last Gmail scan
 Last backup
 ```
 
-## Sources
+## AI Assistant
 
-Purpose:
+Future assistant should use backend APIs/skills instead of raw database access.
+
+Assistant can help with:
 
 ```text
-view each money source and its sub-accounts
+monthly summary
+asset analysis
+source freshness questions
+review item explanation
+money-flow explanation
+missing statement detection
+spending/income summaries after ledger quality is high enough
 ```
 
-Source fields:
+Assistant cannot:
 
 ```text
-source name
-source type
-total value in base currency
-native balances
-last sync/statement date
-unmatched count
-parser errors
-credential status
-document count
+read secrets
+commit ledger directly
+make payments
+place trades
+withdraw crypto
 ```
 
-Source detail tabs:
+## Reconciliation UI
+
+Review should not be overcomplicated. The default should be a scannable inbox/list with expandable detail.
+
+Use side-by-side comparison when the item involves a candidate link:
 
 ```text
-Overview
-Sub-accounts
-Transactions
-Holdings
-Documents
-Sync Runs
-Reconciliation
-Settings
-```
-
-## Assets
-
-Purpose:
-
-```text
-show current assets and liabilities by money type and instrument
-```
-
-Sections:
-
-```text
-Cash
-Credit card liabilities
-Stocks / ETFs
-Crypto
-Insurance / policy values
-Funds
-Other assets
-Other liabilities
-```
-
-Each row should show:
-
-```text
-instrument
-quantity or balance
-native currency
-value in base currency
-source
-sub-account
-last valuation time
-source document/API snapshot
-confidence/freshness
-```
-
-## Transactions / Events
-
-Purpose:
-
-```text
-show canonical ledger events, not just expenses
-```
-
-Columns:
-
-```text
-date
-source
-sub-account
-event type
-money type
-instrument
-amount / quantity
-currency
-description
-ledger impact
-match status
-source document
-confidence
-```
-
-## Reconciliation
-
-Purpose:
-
-```text
-review uncertain parse and match results
-```
-
-Sections:
-
-```text
-Possible duplicates
-Possible transfers
-Possible top-ups
-Credit card payments
-Broker deposits
-FX conversions
-Refunds/reimbursements
-Insurance premiums
-Unmatched records
-Parser warnings
-Account mapping suggestions
-```
-
-Candidate card/table detail:
-
-```text
-left record
-right record(s)
+left record/event
+right candidate record/event
 proposed match type
 confidence
-evidence
+rule evidence
 AI explanation
-rule explanation
-source document links
 actions: confirm, reject, edit, link manually
 ```
 
+Keep AI explanation separate from deterministic evidence so the user can trust what is rule-based versus inferred.
+
 ## Money Flow
 
-Purpose:
-
-```text
-show chains of linked events across sources
-```
+First UI version should be chain-first, not a complex graph canvas.
 
 Example:
 
 ```text
-DBS -1000 SGD
-  -> Wise +1000 SGD
-  -> Wise FX SGD/USD
-  -> Moomoo +740 USD
-  -> AAPL trade
+UOB One Account -1000 SGD
+-> DBS Visa payment
+-> DBS Visa liability -1000 SGD
 ```
 
-Views:
-
-```text
-single chain view
-source-to-source flow summary
-unreconciled flow endpoints
-monthly money movement graph
-```
-
-## Library
-
-Purpose:
-
-```text
-source evidence and audit trail
-```
-
-Library item types:
-
-```text
-PDF statement
-email
-CSV/XLSX export
-screenshot
-API JSON snapshot
-native text extraction
-OCR output
-parsed table
-parse run
-validation report
-```
-
-Document detail tabs:
-
-```text
-Preview
-Metadata
-Text/OCR
-Tables
-Parse Runs
-Parsed Records
-Linked Ledger Events
-Validation
-Audit Log
-```
-
-## Settings
-
-Sections:
-
-```text
-Vault
-Base currency
-AI providers
-Gmail rules
-Sources/plugins
-Money sources and sub-accounts
-Security
-Backup
-iCloud / folder backup
-Parser versions
-Developer tools
-```
+Backend should still model graph relationships so a node-edge visualization can be added later.
 
 ## MVP UI priority
 
@@ -306,7 +152,11 @@ Build in this order:
 6. Parser run detail
 7. Staged records table
 8. Review inbox
-9. Source detail and asset summary
-10. Money Flow graph
-11. Backup settings
+9. Command Center shell
+10. Source detail and asset summary
+11. Money Flow chain view
+12. AI Assistant placeholder/tool surface
+13. Backup settings
 ```
+
+See `docs/specs/0006-command-center-ui.md` for implementation-grade UI requirements.

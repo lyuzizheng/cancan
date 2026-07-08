@@ -6,6 +6,38 @@
 Tauri + React + TypeScript + SQLite/SQLCipher
 ```
 
+## AI SDK decision
+
+Vercel AI SDK may be used for provider routing and structured generation helpers.
+
+The app should still wrap it in CanCan-owned adapters so core parser logic does not depend directly on provider-specific APIs.
+
+## SQL decision
+
+Use hand-written SQL migrations and typed repository/service functions.
+
+Do not use Prisma.
+
+Reasons:
+
+```text
+SQLite/SQLCipher control
+predictable performance
+easier index design
+clear migrations for local vault upgrades
+less ORM magic around financial data
+```
+
+SQL guidance:
+
+```text
+avoid huge clever SQL for business logic
+prefer small indexed queries and TypeScript composition when clearer
+benchmark hot paths
+use JSON fields for provider-specific/evolving metadata
+promote JSON fields to columns when they become frequent filters/sorts
+```
+
 ## Why not Rails/Sure as the app base?
 
 Sure is useful as a reference for personal finance concepts such as accounts, entries, transactions, transfers, imports, trades, and valuations.
@@ -37,14 +69,6 @@ explicit permissions/capabilities
 Rust privileged layer
 SQLite/plugin ecosystem
 future mobile possibility
-```
-
-Electron advantages:
-
-```text
-all TypeScript/Node
-fast prototyping
-large ecosystem
 ```
 
 Decision:

@@ -11,6 +11,7 @@ docs/README.md
 docs/agent/current-state.md
 docs/agent/progress-log.md
 docs/agent/consistency-checklist.md
+docs/specs/README.md
 ```
 
 Then read any feature-specific docs relevant to the task.
@@ -29,22 +30,24 @@ parser/ai
 plugin/connector
 security/backup
 tests/fixtures
+build/package
 ```
 
-## 3. Check for doc/code impact
+## 3. Plan from specs
 
-Before editing, answer:
+For implementation work, identify the relevant spec in `docs/specs/`. If no spec exists, create or update the spec before coding.
+
+A coding plan should include:
 
 ```text
-Does this change product behavior?
-Does this change schemas or storage?
-Does this change parser output or validation?
-Does this change AI authority or safety boundaries?
-Does this change review/commit policy?
-Does this change roadmap/progress?
+files/packages touched
+schema/migration impact
+service/API impact
+UI impact
+test strategy
+build/run validation
+required doc updates
 ```
-
-If yes, update docs in the same change.
 
 ## 4. Implement in small slices
 
@@ -56,32 +59,45 @@ service + tests
 parser contract + fixture + validation test
 UI route + empty/loading/error states
 connector scan + mocked fixture
+build/package check
 ```
 
-Do not jump straight to broad end-to-end automation without a fixture and validation gate.
+Do not jump straight to broad end-to-end automation without fixtures and validation gates.
 
-## 5. Validate
+## 5. Validate like an autonomous coding agent
 
 Each slice should have a clear validation artifact:
 
 ```text
 unit tests
+integration tests with database reset
 fixture parse snapshot
 migration check
-UI screenshot/playwright check
+query benchmark for hot paths
+UI screenshot/browser check
 manual run log
 schema validation output
+build/package output
 ```
 
-## 6. Update working memory
+For UI work, the agent should run the app, inspect it in browser/computer-use when available, check layout visually, fix issues, and iterate.
+
+For flow work, the agent should reset the database and run integration tests covering the intended path.
+
+## 6. Keep docs/code aligned
 
 At the end of a meaningful change:
 
 - update `docs/agent/progress-log.md`;
 - update `docs/agent/current-state.md` when focus or decisions change;
 - update numbered docs when behavior or architecture changes;
+- update `docs/specs/` when implementation contracts change;
 - update ADRs when a major architecture decision is accepted or replaced.
 
-## 7. Keep master coherent
+## 7. Ask when blocked
+
+If a decision affects product meaning, financial correctness, AI authority, security, or irreversible data shape and docs do not answer it, ask the user instead of guessing.
+
+## 8. Keep main coherent
 
 A commit should not leave docs claiming one behavior while code does another. If a feature is partially implemented, mark it partial in progress docs and UI copy.

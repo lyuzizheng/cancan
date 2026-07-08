@@ -8,18 +8,20 @@ This file tracks decisions from product discussions. Keep it updated when decisi
 
 1. MVP success requires Gmail-first automation. Manual PDF import is a test harness and fallback, not the success condition.
 2. The app should support user-configured Gmail search rules with start date and incremental scan.
-3. Initial provider scope should include DBS bank statement, DBS credit card statement, UOB bank statement, UOB credit card statement, and Wise PDF/CSV/export.
-4. The product is not primarily a budgeting app. It is a local financial evidence vault and reconciliation console.
-5. Default base currency is SGD, configurable in vault settings. Native values must always be preserved.
+3. Gmail rule UX should be guided builder plus expert Gmail query preview/editing.
+4. Initial provider scope should include DBS bank statement, DBS credit card statement, UOB bank statement, UOB credit card statement, and Wise PDF/CSV/export.
+5. The product is not primarily a budgeting app. It is a local financial evidence vault and reconciliation console.
+6. Default base currency is SGD, configurable in vault settings. Native values must always be preserved.
 
 ### Parsing and AI
 
 1. AI-assisted parsing is core, not a late optional feature.
 2. PDF processing should use native text extraction and an OCR layer, preserving both outputs.
 3. The LLM helps normalize records, classify event types, identify duplicates, and propose links.
-4. Insert/commit must pass deterministic validation and policy gates.
-5. Low-risk standalone purchases may auto-commit if validation and confidence thresholds pass.
-6. Transfers, repayments, top-ups, FX conversions, broker deposits, and ambiguous links should default to review.
+4. Vercel AI SDK may be used behind CanCan-owned adapters.
+5. Insert/commit must pass deterministic validation and policy gates.
+6. Low-risk standalone purchases may auto-commit if validation and confidence thresholds pass.
+7. Transfers, repayments, top-ups, FX conversions, broker deposits, and ambiguous links should default to review.
 
 ### Accounts and ledger
 
@@ -28,6 +30,7 @@ This file tracks decisions from product discussions. Keep it updated when decisi
 3. Credit card repayment is not spending. It reduces cash and liability; the original card purchase is the spending event.
 4. Balance and valuation snapshots may enter the ledger model as snapshot events, but must not be counted as normal transactions.
 5. `ledger_events` and `ledger_legs` are supported as the canonical financial model.
+6. Money Flow should keep backend graph capability, but first UI can be chain-first.
 
 ### Security and platform
 
@@ -36,14 +39,28 @@ This file tracks decisions from product discussions. Keep it updated when decisi
 3. AI providers are opt-in and must not receive secrets.
 4. The app remains local-first with no CanCan-hosted backend for MVP.
 
+### Engineering and docs
+
+1. Use pure TypeScript core engine.
+2. Use hand-written SQL migrations and typed repositories. Do not use Prisma.
+3. Benchmark hot SQL paths and design indexes deliberately.
+4. JSON fields are acceptable for provider-specific/evolving metadata, but not for core query dimensions.
+5. Future AI coding agents should implement from `docs/specs/`, run tests, reset databases, build/package the app, inspect UI visually, and update docs/progress in the same loop.
+
+### UI
+
+1. Use a left sidebar + main body desktop app layout.
+2. Command Center should feel like a polished asset-management and reconciliation app.
+3. AI Assistant should be represented as future surface backed by narrow backend APIs/skills.
+4. Review UI should avoid unnecessary complexity but provide enough evidence to prevent wrong reconciliation.
+
 ## Remaining product questions
 
-1. What exact Gmail search-rule UX is best: raw Gmail query builder, guided fields, or both?
-2. What confidence threshold should allow standalone purchases to auto-commit?
-3. Should the user be able to disable auto-commit entirely?
-4. Should cash/physical wallet be excluded, hidden by default, or included as a manual source?
-5. How much category/budget functionality is necessary after ledger/reconciliation works?
-6. How should insurance premiums be classified by default: expense, asset transfer, or configurable per policy?
+1. What confidence threshold should allow standalone purchases to auto-commit?
+2. Should the user be able to disable auto-commit entirely?
+3. Should cash/physical wallet be excluded, hidden by default, or included as a manual source?
+4. How much category/budget functionality is necessary after ledger/reconciliation works?
+5. How should insurance premiums be classified by default: expense, asset transfer, or configurable per policy?
 
 ## Remaining data model questions
 
@@ -72,6 +89,7 @@ This file tracks decisions from product discussions. Keep it updated when decisi
 
 ## Remaining UI questions
 
-1. Should the default visual style lean more Bloomberg/Linear professional console or more consumer personal-finance app?
+1. What exact visual theme/tokens should Command Center use?
 2. What should the first empty-state onboarding path look like after vault creation?
 3. Should Command Center prioritize review queue or asset snapshot above the fold?
+4. How prominent should the AI Assistant be in MVP UI?

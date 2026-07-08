@@ -2,6 +2,27 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-08
+
+### Completed
+
+- Added implementation spec layer under `docs/specs/`.
+- Recorded decisions that the app should use hand-written SQL migrations and typed repositories, not Prisma.
+- Added SQL/index/benchmark policy and test database reset requirements.
+- Recorded that Vercel AI SDK may be used for AI provider routing and structured generation.
+- Defined Gmail rule UX as guided builder plus expert query preview/editing.
+- Clarified Command Center layout: left sidebar + main body, polished asset-management/reconciliation app style.
+- Added future AI Assistant direction: assistant accesses backend APIs/skills, not raw DB/files/secrets.
+- Clarified Review UI should be simple and low-friction, with side-by-side detail only where needed.
+- Clarified Money Flow should keep backend graph capability while first UI is chain-first.
+- Added expectation that future AI coding agents can implement, test, build, inspect UI via browser/computer-use, reset database, and iterate.
+
+### Next
+
+- Convert specs into actual migrations, package skeleton, and test harness when coding begins.
+- Define exact TypeScript types for core domain models.
+- Define UI wireframe/tokens for Command Center before implementation.
+
 ## 2026-07-07
 
 ### Completed
@@ -14,10 +35,3 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Confirmed user-created Money Sources and sub-accounts are the source of truth for accounts.
 - Confirmed ledger events/legs are the canonical model, including transactions, trades, balance snapshots, and valuation snapshots.
 - Added `docs/agent/` as a working memory and consistency system for future AI coding agents.
-
-### Next
-
-- Produce detailed schema docs or migrations for the core domain tables.
-- Define Gmail rule model and OAuth/security flow.
-- Define parser JSON schemas and golden fixture policy.
-- Produce a Command Center wireframe/spec before UI coding.
