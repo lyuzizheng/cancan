@@ -17,8 +17,9 @@ blocked       cannot decide until external info/sample/code exists
 | MVP success | aligned | Gmail automation required; manual import is test harness | `docs/00-product-vision.md`, `docs/10-roadmap.md` |
 | Initial providers | partial | Fixed supported provider list; sample policy unresolved | `docs/00-product-vision.md`, `docs/specs/0007-first-run-onboarding.md` |
 | First-run sequence | partial | Welcome -> vault -> currency -> AI -> source -> Gmail/import -> Command Center | `docs/specs/0007-first-run-onboarding.md` |
-| Visual design system | partial | Light-first, modern warm+green, tech/safe feel; exact tokens unresolved | `docs/specs/0008-design-system.md` |
-| Command Center layout | partial | Multi-dimensional overview; source activity main, review lower/compact | `docs/specs/0006-command-center-ui.md` |
+| Visual design system | partial | Warm Off-White + small warmth + green semantic; exact values unresolved | `docs/specs/0008-design-system.md`, `docs/specs/0011-visual-design-tokens.md` |
+| Component strategy | partial | Prefer Hero UI-style app foundation with CanCan wrappers; alternatives possible if documented | `docs/specs/0006-command-center-ui.md`, `docs/specs/0008-design-system.md` |
+| Command Center layout | partial | Multi-dimensional overview; source activity main, review lower/compact; markdown wireframe added | `docs/specs/0006-command-center-ui.md` |
 | Money source/account model | partial | User-created sources/sub-accounts; fixed providers; mapping suggestions | `docs/02-domain-model.md` |
 | Gmail automation | aligned | Desktop OAuth + PKCE + loopback, Gmail readonly, local token/cache, polling sync | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md` |
 | Manual import/library | partial | Test harness/fallback; detail page not fully specified | future spec |
@@ -34,11 +35,11 @@ blocked       cannot decide until external info/sample/code exists
 | Jobs/errors | unresolved | Needs job engine spec | future spec |
 | Testing/fixtures | unresolved | User deferred fixture policy; integration/reset required | future spec |
 | Build/package/release | partial | Agent workflow requires build/package checks; exact commands pending code | `docs/specs/0010-agentic-development-workflow.md` |
-| Autonomous AI coding workflow | partial | Tests, DB reset, build, UI inspection, docs update required | `docs/specs/0010-agentic-development-workflow.md` |
+| Autonomous AI coding workflow | partial | Tests, DB reset, build, UI inspection, docs update required; `.agents/` workflows planned | `docs/specs/0010-agentic-development-workflow.md`, `docs/specs/0012-repo-agent-workflows.md` |
 
 ## Next Discussion Priority
 
-1. Exact visual tokens and design-system choices.
+1. Exact design token values and Figma prototype decision.
 2. Database/ledger details for trades, positions, valuations, gains.
 3. Job engine and error model.
 4. Testing/fixtures and AI agent automation gates.

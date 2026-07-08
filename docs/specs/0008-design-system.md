@@ -22,7 +22,7 @@ AI-assisted
 finance-grade
 ```
 
-CanCan should not look like a generic blue fintech dashboard or a cold terminal app.
+CanCan should not look like a generic blue fintech dashboard, a cold terminal app, or a Claude-style retro parchment template.
 
 ## Theme direction
 
@@ -31,22 +31,34 @@ MVP is light-first.
 Preferred palette direction:
 
 ```text
-warm off-white / soft warm surface
+Warm Off-White base with a small amount of warmth
 charcoal / graphite text
-green accent for confirmation, growth, freshness, and successful sync
-subtle amber/warm accent for pending/review states
+green semantic accent for freshness, healthy sync, confirmation, and money-positive states
+amber/warm accent for pending/review states
 red only for real risk/errors
 ```
 
-The user prefers warm + green. The final palette should still pass contrast checks and avoid beige-heavy AI-default styling.
+The final palette should pass contrast checks and avoid beige-heavy AI-default styling.
 
-## Component/style references
+## Component strategy
 
-Potential implementation references:
+Use a mature React component foundation to keep code volume under control and ensure consistency.
 
-- Hero UI style quality;
-- DaisyUI can be used as inspiration or utility, but should not dictate final visual identity;
-- CanCan should have custom product-level polish, not default component-library appearance.
+Recommended default:
+
+```text
+Hero UI for app components
+Tailwind-compatible theme tokens
+CanCan-owned wrappers in packages/ui
+lucide-react icons
+TanStack Table for complex tables
+Recharts or equivalent for simple charts
+motion/react or CSS transitions for purposeful motion
+```
+
+Alternatives such as shadcn/Radix are acceptable if chosen deliberately. Do not mix multiple component systems without a written reason.
+
+DaisyUI can inspire fast prototypes, but should not define final brand identity.
 
 ## Layout
 
@@ -130,7 +142,7 @@ Avoid decorative animations that do not map to product state.
 ## Acceptance criteria
 
 - UI looks like a custom finance product, not default component-library output.
-- Warm + green direction is visible but not muddy or beige-heavy.
+- Warm Off-White + green direction is visible but not muddy or beige-heavy.
 - Command Center balances overview, source activity, AI insight, and review status.
 - Each money source type can present tailored stats.
 - Motion is meaningful and has reduced-motion fallback.

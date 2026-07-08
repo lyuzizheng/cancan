@@ -41,11 +41,13 @@ Gmail-first local finance evidence automation
 - Use hand-written SQL migrations and typed repository functions. Do not use Prisma.
 - SQL performance matters: add indexes deliberately and benchmark important queries.
 - JSON fields are acceptable for provider-specific/evolving metadata when not hiding core query dimensions.
-- Command Center should use left sidebar + main body, modern warm+green polished finance app style, and future AI Assistant entry.
+- Command Center should use left sidebar + main body, modern Warm Off-White + green polished finance app style, and future AI Assistant entry.
 - Command Center should be multi-dimensional: overview, money source flows, snapshot freshness, AI insight, and review status without excessive density.
 - Money source types need tailored stats/display modes.
+- Preferred component strategy is Hero UI-style app components plus CanCan-owned wrappers and centralized tokens; avoid default library look.
 - Money Flow should preserve backend graph capability, but first UI can be chain-first.
 - Backup should support generic folder first, with iCloud as a possible folder target, and must include version compatibility metadata.
+- Repo-local `.agents/` workflows/skills should be created later once real build/test/UI commands exist.
 
 ## Current alignment work
 
@@ -63,7 +65,7 @@ remove temp workspace after alignment is complete
 
 ## Immediate next design tasks
 
-1. Align exact visual tokens and design system.
+1. Decide exact design token values and whether to generate a Figma prototype.
 2. Align database/ledger details for trades, positions, valuations, and gains.
 3. Align job engine and error model.
 4. Align testing/fixtures and AI agent automation gates.

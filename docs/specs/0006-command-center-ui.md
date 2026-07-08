@@ -30,6 +30,41 @@ Main body:
 - review/action modules
 ```
 
+## Markdown wireframe
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ CanCan                         Search / Command                    AI Ask   │
+├───────────────┬───────────────────────────────────────────────┬──────────────┤
+│ Sidebar       │ Command Center                                │ Right Rail   │
+│               │                                               │              │
+│ ● Overview    │ ┌───────────────────────────────────────────┐ │ AI Insight   │
+│ Sources       │ │ Net Worth      Freshness      Last Backup │ │ ┌──────────┐ │
+│ Assets        │ │ SGD xxx        92% fresh      Today       │ │ │Monthly   │ │
+│ Transactions  │ └───────────────────────────────────────────┘ │ │summary   │ │
+│ Reconcile     │                                               │ └──────────┘ │
+│ Money Flow    │ ┌───────────────────────────────────────────┐ │              │
+│ Library       │ │ Money Source Activity                     │ │ Review       │
+│ Jobs          │ │                                           │ │ ┌──────────┐ │
+│ Settings      │ │ DBS Bank      balance / latest movement   │ │ │Needs 8   │ │
+│               │ │ DBS Card      liability / payment status  │ │ │Failed 1  │ │
+│ AI Assistant  │ │ UOB Bank      inflow / outflow / freshness│ │ │New 12    │ │
+│               │ │ Wise          SGD/USD / FX / top-ups      │ │ └──────────┘ │
+│               │ └───────────────────────────────────────────┘ │              │
+│               │                                               │ Backup       │
+│               │ ┌───────────────────────────────────────────┐ │ ┌──────────┐ │
+│               │ │ Recent Flows                              │ │ │Encrypted │ │
+│               │ │ UOB -> DBS Card payment                   │ │ │Folder OK │ │
+│               │ │ DBS -> Wise top-up -> FX                  │ │ └──────────┘ │
+│               │ └───────────────────────────────────────────┘ │              │
+│               │                                               │              │
+│               │ ┌───────────────────────────────────────────┐ │              │
+│               │ │ Lower Work Queue                          │ │              │
+│               │ │ Needs Review | New Evidence | Failed Jobs │ │              │
+│               │ └───────────────────────────────────────────┘ │              │
+└───────────────┴───────────────────────────────────────────────┴──────────────┘
+```
+
 ## Design register
 
 CanCan should feel like a professional finance operations console with consumer-grade polish and 2026-level interaction quality.
@@ -43,13 +78,14 @@ glassmorphism as default
 busy card grids
 cute illustrations
 default component-library appearance
+Claude-style retro parchment templates
 ```
 
 Prefer:
 
 ```text
 clear navigation
-modern warm + green palette
+modern warm off-white + green semantic palette
 dense but readable tables
 source/account status chips
 precise typography
@@ -58,6 +94,32 @@ animated but meaningful state transitions
 side-by-side review surfaces when needed
 excellent empty/loading/error states
 ```
+
+## Component library strategy
+
+Use a modern React component foundation to avoid exploding code volume.
+
+Recommended direction:
+
+```text
+Base components: Hero UI or shadcn/Radix-style primitives
+Styling: Tailwind-compatible token system
+Charts: Recharts or lightweight visx-style components when needed
+Tables: TanStack Table for complex tables
+Icons: lucide-react
+Motion: motion/react or CSS transitions for meaningful state changes
+```
+
+Preferred default: **Hero UI for application components**, with CanCan-owned design tokens and wrappers so the app does not look like an unmodified library demo.
+
+Rules:
+
+- Do not fork or hand-roll basic controls if a solid component exists.
+- Wrap library components in `packages/ui` CanCan components.
+- Keep theme tokens centralized.
+- Avoid mixing multiple visual systems.
+- DaisyUI can be used for prototyping inspiration, but should not define final brand identity.
+- Paid UI kits are acceptable only if they do not lock the app into unmaintainable patterns; document the choice before adopting.
 
 ## Command Center zones
 
@@ -120,6 +182,10 @@ Keep review lightweight:
 First version is chain-first, not a complex graph canvas.
 
 Backend should still model graph relationships so node-edge visualization can be added later.
+
+## Figma prototype option
+
+A Figma prototype can be generated after visual tokens are accepted. The Figma output should follow this spec and `0011-visual-design-tokens.md`, then any approved Figma decisions should be copied back into docs.
 
 ## Acceptance criteria
 

@@ -14,6 +14,8 @@ Read order:
 8. `0008-design-system.md`
 9. `0009-backup-restore-versioning.md`
 10. `0010-agentic-development-workflow.md`
+11. `0011-visual-design-tokens.md`
+12. `0012-repo-agent-workflows.md`
 
 Rules:
 

@@ -23,10 +23,14 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added agentic development workflow spec with required tests, DB reset, build/package, UI inspection, and docs update loop.
 - Aligned Gmail integration: Desktop OAuth Authorization Code Flow + PKCE + loopback redirect; local token exchange; Gmail readonly; local Keychain token storage; local encrypted mail cache; polling sync; no CanCan server.
 - Recorded Google restricted scope/OAuth verification risk for public release.
+- Added markdown Command Center wireframe.
+- Added visual design tokens spec for Warm Off-White + green semantic direction.
+- Recorded component strategy: prefer Hero UI-style foundation with CanCan wrappers and centralized tokens.
+- Added repo agent workflows spec for future `.agents/` rules/workflows/skills after real commands exist.
 
 ### Next
 
-- Align exact design tokens and Command Center visual system.
+- Decide exact design token values and whether to generate a Figma prototype.
 - Align ledger details for trades, positions, valuations, and gains.
 - Align job engine and error model.
 - Align testing/fixtures and AI agent automation gates.
