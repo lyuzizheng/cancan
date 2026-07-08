@@ -21,13 +21,15 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added design system spec with light-first, modern warm+green, technical/safe/premium direction.
 - Added backup/restore/versioning spec with generic folder backup, manifest, compatibility rules, and restore behavior.
 - Added agentic development workflow spec with required tests, DB reset, build/package, UI inspection, and docs update loop.
+- Aligned Gmail integration: Desktop OAuth Authorization Code Flow + PKCE + loopback redirect; local token exchange; Gmail readonly; local Keychain token storage; local encrypted mail cache; polling sync; no CanCan server.
+- Recorded Google restricted scope/OAuth verification risk for public release.
 
 ### Next
 
-- Resolve Gmail integration approach: official OAuth/API vs AI computer-use/browser automation.
 - Align exact design tokens and Command Center visual system.
 - Align ledger details for trades, positions, valuations, and gains.
 - Align job engine and error model.
+- Align testing/fixtures and AI agent automation gates.
 
 ## 2026-07-07
 

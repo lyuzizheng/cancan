@@ -54,7 +54,7 @@ Welcome / product promise
 -> AI provider setup
 -> Create first money source from supported providers
 -> Create source sub-account(s)
--> Configure Gmail or import manually
+-> Configure Gmail using Desktop OAuth + PKCE loopback, or import manually
 -> Land in Command Center
 ```
 
@@ -69,16 +69,11 @@ Rules:
 - user-owned provider settings should be preferred for privacy, cost transparency, and control;
 - Vercel AI SDK may be used behind CanCan-owned adapters.
 
-## Gmail setup status
+## Gmail setup decision
 
-Gmail integration is still unresolved at the alignment level.
+Gmail MVP uses official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect.
 
-Two possible paths:
-
-1. Official Gmail read-only OAuth/API.
-2. AI computer-use/browser automation as fallback or later experiment.
-
-Current recommendation remains official read-only OAuth/API for MVP, but this requires further alignment.
+Computer-use/browser automation is not the primary Gmail architecture. It may be reconsidered later for non-Gmail bank portals or as an experimental fallback.
 
 ## Animation and interaction
 
@@ -110,6 +105,7 @@ Open app
 -> find unfinished jobs
 -> mark expired running jobs as queued
 -> build resume plan
+-> optionally run enabled Gmail scans if auto-scan is on
 -> land on Command Center with status modules
 ```
 
@@ -119,5 +115,5 @@ Open app
 - User cannot accidentally create arbitrary unsupported providers.
 - User can create a vault and at least one supported money source.
 - AI setup is prominent but not a hard blocker for all app use.
-- Gmail setup remains a visible activation path.
-- Startup handles locked vault, migration checks, and unfinished jobs.
+- Gmail setup uses local-first Desktop OAuth + PKCE loopback flow.
+- Startup handles locked vault, migration checks, optional Gmail scan, and unfinished jobs.

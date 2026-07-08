@@ -4,16 +4,89 @@
 
 Automatically collect financial statement evidence from Gmail while preserving local-first behavior.
 
-## MVP approach
+## MVP decision
 
-Use official Gmail read-only OAuth/API. Do not use browser computer-use automation for MVP unless the official API path is blocked.
+Use official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect.
 
-CanCan remains local-first because:
+Do not use AI computer-use/browser automation as the primary Gmail architecture. Computer-use may remain a future fallback/experiment for websites or bank portals that do not expose usable APIs, but Gmail MVP should use the official API.
 
-- OAuth token is stored locally in OS secret storage;
-- downloaded emails/attachments are stored in the local encrypted vault;
-- CanCan has no hosted backend or proxy;
-- Gmail is an external source, not CanCan storage.
+## Local-first OAuth architecture
+
+CanCan should not proxy Gmail data through a CanCan server.
+
+Flow:
+
+```text
+1. User starts Gmail connect flow in CanCan desktop app.
+2. App generates PKCE code_verifier and code_challenge.
+3. App starts a temporary local loopback listener on http://127.0.0.1:{random_port}/callback.
+4. App opens the system browser to Google OAuth authorization URL.
+5. User approves requested Gmail scope.
+6. Google redirects authorization code to local loopback callback.
+7. App exchanges code + code_verifier + client_id + redirect_uri directly with Google token endpoint.
+8. App receives access_token and refresh_token.
+9. App stores refresh_token in macOS Keychain / OS secret storage.
+10. App stores access_token in memory or Keychain and refreshes as needed.
+11. App calls Gmail API directly from local app.
+12. Email metadata, attachments, cache, index, and sync state are stored locally in encrypted vault/database.
+```
+
+Desktop apps cannot safely keep a client secret. PKCE is required to protect the authorization code exchange.
+
+## Google Cloud setup
+
+For development/MVP, Google Cloud side needs:
+
+```text
+Gmail API enabled
+OAuth consent screen configured
+OAuth client application type: Desktop app
+redirect URI using loopback pattern
+```
+
+Early development can require bring-your-own Google OAuth client configuration if needed. A later public release may use a CanCan-owned OAuth client.
+
+## Scope policy
+
+Use minimum Gmail scope.
+
+Required scope:
+
+```text
+https://www.googleapis.com/auth/gmail.readonly
+```
+
+Allowed actions:
+
+```text
+search/list messages
+read metadata
+read message body when needed
+read attachment metadata
+download attachments
+read history for incremental sync
+```
+
+Disallowed actions:
+
+```text
+send email
+modify labels
+mark read/unread
+delete email
+change mailbox settings
+```
+
+Gmail read scopes are often restricted scopes. Public distribution will likely require Google OAuth verification. Documentation/privacy copy must emphasize:
+
+```text
+data is processed locally
+no CanCan server receives Gmail data
+refresh token is stored in local Keychain/secret storage
+user can revoke Google access
+user can delete local cached data
+only minimum read-only scope is requested
+```
 
 ## UX model
 
@@ -22,26 +95,36 @@ Use guided rules plus expert query editing.
 Top section: guided builder.
 
 ```text
-Provider: DBS | UOB | Wise | Custom
-Document type: bank statement | credit card statement | export | custom
+Provider: DBS | UOB | Wise | Custom supported source
+Document type: bank statement | credit card statement | export | custom supported type
 Required keywords
 Excluded keywords
+Sender/from hint
 Has attachment toggle
 Filename hints
 Start date
 Overlap days
 Enabled toggle
+Auto-scan toggle
 ```
 
 Bottom section: expert Gmail query preview/editor.
 
-The user can manually edit the generated query. If edited, preserve both:
+The user can manually edit the generated query. Preserve both:
 
 ```text
 generated_query
 manual_query_override
 active_query
 ```
+
+## Provider policy
+
+Gmail rules should use fixed supported provider hints. Users should not create arbitrary provider integrations in MVP.
+
+Manual source/support requests should be tracked as future feature requests, not custom live integrations.
+
+A Gmail rule may have a provider hint, but downloaded documents still go through classifier/parser verification. Do not trust the rule alone.
 
 ## Data model
 
@@ -53,11 +136,13 @@ gmail_search_rules
 - document_type_hint
 - required_keywords_json
 - excluded_keywords_json
+- sender_hint
 - generated_query
 - manual_query_override
 - active_query
 - start_after
 - overlap_days
+- auto_scan_enabled
 - enabled
 - created_at
 - updated_at
@@ -70,67 +155,115 @@ gmail_sync_states
 - last_success_at
 - last_scan_started_at
 - last_scan_finished_at
+- latest_history_id
 - cursor_json
 - last_error_json
 - created_at
 - updated_at
 ```
 
-## Collector behavior
+## Storage policy
+
+Use minimum storage.
+
+Default:
 
 ```text
-1. Load enabled rules.
-2. Build search window from start_after or last_success_at minus overlap_days.
-3. Query Gmail read-only API.
-4. Store email metadata.
-5. Download matching attachments.
-6. Hash attachments.
-7. Dedupe by file hash and Gmail message/attachment id.
-8. Create source_documents.
-9. Queue extraction/parser jobs.
-10. Update sync state.
+store message id
+store thread id if useful
+store sender/from
+store subject
+store date/internalDate
+store attachment metadata
+store downloaded attachment bytes in file vault
+store file hash and source document metadata
 ```
 
-## Security
+Do not store full email body by default unless needed for evidence/parser behavior or explicitly enabled.
 
-Allowed Gmail actions:
+## Sync strategy
+
+Initial login/full sync:
 
 ```text
-read message metadata
-read message body when needed for evidence
-read/download attachments
+messages.list with q query
+messages.get for matching message details
+attachments.get for matching attachments
+store latest usable historyId when available
 ```
 
-Disallowed Gmail actions:
+Incremental sync:
 
 ```text
-send email
-modify labels
-delete email
-mark read/unread
-change mailbox settings
+prefer history.list from saved historyId where possible
+fall back to query-based overlap window when history is expired/unavailable
 ```
+
+Gmail push notification uses Google Cloud Pub/Sub and a backend webhook, which does not fit the fully local-first MVP. Prefer local polling:
+
+```text
+app startup
+app wake/resume
+manual refresh
+configurable interval while app is running
+```
+
+Auto-scan should be configurable and can be disabled. Manual scan must always be available.
+
+## Test rule UX
+
+Before enabling a rule, provide `Test rule`:
+
+```text
+show recent matching messages
+show attachment names and mime types
+show provider/document classification hints
+show whether each attachment would import, skip, or dedupe
+```
+
+## Error handling
+
+Gmail auth/sync errors should appear in multiple places:
+
+```text
+Command Center source status
+Jobs page with technical details
+Gmail rule settings with reconnect CTA
+```
+
+Do not only show a transient toast.
 
 ## Tests
 
 Use mocked Gmail API fixtures for:
 
 ```text
+OAuth callback success
+OAuth callback failure
+refresh token flow
 first scan from start date
-incremental scan with overlap
+incremental scan with historyId
+historyId expired fallback to overlap query
 duplicate attachment hash
 same attachment from same email
 rule disabled
+auto-scan disabled
 OAuth/token error
+restricted/insufficient scope error
 no matching emails
 PDF attachment import
 CSV attachment import
+message body not stored by default
 ```
 
 ## Acceptance criteria
 
-- User can create a guided rule and see the expert query.
-- User can override the expert query.
-- Scan imports matching attachments into Library.
-- Re-running scan does not duplicate already imported files.
-- Errors create visible job/review status instead of silent failure.
+- Gmail connect uses Desktop OAuth + PKCE + loopback redirect.
+- No Gmail data touches a CanCan server.
+- Refresh token is stored in local secret storage.
+- Only read-only Gmail scope is requested.
+- User can create guided rules and edit expert query.
+- User can test a rule before enabling it.
+- App supports startup/wake/manual/configurable polling sync.
+- Re-running sync does not duplicate already imported attachments.
+- Errors are visible and actionable.

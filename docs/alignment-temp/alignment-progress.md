@@ -20,7 +20,7 @@ blocked       cannot decide until external info/sample/code exists
 | Visual design system | partial | Light-first, modern warm+green, tech/safe feel; exact tokens unresolved | `docs/specs/0008-design-system.md` |
 | Command Center layout | partial | Multi-dimensional overview; source activity main, review lower/compact | `docs/specs/0006-command-center-ui.md` |
 | Money source/account model | partial | User-created sources/sub-accounts; fixed providers; mapping suggestions | `docs/02-domain-model.md` |
-| Gmail automation | unresolved | Official OAuth/API recommended, but computer-use vs API still open | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md` |
+| Gmail automation | aligned | Desktop OAuth + PKCE + loopback, Gmail readonly, local token/cache, polling sync | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md` |
 | Manual import/library | partial | Test harness/fallback; detail page not fully specified | future spec |
 | Extraction/OCR/AI parser | partial | Native text + OCR + AI normalization; schemas need exact detail | `docs/specs/0004-parser-contract.md` |
 | AI SDK | aligned | Vercel AI SDK allowed behind CanCan adapters | `docs/09-technology-decisions.md` |
@@ -29,7 +29,7 @@ blocked       cannot decide until external info/sample/code exists
 | Reconciliation policy | partial | Review-first for links; auto policies need thresholds | `docs/specs/0005-review-and-commit-policy.md` |
 | Review interaction | partial | Simple inbox + expandable side-by-side details | `docs/specs/0006-command-center-ui.md` |
 | AI Assistant | partial | Backend APIs/skills only; exact tools need spec | `docs/01-system-architecture.md`, `docs/specs/0006-command-center-ui.md` |
-| Security/privacy | partial | Encrypted vault, read-only connectors, opt-in AI | `docs/06-local-storage-security-backup.md` |
+| Security/privacy | partial | Encrypted vault, read-only connectors, opt-in AI; Google restricted scope review risk recorded | `docs/06-local-storage-security-backup.md`, `docs/specs/0003-gmail-collector.md` |
 | Backup/restore | partial | Generic folder first; manifest/schema/app version compatibility required | `docs/specs/0009-backup-restore-versioning.md` |
 | Jobs/errors | unresolved | Needs job engine spec | future spec |
 | Testing/fixtures | unresolved | User deferred fixture policy; integration/reset required | future spec |
@@ -38,8 +38,8 @@ blocked       cannot decide until external info/sample/code exists
 
 ## Next Discussion Priority
 
-1. Gmail integration approach: official OAuth/API vs AI computer-use.
-2. Exact visual tokens and design-system choices.
-3. Database/ledger details for trades, positions, valuations, gains.
-4. Job engine and error model.
-5. Testing/fixtures and AI agent automation gates.
+1. Exact visual tokens and design-system choices.
+2. Database/ledger details for trades, positions, valuations, gains.
+3. Job engine and error model.
+4. Testing/fixtures and AI agent automation gates.
+5. Evidence Library detail UX.

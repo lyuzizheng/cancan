@@ -21,7 +21,11 @@ Gmail-first local finance evidence automation
 
 - Manual import is a test harness and fallback.
 - Supported providers are fixed/product-defined, not arbitrary user-created integrations.
-- Gmail read-only collection is part of MVP success, but exact integration path remains unresolved: official OAuth/API vs AI computer-use/browser automation.
+- Gmail read-only collection is part of MVP success.
+- Gmail MVP uses Desktop OAuth Authorization Code Flow + PKCE + loopback redirect, then calls Gmail API locally.
+- Gmail scope is read-only; allowed data includes metadata, message body when needed, and attachments.
+- Gmail storage follows minimum storage: metadata + attachments by default, not full email body unless needed/enabled.
+- Gmail sync should support app startup, wake/resume, manual refresh, and configurable polling; no backend Pub/Sub webhook for MVP.
 - Gmail rule UX should be guided at the top and expert-query editable below.
 - User manually creates Money Sources and sub-accounts.
 - Parser/AI maps documents to existing sub-accounts or creates review suggestions.
@@ -59,11 +63,11 @@ remove temp workspace after alignment is complete
 
 ## Immediate next design tasks
 
-1. Resolve Gmail integration path: official OAuth/API vs AI computer-use/browser automation.
-2. Align exact visual tokens and design system.
-3. Align database/ledger details for trades, positions, valuations, and gains.
-4. Align job engine and error model.
-5. Align testing/fixtures and AI agent automation gates.
+1. Align exact visual tokens and design system.
+2. Align database/ledger details for trades, positions, valuations, and gains.
+3. Align job engine and error model.
+4. Align testing/fixtures and AI agent automation gates.
+5. Align Evidence Library detail UX.
 
 ## Do not start yet
 
