@@ -74,6 +74,22 @@ doc consistency audits while the design is still moving
 
 When alignment is complete, stable decisions move into `docs/specs/` and the temp files can be deleted.
 
+### `.agents/`
+
+Repo-local agent operating material.
+
+Use it for:
+
+```text
+role routing
+workflow checklists
+agent-facing skills
+deterministic helper scripts
+report/spec templates
+```
+
+The `.agents/` folder describes how future agents work. It must point back to `docs/specs/` for product truth and must not duplicate canonical implementation decisions.
+
 ## Removed layer
 
 The old numbered docs layer (`00-product-vision.md` through `11-open-questions.md`) was removed because it duplicated the newer specs and created conflict risk.

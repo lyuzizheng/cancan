@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-07-08
+Last updated: 2026-07-09
 
 ## Product state
 
@@ -61,7 +61,7 @@ The old numbered docs layer (`00-product-vision.md` through `11-open-questions.m
 - Money Flow should preserve backend graph capability, but first UI can be chain-first.
 - Backup should support generic folder first, with iCloud as a possible folder target, and must include version compatibility metadata.
 - Backups do not include OAuth/API secrets, AI keys, vault key material, or statement PDF passwords by default.
-- Repo-local `.agents/` workflows/skills should be created later once real build/test/UI commands exist.
+- Repo-local `.agents/` workflows/skills exist for orientation, role routing, design grill, implementation, review, testing simulation, architecture refinement, UI refinement, and docs checks. Real app build/test/UI commands should be wired once application code exists.
 
 ## Current alignment work
 
@@ -73,7 +73,7 @@ Purpose:
 break down the full product lifecycle
 track aligned / partial / unresolved decisions
 run structured grill-me discussion rounds
-move stable decisions into permanent docs/specs
+move stable decisions into canonical specs or ADRs
 remove temp workspace after alignment is complete
 ```
 

@@ -2,9 +2,9 @@
 
 Status: active temporary audit.
 
-Purpose: track duplicate/conflicting documentation while the product spec is still being aligned. Delete this file when the permanent docs are clean and stable.
+Purpose: track duplicate/conflicting documentation while the product spec is still being aligned. Delete this file when the canonical docs are clean and stable.
 
-## Resolved in permanent docs
+## Resolved in Canonical Docs
 
 ### Old numbered docs layer
 
@@ -84,7 +84,7 @@ docs/specs/0009-backup-restore-versioning.md
 
 ## Audit still needed
 
-- Check roadmap assumptions once job engine and testing specs are aligned.
+- Check future-scope and release assumptions once job engine and testing specs are aligned.
 - Check whether future `.agents/` folder should be created after real scripts exist.
 - Delete this temp audit after all temporary alignment docs are either removed or replaced by canonical specs.
 

@@ -2,6 +2,23 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-09
+
+### Completed
+
+- Pulled latest `main` and re-evaluated docs after the old numbered docs layer was removed.
+- Updated temporary alignment docs so permanent homes point to canonical specs/current docs instead of deleted numbered docs.
+- Reconciled remaining base-currency, default Net Worth, and future crypto/source valuation wording with `0013` and `0014`.
+- Updated agent workflow/checklist references to use `docs/specs/` instead of the removed numbered docs layer.
+- Created repo-local `.agents/` operating workspace with role routing, workflows, rules, skills, plugin guidance, templates, and deterministic docs/preflight scripts.
+- Updated agent reading order and repo-agent workflow spec so future agents use `.agents/` without duplicating product truth from `docs/specs/`.
+
+### Next
+
+- Align job engine and error model.
+- Align testing/fixtures and AI agent automation gates.
+- Align Evidence Library detail UX.
+
 ## 2026-07-08
 
 ### Completed

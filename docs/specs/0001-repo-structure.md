@@ -40,7 +40,7 @@ ledger event and ledger leg construction
 validation rules
 reconciliation scoring
 money-flow graph building
-base-currency calculation interfaces
+source-backed valuation and compatible subtotal interfaces
 ```
 
 ### packages/db

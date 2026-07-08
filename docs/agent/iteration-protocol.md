@@ -8,10 +8,14 @@ Read:
 
 ```text
 docs/README.md
+docs/STRUCTURE.md
 docs/agent/current-state.md
+docs/agent/reading-order.md
 docs/agent/progress-log.md
 docs/agent/consistency-checklist.md
 docs/specs/README.md
+.agents/README.md
+.agents/ROUTER.md
 ```
 
 Then read any feature-specific docs relevant to the task.
@@ -90,7 +94,6 @@ At the end of a meaningful change:
 
 - update `docs/agent/progress-log.md`;
 - update `docs/agent/current-state.md` when focus or decisions change;
-- update numbered docs when behavior or architecture changes;
 - update `docs/specs/` when implementation contracts change;
 - update ADRs when a major architecture decision is accepted or replaced.
 

@@ -15,9 +15,11 @@ Before implementation, read in this order:
 4. docs/agent/reading-order.md
 5. docs/agent/iteration-protocol.md
 6. docs/agent/consistency-checklist.md
-7. docs/adr/*.md relevant to the task
-8. docs/specs/* relevant to the task
-9. docs/alignment-temp/* only when active alignment decisions are needed
+7. .agents/README.md
+8. .agents/ROUTER.md
+9. docs/specs/* relevant to the task
+10. docs/adr/*.md relevant to the task
+11. docs/alignment-temp/* only when active alignment decisions are needed
 ```
 
 ## Source-of-truth hierarchy

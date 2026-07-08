@@ -1,6 +1,6 @@
 # Grill Backlog
 
-This file stores prioritized questions to ask the user. Move answered decisions into `alignment-progress.md` and permanent docs/specs.
+This file stores prioritized questions to ask the user. Move answered decisions into `alignment-progress.md` and canonical specs or ADRs.
 
 ## Batch 1: Visual Design and Command Center
 
@@ -17,12 +17,12 @@ This file stores prioritized questions to ask the user. Move answered decisions 
 
 1. Should trades use only ledger legs or also specialized trade tables?
 2. How should stock positions be derived: from trades, snapshots, or both?
-3. How should current market values be updated without broker API?
+3. Which source-provided position and valuation snapshots should be trusted/displayed before broker APIs?
 4. How should realized/unrealized gains be represented?
 5. Should insurance policy value be treated as asset, special instrument, or note-only?
-6. How should FX rates be sourced and timestamped?
+6. How should source-provided or implied FX facts be stored and timestamped?
 7. How should liabilities display alongside assets?
-8. How should stale valuations affect net worth confidence?
+8. How should stale valuations affect Money Overview confidence or review state?
 
 ## Batch 3: Reconciliation and Review
 

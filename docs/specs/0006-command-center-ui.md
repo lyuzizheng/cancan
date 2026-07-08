@@ -162,7 +162,7 @@ Bank account: balance, inflow/outflow, statement updated at
 Credit card: liability, statement period, repayment status, spending trend if source-backed
 Wise/wallet: balances by currency, top-ups, FX conversions from source evidence
 Brokerage: cash, positions, source-provided valuation/P&L if present
-Crypto: token balances, source-provided valuation if present
+Future crypto source: token balances, source-provided valuation if present
 Insurance: policy value, premium history, valuation date
 ```
 

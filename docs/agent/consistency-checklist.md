@@ -13,7 +13,7 @@ Use this before considering a docs or code change complete.
 ## Data consistency
 
 - [ ] Are native currency/instrument values preserved?
-- [ ] Is base-currency value derived and timestamped when needed?
+- [ ] Are source-provided equivalent values preserved without requiring a base currency?
 - [ ] Are balance/valuation snapshots prevented from being counted as normal spending/income?
 - [ ] Are credit card repayments prevented from double-counting spending?
 - [ ] Can every committed event trace back to source evidence?
@@ -47,7 +47,6 @@ Use this before considering a docs or code change complete.
 
 ## Documentation consistency
 
-- [ ] Did the relevant numbered docs change if behavior changed?
 - [ ] Did `docs/specs/` change if implementation contracts changed?
 - [ ] Did `docs/agent/current-state.md` change if the current focus changed?
 - [ ] Did `docs/agent/progress-log.md` get a dated entry for meaningful progress?

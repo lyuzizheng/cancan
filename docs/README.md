@@ -63,8 +63,10 @@ Before implementation, an AI coding agent must read:
 4. docs/agent/reading-order.md
 5. docs/agent/iteration-protocol.md
 6. docs/agent/consistency-checklist.md
-7. task-relevant docs/specs/*.md
-8. task-relevant docs/adr/*.md
+7. .agents/README.md
+8. .agents/ROUTER.md
+9. task-relevant docs/specs/*.md
+10. task-relevant docs/adr/*.md
 ```
 
 ## Non-negotiable principles

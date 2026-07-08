@@ -30,12 +30,13 @@ Questions:
 - Which sample files are required before claiming support?
 - How are sample files redacted, named, stored, and tested?
 - Should Singapore context be assumed in defaults?
-- What base currency is default?
+- Should MVP ask for a base currency, or stay native-value-first?
 - How should physical cash/manual assets be handled?
 
 Current direction:
 
-- Default base currency is SGD.
+- MVP does not ask for base currency.
+- Native values and source-provided equivalent values are preserved.
 - MVP providers are DBS/UOB bank/card and Wise PDF/CSV/export.
 - Fixture policy is not aligned yet.
 
@@ -47,7 +48,7 @@ Questions:
 - Does vault creation happen before any screen?
 - Is the app usable without AI provider setup?
 - Is the app usable without Gmail setup?
-- What order: vault -> base currency -> AI provider -> sources -> Gmail rules -> import sample?
+- What order: vault -> AI provider -> sources -> Gmail rules -> import sample?
 - How does app resume unfinished jobs on startup?
 - What happens if vault unlock fails?
 - What happens if migrations fail?
@@ -188,7 +189,7 @@ Questions:
 - How are stock positions represented?
 - How are current values and historical valuations stored?
 - How are realized/unrealized gains represented?
-- How are FX rates stored?
+- How are source-provided or implied FX facts stored?
 - How are insurance policy values represented?
 - How are liabilities represented?
 - How are balance snapshots prevented from double-counting income/spending?
@@ -197,7 +198,9 @@ Current direction:
 
 - Ledger events/legs are canonical.
 - Snapshots can enter ledger model but are not normal transactions.
-- Trades and gains still need deeper alignment.
+- Source snapshots are current facts; parsed events explain changes.
+- MVP does not fetch market prices or external FX rates.
+- Specialized trades table and tax-grade gains are deferred.
 
 ## 11. Reconciliation and Review
 

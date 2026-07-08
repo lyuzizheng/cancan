@@ -92,7 +92,7 @@ The main subject should be money-source activity and overview, not only review q
 Recommended zones:
 
 ```text
-Top: net worth / freshness / vault status / last scan
+Top: Money Overview / source timestamps / vault status / last scan
 Main: money source streams and recent activity
 Side: AI insight, review count, backup health
 Lower section: Needs Review, New Evidence, Failed Jobs, Suggested Links
@@ -109,9 +109,9 @@ Examples:
 ```text
 Bank account: balance, inflow/outflow, statement freshness, unmatched transfers
 Credit card: current liability, due/payment status, statement period, spending trend
-Wise/wallet: balances by currency, FX conversions, top-ups, stale currency rates
-Brokerage: cash, positions, valuation, estimated P/L, stale price warnings
-Crypto: token balances, valuation, deposits/withdrawals, high volatility warning
+Wise/wallet: balances by currency, source-backed FX conversions, top-ups
+Brokerage: cash, positions, source-provided valuation/P&L if present
+Future crypto source: token balances, source-provided valuation if present, deposits/withdrawals
 Insurance: policy value, premiums, valuation date, confidence/freshness
 ```
 
