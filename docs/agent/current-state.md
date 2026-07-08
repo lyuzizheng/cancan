@@ -38,14 +38,28 @@ Gmail-first local finance evidence automation
 - Command Center should use left sidebar + main body, polished finance app style, and future AI Assistant entry.
 - Money Flow should preserve backend graph capability, but first UI can be chain-first.
 
+## Current alignment work
+
+A temporary alignment workspace exists in `docs/alignment-temp/`.
+
+Purpose:
+
+```text
+break down the full product lifecycle
+track aligned / partial / unresolved decisions
+run structured grill-me discussion rounds
+move stable decisions into permanent docs/specs
+remove temp workspace after alignment is complete
+```
+
 ## Immediate next design tasks
 
-1. Finalize implementation specs in `docs/specs/`.
-2. Define exact database migrations and index policy.
-3. Define Gmail search-rule UX and API/security flow.
-4. Define parser output JSON schemas and validation gates.
-5. Define auto-commit threshold policy for standalone purchases.
-6. Define Command Center wireframe and AI Assistant backend tool contracts.
+1. Work through `docs/alignment-temp/alignment-progress.md` from highest-risk unresolved areas.
+2. Align first-run/startup sequence.
+3. Align visual design system and Command Center UX.
+4. Align database/ledger details for trades, positions, valuations, and gains.
+5. Align backup/restore model.
+6. Align testing/fixtures and AI agent automation gates.
 
 ## Do not start yet
 

@@ -16,12 +16,13 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Clarified Review UI should be simple and low-friction, with side-by-side detail only where needed.
 - Clarified Money Flow should keep backend graph capability while first UI is chain-first.
 - Added expectation that future AI coding agents can implement, test, build, inspect UI via browser/computer-use, reset database, and iterate.
+- Added temporary alignment workspace under `docs/alignment-temp/` to break down full product lifecycle questions and track alignment progress.
 
 ### Next
 
-- Convert specs into actual migrations, package skeleton, and test harness when coding begins.
-- Define exact TypeScript types for core domain models.
-- Define UI wireframe/tokens for Command Center before implementation.
+- Work through lifecycle alignment batches in `docs/alignment-temp/grill-backlog.md`.
+- Move stable answers into permanent docs/specs.
+- Delete `docs/alignment-temp/` after alignment completes.
 
 ## 2026-07-07
 
