@@ -10,6 +10,10 @@ Read order:
 4. `0004-parser-contract.md`
 5. `0005-review-and-commit-policy.md`
 6. `0006-command-center-ui.md`
+7. `0007-first-run-onboarding.md`
+8. `0008-design-system.md`
+9. `0009-backup-restore-versioning.md`
+10. `0010-agentic-development-workflow.md`
 
 Rules:
 

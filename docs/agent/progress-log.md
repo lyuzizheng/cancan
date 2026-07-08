@@ -17,12 +17,17 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Clarified Money Flow should keep backend graph capability while first UI is chain-first.
 - Added expectation that future AI coding agents can implement, test, build, inspect UI via browser/computer-use, reset database, and iterate.
 - Added temporary alignment workspace under `docs/alignment-temp/` to break down full product lifecycle questions and track alignment progress.
+- Added first-run/onboarding spec with product promise, fixed provider policy, bring-your-own AI direction, startup sequence, and interaction/motion requirements.
+- Added design system spec with light-first, modern warm+green, technical/safe/premium direction.
+- Added backup/restore/versioning spec with generic folder backup, manifest, compatibility rules, and restore behavior.
+- Added agentic development workflow spec with required tests, DB reset, build/package, UI inspection, and docs update loop.
 
 ### Next
 
-- Work through lifecycle alignment batches in `docs/alignment-temp/grill-backlog.md`.
-- Move stable answers into permanent docs/specs.
-- Delete `docs/alignment-temp/` after alignment completes.
+- Resolve Gmail integration approach: official OAuth/API vs AI computer-use/browser automation.
+- Align exact design tokens and Command Center visual system.
+- Align ledger details for trades, positions, valuations, and gains.
+- Align job engine and error model.
 
 ## 2026-07-07
 

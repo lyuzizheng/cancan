@@ -23,15 +23,16 @@ Left sidebar:
 
 Main body:
 - top status/header
-- operational queue
-- asset snapshot
+- money source activity overview
+- compact asset snapshot
 - evidence freshness
+- AI insight
 - review/action modules
 ```
 
 ## Design register
 
-CanCan should feel like a professional finance operations console with consumer-grade polish.
+CanCan should feel like a professional finance operations console with consumer-grade polish and 2026-level interaction quality.
 
 Avoid:
 
@@ -41,32 +42,51 @@ decorative gradients
 glassmorphism as default
 busy card grids
 cute illustrations
+default component-library appearance
 ```
 
 Prefer:
 
 ```text
 clear navigation
+modern warm + green palette
 dense but readable tables
 source/account status chips
 precise typography
 compact asset summaries
-side-by-side review surfaces
-calm accent color
+animated but meaningful state transitions
+side-by-side review surfaces when needed
 excellent empty/loading/error states
 ```
 
 ## Command Center zones
 
+The first viewport should be multi-dimensional but not too dense.
+
+Recommended priority:
+
 ```text
-1. Vault and sync status
-2. Needs Review queue
-3. New Evidence from Gmail/import
-4. Failed or paused jobs
-5. Suggested Links
-6. Compact Asset Snapshot
-7. Freshness and Backup status
-8. AI Assistant entry point
+1. Top overview: net worth, freshness, last scan, vault/backup health
+2. Main stream: money source activity and recent flows
+3. Source snapshots: tailored status per source type
+4. AI insight: monthly/weekly summary or missing statement prompt
+5. Compact review status: needs review, failed jobs, suggested links
+6. Lower section: detailed Needs Review / New Evidence / Failed Jobs
+```
+
+## Source-specific modules
+
+Different source types should not all render the same generic card.
+
+Examples:
+
+```text
+Bank account: balance, inflow/outflow, statement freshness
+Credit card: liability, statement period, repayment status, spending trend
+Wise/wallet: balances by currency, top-ups, FX conversions
+Brokerage: cash, positions, valuation, estimated P/L
+Crypto: token balances, valuation, deposits/withdrawals
+Insurance: policy value, premium history, valuation date
 ```
 
 ## AI Assistant direction
@@ -82,26 +102,7 @@ list_review_items(status)
 explain_money_flow(chain_id)
 search_transactions(query)
 get_source_freshness()
-```
-
-The assistant can answer questions like:
-
-```text
-What changed this month?
-Why did net worth move?
-Which statements are missing?
-Which transactions still need review?
-Summarize my DBS/UOB/Wise activity.
-```
-
-It must not:
-
-```text
-read secrets
-commit ledger directly
-make payments
-place trades
-withdraw crypto
+list_missing_statements()
 ```
 
 ## Review surface
@@ -118,20 +119,13 @@ Keep review lightweight:
 
 First version is chain-first, not a complex graph canvas.
 
-Example:
-
-```text
-UOB One Account -1000 SGD
--> DBS Visa credit card payment
--> DBS Visa liability -1000 SGD
-```
-
-Keep backend graph capability so node-edge visualization can be added later.
+Backend should still model graph relationships so node-edge visualization can be added later.
 
 ## Acceptance criteria
 
 - First screen has left sidebar and main body.
-- Review and evidence status are visible without hunting.
+- Source activity, overview, freshness, AI insight, and review status are all represented.
 - Asset snapshot is present but not the only focus.
-- Empty states guide the user to create sources, import files, or configure Gmail.
+- Different money source types can display different stats.
+- Empty states guide the user to create sources, configure Gmail, or import files.
 - AI Assistant is represented as a future-ready surface/tool entry, but cannot bypass safety boundaries.

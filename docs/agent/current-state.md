@@ -20,13 +20,15 @@ Gmail-first local finance evidence automation
 ## Current MVP decisions
 
 - Manual import is a test harness and fallback.
-- Gmail read-only collection is part of MVP success.
+- Supported providers are fixed/product-defined, not arbitrary user-created integrations.
+- Gmail read-only collection is part of MVP success, but exact integration path remains unresolved: official OAuth/API vs AI computer-use/browser automation.
 - Gmail rule UX should be guided at the top and expert-query editable below.
 - User manually creates Money Sources and sub-accounts.
 - Parser/AI maps documents to existing sub-accounts or creates review suggestions.
 - Initial provider scope: DBS bank, DBS credit card, UOB bank, UOB credit card, Wise PDF/CSV/export.
 - Native PDF extraction and OCR output should both be preserved.
 - AI-assisted parsing is core from early phases.
+- App may offer a default AI path, but should strongly prompt bring-your-own AI provider/key.
 - Vercel AI SDK may be used for provider routing and structured generation.
 - Low-risk standalone purchases may auto-commit after deterministic validation and threshold checks.
 - Transfers, repayments, top-ups, FX conversions, broker deposits, and ambiguous links default to review.
@@ -35,8 +37,11 @@ Gmail-first local finance evidence automation
 - Use hand-written SQL migrations and typed repository functions. Do not use Prisma.
 - SQL performance matters: add indexes deliberately and benchmark important queries.
 - JSON fields are acceptable for provider-specific/evolving metadata when not hiding core query dimensions.
-- Command Center should use left sidebar + main body, polished finance app style, and future AI Assistant entry.
+- Command Center should use left sidebar + main body, modern warm+green polished finance app style, and future AI Assistant entry.
+- Command Center should be multi-dimensional: overview, money source flows, snapshot freshness, AI insight, and review status without excessive density.
+- Money source types need tailored stats/display modes.
 - Money Flow should preserve backend graph capability, but first UI can be chain-first.
+- Backup should support generic folder first, with iCloud as a possible folder target, and must include version compatibility metadata.
 
 ## Current alignment work
 
@@ -54,12 +59,11 @@ remove temp workspace after alignment is complete
 
 ## Immediate next design tasks
 
-1. Work through `docs/alignment-temp/alignment-progress.md` from highest-risk unresolved areas.
-2. Align first-run/startup sequence.
-3. Align visual design system and Command Center UX.
-4. Align database/ledger details for trades, positions, valuations, and gains.
-5. Align backup/restore model.
-6. Align testing/fixtures and AI agent automation gates.
+1. Resolve Gmail integration path: official OAuth/API vs AI computer-use/browser automation.
+2. Align exact visual tokens and design system.
+3. Align database/ledger details for trades, positions, valuations, and gains.
+4. Align job engine and error model.
+5. Align testing/fixtures and AI agent automation gates.
 
 ## Do not start yet
 
