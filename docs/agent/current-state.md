@@ -55,6 +55,9 @@ The old numbered docs layer (`00-product-vision.md` through `11-open-questions.m
 - Use hand-written SQL migrations and typed repository functions. Do not use Prisma.
 - SQL performance matters: add indexes deliberately and benchmark important queries.
 - JSON fields are acceptable for provider-specific/evolving metadata when not hiding core query dimensions.
+- A durable SQLite-backed job engine is required from day 1 for Gmail sync, document ingest, parsing, reconciliation, commit, backup, and restore flows.
+- Jobs should be coarse-grained and user-meaningful. Do not split simple internal work into many tiny jobs.
+- `blocked` job status is used for user action requirements such as password-protected PDFs, Gmail reconnect, AI provider setup, or backup target issues.
 - Command Center should use left sidebar + main body, modern Warm Off-White + green polished finance app style, and future AI Assistant entry.
 - Command Center should show user-facing facts, source activity, snapshot timestamps, AI insight, and review status without noisy metrics/tags.
 - Money source types need tailored stats/display modes.
@@ -79,11 +82,10 @@ remove temp workspace after alignment is complete
 
 ## Immediate next design tasks
 
-1. Align job engine and error model.
-2. Align testing/fixtures and AI agent automation gates.
-3. Align Evidence Library detail UX.
-4. Decide exact design token values and whether to generate a Figma prototype.
-5. Continue deleting or rewriting temporary alignment files once stable decisions move into specs.
+1. Align testing/fixtures and AI agent automation gates.
+2. Align Evidence Library detail UX.
+3. Decide exact design token values and whether to generate a Figma prototype.
+4. Continue deleting or rewriting temporary alignment files once stable decisions move into specs.
 
 ## Do not start yet
 

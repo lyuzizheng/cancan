@@ -35,8 +35,8 @@ avoid overcomplicating the product
 
 ## Current Priority Order
 
-1. Job engine and error model.
-2. Testing/fixtures and agent automation gates.
-3. Evidence Library detail UX.
-4. Exact design token values and Figma prototype decision.
-5. Future optional estimated-total/network-valuation policy.
+1. Testing/fixtures and agent automation gates.
+2. Evidence Library detail UX.
+3. Exact design token values and Figma prototype decision.
+4. Future optional estimated-total/network-valuation policy.
+5. Post-MVP source expansion policy.

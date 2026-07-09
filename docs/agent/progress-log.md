@@ -14,12 +14,15 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Updated agent reading order and repo-agent workflow spec so future agents use `.agents/` without duplicating product truth from `docs/specs/`.
 - Reviewed `.agents/` after creation and fixed grill workflow mismatch: CanCan design grill now asks focused batches of 5-10 questions by default, with one-question mode reserved for security, money correctness, irreversible data shape, or single blocking ambiguity.
 - Updated `docs/agent/README.md` to explicitly describe the split between persistent project memory in `docs/agent/` and operating workflows in `.agents/`.
+- Aligned job engine and error model in `docs/specs/0015-job-engine-error-model.md`.
+- Recorded that jobs should be coarse-grained and user-meaningful, with internal step checkpoints instead of many tiny jobs.
+- Added job engine to specs index and agent reading order.
 
 ### Next
 
-- Align job engine and error model.
 - Align testing/fixtures and AI agent automation gates.
 - Align Evidence Library detail UX.
+- Decide exact design token values and whether to generate a Figma prototype.
 
 ## 2026-07-08
 

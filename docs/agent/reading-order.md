@@ -52,6 +52,7 @@ Visual tokens                 docs/specs/0011-visual-design-tokens.md
 Repo agent workflows          docs/specs/0012-repo-agent-workflows.md
 Ledger/assets/valuation       docs/specs/0013-ledger-assets-valuation.md
 Money overview/taxonomy       docs/specs/0014-money-overview-source-taxonomy.md
+Job engine/error model        docs/specs/0015-job-engine-error-model.md
 ```
 
 ## Conflict handling protocol
