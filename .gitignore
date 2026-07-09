@@ -1,0 +1,18 @@
+# Local-only sensitive fixture data
+fixtures-private/
+.cancan-test/
+.cancan-local/
+
+# Common local files
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Node/app build output once app code exists
+node_modules/
+dist/
+build/
+coverage/
+.playwright/
+test-results/

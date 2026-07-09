@@ -53,6 +53,7 @@ Repo agent workflows          docs/specs/0012-repo-agent-workflows.md
 Ledger/assets/valuation       docs/specs/0013-ledger-assets-valuation.md
 Money overview/taxonomy       docs/specs/0014-money-overview-source-taxonomy.md
 Job engine/error model        docs/specs/0015-job-engine-error-model.md
+Testing/fixtures/gates        docs/specs/0016-testing-fixtures-agent-gates.md
 ```
 
 ## Conflict handling protocol

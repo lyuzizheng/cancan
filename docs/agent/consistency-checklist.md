@@ -7,7 +7,7 @@ Use this before considering a docs or code change complete.
 - [ ] Does the change preserve the core product loop: Source -> Evidence -> Extract -> AI Normalize -> Validate -> Reconcile -> Review -> Ledger?
 - [ ] Is Gmail automation still treated as MVP success and manual import as test harness/fallback?
 - [ ] Are provider claims backed by fixtures or explicitly marked planned?
-- [ ] Are user-created Money Sources and sub-accounts respected?
+- [ ] Are user-created Money Sources and child containers/accounts respected?
 - [ ] Does the future AI Assistant access data only through narrow backend APIs/skills?
 
 ## Data consistency
@@ -25,9 +25,18 @@ Use this before considering a docs or code change complete.
 - [ ] Is AI output schema-validated?
 - [ ] Is deterministic financial validation applied before staging/commit?
 - [ ] Are prompt/model/parser versions recorded?
+- [ ] Are LLM-dependent tests deterministic through mocked/stored outputs?
 - [ ] Are AI permissions narrow and unable to read secrets or mutate committed ledger directly?
 - [ ] Are ambiguous links routed to Review?
 - [ ] If Vercel AI SDK is used, is provider-specific behavior still hidden behind app-level adapters?
+
+## Fixture and testing consistency
+
+- [ ] Are real statement fixtures kept in ignored `fixtures-private/`?
+- [ ] Are committed fixtures synthetic or explicitly redacted/reviewed?
+- [ ] Does DB reset target only a test database/path?
+- [ ] Are expected outputs versioned when parser/prompt/extraction behavior changes?
+- [ ] Are UI changes visually inspected when app code exists?
 
 ## Security consistency
 
@@ -36,6 +45,7 @@ Use this before considering a docs or code change complete.
 - [ ] Are connectors read-only?
 - [ ] Does Gmail use official read-only OAuth/API for MVP?
 - [ ] Are cloud AI provider uploads opt-in?
+- [ ] Are statement PDF passwords excluded from logs, prompts, fixtures, and default backups?
 
 ## UI consistency
 

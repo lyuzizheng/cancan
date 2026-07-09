@@ -58,6 +58,9 @@ The old numbered docs layer (`00-product-vision.md` through `11-open-questions.m
 - A durable SQLite-backed job engine is required from day 1 for Gmail sync, document ingest, parsing, reconciliation, commit, backup, and restore flows.
 - Jobs should be coarse-grained and user-meaningful. Do not split simple internal work into many tiny jobs.
 - `blocked` job status is used for user action requirements such as password-protected PDFs, Gmail reconnect, AI provider setup, or backup target issues.
+- Fixture policy is private-first: real samples go in ignored `fixtures-private/`; deterministic CI uses synthetic or approved redacted fixtures.
+- LLM-dependent tests must use mocked/stored model outputs in CI; live LLM eval is local opt-in only.
+- Test DB reset must only target test paths and must never touch a real vault by default.
 - Command Center should use left sidebar + main body, modern Warm Off-White + green polished finance app style, and future AI Assistant entry.
 - Command Center should show user-facing facts, source activity, snapshot timestamps, AI insight, and review status without noisy metrics/tags.
 - Money source types need tailored stats/display modes.
@@ -82,9 +85,9 @@ remove temp workspace after alignment is complete
 
 ## Immediate next design tasks
 
-1. Align testing/fixtures and AI agent automation gates.
-2. Align Evidence Library detail UX.
-3. Decide exact design token values and whether to generate a Figma prototype.
+1. Align Evidence Library detail UX.
+2. Decide exact design token values and whether to generate a Figma prototype.
+3. Align future optional estimated-total/network-valuation policy.
 4. Continue deleting or rewriting temporary alignment files once stable decisions move into specs.
 
 ## Do not start yet

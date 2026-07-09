@@ -13,13 +13,14 @@ Use this when the user asks to build, add, fix, or change behavior.
    - schema impact;
    - service/API impact;
    - UI impact;
-   - test strategy;
+   - fixture/test strategy;
    - docs updates.
 6. Implement the smallest complete slice.
 7. Run focused tests/checks.
-8. For data changes, reset the test DB once a DB exists.
-9. For UI changes, inspect visually once an app exists.
-10. Update docs/progress.
+8. For data changes, reset only the test DB once a DB exists.
+9. For parser/AI changes, use deterministic mocked/stored AI outputs.
+10. For UI changes, inspect visually once an app exists.
+11. Update docs/progress.
 
 ## Current Repo State
 

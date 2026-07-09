@@ -17,12 +17,15 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Aligned job engine and error model in `docs/specs/0015-job-engine-error-model.md`.
 - Recorded that jobs should be coarse-grained and user-meaningful, with internal step checkpoints instead of many tiny jobs.
 - Added job engine to specs index and agent reading order.
+- Aligned testing, fixtures, and AI agent automation gates in `docs/specs/0016-testing-fixtures-agent-gates.md`.
+- Added `.gitignore` entries for `fixtures-private/`, local vault/test folders, and common generated output.
+- Updated `.agents` testing workflow and testing rules for private/redacted/synthetic fixtures, deterministic LLM mocks, safe test DB reset, and UI visual inspection gates.
 
 ### Next
 
-- Align testing/fixtures and AI agent automation gates.
 - Align Evidence Library detail UX.
 - Decide exact design token values and whether to generate a Figma prototype.
+- Align future optional estimated-total/network-valuation policy.
 
 ## 2026-07-08
 

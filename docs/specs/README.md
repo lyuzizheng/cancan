@@ -25,10 +25,11 @@ Do not load every spec by default unless the task spans the whole system.
 | `0009-backup-restore-versioning.md` | Backup bundles, restore, schema/version compatibility, secrets policy |
 | `0010-agentic-development-workflow.md` | Build/test/package/inspect workflow for AI coding agents |
 | `0011-visual-design-tokens.md` | Colors, typography, spacing, radius, motion tokens |
-| `0012-repo-agent-workflows.md` | Future repo-local `.agents/` workflow plan |
+| `0012-repo-agent-workflows.md` | Future repo-local `.agents` workflow plan |
 | `0013-ledger-assets-valuation.md` | Ledger, valuations, snapshots, trades, multi-currency behavior |
 | `0014-money-overview-source-taxonomy.md` | Money Overview, no base currency, source/account/instrument taxonomy |
 | `0015-job-engine-error-model.md` | Durable jobs, blocked states, retry, recovery, errors |
+| `0016-testing-fixtures-agent-gates.md` | Fixture privacy, deterministic tests, DB reset, agent validation gates |
 
 ## Adding a new spec
 

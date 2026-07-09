@@ -13,6 +13,13 @@ if find docs -maxdepth 1 -type f -regex '.*/[0-9][0-9]-.*[.]md' | grep -q .; the
   fail=1
 fi
 
+echo "Checking private fixtures are not tracked..."
+if git ls-files 'fixtures-private/*' | grep -q .; then
+  echo "Tracked files found under fixtures-private/. These must remain local-only."
+  git ls-files 'fixtures-private/*'
+  fail=1
+fi
+
 echo "Checking stale design claims..."
 patterns=(
   "Default base currency is SGD"
