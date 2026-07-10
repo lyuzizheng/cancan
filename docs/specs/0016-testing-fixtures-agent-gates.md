@@ -1,10 +1,10 @@
-# 0016. Testing, Fixtures, and Agent Automation Gates Spec
+# 0016. Testing, Fixtures, and Application Gates Spec
 
 ## Goal
 
-Define how CanCan tests source-evidence flows, protects sensitive fixtures, keeps LLM-dependent behavior deterministic, and gives future AI coding agents clear validation gates.
+Define how CanCan tests source-evidence flows, protects sensitive fixtures, keeps LLM-dependent behavior deterministic, and gates application changes.
 
-This spec is canonical for fixture policy, parser/reconciliation test expectations, database reset safety, and future CI gate design.
+This spec is canonical for fixture policy, parser/reconciliation test expectations, database reset safety, and future application CI gates. `0012-repo-agent-workflows.md` owns the docs/agent harness.
 
 ## Stable decisions
 
@@ -15,7 +15,7 @@ This spec is canonical for fixture policy, parser/reconciliation test expectatio
 - LLM-dependent tests should not call live LLMs in CI.
 - DB reset must only affect test databases, never a real vault.
 - UI work requires visual inspection when app code exists.
-- CI gates are designed now, but GitHub Actions can wait until app/package scripts exist.
+- App/typecheck/test/build gates wait until real app/package scripts exist.
 
 ## Fixture privacy layers
 
@@ -199,21 +199,11 @@ pnpm test:integration
 pnpm test:fixtures
 ```
 
-## Agent automation gates
+## Application automation gates
 
-### Before app code exists
+The docs/agent harness and its CI workflow are owned by `0012-repo-agent-workflows.md`.
 
-Required checks:
-
-```text
-.agents/scripts/agent-preflight.sh
-git diff --check
-verify changed docs point to canonical specs
-```
-
-### Once app code exists
-
-Every feature slice should run the strongest relevant subset:
+Once app code exists, every feature slice should run the strongest relevant subset:
 
 ```text
 typecheck
@@ -257,14 +247,13 @@ secret handling
 
 UI screenshots can be useful artifacts, but visual review and targeted assertions should decide pass/fail.
 
-## CI design stance
+## Application CI design stance
 
-Design CI gates now, implement GitHub Actions later when the app skeleton and package scripts exist.
+Add application CI gates when the app skeleton and package scripts exist. The existing docs-harness CI is outside this spec's ownership.
 
 Future CI should include:
 
 ```text
-docs/preflight
 lint/typecheck
 unit tests
 migration check
@@ -284,4 +273,4 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - LLM-dependent tests are deterministic in CI.
 - DB reset cannot target a real vault by default.
 - UI changes require visual inspection once UI exists.
-- Future CI gates are defined without prematurely adding Actions before scripts exist.
+- Future application CI gates are defined without inventing scripts that do not exist.

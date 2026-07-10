@@ -4,6 +4,10 @@
 
 Define when records can auto-commit, when they require review, and how reconciliation avoids double-counting.
 
+## Implementation blocker
+
+Ledger/reconciliation semantics, undo/reversal behavior, and the AI ledger-authority ADR status remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not implement commit, destructive, or AI-authority paths beyond accepted invariants.
+
 ## Policy levels
 
 User-configurable settings:

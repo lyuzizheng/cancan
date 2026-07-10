@@ -4,21 +4,7 @@ Follow this protocol for every future AI coding session.
 
 ## 1. Orient
 
-Read:
-
-```text
-docs/README.md
-docs/STRUCTURE.md
-docs/agent/current-state.md
-docs/agent/reading-order.md
-docs/agent/progress-log.md
-docs/agent/consistency-checklist.md
-docs/specs/README.md
-.agents/README.md
-.agents/ROUTER.md
-```
-
-Then read any feature-specific docs relevant to the task.
+Run `.agents/scripts/agent-preflight.sh`, follow `docs/agent/reading-order.md`, then read task-relevant canonical specs and ADRs.
 
 ## 2. Classify the task
 
@@ -96,6 +82,8 @@ At the end of a meaningful change:
 - update `docs/agent/current-state.md` when focus or decisions change;
 - update `docs/specs/` when implementation contracts change;
 - update ADRs when a major architecture decision is accepted or replaced.
+- run `.agents/scripts/agent-preflight.sh`;
+- run independent semantic review when docs or harness files changed.
 
 ## 7. Ask when blocked
 
@@ -103,4 +91,4 @@ If a decision affects product meaning, financial correctness, AI authority, secu
 
 ## 8. Keep main coherent
 
-A commit should not leave docs claiming one behavior while code does another. If a feature is partially implemented, mark it partial in progress docs and UI copy.
+A commit should not leave docs claiming one behavior while code does another. If a feature is partially implemented, record current behavior in `current-state.md`; if a decision is unresolved, keep it in the active alignment register and add an implementation blocker to the affected spec.

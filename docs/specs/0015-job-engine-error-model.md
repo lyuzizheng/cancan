@@ -6,6 +6,10 @@ Define CanCan's durable local job system, error model, recovery behavior, and us
 
 The job engine exists to make long-running local-first finance workflows reliable and observable. It must not turn simple local functions into unnecessary micro-jobs.
 
+## Implementation blocker
+
+Restore bootstrap, destructive-job behavior, cancellation, idempotency, log/error redaction, and crash-report consent remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not implement those paths from the coarse job and error examples alone.
+
 ## Stable decisions
 
 - A durable job system is required from day 1.

@@ -40,7 +40,9 @@ If something will guide implementation, it belongs in `docs/specs/`.
 
 Architecture Decision Records.
 
-Use ADRs for stable decisions with historical context, such as choosing Tauri/React/SQLite or setting the AI ledger boundary.
+Use ADRs for architecture decisions with historical context, such as choosing Tauri/React/SQLite or setting the AI ledger boundary.
+
+An ADR's `Status` controls its authority. `Proposed` is not the same as `Accepted`.
 
 ADR files should not duplicate detailed feature specs.
 
@@ -67,9 +69,9 @@ Temporary alignment workspace.
 Use it for:
 
 ```text
-grill-me question backlog
-temporary decision tracking
-doc consistency audits while the design is still moving
+active unresolved decision register
+focused questions for the next design round
+explicit implementation blockers
 ```
 
 When alignment is complete, stable decisions move into `docs/specs/` and the temp files can be deleted.
@@ -81,11 +83,11 @@ Repo-local agent operating material.
 Use it for:
 
 ```text
-role routing
+intent routing
 workflow checklists
-agent-facing skills
+trigger-oriented skills
 deterministic helper scripts
-report/spec templates
+independent semantic review contract
 ```
 
 The `.agents/` folder describes how future agents work. It must point back to `docs/specs/` for product truth and must not duplicate canonical implementation decisions.
@@ -96,17 +98,32 @@ The old numbered docs layer (`00-product-vision.md` through `11-open-questions.m
 
 Do not recreate broad numbered docs unless there is a very strong reason. Add or update a focused spec instead.
 
-## Source-of-truth order
+## Source contract
 
-When content conflicts:
+Authority is concern-based, not a misleading total order:
+
+| Concern | Authoritative source |
+| --- | --- |
+| User direction for the active task | User's latest explicit instruction |
+| Intended product and implementation behavior | `docs/specs/*.md` |
+| Architecture decision and rationale | `docs/adr/*.md`, according to each ADR's status |
+| Current implemented behavior | Code and tests |
+| Current phase, focus, and known implementation state | `docs/agent/current-state.md` |
+| Unresolved decisions and blockers | `docs/alignment-temp/alignment-progress.md` |
+| Agent procedure | `AGENTS.md` and `.agents/` |
+
+Summary, progress, alignment, and harness files may link to canonical behavior but must not restate it as a competing contract.
+
+## Conflict protocol
+
+When sources disagree:
 
 ```text
-1. User's latest explicit instruction in the active conversation
-2. docs/agent/current-state.md
-3. docs/specs/*.md
-4. docs/adr/*.md
-5. docs/alignment-temp/* for unresolved temporary work
-6. code behavior only when docs are silent
+1. Do not silently choose a convenient source.
+2. Identify whether the conflict is intended behavior, current behavior, architecture status, or unresolved design.
+3. If the user's active instruction resolves it, update every stale projection in the same change.
+4. If it needs product, financial, security, privacy, or irreversible data judgment, mark an implementation blocker and ask the user.
+5. Run deterministic harness checks and independent semantic review before finishing.
 ```
 
 ## How to add new docs
@@ -119,6 +136,8 @@ Before adding a doc:
 3. Add a new numbered spec only when the topic is genuinely new.
 4. Update specs/README.md and agent/current-state.md if the topic changes implementation direction.
 5. Record the change in agent/progress-log.md.
+6. Run `.agents/scripts/agent-preflight.sh`.
+7. Run the independent semantic gate for docs or harness changes.
 ```
 
 ## Anti-duplication rule
@@ -133,6 +152,7 @@ Parser contracts -> specs/0004-parser-contract.md
 Review policy -> specs/0005-review-and-commit-policy.md
 Command Center UI -> specs/0006-command-center-ui.md
 Money overview/taxonomy -> specs/0014-money-overview-source-taxonomy.md
+Evidence document UX -> specs/0017-evidence-documents-source-ux.md
 ```
 
 Other files may link to the canonical spec, but should not restate the full decision.

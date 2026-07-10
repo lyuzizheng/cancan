@@ -4,6 +4,10 @@
 
 Automatically collect financial statement evidence from Gmail while preserving local-first behavior.
 
+## Implementation blocker
+
+Public OAuth distribution and Gmail-data transfer to cloud AI remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not finalize those paths from this directional spec.
+
 ## MVP decision
 
 Use official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect.

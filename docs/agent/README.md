@@ -2,39 +2,17 @@
 
 This folder exists so future AI coding agents can keep product docs, implementation progress, and code behavior aligned.
 
-Before making code changes, an agent must read:
+Before making changes, run `.agents/scripts/agent-preflight.sh` and follow [`reading-order.md`](./reading-order.md).
 
-```text
-1. docs/README.md
-2. docs/STRUCTURE.md
-3. docs/agent/current-state.md
-4. docs/agent/reading-order.md
-5. docs/agent/iteration-protocol.md
-6. docs/agent/consistency-checklist.md
-7. .agents/README.md
-8. .agents/ROUTER.md
-9. task-relevant docs/specs/*.md
-10. task-relevant docs/adr/*.md
-```
+## Source contract
 
-## Source-of-truth hierarchy
-
-Use this order when resolving conflicts:
-
-1. User's newest instruction in the active conversation.
-2. `docs/agent/current-state.md` for current implementation focus.
-3. `docs/specs/*.md` for implementation-grade detail.
-4. ADRs in `docs/adr/` for accepted architecture decisions.
-5. `docs/alignment-temp/*` only for active unresolved alignment.
-6. Existing code behavior, only when docs are silent.
-
-If code and docs disagree, do not silently choose one. Update docs and code together or record the discrepancy in `docs/agent/progress-log.md`.
+The source contract lives only in [`docs/STRUCTURE.md`](../STRUCTURE.md). This folder records phase, progress, and procedure; it does not override product behavior.
 
 ## Relationship with `.agents/`
 
 ```text
 docs/agent/   persistent project memory and current state
-.agents/      repo-local operating workflows, roles, rules, scripts, and templates
+.agents/      repo-local skills, workflows, deterministic gates, and semantic review
 ```
 
 Neither folder owns product truth. Product and implementation truth belongs in `docs/specs/` or ADRs.
@@ -42,7 +20,7 @@ Neither folder owns product truth. Product and implementation truth belongs in `
 ## What belongs here
 
 ```text
-current-state.md          current decisions and immediate focus
+current-state.md          phase, focus, and current implementation state
 reading-order.md          canonical read path and conflict resolution order
 progress-log.md           dated progress entries and next actions
 iteration-protocol.md     how AI agents should plan, implement, validate, and update docs

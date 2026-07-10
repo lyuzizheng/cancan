@@ -1,45 +1,45 @@
-# CanCan Agent Workspace
+# CanCan Agent Harness
 
-This folder is the repo-local operating guide for future coding agents.
+This folder contains procedure only. Intended product and implementation behavior belongs in `docs/specs/`; architecture decisions belong in status-bearing ADRs.
 
-It does not replace `docs/specs/`. Canonical product and implementation truth stays in `docs/specs/`; this folder explains how an agent should work with that truth.
-
-## Start Here
+## Start
 
 1. Run `.agents/scripts/agent-preflight.sh`.
-2. Read `docs/README.md`.
-3. Read `docs/STRUCTURE.md`.
-4. Read `docs/agent/current-state.md`.
-5. Read `docs/agent/reading-order.md`.
-6. Read `.agents/ROUTER.md`.
-7. Pick the role/workflow that matches the user's prompt.
-8. Read only task-relevant specs and ADRs.
+2. Follow `docs/agent/reading-order.md`.
+3. Select the task-relevant skill and workflow from `.agents/ROUTER.md`.
+4. Read only the relevant canonical specs and ADRs.
 
-## Folder Map
+## Shape
 
 ```text
 .agents/
   README.md
   ROUTER.md
-  rules/       always-on project rules for agent behavior
-  workflows/   repeatable task loops
-  roles/       role cards selected by user prompt
-  skills/      repo-local skill instructions
-  plugins/     guidance for connectors/plugins/capabilities
-  scripts/     deterministic checks and helper generators
-  templates/   reusable report/spec/checklist templates
+  docs-semantic-review.md
+  workflows/   detailed task loops
+  skills/      trigger-oriented entry points
+  scripts/     deterministic gates and generators
 ```
 
-## Core Rule
+Roles, repeated product rules, static priority lists, generic templates, and placeholder plugin guidance are intentionally excluded. They created additional sources of truth without adding executable guarantees.
 
-Every agent cycle follows this shape:
+## Two-layer gate
+
+Every meaningful change uses both layers:
 
 ```text
-orient -> route role -> read canonical docs -> plan -> execute smallest slice -> verify -> update docs -> report
+deterministic gate
+  -> paths, spec index, duplicate numbers, skill metadata, shell syntax,
+     sensitive fixture tracking, stale harness references, whitespace
+
+semantic gate
+  -> an independent agent reviews changed docs and harness files for contradiction,
+     hidden product decisions, stale status, unsafe implementation guidance,
+     and duplicate ownership
 ```
 
-Do not invent product truth in `.agents/`. If a decision affects implementation, put it in `docs/specs/` or an ADR.
+Run the deterministic gate with `.agents/scripts/agent-preflight.sh`. Test the gate itself with `.agents/scripts/harness-self-test.sh`.
 
-## Current Limits
+For docs or harness changes, prepare the semantic review with `.agents/scripts/docs-review-packet.sh HEAD` and follow `.agents/docs-semantic-review.md`. A semantic reviewer may identify a decision that needs user input, but must not decide it.
 
-Application code has not started. Workflows that mention tests, DB reset, package, UI inspection, or simulated flows define the required shape, but must be wired to real commands once app code exists.
+Read implementation state from `docs/agent/current-state.md`; do not copy it into the harness. App commands may be added only when the referenced scripts and paths are real.

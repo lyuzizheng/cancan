@@ -5,15 +5,6 @@ description: Review CanCan changes against canonical specs, safety rules, tests,
 
 # CanCan Code Review
 
-## Review Order
+## Workflow
 
-1. Identify changed files.
-2. Read relevant specs.
-3. Check product, data, security, testing, and UI rules.
-4. Report findings first, ordered by severity.
-5. Include file/line references.
-6. Mention missing verification and residual risk.
-
-## Default Stance
-
-Review only. Do not edit files unless the user asks to fix.
+Run `.agents/workflows/review-code.md` against task-relevant canonical specs and status-bearing ADRs. For docs or harness review, also apply `.agents/docs-semantic-review.md`.

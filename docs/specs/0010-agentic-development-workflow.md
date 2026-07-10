@@ -20,7 +20,8 @@ For each feature slice:
 9. Inspect UI with browser/computer-use/Chrome MCP when UI changed
 10. Fix issues and repeat
 11. Update docs/progress
-12. Ask user when product/security/data decisions are unclear
+12. Run the repo harness gates required by 0012
+13. Ask user when product/security/data decisions are unclear
 ```
 
 ## Browser/computer-use policy
@@ -33,9 +34,9 @@ Acceptable tools may include:
 - computer-use;
 - Chrome MCP;
 - Playwright screenshots;
-- future installed repo-local skills/workflows.
+- installed repo-local skills/workflows.
 
-The repo may include `.agents/` workflows or skills later to pin these procedures. If added, they become part of the agent operating contract.
+The repo-local harness is defined in `0012-repo-agent-workflows.md`. UI tooling remains flexible, but the visual-inspection outcome is required.
 
 ## Done criteria
 
@@ -48,6 +49,7 @@ A feature is not done until:
 - UI was visually inspected if UI changed;
 - docs/specs/progress are updated;
 - unresolved decisions are recorded or asked.
+- the repo harness gates required by `0012-repo-agent-workflows.md` pass.
 
 ## Integration test expectations
 
@@ -82,6 +84,7 @@ Ask instead of guessing when the decision affects:
 ## Acceptance criteria
 
 - Agents have a repeatable loop for autonomous development.
+- Documentation/harness validation follows `0012-repo-agent-workflows.md`.
 - UI changes cannot be completed without visual inspection.
 - Integration flows require database reset coverage.
 - Docs remain part of the implementation contract.

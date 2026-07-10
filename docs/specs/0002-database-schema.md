@@ -4,6 +4,10 @@
 
 Design SQLite/SQLCipher schema for a local-first finance vault that supports evidence, parsing, review, ledger, assets, positions, snapshots, and reconciliation.
 
+## Implementation blocker
+
+Ledger invariants, source identity, and vault/storage feasibility remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not finalize affected tables or destructive constraints until those entries are resolved.
+
 ## Database policy
 
 - Use hand-written SQL migrations.
@@ -109,3 +113,11 @@ run parser/reconciliation tests
 ```
 
 Acceptance requires integration tests to run from a clean database without manual setup.
+
+## Acceptance criteria
+
+- Schema changes use hand-written, versioned migrations.
+- Core query dimensions are columns rather than hidden in JSON.
+- Required UI/service access paths have deliberate indexes.
+- Important query paths have benchmark coverage at the documented fixture sizes.
+- Integration tests can reset and migrate only a test database without manual setup.

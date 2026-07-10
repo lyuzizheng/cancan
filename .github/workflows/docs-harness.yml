@@ -1,0 +1,32 @@
+name: Docs harness
+
+on:
+  pull_request:
+    paths:
+      - AGENTS.md
+      - .agents/**
+      - docs/**
+      - .github/workflows/docs-harness.yml
+  push:
+    branches:
+      - main
+    paths:
+      - AGENTS.md
+      - .agents/**
+      - docs/**
+      - .github/workflows/docs-harness.yml
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-docs-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install harness dependency
+        run: sudo apt-get update && sudo apt-get install --yes ripgrep ruby
+      - name: Run preflight
+        run: .agents/scripts/agent-preflight.sh
+      - name: Test the harness
+        run: .agents/scripts/harness-self-test.sh

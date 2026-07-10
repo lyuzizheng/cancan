@@ -6,6 +6,10 @@ This spec aligns CanCan's top-level overview and source taxonomy.
 
 It supersedes older MVP wording that asks the user to choose a base currency during onboarding or vault setup.
 
+## Implementation blocker
+
+Money Source identity and account/container/instrument hierarchy remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not freeze schema or parser identity from the examples alone.
+
 ## No base currency in MVP
 
 CanCan should not ask the user to configure a base currency in MVP.
@@ -31,24 +35,11 @@ Single-currency subtotal cards are allowed when the underlying values are compat
 
 ## Source-provided equivalent values
 
-If a statement provides an equivalent value in another currency, CanCan may show it as part of source evidence.
-
-Store valuation amount, valuation currency, valuation date, and the source document or external record reference.
+`0013-ledger-assets-valuation.md` owns storage and evidence rules for source-provided equivalent values. Money Overview may display only values permitted by that valuation contract.
 
 ## Optional network activity for future estimated totals
 
-A future setting may enable network activity for estimated totals, market prices, or external FX.
-
-MVP default:
-
-```text
-network activity for valuation = off
-market price fetch = off
-external FX fetch = off
-estimated total = not shown unless source-backed
-```
-
-If added later, it must be explicitly enabled by the user, visible in Settings, reversible, versioned, and separate from source-provided facts.
+`0013-ledger-assets-valuation.md` owns future network-valuation policy. This spec only requires Money Overview to avoid presenting an estimated aggregate unless that valuation contract permits it.
 
 ## Product copy guardrail
 

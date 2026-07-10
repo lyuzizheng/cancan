@@ -4,6 +4,10 @@
 
 Define how CanCan represents assets, liabilities, positions, snapshots, valuations, trades, and multi-currency views without overcomplicating MVP or inventing unsupported financial facts.
 
+## Implementation blocker
+
+Core ledger/reconciliation invariants remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not finalize event/leg, reversal, or destructive behavior from valuation examples.
+
 ## Core principle: fact-based finance
 
 CanCan is a record, reconciliation, and evidence dashboard. It should preserve and organize source evidence as user-facing financial memory.
@@ -36,13 +40,9 @@ manual import evidence
 
 If no source evidence provides current value, CanCan should not fetch market price or estimate live value.
 
-## No base currency in MVP
+## Money Overview product policy
 
-CanCan should not ask the user to choose a base currency during MVP onboarding or vault settings.
-
-CanCan is a multi-currency factual overview. User assets may naturally exist across SGD, USD, CNY, HKD, securities, policies, and other native units. A base currency setting can incorrectly imply that CanCan will convert everything into one total.
-
-MVP should show native values and source-provided valuations without forcing a single synthetic total.
+`0014-money-overview-source-taxonomy.md` owns the no-base-currency, Money Overview, and user-facing aggregation policy. This spec owns the underlying ledger, valuation, position, and multi-currency behavior.
 
 ## Multi-currency model
 
@@ -61,20 +61,6 @@ credit card liability in stated currency
 If a statement/source provides a valuation in another currency, store that valuation and source it.
 
 If no source provides conversion, show separate currency buckets rather than inventing conversion.
-
-## Money Overview instead of default Net Worth
-
-The Command Center should not default to a single `Net Worth` number unless the source evidence already supports compatible aggregation.
-
-Preferred MVP language:
-
-```text
-Money Overview
-Source Overview
-Your Money Sources
-```
-
-Single-currency subtotal cards are allowed when the underlying values are compatible.
 
 ## Source-provided equivalent values
 
@@ -260,12 +246,10 @@ Docs may state technical constraints clearly for implementation safety, but prod
 
 ## Acceptance criteria
 
-- MVP does not ask for base currency.
 - MVP does not fetch market prices or external FX rates.
 - Native values are preserved and displayed.
 - Statement/source snapshots can drive current position/value display.
 - Source-provided equivalent values can be shown with evidence.
-- Single totals are only shown when source evidence supports compatible aggregation.
 - Future estimated totals require explicit network activity settings.
 - Trades can be represented without a specialized table in MVP.
 - Future specialized trade table remains possible without data loss.

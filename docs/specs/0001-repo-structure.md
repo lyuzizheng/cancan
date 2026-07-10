@@ -4,10 +4,16 @@
 
 Create a monorepo shape that lets AI coding agents implement, test, build, inspect, and iterate without mixing UI, domain logic, privileged desktop APIs, and parser logic.
 
+## Implementation blocker
+
+Desktop/storage architecture remains blocked on the feasibility and ADR-status entry in the [active alignment register](../alignment-temp/alignment-progress.md). Do not treat the target layout as accepted runtime architecture until that entry is resolved.
+
 ## Target layout
 
 ```text
 cancan/
+  AGENTS.md                 # tool-neutral coding-agent entry point
+  .agents/                  # skills, workflows, deterministic and semantic gates
   apps/
     desktop/
       src/                  # React app shell and pages

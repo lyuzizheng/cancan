@@ -1,63 +1,36 @@
 # Consistency Checklist
 
-Use this before considering a docs or code change complete.
+Use this before considering a docs or code change complete. This checklist verifies ownership and evidence; it does not restate product behavior.
 
-## Product consistency
+## Scope and authority
 
-- [ ] Does the change preserve the core product loop: Source -> Evidence -> Extract -> AI Normalize -> Validate -> Reconcile -> Review -> Ledger?
-- [ ] Is Gmail automation still treated as MVP success and manual import as test harness/fallback?
-- [ ] Are provider claims backed by fixtures or explicitly marked planned?
-- [ ] Are user-created Money Sources and child containers/accounts respected?
-- [ ] Does the future AI Assistant access data only through narrow backend APIs/skills?
+- [ ] Is the task's intended behavior owned by an existing entry in `docs/specs/README.md`?
+- [ ] If no spec owns it, was a focused spec added and indexed without duplicating another topic?
+- [ ] Were ADR claims interpreted according to the ADR's explicit status?
+- [ ] Does `current-state.md` describe phase/current reality rather than override intended behavior?
+- [ ] Are unresolved decisions present only in `docs/alignment-temp/alignment-progress.md` and as blockers in affected specs?
+- [ ] Did the change avoid silently answering product, financial, security, privacy, or irreversible data questions?
 
-## Data consistency
+## Implementation evidence
 
-- [ ] Are native currency/instrument values preserved?
-- [ ] Are source-provided equivalent values preserved without requiring a base currency?
-- [ ] Are balance/valuation snapshots prevented from being counted as normal spending/income?
-- [ ] Are credit card repayments prevented from double-counting spending?
-- [ ] Can every committed event trace back to source evidence?
-- [ ] Are hot query paths indexed and benchmarked where needed?
-- [ ] Are JSON fields used only for metadata/evolving shapes, not core filters?
+- [ ] Does code behavior match the relevant canonical spec, or is the divergence explicitly recorded?
+- [ ] Do tests prove the changed behavior and important failure paths?
+- [ ] Do financial/data invariants trace to their canonical spec and source evidence?
+- [ ] Do security, connector, AI, secret, and backup changes satisfy their task-relevant specs/ADRs?
+- [ ] Were implementation blockers respected rather than coded from directional prose?
 
-## AI and parser consistency
+## Verification evidence
 
-- [ ] Is AI output schema-validated?
-- [ ] Is deterministic financial validation applied before staging/commit?
-- [ ] Are prompt/model/parser versions recorded?
-- [ ] Are LLM-dependent tests deterministic through mocked/stored outputs?
-- [ ] Are AI permissions narrow and unable to read secrets or mutate committed ledger directly?
-- [ ] Are ambiguous links routed to Review?
-- [ ] If Vercel AI SDK is used, is provider-specific behavior still hidden behind app-level adapters?
+- [ ] Were the strongest real repository commands used without inventing missing commands?
+- [ ] Did data-layer work use a safe test-only reset path?
+- [ ] Did parser/LLM work use deterministic fixtures or mocked outputs according to `0016-testing-fixtures-agent-gates.md`?
+- [ ] Did UI work include visual inspection and relevant state/accessibility checks once UI exists?
+- [ ] Did `.agents/scripts/agent-preflight.sh` pass?
+- [ ] If the harness changed, did `.agents/scripts/harness-self-test.sh` pass?
 
-## Fixture and testing consistency
+## Documentation projection
 
-- [ ] Are real statement fixtures kept in ignored `fixtures-private/`?
-- [ ] Are committed fixtures synthetic or explicitly redacted/reviewed?
-- [ ] Does DB reset target only a test database/path?
-- [ ] Are expected outputs versioned when parser/prompt/extraction behavior changes?
-- [ ] Are UI changes visually inspected when app code exists?
-
-## Security consistency
-
-- [ ] Are secrets stored outside plain SQLite?
-- [ ] Is the vault encrypted at rest?
-- [ ] Are connectors read-only?
-- [ ] Does Gmail use official read-only OAuth/API for MVP?
-- [ ] Are cloud AI provider uploads opt-in?
-- [ ] Are statement PDF passwords excluded from logs, prompts, fixtures, and default backups?
-
-## UI consistency
-
-- [ ] Does the app use left sidebar + main body layout for core desktop UI?
-- [ ] Is the first screen useful as an asset/reconciliation Command Center?
-- [ ] Are review interactions simple enough for regular use while still preventing bad links?
-- [ ] Are empty/loading/error states implemented?
-- [ ] Has the UI been inspected visually via browser/computer-use when available?
-
-## Documentation consistency
-
-- [ ] Did `docs/specs/` change if implementation contracts changed?
-- [ ] Did `docs/agent/current-state.md` change if the current focus changed?
+- [ ] Did `docs/agent/current-state.md` change only if phase, focus, or current implementation state changed?
 - [ ] Did `docs/agent/progress-log.md` get a dated entry for meaningful progress?
-- [ ] Are open questions moved to resolved decisions when answered?
+- [ ] Were resolved alignment entries removed after moving decisions to their canonical home?
+- [ ] Did an independent semantic reviewer return `pass` for docs or harness changes?

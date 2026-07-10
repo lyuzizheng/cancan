@@ -12,11 +12,4 @@ Use this when the user asks to improve code structure, package boundaries, or do
 6. Add or update tests for the boundary.
 7. Update specs only if the architecture contract changes.
 
-## Preferred Boundaries
-
-- Pure domain logic in `packages/core`.
-- SQL migrations/repositories in `packages/db`.
-- Source collection in `packages/connectors`.
-- Extraction and parser contracts in `packages/parsers`.
-- AI routing behind app-owned adapters in `packages/ai`.
-- Reusable UI in `packages/ui`.
+Package and runtime boundaries are owned by `docs/specs/0001-repo-structure.md` and task-relevant canonical specs. Do not copy them into this workflow.

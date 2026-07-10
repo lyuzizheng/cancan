@@ -2,6 +2,25 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-10
+
+### Completed
+
+- Added `0017-evidence-documents-source-ux.md`: Evidence lives under Money Source detail rather than a dominant standalone Library section.
+- Synchronized the spec index, Command Center navigation, current state, reading path, and active alignment register with `0017`.
+- Marked unresolved Evidence Remove/reversal and encrypted original-file behavior as explicit implementation blockers instead of inventing product or security answers.
+- Replaced the duplicated source-of-truth precedence list with one concern-based source contract in `docs/STRUCTURE.md`.
+- Simplified `.agents/` by removing duplicate roles, product rules, placeholder plugin guidance, generic templates, brittle keyword routing, and static priority copies.
+- Added a tool-neutral root `AGENTS.md`, bilingual intent routing, deterministic spec/index/link/skill/doc checks, shell syntax validation, and harness fault-injection self-tests.
+- Added an independent semantic-review contract and review-packet generator for docs and harness changes.
+- Added a docs-harness GitHub Action plus a contract check that protects its triggers, paths, permissions, and required commands.
+- Consolidated temporary alignment material into one active unresolved decision register and deleted stale lifecycle/audit/backlog copies.
+
+### Next
+
+- Run the next design round from `docs/alignment-temp/alignment-progress.md`, starting with P0 implementation blockers.
+- Wire real app commands into the harness only after application/package scripts exist.
+
 ## 2026-07-09
 
 ### Completed

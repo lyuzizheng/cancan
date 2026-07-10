@@ -144,6 +144,8 @@ Do not require a PDF preview panel in MVP.
 
 Provide `Open original` where the local file exists.
 
+Implementation blocker: the encrypted-vault-to-OS-viewer boundary is unresolved. Do not implement temporary plaintext extraction until the vault/file security design defines creation, permissions, cleanup, crash recovery, and audit behavior.
+
 Rules:
 
 ```text
@@ -192,16 +194,7 @@ The UI should present one simple action: `Remove`.
 
 Implementation must still protect data integrity.
 
-Recommended behavior:
-
-```text
-If document only created uncommitted staged records:
-  remove document from active view and remove/ignore staged records.
-
-If document created committed ledger facts:
-  show a concise confirmation explaining that related records will also be removed or reversed according to the ledger policy.
-  keep an audit trail where required by the local vault model.
-```
+Implementation blocker: all Remove persistence and file semantics are unresolved, including uncommitted/committed records, archive versus deletion, local file retention, audit, and re-import. Do not implement Remove beyond UI presentation until the canonical ledger/security owners define those behaviors.
 
 Do not expose multiple confusing actions like `remove from library`, `delete local file`, and `delete records` in the normal UI.
 
@@ -279,5 +272,6 @@ This source has documents, but none match the current filter.
 - Technical extraction artifacts are hidden from normal UI.
 - User-facing document states stay simple.
 - `Remove` is one user-facing action while implementation preserves data integrity.
+- Opening encrypted originals and all Remove persistence behavior remain blocked until their canonical security and ledger semantics are accepted.
 - MVP search works through indexed structured fields.
 - Future full-text search uses local SQLite FTS5, not a remote search service.

@@ -16,7 +16,6 @@ Left sidebar:
 - Transactions
 - Reconciliation
 - Money Flow
-- Library
 - Jobs
 - Settings
 - AI Assistant
@@ -44,9 +43,9 @@ Main body:
 │ Transactions  │ └───────────────────────────────────────────┘ │ │summary   │ │
 │ Reconcile     │                                               │ └──────────┘ │
 │ Money Flow    │ ┌───────────────────────────────────────────┐ │              │
-│ Library       │ │ Money Source Activity                     │ │ Review       │
-│ Jobs          │ │                                           │ │ ┌──────────┐ │
-│ Settings      │ │ DBS Bank      balance / latest movement   │ │ │Needs 8   │ │
+│ Jobs          │ │ Money Source Activity                     │ │ Review       │
+│ Settings      │ │                                           │ │ ┌──────────┐ │
+│               │ │ DBS Bank      balance / latest movement   │ │ │Needs 8   │ │
 │               │ │ DBS Card      liability / payment status  │ │ │Failed 1  │ │
 │ AI Assistant  │ │ UOB Bank      inflow / outflow / updated  │ │ │New 12    │ │
 │               │ │ Wise          SGD/USD / FX / top-ups      │ │ └──────────┘ │
@@ -166,6 +165,10 @@ Future crypto source: token balances, source-provided valuation if present
 Insurance: policy value, premium history, valuation date
 ```
 
+## Evidence navigation
+
+Evidence documents live under each Money Source detail view. Do not add a dominant standalone Library navigation item in MVP. The canonical document UX is `0017-evidence-documents-source-ux.md`.
+
 ## AI Assistant direction
 
 Future assistant should access data through backend APIs/skills, not direct database or filesystem access.
@@ -209,4 +212,5 @@ A Figma prototype can be generated after visual tokens are accepted. The Figma o
 - Different money source types can display different stats.
 - UI avoids overcomplicated freshness scores or noisy tags.
 - Empty states guide the user to create sources, configure Gmail, or import files.
+- Evidence documents are reached through Source detail rather than a standalone Library sidebar item.
 - AI Assistant is represented as a future-ready surface/tool entry, but cannot bypass safety boundaries.

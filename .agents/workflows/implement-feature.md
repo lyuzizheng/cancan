@@ -22,6 +22,4 @@ Use this when the user asks to build, add, fix, or change behavior.
 10. For UI changes, inspect visually once an app exists.
 11. Update docs/progress.
 
-## Current Repo State
-
-Application code has not started. Until package scripts exist, implementation tasks may be spec/workflow scaffolding only.
+Read current implementation state from `docs/agent/current-state.md`. Do not copy state or planned command names into this workflow.

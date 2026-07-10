@@ -1,46 +1,43 @@
-# Alignment Progress
+# Active Alignment Register
+
+This file contains only decisions that are still partial, unresolved, or blocked. Stable decisions belong in canonical specs or status-bearing ADRs and must not be copied here.
 
 Status values:
 
 ```text
-aligned       decision is stable and reflected in canonical specs/ADRs/current docs
-partial       direction exists but needs more detail
-unresolved    needs user discussion
-blocked       cannot decide until external info/sample/code exists
+partial       direction exists but implementation-critical detail is missing
+unresolved    user discussion is required
+blocked       external evidence, feasibility work, or implementation is required first
 ```
 
-## Progress Table
+## P0: blocks safe implementation
 
-| Area | Status | Current decision | Permanent home |
+| Area | Status | Decision still required | Canonical home after decision |
 | --- | --- | --- | --- |
-| Product identity | aligned | Local-first financial evidence vault + reconciliation console | `docs/README.md`, `docs/agent/current-state.md` |
-| MVP success | aligned | Gmail automation required; manual import is test harness | `docs/README.md`, `docs/specs/0003-gmail-collector.md` |
-| Initial providers | partial | Fixed supported provider list; sample policy unresolved | `docs/specs/0007-first-run-onboarding.md` |
-| First-run sequence | partial | Welcome -> vault -> AI -> source -> Gmail/import -> Command Center | `docs/specs/0007-first-run-onboarding.md` |
-| Visual design system | partial | Warm Off-White + small warmth + green semantic; exact values unresolved | `docs/specs/0008-design-system.md`, `docs/specs/0011-visual-design-tokens.md` |
-| Component strategy | partial | Prefer Hero UI-style app foundation with CanCan wrappers; alternatives possible if documented | `docs/specs/0006-command-center-ui.md`, `docs/specs/0008-design-system.md` |
-| Command Center layout | partial | Multi-dimensional overview; source activity main, review lower/compact; markdown wireframe added | `docs/specs/0006-command-center-ui.md` |
-| Money source/account model | partial | User-created sources/sub-accounts; fixed providers; mapping suggestions | `docs/specs/0014-money-overview-source-taxonomy.md` |
-| Gmail automation | aligned | Desktop OAuth + PKCE + loopback, Gmail readonly, local token/cache, polling sync | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md` |
-| Manual import/library | partial | Test harness/fallback; detail page not fully specified | future spec |
-| Extraction/OCR/AI parser | partial | Native text + OCR + AI normalization; schemas need exact detail | `docs/specs/0004-parser-contract.md` |
-| AI SDK | aligned | Vercel AI SDK allowed behind CanCan adapters | `docs/specs/0004-parser-contract.md`, `docs/specs/0007-first-run-onboarding.md` |
-| SQL/ORM | aligned | Hand-written SQL; no Prisma; indexes/benchmarks required | `docs/specs/0002-database-schema.md` |
-| Ledger/assets/valuation | partial | Fact-based; no market price fetch; multi-currency; source snapshots first; no tax; trade table deferred | `docs/specs/0013-ledger-assets-valuation.md`, `docs/specs/0014-money-overview-source-taxonomy.md` |
-| Reconciliation policy | partial | Review-first for links; auto policies need thresholds | `docs/specs/0005-review-and-commit-policy.md` |
-| Review interaction | partial | Simple inbox + expandable side-by-side details | `docs/specs/0006-command-center-ui.md` |
-| AI Assistant | partial | Backend APIs/skills only; exact tools need spec | `docs/specs/0006-command-center-ui.md` |
-| Security/privacy | partial | Encrypted vault, read-only connectors, opt-in AI; Google restricted scope review risk recorded | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md`, `docs/specs/0009-backup-restore-versioning.md` |
-| Backup/restore | partial | Generic folder first; manifest/schema/app version compatibility required | `docs/specs/0009-backup-restore-versioning.md` |
-| Jobs/errors | unresolved | Needs job engine spec | future spec |
-| Testing/fixtures | unresolved | User deferred fixture policy; integration/reset required | future spec |
-| Build/package/release | partial | Agent workflow requires build/package checks; exact commands pending code | `docs/specs/0010-agentic-development-workflow.md` |
-| Autonomous AI coding workflow | partial | Tests, DB reset, build, UI inspection, docs update required; `.agents/` workflows planned | `docs/specs/0010-agentic-development-workflow.md`, `docs/specs/0012-repo-agent-workflows.md` |
+| Ledger and reconciliation semantics | unresolved | Event/leg invariants, partial and one-to-many matches, reversal/undo, audit behavior, idempotency | `docs/specs/0002-database-schema.md`, `docs/specs/0005-review-and-commit-policy.md`, `docs/specs/0013-ledger-assets-valuation.md` |
+| Evidence document lifecycle | unresolved | Meaning of Remove after commit; file deletion/archive behavior; encrypted original-file opening and temporary plaintext lifecycle | `docs/specs/0017-evidence-documents-source-ux.md` plus the ledger/security owner selected during design |
+| Vault, file, backup, and restore keys | unresolved | Vault key lifecycle, file encryption boundary, backup key/KDF, atomic restore and recovery | `docs/specs/0009-backup-restore-versioning.md` and an ADR if architecture changes |
+| Money Source identity model | unresolved | Institution/source/account/container/instrument hierarchy, stable account identity, archived accounts, parser-created candidates | `docs/specs/0014-money-overview-source-taxonomy.md`, `docs/specs/0002-database-schema.md` |
+| Parser evidence contract | partial | OCR/native-text selection, evidence locations, locale/timezone/sign rules, stable record identity, reparse/supersede behavior | `docs/specs/0004-parser-contract.md` |
+| Gmail data and cloud AI consent | unresolved | Owner-only versus public OAuth path, data sent to AI, consent granularity, provider retention and Limited Use compatibility | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md` |
+| Restore and destructive job behavior | partial | Restore bootstrap outside the database being replaced, cancellation boundaries, state transitions and idempotency keys | `docs/specs/0015-job-engine-error-model.md`, `docs/specs/0009-backup-restore-versioning.md` |
+| Desktop/storage architecture feasibility | blocked | Validate the Tauri/SQLCipher/FTS5 path, then accept, revise, or reject the proposed desktop architecture | `docs/adr/0001-local-first-tauri-react-sqlite.md` |
+| AI ledger-authority ADR status | unresolved | Accept, revise, or reject the proposed AI authority boundary before implementation relies on it | `docs/adr/0002-agent-is-advisor-not-ledger-owner.md` |
 
-## Next Discussion Priority
+## P1: required before the affected implementation slice
 
-1. Job engine and error model.
-2. Testing/fixtures and AI agent automation gates.
-3. Evidence Library detail UX.
-4. Exact design token values and Figma prototype decision.
-5. Future optional estimated-total/network-valuation policy if needed.
+| Area | Status | Decision still required | Canonical home after decision |
+| --- | --- | --- | --- |
+| First-run optionality | unresolved | Whether AI and Gmail setup can be skipped and how incomplete setup resumes | `docs/specs/0007-first-run-onboarding.md` |
+| Build and release target | unresolved | MVP operating systems, signing/notarization, packaging, update and release artifacts | future focused spec after the decision |
+| Visual tokens and component version | unresolved | Exact accessible token values, HeroUI major/version contract, Figma role | `docs/specs/0008-design-system.md`, `docs/specs/0011-visual-design-tokens.md` |
+| Security observability and sensitive-data lifecycle | unresolved | Log redaction, crash-report collection/consent, raw extraction retention, and deletion behavior | future focused security spec after the decision |
+| Backup operations and portability | unresolved | Manual/automatic schedule, failure UX, Command Center status, export formats, and restore-migration detail | `docs/specs/0009-backup-restore-versioning.md`, `docs/specs/0015-job-engine-error-model.md` |
+
+## P2: deliberately deferred, does not block the core MVP slices
+
+| Area | Status | Decision still required | Canonical home after decision |
+| --- | --- | --- | --- |
+| Usage cadence and manual money | unresolved | Retention workflow, physical cash, and manual asset/liability scope | future focused product spec after the decision |
+| AI Assistant operating scope | unresolved | Tool set, history, suggestion authority, and settings access after the core loop is stable | `docs/specs/0006-command-center-ui.md` or a future focused spec |
+| Post-MVP extensions | blocked | Mobile, API connectors, valuation providers, tax reporting, parser sharing, and multi-device sync remain gated on the core loop | future roadmap after MVP evidence exists |

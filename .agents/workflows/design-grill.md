@@ -6,7 +6,6 @@ Use this to continue product/design alignment.
 
 - `docs/agent/current-state.md`
 - `docs/alignment-temp/alignment-progress.md`
-- `docs/alignment-temp/grill-backlog.md`
 - Task-relevant specs
 
 ## Steps
@@ -20,6 +19,7 @@ Use this to continue product/design alignment.
 7. Move stable implementation guidance into the canonical spec.
 8. Remove or rewrite stale temp notes.
 9. Update `docs/agent/progress-log.md`.
+10. Run the deterministic and independent semantic gates.
 
 ## Question Quality Bar
 
@@ -33,10 +33,4 @@ make tradeoffs explicit
 avoid overcomplicating the product
 ```
 
-## Current Priority Order
-
-1. Testing/fixtures and agent automation gates.
-2. Evidence Library detail UX.
-3. Exact design token values and Figma prototype decision.
-4. Future optional estimated-total/network-valuation policy.
-5. Post-MVP source expansion policy.
+Current priorities must be read from `docs/agent/current-state.md` and `docs/alignment-temp/alignment-progress.md`. Do not copy them into this workflow.

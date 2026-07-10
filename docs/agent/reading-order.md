@@ -22,39 +22,13 @@ Before implementation, read in this order:
 11. docs/alignment-temp/* only when active alignment decisions are needed
 ```
 
-## Source-of-truth hierarchy
+## Source contract
 
-When documents conflict, use this order:
-
-```text
-1. User's latest explicit instruction in the active conversation
-2. docs/agent/current-state.md
-3. docs/specs/*.md for implementation-grade detail
-4. docs/adr/*.md for architecture decisions
-5. docs/alignment-temp/* for temporary unresolved discussion only
-6. existing code behavior, only when docs are silent
-```
+Use the concern-based source contract in `docs/STRUCTURE.md`. Do not reproduce it in agent or harness files.
 
 ## Canonical specs by topic
 
-```text
-Repo structure                docs/specs/0001-repo-structure.md
-Database schema               docs/specs/0002-database-schema.md
-Gmail collector               docs/specs/0003-gmail-collector.md
-Parser contract               docs/specs/0004-parser-contract.md
-Review/commit policy          docs/specs/0005-review-and-commit-policy.md
-Command Center UI             docs/specs/0006-command-center-ui.md
-First-run onboarding          docs/specs/0007-first-run-onboarding.md
-Design system                 docs/specs/0008-design-system.md
-Backup/restore/versioning     docs/specs/0009-backup-restore-versioning.md
-Agentic workflow              docs/specs/0010-agentic-development-workflow.md
-Visual tokens                 docs/specs/0011-visual-design-tokens.md
-Repo agent workflows          docs/specs/0012-repo-agent-workflows.md
-Ledger/assets/valuation       docs/specs/0013-ledger-assets-valuation.md
-Money overview/taxonomy       docs/specs/0014-money-overview-source-taxonomy.md
-Job engine/error model        docs/specs/0015-job-engine-error-model.md
-Testing/fixtures/gates        docs/specs/0016-testing-fixtures-agent-gates.md
-```
+The maintained spec map lives only in `docs/specs/README.md`. Read the relevant entries from that index.
 
 ## Conflict handling protocol
 
@@ -62,10 +36,11 @@ If a conflict is found:
 
 ```text
 1. Do not implement from the conflicting docs.
-2. Check current-state and the newest relevant spec.
+2. Classify the conflict using `docs/STRUCTURE.md` and read the relevant canonical spec or ADR.
 3. If the intended answer is clear, update the stale document in the same change.
-4. If the answer is unclear, write the question into docs/alignment-temp/grill-backlog.md and ask the user.
+4. If the answer needs user judgment, record the blocker in `docs/alignment-temp/alignment-progress.md` and ask the user.
 5. Record the cleanup in docs/agent/progress-log.md.
+6. Run deterministic checks and independent semantic review.
 ```
 
 ## Completion gate
@@ -77,4 +52,6 @@ code behavior matches docs
 relevant docs match code behavior
 progress log is updated
 no known conflicts remain in touched topics
+agent-preflight passes
+independent semantic review passes when docs or harness files changed
 ```

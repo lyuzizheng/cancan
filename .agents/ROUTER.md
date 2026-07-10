@@ -1,30 +1,16 @@
 # Agent Router
 
-Use this file to choose a role and workflow from the user's prompt.
+Choose the workflow by intent, not by brittle keyword matching. Chinese and English prompts use the same mapping.
 
-## Prompt Routing
-
-| User asks for | Role | Workflow |
+| Intent | Skill | Workflow |
 | --- | --- | --- |
-| "grill", "stress-test", "align design", "questions" | `roles/design-griller.md` | `workflows/design-grill.md` |
-| "implement", "build", "add", "fix" | `roles/implementer.md` | `workflows/implement-feature.md` |
-| "review", "audit PR", "find risks" | `roles/code-reviewer.md` | `workflows/review-code.md` |
-| "test", "simulate", "QA", "try flows" | `roles/qa-simulator.md` | `workflows/simulated-testing.md` |
-| "refactor structure", "architecture", "boundaries" | `roles/architect.md` | `workflows/refine-architecture.md` |
-| "polish UI", "improve design", "visual check" | `roles/ui-polisher.md` | `workflows/refine-ui.md` |
-| "connector", "plugin", "Gmail", "source integration" | `roles/implementer.md` | `workflows/plugin-work.md` |
+| Clarify, grill, align, 商量, 对齐 | [cancan-design-grill](./skills/cancan-design-grill/SKILL.md) | [design-grill](./workflows/design-grill.md) |
+| Implement, build, fix, 实现, 修复 | [cancan-implementation-cycle](./skills/cancan-implementation-cycle/SKILL.md) | [implement-feature](./workflows/implement-feature.md) |
+| Review, audit, evaluate, 审查, 评估 | [cancan-code-review](./skills/cancan-code-review/SKILL.md) | [review-code](./workflows/review-code.md) |
+| Test, simulate, QA, 测试, 模拟 | [cancan-testing-simulation](./skills/cancan-testing-simulation/SKILL.md) | [simulated-testing](./workflows/simulated-testing.md) |
+| Architecture, boundaries, 架构, 边界 | [cancan-architecture-refinement](./skills/cancan-architecture-refinement/SKILL.md) | [refine-architecture](./workflows/refine-architecture.md) |
+| UI, visual polish, 界面, 视觉 | [cancan-ui-quality](./skills/cancan-ui-quality/SKILL.md) | [refine-ui](./workflows/refine-ui.md) |
+| Connector, Gmail, source integration, 数据源 | [cancan-implementation-cycle](./skills/cancan-implementation-cycle/SKILL.md) | [plugin-work](./workflows/plugin-work.md) |
+| Orientation, status, plan, 进度, 规划 | [cancan-docs-orientation](./skills/cancan-docs-orientation/SKILL.md) | [development-cycle](./workflows/development-cycle.md) |
 
-If a prompt contains several intents, pick the earliest blocker. For example, if the user asks to "grill the design then implement", run `design-grill` first.
-
-## Role Rules
-
-- Use one primary role per task.
-- Mention assumptions before changing files.
-- Ask only when the canonical docs do not answer a product, security, money-correctness, or irreversible data-shape question.
-- Keep implementation slices small enough to verify independently.
-
-## Quick CLI Helper
-
-```bash
-.agents/scripts/role-for-prompt.sh "review the parser and add tests"
-```
+For mixed intents, resolve the earliest blocker first. Product, money-correctness, security, and irreversible data ambiguities block implementation. Unknown intent defaults to orientation, never implementation.

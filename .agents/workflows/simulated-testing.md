@@ -12,17 +12,9 @@ Use simulation as a design exercise:
 2. Walk the expected state transitions.
 3. List required fixtures and deterministic assertions.
 4. Decide which fixture layer is appropriate: private, redacted, or synthetic.
-5. Record gaps in `docs/alignment-temp/grill-backlog.md` or the canonical spec.
+5. Record unresolved design gaps in `docs/alignment-temp/alignment-progress.md`; record accepted behavior in the canonical spec.
 
-## Fixture Selection
-
-```text
-fixtures-private/     local real samples, ignored by Git
-fixtures-redacted/    manually redacted, commit only after review
-fixtures-synthetic/   generated safe samples, preferred for CI
-```
-
-Never use live LLM, live Gmail, or real external finance accounts as default test gates.
+Fixture privacy and live-service boundaries are owned by `docs/specs/0016-testing-fixtures-agent-gates.md`.
 
 ## Once App Code Exists
 
@@ -34,17 +26,4 @@ Never use live LLM, live Gmail, or real external finance accounts as default tes
 6. Compare against expected source evidence, staged records, review items, jobs, and committed ledger state.
 7. File findings or patch the smallest cause.
 
-## Required Scenario Types
-
-For supported provider document types, cover:
-
-```text
-normal statement
-edge-case statement
-duplicate/reconciliation scenario
-password-protected PDF when applicable
-```
-
-## Report Template
-
-Use `.agents/templates/simulation-report.md`.
+Scenario requirements are owned by `docs/specs/0016-testing-fixtures-agent-gates.md`. Report the scenario, expected state transitions, actual result, gaps, and follow-up tests.

@@ -5,15 +5,6 @@ description: Refine CanCan code structure and package boundaries without specula
 
 # CanCan Architecture Refinement
 
-## Read
+## Workflow
 
-1. `docs/specs/0001-repo-structure.md`
-2. Task-relevant specs
-3. `.agents/workflows/refine-architecture.md`
-
-## Rules
-
-- Keep files small and purpose-specific.
-- Prefer existing patterns.
-- Add abstractions only when they remove real complexity.
-- Update ADRs only for hard-to-reverse tradeoff decisions.
+Run `.agents/workflows/refine-architecture.md`. Read `docs/specs/0001-repo-structure.md`, task-relevant canonical specs, and status-bearing ADRs; the workflow owns the procedure.

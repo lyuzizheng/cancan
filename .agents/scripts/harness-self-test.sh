@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+cd "$ROOT"
+
+TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/cancan-harness.XXXXXX")"
+trap 'rm -rf "$TEST_ROOT"' EXIT
+
+cp -R docs .agents .github "$TEST_ROOT/"
+cp AGENTS.md README.md .gitignore "$TEST_ROOT/"
+
+(
+  cd "$TEST_ROOT"
+  git init -q
+  git add .
+)
+
+run_check() {
+  CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/$1" >/dev/null
+}
+
+expect_failure() {
+  label="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then
+    echo "Harness failed to detect: $label"
+    exit 1
+  fi
+  echo "Detected injected fault: $label"
+}
+
+run_check .agents/scripts/check-spec-index.sh
+run_check .agents/scripts/check-links.sh
+run_check .agents/scripts/check-docs-consistency.sh
+run_check .agents/scripts/check-agent-skills.sh
+run_check .agents/scripts/check-ci-workflow.sh
+
+CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/new-spec.sh" "Harness Probe" >/dev/null
+generated_spec="$(find "$TEST_ROOT/docs/specs" -maxdepth 1 -type f -name '*-harness-probe.md')"
+if [ -z "$generated_spec" ]; then
+  echo "new-spec did not create the expected file"
+  exit 1
+fi
+expect_failure "new spec requires index update" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-spec-index.sh"
+rm "$generated_spec"
+
+cp "$TEST_ROOT/docs/specs/0017-evidence-documents-source-ux.md" "$TEST_ROOT/docs/specs/0017-duplicate.md"
+expect_failure "duplicate spec number" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-spec-index.sh"
+rm "$TEST_ROOT/docs/specs/0017-duplicate.md"
+
+index="$TEST_ROOT/docs/specs/README.md"
+cp "$index" "$index.bak"
+grep -v '0017-evidence-documents-source-ux.md' "$index.bak" > "$index"
+expect_failure "spec missing from index" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-spec-index.sh"
+mv "$index.bak" "$index"
+
+readme="$TEST_ROOT/docs/README.md"
+cp "$readme" "$readme.bak"
+printf '\n[broken harness link](missing-harness-target.md)\n' >> "$readme"
+expect_failure "broken local Markdown link" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-links.sh"
+mv "$readme.bak" "$readme"
+
+router="$TEST_ROOT/.agents/ROUTER.md"
+cp "$router" "$router.bak"
+sed 's#\./workflows/design-grill[.]md#./workflows/missing-design-grill.md#' "$router.bak" > "$router"
+expect_failure "broken router target" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-links.sh"
+mv "$router.bak" "$router"
+
+skill="$TEST_ROOT/.agents/skills/cancan-docs-orientation/SKILL.md"
+cp "$skill" "$skill.bak"
+sed '2s/.*/name: wrong-name/' "$skill.bak" > "$skill"
+expect_failure "skill name mismatch" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-agent-skills.sh"
+mv "$skill.bak" "$skill"
+
+agent_readme="$TEST_ROOT/.agents/README.md"
+cp "$agent_readme" "$agent_readme.bak"
+printf '\n## Current Priority\n' >> "$agent_readme"
+expect_failure "static priority in harness" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-docs-consistency.sh"
+mv "$agent_readme.bak" "$agent_readme"
+
+cp "$readme" "$readme.bak"
+printf '\ntrailing whitespace probe \n' >> "$readme"
+expect_failure "whole-tree trailing whitespace" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-docs-consistency.sh"
+mv "$readme.bak" "$readme"
+
+adr="$TEST_ROOT/docs/adr/0001-local-first-tauri-react-sqlite.md"
+cp "$adr" "$adr.bak"
+awk 'found && $0 == "Proposed" {$0 = "Unknown"} /^## Status$/ {found = 1} {print}' "$adr.bak" > "$adr"
+expect_failure "invalid ADR status" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-docs-consistency.sh"
+mv "$adr.bak" "$adr"
+
+cp "$agent_readme" "$agent_readme.bak"
+printf '\nSee `.agents/roles/removed.md`.\n' >> "$agent_readme"
+expect_failure "reference to removed harness layer" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-docs-consistency.sh"
+mv "$agent_readme.bak" "$agent_readme"
+
+mkdir -p "$TEST_ROOT/fixtures-private"
+printf 'private fixture probe\n' > "$TEST_ROOT/fixtures-private/probe.txt"
+(
+  cd "$TEST_ROOT"
+  git add -f fixtures-private/probe.txt
+)
+expect_failure "tracked private fixture" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-docs-consistency.sh"
+(
+  cd "$TEST_ROOT"
+  git rm -q --cached fixtures-private/probe.txt
+)
+rm -rf "$TEST_ROOT/fixtures-private"
+
+syntax_probe="$TEST_ROOT/.agents/scripts/syntax-probe.sh"
+printf '#!/usr/bin/env bash\nif then\n' > "$syntax_probe"
+expect_failure "invalid shell syntax" bash -n "$syntax_probe"
+rm "$syntax_probe"
+
+workflow="$TEST_ROOT/.github/workflows/docs-harness.yml"
+cp "$workflow" "$workflow.bak"
+printf '\ninvalid: [\n' >> "$workflow"
+expect_failure "invalid workflow YAML" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$workflow.bak" "$workflow"
+
+cp "$workflow" "$workflow.bak"
+grep -v '^        run: [. ]*agents/scripts/harness-self-test[.]sh$' "$workflow.bak" > "$workflow"
+expect_failure "docs CI missing harness self-test" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$workflow.bak" "$workflow"
+
+cp "$workflow" "$workflow.bak"
+sed 's/^      - main$/      - develop/' "$workflow.bak" > "$workflow"
+expect_failure "docs CI missing main push branch" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$workflow.bak" "$workflow"
+
+echo "Harness self-test passed."

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$ROOT"
 
 title="${*:-}"
@@ -11,8 +11,16 @@ if [ -z "$title" ]; then
 fi
 
 last="$(find docs/specs -maxdepth 1 -type f -name '[0-9][0-9][0-9][0-9]-*.md' | sed -E 's#.*docs/specs/([0-9]{4})-.*#\1#' | sort | tail -1)"
-next_num="$(printf '%04d' "$((10#$last + 1))")"
+if [ -n "$last" ]; then
+  next_num="$(printf '%04d' "$((10#$last + 1))")"
+else
+  next_num="0001"
+fi
 slug="$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-//; s/-$//')"
+if [ -z "$slug" ]; then
+  echo "Title must contain at least one ASCII letter or number for the filename."
+  exit 2
+fi
 path="docs/specs/${next_num}-${slug}.md"
 
 if [ -f "$path" ]; then
@@ -25,14 +33,14 @@ cat > "$path" <<SPEC
 
 ## Goal
 
-## Stable Decisions
+## Stable decisions
 
-## Data/API/UI Behavior
+## Data/API/UI behavior
 
-## Edge Cases
+## Edge cases
 
-## Tests / Acceptance Criteria
+## Tests / acceptance criteria
 SPEC
 
 echo "Created $path"
-echo "Update docs/specs/README.md and docs/agent/progress-log.md before finishing."
+echo "Update docs/specs/README.md, current-state/progress when relevant, and run agent-preflight before finishing."

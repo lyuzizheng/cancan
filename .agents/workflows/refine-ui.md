@@ -13,6 +13,4 @@ Use this when the user asks to improve visual quality, interaction quality, or U
 7. Inspect visually with the best available browser/Chrome/Playwright/computer-use tool once app code exists.
 8. Update design specs only when the design contract changes.
 
-## Visual Direction
-
-Modern, warm, technical, secure, precise, premium, local-first, AI-assisted, finance-grade.
+Visual direction is owned by the referenced canonical specs. Do not copy it into this workflow.

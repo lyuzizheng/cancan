@@ -8,13 +8,8 @@ description: Implement CanCan feature slices with docs, tests, build, UI inspect
 ## Loop
 
 1. Orient with `.agents/scripts/agent-preflight.sh`.
-2. Read the relevant role and workflow in `.agents/`.
-3. Read the relevant canonical specs.
-4. State assumptions and success criteria.
-5. Implement the smallest complete slice.
-6. Verify with tests/checks available in the repo.
-7. Inspect UI visually if UI changed and an app exists.
-8. Update specs/current-state/progress if meaning changed.
+2. Run `.agents/workflows/development-cycle.md` and the task-specific workflow from `.agents/ROUTER.md`.
+3. If docs or harness files changed, run `.agents/docs-semantic-review.md` with a reviewer that did not author the patch. If unavailable, report the gate as blocked.
 
 ## Stop And Ask
 

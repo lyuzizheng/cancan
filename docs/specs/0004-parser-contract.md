@@ -4,6 +4,10 @@
 
 Define how source evidence becomes staged records through extraction, OCR, AI normalization, schema validation, and deterministic financial validation.
 
+## Implementation blocker
+
+The implementation-grade parser evidence contract, raw extraction retention/deletion policy, and AI ledger-authority ADR status remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not freeze affected schemas, sensitive-data lifecycle, reparse behavior, or AI authority by inference.
+
 ## Pipeline
 
 ```text
@@ -122,6 +126,5 @@ expected review items if any
 ## Acceptance criteria
 
 - Parser output never bypasses schema validation.
-- AI output cannot directly commit ledger events.
 - A failed parse creates a visible review/repair item.
 - Provider parsers can evolve without changing ledger schema.

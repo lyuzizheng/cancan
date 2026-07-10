@@ -4,6 +4,10 @@
 
 Define how CanCan preserves local-first data safely across app upgrades, backups, restores, and schema versions.
 
+## Implementation blocker
+
+Key management, atomic restore, destructive-job behavior, backup operations, and portability remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not implement a backup/restore format from the directional bundle alone.
+
 ## Backup target
 
 MVP should support generic folder backup first. iCloud Drive is treated as a common folder target, not a hard dependency.

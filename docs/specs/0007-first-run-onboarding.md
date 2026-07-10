@@ -6,6 +6,10 @@ Define the first-launch experience and startup sequence for CanCan.
 
 The first-run experience must communicate technology, safety, and local ownership while staying practical.
 
+## Implementation blocker
+
+First-run optionality and Gmail/cloud-AI consent remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not make AI or Gmail steps mandatory/optional by inference.
+
 ## Opening message
 
 The opening screen should feel modern, warm, and secure.
