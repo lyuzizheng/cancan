@@ -6,6 +6,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Changed design grill rounds to consistently ask 5-10 related questions, ordered by risk, instead of falling back to one-question-at-a-time interviews.
 - Added `0017-evidence-documents-source-ux.md`: Evidence lives under Money Source detail rather than a dominant standalone Library section.
 - Synchronized the spec index, Command Center navigation, current state, reading path, and active alignment register with `0017`.
 - Marked unresolved Evidence Remove/reversal and encrypted original-file behavior as explicit implementation blockers instead of inventing product or security answers.

@@ -12,8 +12,8 @@ Use this to continue product/design alignment.
 
 1. Identify the highest-risk unresolved or partial area.
 2. Check if existing specs already answer the question.
-3. Prepare a focused batch of 5-10 questions for normal grill sessions.
-4. Use one-question mode only for security, money correctness, irreversible data shape, or a single blocking ambiguity.
+3. Prepare a focused batch of 5-10 related questions for each grill round.
+4. Do not fall back to a one-question-at-a-time interview; put the highest-risk or blocking questions first in the batch.
 5. Provide a recommended answer with tradeoffs for each question.
 6. Record accepted decisions in `alignment-progress.md`.
 7. Move stable implementation guidance into the canonical spec.

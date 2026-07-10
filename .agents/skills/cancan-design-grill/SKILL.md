@@ -9,4 +9,4 @@ description: Run CanCan design grilling against current specs and alignment-temp
 
 Run `.agents/workflows/design-grill.md`.
 
-Read the current priority from `docs/agent/current-state.md` and `docs/alignment-temp/alignment-progress.md`. Ask a focused batch by default; use one-question mode only for the high-risk cases defined by the workflow. Accepted decisions move to canonical specs, while unanswered decisions remain explicit blockers.
+Read the current priority from `docs/agent/current-state.md` and `docs/alignment-temp/alignment-progress.md`. Ask 5-10 related questions in each round instead of interviewing one question at a time. Accepted decisions move to canonical specs, while unanswered decisions remain explicit blockers.
