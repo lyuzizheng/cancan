@@ -1,12 +1,12 @@
 # Current State
 
-Last updated: 2026-07-10
+Last updated: 2026-07-12
 
 ## Product phase
 
 CanCan is in documentation/design alignment. Application code has not started.
 
-The current product target remains a Gmail-first local financial evidence vault and reconciliation console with AI-assisted parsing, deterministic validation, review-first ledger commit, and source-backed money views.
+The current product target is a Gmail-first local financial evidence vault and polished personal finance/account-record workspace with AI-assisted parsing, deterministic validation, policy-gated ledger commit, and source-backed money views.
 
 ## Implementation state
 
@@ -18,7 +18,7 @@ The current product target remains a Gmail-first local financial evidence vault 
 
 - `docs/specs/README.md` is the only maintained canonical spec index.
 - `docs/STRUCTURE.md` is the only source contract and conflict protocol.
-- ADR authority follows each ADR's explicit status; the current ADRs remain `Proposed`.
+- ADR authority follows each ADR's explicit status; ADR 0001 remains `Proposed` and ADR 0002 is `Accepted`.
 - `docs/alignment-temp/alignment-progress.md` is the only active unresolved decision register.
 - `.agents/scripts/agent-preflight.sh` provides deterministic gates.
 - `.agents/docs-semantic-review.md` defines the independent semantic gate for docs and harness changes.

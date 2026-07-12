@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -24,6 +24,8 @@ AI/rule proposal
 ```
 
 Low-risk standalone purchases may auto-commit only after schema validation, deterministic validation, confidence threshold checks, account mapping, and duplicate/link checks.
+
+An enabled deterministic auto-policy may commit an eligible proposal. AI confidence is only one input to that policy; it never grants direct ledger-write authority by itself. `0005-review-and-commit-policy.md` owns which policy is enabled by default.
 
 Transfers, credit card repayments, top-ups, FX conversions, broker deposits, crypto movements, trades, and ambiguous duplicates default to review unless a future explicit auto-policy is approved.
 
@@ -71,5 +73,5 @@ Negative:
 ```text
 slower than fully autonomous workflow
 more engineering around review and validation
-some low-risk actions need explicit policy design before auto-accept
+deterministic eligibility rules and conservative thresholds require fixture-backed calibration and maintenance
 ```

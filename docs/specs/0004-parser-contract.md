@@ -6,7 +6,7 @@ Define how source evidence becomes staged records through extraction, OCR, AI no
 
 ## Implementation blocker
 
-The implementation-grade parser evidence contract, raw extraction retention/deletion policy, and AI ledger-authority ADR status remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not freeze affected schemas, sensitive-data lifecycle, reparse behavior, or AI authority by inference.
+OCR/native-text selection, evidence locations, locale/timezone/sign rules, and raw extraction retention/deletion remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not freeze those affected fields or sensitive-data lifecycle rules by inference.
 
 ## Pipeline
 
@@ -29,7 +29,7 @@ source_document
 ```ts
 export interface ExtractionBundle {
   sourceDocumentId: string;
-  fileHash: string;
+  fileSha256: string;
   mimeType: string;
   nativeText?: {
     text: string;
@@ -47,6 +47,24 @@ export interface ExtractionBundle {
   tables?: unknown[];
   metadata: Record<string, unknown>;
 }
+```
+
+## Identity and reparse behavior
+
+Exact document deduplication uses SHA-256 over the imported source bytes. Do not use MD5.
+
+A semantic document fingerprint detects probable duplicates whose PDF metadata or encoding changed. Prefer a provider statement ID; otherwise combine Money Source/account identity, statement period, and a normalized record-set fingerprint. A semantic match with different source bytes is review evidence, not permission to discard either file automatically.
+
+Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity, source row coordinates, and normalized stable financial fields. Confidence, parser version, prompt version, and mutable descriptions are not identity inputs.
+
+Reparse rules:
+
+```text
+an identical request for the same document and parser/input versions is idempotent
+a changed parser or prompt creates a new parse run and external-record version
+new uncommitted records supersede prior uncommitted versions
+committed ledger events are never rewritten automatically by reparse
+changed output that conflicts with committed facts creates review work
 ```
 
 ## Parser result layers
@@ -127,4 +145,6 @@ expected review items if any
 
 - Parser output never bypasses schema validation.
 - A failed parse creates a visible review/repair item.
+- Exact PDF/file deduplication uses SHA-256, with semantic document identity handled separately.
+- Reparse versions supersede proposals without rewriting committed ledger events.
 - Provider parsers can evolve without changing ledger schema.

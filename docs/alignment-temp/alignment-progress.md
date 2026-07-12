@@ -14,15 +14,14 @@ blocked       external evidence, feasibility work, or implementation is required
 
 | Area | Status | Decision still required | Canonical home after decision |
 | --- | --- | --- | --- |
-| Ledger and reconciliation semantics | unresolved | Event/leg invariants, partial and one-to-many matches, reversal/undo, audit behavior, idempotency | `docs/specs/0002-database-schema.md`, `docs/specs/0005-review-and-commit-policy.md`, `docs/specs/0013-ledger-assets-valuation.md` |
-| Evidence document lifecycle | unresolved | Meaning of Remove after commit; file deletion/archive behavior; encrypted original-file opening and temporary plaintext lifecycle | `docs/specs/0017-evidence-documents-source-ux.md` plus the ledger/security owner selected during design |
+| Safe standalone auto-commit eligibility | unresolved | Exact record/account confidence thresholds, trusted-source eligibility, and fixture-backed calibration; the default-enabled product direction is already accepted | `docs/specs/0005-review-and-commit-policy.md` |
+| Evidence document lifecycle | unresolved | Proposal/source-document behavior after Remove; file deletion/archive behavior; evidence navigation, audit and re-import; encrypted original-file opening and temporary plaintext lifecycle | `docs/specs/0017-evidence-documents-source-ux.md` plus the security/evidence owner selected during design |
 | Vault, file, backup, and restore keys | unresolved | Vault key lifecycle, file encryption boundary, backup key/KDF, atomic restore and recovery | `docs/specs/0009-backup-restore-versioning.md` and an ADR if architecture changes |
 | Money Source identity model | unresolved | Institution/source/account/container/instrument hierarchy, stable account identity, archived accounts, parser-created candidates | `docs/specs/0014-money-overview-source-taxonomy.md`, `docs/specs/0002-database-schema.md` |
-| Parser evidence contract | partial | OCR/native-text selection, evidence locations, locale/timezone/sign rules, stable record identity, reparse/supersede behavior | `docs/specs/0004-parser-contract.md` |
+| Parser evidence contract | partial | OCR/native-text selection, evidence locations, and locale/timezone/sign rules | `docs/specs/0004-parser-contract.md` |
 | Gmail data and cloud AI consent | unresolved | Owner-only versus public OAuth path, data sent to AI, consent granularity, provider retention and Limited Use compatibility | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md` |
 | Restore and destructive job behavior | partial | Restore bootstrap outside the database being replaced, cancellation boundaries, state transitions and idempotency keys | `docs/specs/0015-job-engine-error-model.md`, `docs/specs/0009-backup-restore-versioning.md` |
 | Desktop/storage architecture feasibility | blocked | Validate the Tauri/SQLCipher/FTS5 path, then accept, revise, or reject the proposed desktop architecture | `docs/adr/0001-local-first-tauri-react-sqlite.md` |
-| AI ledger-authority ADR status | unresolved | Accept, revise, or reject the proposed AI authority boundary before implementation relies on it | `docs/adr/0002-agent-is-advisor-not-ledger-owner.md` |
 
 ## P1: required before the affected implementation slice
 

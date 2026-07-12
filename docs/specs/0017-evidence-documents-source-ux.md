@@ -194,7 +194,7 @@ The UI should present one simple action: `Remove`.
 
 Implementation must still protect data integrity.
 
-Implementation blocker: all Remove persistence and file semantics are unresolved, including uncommitted/committed records, archive versus deletion, local file retention, audit, and re-import. Do not implement Remove beyond UI presentation until the canonical ledger/security owners define those behaviors.
+Committed ledger events and legs are immutable: `Remove` must not delete or rewrite them. Remaining Remove persistence and file semantics are unresolved, including proposal cleanup, source-document archive versus deletion, local file retention, evidence navigation, audit, and re-import. Do not implement those remaining behaviors until their canonical security/evidence owner defines them.
 
 Do not expose multiple confusing actions like `remove from library`, `delete local file`, and `delete records` in the normal UI.
 
@@ -272,6 +272,6 @@ This source has documents, but none match the current filter.
 - Technical extraction artifacts are hidden from normal UI.
 - User-facing document states stay simple.
 - `Remove` is one user-facing action while implementation preserves data integrity.
-- Opening encrypted originals and all Remove persistence behavior remain blocked until their canonical security and ledger semantics are accepted.
+- Opening encrypted originals and the remaining Remove persistence/file behavior stay blocked until their canonical security and evidence semantics are accepted.
 - MVP search works through indexed structured fields.
 - Future full-text search uses local SQLite FTS5, not a remote search service.

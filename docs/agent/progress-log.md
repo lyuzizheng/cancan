@@ -2,6 +2,21 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-12
+
+### Completed
+
+- Accepted the AI advisor boundary and the desired default-enabled safe standalone-purchase policy; its exact thresholds and trusted-source eligibility remain blocked for a later decision, and AI confidence alone never grants ledger-write authority.
+- Defined immutable committed events, posting versus observation classes, simple event-type invariants, reversal/replacement correction, commit idempotency, and atomic append-only audit.
+- Defined source-backed initial balance anchors so first import does not assume zero or invent historical transactions.
+- Defined many-to-many record/event allocations and consumer-first progressive disclosure for partial matches.
+- Selected SHA-256 for exact file deduplication, separate semantic document/record identity, and versioned reparse/supersede behavior.
+- Reframed the UI as a polished, future-facing personal finance and account-record product with presentation-ready views and low user mental load; sharing remains post-MVP.
+
+### Next
+
+- Continue the next unresolved P0 batch from `docs/alignment-temp/alignment-progress.md`.
+
 ## 2026-07-10
 
 ### Completed

@@ -4,10 +4,6 @@
 
 Define how CanCan represents assets, liabilities, positions, snapshots, valuations, trades, and multi-currency views without overcomplicating MVP or inventing unsupported financial facts.
 
-## Implementation blocker
-
-Core ledger/reconciliation invariants remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not finalize event/leg, reversal, or destructive behavior from valuation examples.
-
 ## Core principle: fact-based finance
 
 CanCan is a record, reconciliation, and evidence dashboard. It should preserve and organize source evidence as user-facing financial memory.
@@ -25,6 +21,51 @@ Show source, timestamp, and evidence for displayed financial facts.
 ```
 
 LLM may normalize and explain source evidence. It should not invent valuation, returns, gains, or tax logic.
+
+## Event classes and lifecycle
+
+Ledger events have two explicit classes:
+
+```text
+posting      changes an account, liability, cash, or instrument state
+observation  records a source-backed balance, position, or valuation at a point in time
+```
+
+Only posting events change ledger-derived balances. Observations validate or anchor displayed state and can reveal discrepancies without inventing a transaction.
+
+Draft proposals may change. Once committed, an event and its legs are immutable. Corrections use a typed reversal event and, when needed, a replacement event. Reparse, Remove, and retry flows must not mutate or delete committed events.
+
+## Initial balance anchor
+
+The first import does not imply that an account started at zero.
+
+When the earliest accepted evidence contains a balance or valuation, store it as an observation and use it as a source-backed balance anchor at that timestamp. Do not synthesize historical income, spending, transfer, or adjustment postings to explain the unknown earlier history.
+
+If the earliest evidence contains activity but no balance, show the known activity and mark the balance unavailable. Never derive a current balance by assuming the account began at zero.
+
+User-facing behavior should be simple:
+
+```text
+show "Balance as of <date>" from the source-backed anchor
+show later known activity relative to that anchor
+describe earlier history as unavailable rather than zero
+if a later snapshot disagrees with known postings, create a review discrepancy
+never auto-create an adjustment event to hide the difference
+```
+
+## Posting invariants
+
+Use small event-type invariants rather than a universal cross-currency balancing engine:
+
+```text
+purchase              has an amount/currency and an affected cash or liability side
+same-currency transfer has linked outgoing and incoming sides; explicit fees remain separate
+credit-card repayment decreases cash and liability and is not spending
+FX conversion         has both source-backed currency sides and any evidenced fee
+trade execution       has the parsed cash/instrument sides and any evidenced fee
+```
+
+Do not numerically add different currencies or instruments to claim that an event balances. Do not generate artificial clearing legs merely to satisfy a generic zero-sum rule. Incomplete required sides stay in review rather than becoming a committed posting.
 
 ## Current valuation
 
@@ -114,7 +155,7 @@ Recommended MVP model:
 
 ```text
 external_records preserve provider-specific trade rows
-ledger_events represent canonical trade_execution or position/valuation snapshot events
+ledger_events represent canonical posting trade executions or observation snapshots
 ledger_legs represent cash and instrument impacts when confidently parsed
 source_documents and parse_runs preserve evidence/audit
 ```
@@ -166,6 +207,7 @@ Recommended representation:
 ```text
 instrument_type = insurance_policy
 ledger_event.event_type = valuation_snapshot
+ledger_event.event_class = observation
 ledger_leg.valuation_amount = source-provided policy value
 source_document proves value
 ```
@@ -248,6 +290,10 @@ Docs may state technical constraints clearly for implementation safety, but prod
 
 - MVP does not fetch market prices or external FX rates.
 - Native values are preserved and displayed.
+- Posting and observation events are explicit; only postings change ledger-derived balances.
+- The first source-backed balance is an observation anchor, not invented historical income or an adjustment transaction.
+- Posting validity uses simple event-type invariants without adding different currencies or instruments together.
+- Committed events are immutable and corrections use reversal/replacement events.
 - Statement/source snapshots can drive current position/value display.
 - Source-provided equivalent values can be shown with evidence.
 - Future estimated totals require explicit network activity settings.

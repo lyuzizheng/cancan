@@ -2,7 +2,7 @@
 
 ## Goal
 
-Design the first screen as a polished asset-management and reconciliation app, not a marketing dashboard.
+Design the first screen as a polished personal finance and account-record workspace, not professional accounting software, an enterprise reconciliation console, or a marketing dashboard.
 
 ## Layout
 
@@ -14,7 +14,7 @@ Left sidebar:
 - Sources
 - Assets
 - Transactions
-- Reconciliation
+- Review
 - Money Flow
 - Jobs
 - Settings
@@ -41,7 +41,7 @@ Main body:
 │ Sources       │ │ Overview: native totals, last updates     │ │ ┌──────────┐ │
 │ Assets        │ │ SGD cash | USD cash | liabilities | etc.  │ │ │Monthly   │ │
 │ Transactions  │ └───────────────────────────────────────────┘ │ │summary   │ │
-│ Reconcile     │                                               │ └──────────┘ │
+│ Review        │                                               │ └──────────┘ │
 │ Money Flow    │ ┌───────────────────────────────────────────┐ │              │
 │ Jobs          │ │ Money Source Activity                     │ │ Review       │
 │ Settings      │ │                                           │ │ ┌──────────┐ │
@@ -81,7 +81,7 @@ Avoid confusing aggregate scores like `92% fresh` unless later backed by a clear
 
 ## Design register
 
-CanCan should feel like a professional finance operations console with consumer-grade polish and 2026-level interaction quality.
+CanCan should feel like a refined, future-facing personal finance workspace with consumer-grade simplicity and 2026-level interaction quality. Financial detail remains available on demand without becoming the default mental model.
 
 Avoid:
 
@@ -100,8 +100,8 @@ Prefer:
 ```text
 clear navigation
 modern warm off-white + green semantic palette
-dense but readable tables
-source/account status chips
+polished cards and lists with progressive disclosure
+subtle source/account states
 precise typography
 compact asset summaries
 animated but meaningful state transitions
@@ -195,6 +195,14 @@ Keep review lightweight:
 - show AI explanation and rule evidence separately;
 - keep confirm/reject/edit actions visible.
 
+Use personal, action-oriented language such as `Looks related` and `Needs your check`. Do not expose match edges, allocations, posting classes, or reconciliation jargon in the default view.
+
+## Presentation and future sharing
+
+Design user-facing summaries, source cards, timelines, and money-flow views as presentation-ready surfaces rather than thin renderings of internal audit tables.
+
+Keep presentation models separate from internal ledger/reconciliation structures so a future explicit sharing or export feature can reuse clear human-readable views without exposing raw evidence, secrets, hidden technical metadata, or internal matching complexity. Sharing itself is not an MVP feature.
+
 ## Money Flow UI
 
 First version is chain-first, not a complex graph canvas.
@@ -211,6 +219,8 @@ A Figma prototype can be generated after visual tokens are accepted. The Figma o
 - Source activity, overview, timestamps, AI insight, and review status are all represented.
 - Different money source types can display different stats.
 - UI avoids overcomplicated freshness scores or noisy tags.
+- Default review and relationship UI uses a low-complexity personal-finance mental model with detail available on demand.
+- User-facing presentation models remain separate from internal ledger and audit structures.
 - Empty states guide the user to create sources, configure Gmail, or import files.
 - Evidence documents are reached through Source detail rather than a standalone Library sidebar item.
 - AI Assistant is represented as a future-ready surface/tool entry, but cannot bypass safety boundaries.
