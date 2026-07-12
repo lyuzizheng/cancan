@@ -31,6 +31,7 @@ Do not load every spec by default unless the task spans the whole system.
 | `0015-job-engine-error-model.md` | Durable jobs, blocked states, retry, recovery, errors |
 | `0016-testing-fixtures-agent-gates.md` | Fixture privacy, deterministic tests, DB reset, future application gates |
 | `0017-evidence-documents-source-ux.md` | Source Documents placement, document detail, states, search, and actions |
+| `0018-app-updates-open-source-release.md` | App updates, forward compatibility, parser delivery, and open-source GitHub releases |
 
 ## Adding a new spec
 

@@ -2,6 +2,22 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-13
+
+### Completed
+
+- Allowed every financial event type to auto-commit only when the user toggle is on, all record/provider/account gates pass, package-calibrated required fields are very-high confidence, and every affected native-unit reconciliation window closes exactly against source-backed snapshots.
+- Kept mixed-statement behavior record-level: semantic-only ambiguities can remain in Review while eligible records commit after full arithmetic closure; missing or uncertain financial fields block the window.
+- Finalized account identity fields and resolver order, one-time first-account confirmation, idempotent aliases, and audited rename/merge/archive behavior without rewriting committed ledger legs.
+- Added cross-channel duplicate outcomes and an import completion summary that identifies files already present or already archived/removed without deciding deletion semantics.
+- Expanded onboarding into a polished animated local-first/vault story with encryption/privacy explanation and a final enabled-capabilities review.
+- Added `0018-app-updates-open-source-release.md` for semantic versions, public GitHub Releases, signed CI artifacts, forward compatibility, safe parser delivery, and conditional desktop updater integration.
+
+### Next
+
+- Continue the remaining P0 security, evidence lifecycle, parser-evidence, consent, restore, and desktop feasibility decisions.
+- Resolve the P1 license/platform/signing/update-channel details before implementing release automation.
+
 ## 2026-07-12
 
 ### Completed

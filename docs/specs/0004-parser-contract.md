@@ -88,6 +88,17 @@ Exact document deduplication uses SHA-256 over the imported source bytes. Do not
 
 A semantic document fingerprint detects probable duplicates whose PDF metadata or encoding changed. Prefer a provider statement ID; otherwise combine Money Source/account identity, statement period, and a normalized record-set fingerprint. A semantic match with different source bytes is review evidence, not permission to discard either file automatically.
 
+Cross-channel import behavior:
+
+```text
+same SHA-256 -> reuse the existing source document and do not create duplicate records
+same semantic document identity with different bytes -> retain the additional file evidence under the same statement identity
+same stable external-record keys -> reuse/version records rather than duplicate them
+semantic conflict or changed financial content -> retain both files and create review work
+```
+
+Every completed import returns per-file outcomes so the UI can distinguish newly imported files, files already in CanCan, probable existing statements, archived/removed existing evidence, and failures.
+
 Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity, source row coordinates, and normalized stable financial fields. Confidence, parser version, prompt version, and mutable descriptions are not identity inputs.
 
 Reparse rules:
@@ -183,5 +194,7 @@ expected review items if any
 - AI classification selects a provider parser, while deterministic provider/schema checks prevent a classifier label from becoming authority by itself.
 - A failed parse creates a visible review/repair item.
 - Exact PDF/file deduplication uses SHA-256, with semantic document identity handled separately.
+- Re-import through Gmail, manual import, or API preserves additional evidence without duplicating stable records.
+- Import completion returns a per-file duplicate/archive/result summary.
 - Reparse versions supersede proposals without rewriting committed ledger events.
 - Provider parsers can evolve without changing ledger schema.

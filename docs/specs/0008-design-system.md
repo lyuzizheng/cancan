@@ -8,7 +8,7 @@ Define CanCan's visual design direction before UI implementation.
 
 Exact tokens, component major/version, and Figma's role remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Directional styling may guide discussion but must not be treated as a final token contract.
 
-CanCan should feel like a 2026 asset-management and finance operations app: modern, warm, technical, secure, polished, and calm.
+CanCan should feel like a 2026 personal finance and account-record workspace: modern, warm, technical, secure, polished, and calm, with professional-grade detail available through progressive disclosure.
 
 ## Design personality
 

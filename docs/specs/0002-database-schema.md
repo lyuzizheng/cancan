@@ -6,7 +6,7 @@ Design SQLite/SQLCipher schema for a local-first finance vault that supports evi
 
 ## Implementation blocker
 
-Money Source identity and vault/storage feasibility remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not finalize affected ownership or storage constraints until those entries are resolved.
+Vault/storage feasibility remains open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not finalize affected storage constraints until that entry is resolved.
 
 ## Database policy
 
@@ -26,6 +26,7 @@ Initial schema areas:
 vault_settings
 money_sources
 accounts
+account_identifiers
 instruments
 source_documents
 file_objects
@@ -62,6 +63,19 @@ review status and unmatched remainder
 append-only audit entries written atomically with financial mutations
 ```
 
+## Account identity schema projection
+
+`0014-money-overview-source-taxonomy.md` owns account identity and lifecycle behavior. The schema must support:
+
+```text
+candidate, confirmed, archived, and merged account states
+multiple versioned provider identifiers per account
+unique versioned keyed identifier digests within a Money Source/provider/type
+masked display values separated from identity digests
+merged_into_account_id without rewriting committed ledger legs
+idempotent account resolution and audited merge/archive transitions
+```
+
 ## Document and record identity
 
 `0004-parser-contract.md` owns document/record identity and reparse behavior. The schema keeps its SHA-256 file identity, semantic document identity, stable external-record key, and record version as separate fields.
@@ -76,6 +90,10 @@ Required examples:
 source_documents(file_sha256)
 source_documents(money_source_id, semantic_document_key)
 source_documents(money_source_id, received_at)
+accounts(money_source_id, status)
+accounts(merged_into_account_id)
+account_identifiers(money_source_id, provider_key, identifier_type, identifier_key_version, identifier_digest) WHERE verified exact/strong
+account_identifiers(account_id, strength)
 gmail_search_rules(enabled)
 parse_runs(source_document_id, created_at)
 external_records(stable_record_key, version)
@@ -148,6 +166,7 @@ Acceptance requires integration tests to run from a clean database without manua
 - Schema changes use hand-written, versioned migrations.
 - Core query dimensions are columns rather than hidden in JSON.
 - Exact source-file identity uses SHA-256 and remains separate from semantic document identity.
+- Account identity supports unique keyed provider aliases, first-seen candidates, archive, and merge redirects without using display names or bare hashes as identity.
 - The schema supports immutable committed events, reversals, commit idempotency, many-to-many allocations, and atomic audit records.
 - Required UI/service access paths have deliberate indexes.
 - Important query paths have benchmark coverage at the documented fixture sizes.

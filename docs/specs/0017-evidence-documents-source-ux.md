@@ -262,6 +262,22 @@ No Wise exports yet. Import a CSV/PDF export to start.
 This source has documents, but none match the current filter.
 ```
 
+## Import completion summary
+
+After a Gmail, manual, folder, or API import completes, show a concise summary with expandable filenames:
+
+```text
+Imported
+Already in CanCan
+Looks like an existing statement
+Already archived or removed
+Needs attention
+```
+
+Exact duplicates do not create duplicate records. A semantically matching file with different bytes remains available as additional evidence for the same statement identity.
+
+The summary reports an existing document's current archive/remove state; it does not define file deletion or retention semantics. Those remain in the Remove lifecycle blocker.
+
 ## Acceptance criteria
 
 - Evidence is accessed from Source detail, not as a dominant standalone sidebar section.
@@ -275,3 +291,4 @@ This source has documents, but none match the current filter.
 - Opening encrypted originals and the remaining Remove persistence/file behavior stay blocked until their canonical security and evidence semantics are accepted.
 - MVP search works through indexed structured fields.
 - Future full-text search uses local SQLite FTS5, not a remote search service.
+- Import completion identifies which files were new, already present, probable prior statements, or already archived/removed.

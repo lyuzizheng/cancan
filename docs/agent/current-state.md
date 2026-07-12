@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-07-12
+Last updated: 2026-07-13
 
 ## Product phase
 
@@ -20,6 +20,7 @@ The current product target is a Gmail-first local financial evidence vault and p
 - `docs/STRUCTURE.md` is the only source contract and conflict protocol.
 - ADR authority follows each ADR's explicit status; ADR 0001 remains `Proposed` and ADR 0002 is `Accepted`.
 - `docs/alignment-temp/alignment-progress.md` is the only active unresolved decision register.
+- `docs/specs/0018-app-updates-open-source-release.md` owns the accepted open-source GitHub release/update direction and its remaining blockers.
 - `.agents/scripts/agent-preflight.sh` provides deterministic gates.
 - `.agents/docs-semantic-review.md` defines the independent semantic gate for docs and harness changes.
 

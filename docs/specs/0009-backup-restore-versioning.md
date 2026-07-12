@@ -45,6 +45,8 @@ The bundle should be encrypted before it leaves the local vault area.
 
 ## Version compatibility
 
+[0018 App Updates and Open-Source Release](0018-app-updates-open-source-release.md) owns app artifact delivery and update UX. This spec owns whether an updated or downgraded app may safely read, migrate, restore, or mutate a vault.
+
 Newer app reading older vault:
 
 ```text

@@ -6,26 +6,21 @@ Define when records can auto-commit, when they require review, and how reconcili
 
 ## Implementation blocker
 
-The desired default-enabled auto-commit direction and provider-package qualification flow are accepted. The exact meaning of a sufficiently clear record and which financial event types may auto-commit remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not enable live auto-commit until that boundary and first-seen account commit eligibility are accepted.
+The auto-commit rule is accepted. Live implementation still depends on the unresolved parser-evidence and vault/storage blockers in the [active alignment register](../alignment-temp/alignment-progress.md); do not weaken the accepted gates to work around them.
 
-## Policy levels
+## MVP user setting
 
-User-configurable settings:
-
-```text
-Never auto-commit
-Auto-dedupe exact duplicates only
-Auto-commit qualified clear records
-Future: custom advanced policies
-```
-
-Recommended default:
+Expose one setting:
 
 ```text
-Auto-commit qualified clear records; review all excluded or ambiguous cases.
+Automatically add qualified records = On | Off
 ```
 
-Expose one simple user toggle for this policy; do not expose confidence numbers, provider allowlists, or parser qualification internals in normal settings. The default can be disabled. [ADR 0002](../adr/0002-agent-is-advisor-not-ledger-owner.md) owns the accepted AI authority boundary.
+Recommended default is `On`. Turning it off sends otherwise eligible records to Review.
+
+Do not expose confidence numbers, provider allowlists, parser qualification internals, or a three-state policy selector in normal settings. [ADR 0002](../adr/0002-agent-is-advisor-not-ledger-owner.md) owns the accepted AI authority boundary.
+
+Exact SHA-256 duplicate reuse always applies as import idempotency under `0004-parser-contract.md`; it is not an auto-commit setting and cannot be disabled through this toggle.
 
 ## Qualified document baseline
 
@@ -41,39 +36,49 @@ schema_valid = true
 deterministic_validation_passed = true
 account/container identity is resolved for commit
 not an exact/probable duplicate, partial allocation, or warning case
-record/event type is inside the accepted auto-commit boundary
+every required field has package-calibrated very-high confidence
+the affected reconciliation window closes exactly against source-backed snapshots
+all event-type-required legs and evidence are present
 ```
 
-Do not use one global numeric AI confidence threshold as the trust boundary. Confidence may help rank review items, but provider-package qualification plus deterministic checks decide eligibility.
+All financial event types may qualify, including repayments, transfers, FX, trades, refunds, withdrawals, interest, and fees. There is no document-type shortcut and no permanently trusted event-type list.
 
-Classification and parsing continue when a configured source reveals new account candidates. Those records remain staged until the Money Source identity contract permits commit to that account.
+Do not use raw LLM self-reported confidence or one global numeric threshold. Each provider/document/parser package calibrates required-field confidence against its labeled qualification fixtures. A record is `very-high confidence` only when every event-type-required field meets that package's accepted calibration and no competing parse or mapping remains.
 
-## Event-type boundary still requiring design
+## Exact reconciliation-window gate
+
+A reconciliation window is the source-backed interval between accepted opening and closing observations for every affected account, currency, or instrument scope.
+
+Use exact decimal/native-unit arithmetic:
 
 ```text
-credit card repayments
-bank transfers
-Wise/Revolut/payment app top-ups
-FX conversions
-broker deposits
-crypto deposits/withdrawals
-stock/ETF/fund trades
-insurance premiums if policy classification is ambiguous
-refunds
-cash withdrawals
-interest and standalone fees
+opening observation
++ all staged posting effects in the window
+= closing observation
 ```
 
-Clear provider documents may eventually allow some of these types to auto-commit, but document readability alone is not yet an executable financial rule. Until the next decision is accepted, these types remain review-only.
-
-The following always require review under the accepted matching rules:
+Rules:
 
 ```text
-partial matches
-one-to-many matches
-ambiguous account mappings
-validation warnings
+every affected native currency and instrument quantity closes independently
+cross-source events require all event-type-required sides and evidence
+FX and trades require both asset sides plus evidenced fees
+no unexplained residual, missing row, duplicate, partial allocation, or uncertain amount/sign/account remains
+a statement without sufficient source-backed opening/closing observations cannot auto-commit
+the user auto-commit toggle must still be enabled
 ```
+
+Snapshot closure is necessary but not sufficient: each committed record must also pass its own provider-package, field-confidence, event-invariant, identity, duplicate, and evidence gates.
+
+A source-backed balance, position, or valuation observation may be accepted as a non-posting anchor without a prior opening observation when all of its own gates pass. It establishes a boundary; it does not make earlier postings auto-committable unless a complete opening-to-closing window exists.
+
+## Mixed-document behavior
+
+Auto-commit eligibility is record-level, not all-or-nothing per PDF.
+
+A staged record with verified amount/sign/account but unresolved semantic classification may participate in arithmetic closure while remaining in Review. The other individually eligible records may auto-commit after the full window closes. A record with uncertain financial fields or a missing amount creates a reconciliation gap and blocks auto-commit for that window.
+
+Until every staged record is committed, rejected, or otherwise resolved, the window remains visibly `Needs review`. Do not present the committed subset alone as a fully reconciled/completed window.
 
 ## Review UI principle
 
@@ -147,10 +152,14 @@ may affect current displayed asset value
 
 ## Acceptance criteria
 
-- User can disable auto-commit.
-- Qualified clear-record auto-commit is the desired default, but live execution stays blocked until its event-type and first-seen-account boundaries are accepted.
-- Normal settings expose one simple toggle rather than numeric confidence or parser controls.
-- Provider/package qualification and deterministic checks, not a global AI confidence threshold, decide eligibility.
+- MVP exposes one default-on `Automatically add qualified records` toggle.
+- Exact duplicate reuse is mandatory ingestion idempotency, not a user-selectable auto-commit level.
+- Any financial event type may auto-commit only after every accepted record-level and reconciliation-window gate passes.
+- Normal settings do not expose numeric confidence, parser controls, or a three-state policy selector.
+- Provider/package calibration and deterministic checks, not raw LLM confidence or a global threshold, decide very-high confidence.
+- Exact source-backed snapshot closure is required for every affected native-unit scope, without residuals or missing financial fields.
+- A qualified non-posting observation may establish the first anchor, but cannot retroactively validate an incomplete earlier posting window.
+- A mixed document may auto-commit individually eligible records while semantic-only ambiguities remain in Review; financial gaps block the window.
 - Auto-committed records appear quietly in Recent Activity with one-click reversal-backed Undo.
 - Exact duplicate handling is auditable.
 - Partial and one-to-many matches remain simple in normal UI and block auto-commit.

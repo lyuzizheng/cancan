@@ -8,7 +8,23 @@ The first-run experience must communicate technology, safety, and local ownershi
 
 ## Implementation blocker
 
-First-run optionality and Gmail/cloud-AI consent remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not make AI or Gmail steps mandatory/optional by inference.
+First-run optionality, Gmail/cloud-AI consent, and the vault key/encryption model remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not make steps mandatory, choose consent defaults, or promise encryption/recovery behavior by inference.
+
+## Experience goal
+
+Onboarding is a designed product experience, not a settings form shown before the app.
+
+It should feel:
+
+```text
+beautiful and future-facing
+calm, secure, and local
+progressive rather than configuration-heavy
+animated with clear state meaning
+transparent about which capabilities are on or off
+```
+
+Use a focused full-screen flow with one primary decision per step, strong typography, precise motion, clear progress, and a persistent sense that the user is building a private local vault.
 
 ## Opening message
 
@@ -54,6 +70,8 @@ Recommended flow:
 
 ```text
 Welcome / product promise
+-> How local-first works
+-> How the vault protects data
 -> Create local vault
 -> Choose vault password / local key setup
 -> AI provider setup
@@ -61,10 +79,43 @@ Welcome / product promise
 -> Configure Gmail using Desktop OAuth + PKCE loopback, or import manually
 -> Detect or create source sub-account(s) as evidence arrives
 -> Optional statement password setup when a supported provider needs it
+-> Review enabled capabilities and privacy-sensitive switches
 -> Land in Command Center
 ```
 
 MVP should not ask the user to choose a base currency. CanCan should render native values and source-provided valuations in the Money Overview.
+
+## Local-first and encryption story
+
+Reserve dedicated onboarding screens for:
+
+```text
+where the vault and evidence live
+what stays on the device
+what may leave the device when Gmail, AI, or a future connector is enabled
+how vault locking and encryption protect stored data
+what recovery can and cannot do
+```
+
+Use a simple animated data-flow/vault visual rather than legal copy or a technical architecture diagram. The user can expand `How it works` for detail.
+
+Copy must be derived from accepted security/key/consent specs. Until those decisions are accepted, the screen structure is stable but exact encryption, key recovery, and cloud-data claims remain implementation-blocked.
+
+## Setup review
+
+Before entering Command Center, show one polished review screen with the current state of applicable capabilities:
+
+```text
+Local vault and lock
+AI provider / cloud processing
+Gmail connection
+Automatic Gmail scan
+Automatically add qualified records
+Backup
+Crash reporting or diagnostics when later defined
+```
+
+Each row shows `On`, `Off`, `Not configured`, or `Needs attention`, a one-line consequence, and an edit action. Do not hide privacy-sensitive defaults or force the user to revisit earlier steps to understand what is enabled.
 
 ## AI provider setup
 
@@ -112,10 +163,12 @@ First-run should feel premium and technical without becoming ornamental.
 Allowed design direction:
 
 - smooth step transitions;
+- animated local-device/vault/data-flow explanation;
 - vault creation progress animation;
 - source cards that feel interactive and tactile;
 - subtle security/local-first visual cues;
 - clear success states after each setup step;
+- continuity animations when a configured source appears in the final Money Overview preview;
 - reduced-motion fallback.
 
 Avoid:
@@ -143,10 +196,13 @@ Open app
 ## Acceptance criteria
 
 - First launch explains CanCan clearly.
+- Onboarding has dedicated local-first and encryption/privacy explanation screens whose claims come from accepted security specs.
+- The final setup review clearly shows which applicable capabilities and privacy-sensitive switches are on, off, or unconfigured.
+- Motion follows design tokens, communicates setup state, and has a reduced-motion fallback.
 - User cannot accidentally create arbitrary unsupported providers.
 - User can create a vault and at least one supported money source.
 - MVP does not ask for base currency.
-- AI setup is prominent but not a hard blocker for all app use.
+- AI setup is prominent and its current state is visible; whether setup may be skipped follows the unresolved first-run optionality decision.
 - Gmail setup uses local-first Desktop OAuth + PKCE loopback flow.
 - Protected PDF statements can prompt for a password and optionally save it securely.
 - Startup handles locked vault, migration checks, optional Gmail scan, configured secrets, and unfinished jobs.

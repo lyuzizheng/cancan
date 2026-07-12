@@ -127,6 +127,19 @@ at least 20 user-confirmed shadow candidates from local use before live auto-com
 zero incorrect account mappings or financial fields among those shadow candidates
 ```
 
+Qualification cases must cover every event type that the package can emit and must include:
+
+```text
+exact opening-to-closing snapshot reconciliation
+one-minor-unit or one-smallest-quantity residual that must fail eligibility
+missing and duplicate rows
+mixed documents where semantic-only ambiguities remain in Review
+cross-account, FX, or trade cases when the package supports them
+field-confidence calibration on held-out labeled cases
+```
+
+Very-high confidence is package-specific and field-level. Set its calibration so the qualification set produces zero incorrect eligible fields/records; never substitute a raw LLM self-score or one global threshold.
+
 The 100 cases may be distributed across synthetic, redacted, and private statement fixtures. Private cases stay local and must never be uploaded to CI or logs.
 
 Shadow mode performs the complete eligibility decision but creates review suggestions instead of committed events. User decisions are recorded as qualification evidence.
@@ -290,6 +303,7 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - Fixture policy distinguishes private, redacted, and synthetic samples.
 - Each supported document type has a target fixture minimum.
 - Auto-commit qualification requires 100 labeled record cases, 20 confirmed shadow candidates, and zero incorrect eligible outcomes per provider/document/parser version.
+- Qualification covers every supported event type, exact snapshot closure, residual failures, duplicate/missing rows, and field-level held-out calibration.
 - Parser or prompt version changes revoke only the affected package version's qualification and fall back to shadow mode.
 - Expected outputs are versioned and assertion-oriented.
 - LLM-dependent tests are deterministic in CI.
