@@ -6,12 +6,16 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
-- Accepted the AI advisor boundary and the desired default-enabled safe standalone-purchase policy; its exact thresholds and trusted-source eligibility remain blocked for a later decision, and AI confidence alone never grants ledger-write authority.
+- Accepted the AI advisor boundary: a qualified deterministic policy may commit eligible records, while AI confidence alone never grants ledger-write authority.
 - Defined immutable committed events, posting versus observation classes, simple event-type invariants, reversal/replacement correction, commit idempotency, and atomic append-only audit.
 - Defined source-backed initial balance anchors so first import does not assume zero or invent historical transactions.
 - Defined many-to-many record/event allocations and consumer-first progressive disclosure for partial matches.
 - Selected SHA-256 for exact file deduplication, separate semantic document/record identity, and versioned reparse/supersede behavior.
 - Reframed the UI as a polished, future-facing personal finance and account-record product with presentation-ready views and low user mental load; sharing remains post-MVP.
+- Defined Money Sources as user-configured provider roots for editable Gmail discovery, explicit imports, and future product-defined official API connectors; matching documents continue parsing when they reveal multiple child-account candidates.
+- Standardized every provider/document parser as a versioned package containing classifier/prompt configuration, deterministic fingerprints and validators, account mapping, fixtures, qualification state, and implementation notes.
+- Replaced global AI confidence thresholds with provider-package qualification: 100 labeled record cases, 20 confirmed shadow candidates, zero incorrect eligible outcomes, and qualification reset after parser/prompt/rule changes.
+- Kept the broader `clear PDF` auto-commit direction partial until eligible financial event types and first-seen account commit behavior are decided; accepted one simple setting, quiet Recent Activity, reversal-backed Undo, and no per-record notifications.
 
 ### Next
 

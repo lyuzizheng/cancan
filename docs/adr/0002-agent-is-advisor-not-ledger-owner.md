@@ -23,11 +23,7 @@ AI/rule proposal
 -> ledger commit
 ```
 
-Low-risk standalone purchases may auto-commit only after schema validation, deterministic validation, confidence threshold checks, account mapping, and duplicate/link checks.
-
-An enabled deterministic auto-policy may commit an eligible proposal. AI confidence is only one input to that policy; it never grants direct ledger-write authority by itself. `0005-review-and-commit-policy.md` owns which policy is enabled by default.
-
-Transfers, credit card repayments, top-ups, FX conversions, broker deposits, crypto movements, trades, and ambiguous duplicates default to review unless a future explicit auto-policy is approved.
+An enabled deterministic auto-policy may commit only proposals that are eligible under `0005-review-and-commit-policy.md`. AI confidence may inform parsing or review ordering, but it never grants direct ledger-write authority by itself. The review/commit spec owns the default policy, provider qualification, event-type eligibility, and review boundaries.
 
 ## Allowed AI capabilities
 
@@ -73,5 +69,5 @@ Negative:
 ```text
 slower than fully autonomous workflow
 more engineering around review and validation
-deterministic eligibility rules and conservative thresholds require fixture-backed calibration and maintenance
+provider-package qualification and deterministic eligibility rules require fixture and shadow-mode maintenance
 ```

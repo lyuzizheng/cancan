@@ -6,7 +6,7 @@ Define when records can auto-commit, when they require review, and how reconcili
 
 ## Implementation blocker
 
-The desired product default is accepted, but exact record/account confidence thresholds, trusted-source eligibility, and their fixture-backed calibration remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not enable the safe standalone-purchase auto-commit execution path until those criteria are accepted and tested.
+The desired default-enabled auto-commit direction and provider-package qualification flow are accepted. The exact meaning of a sufficiently clear record and which financial event types may auto-commit remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not enable live auto-commit until that boundary and first-seen account commit eligibility are accepted.
 
 ## Policy levels
 
@@ -15,33 +15,40 @@ User-configurable settings:
 ```text
 Never auto-commit
 Auto-dedupe exact duplicates only
-Auto-commit safe standalone purchases
+Auto-commit qualified clear records
 Future: custom advanced policies
 ```
 
 Recommended default:
 
 ```text
-Auto-commit safe standalone purchases; review all excluded or ambiguous cases.
+Auto-commit qualified clear records; review all excluded or ambiguous cases.
 ```
 
-The default can be disabled. AI confidence is an input to the policy, not permission to write the ledger. [ADR 0002](../adr/0002-agent-is-advisor-not-ledger-owner.md) owns the accepted AI authority boundary.
+Expose one simple user toggle for this policy; do not expose confidence numbers, provider allowlists, or parser qualification internals in normal settings. The default can be disabled. [ADR 0002](../adr/0002-agent-is-advisor-not-ledger-owner.md) owns the accepted AI authority boundary.
 
-## Auto-commit standalone purchase criteria
+## Qualified document baseline
 
-A record may auto-commit as a standalone purchase only if all are true:
+A record can be considered for auto-commit only if all are true:
 
 ```text
+user auto-commit toggle is enabled
+document arrived through a configured Money Source channel or explicit import into that source
+AI classifier selected the configured supported provider and document type
+provider package deterministic fingerprints and schema checks passed
+provider/document/parser package version is currently qualified
 schema_valid = true
 deterministic_validation_passed = true
-record_confidence >= configured_threshold
-account_mapping_confidence >= configured_threshold
-not a transfer/top-up/repayment/FX/trade/broker/crypto candidate
-not a duplicate candidate above threshold
-source document is trusted enough for policy
+account/container identity is resolved for commit
+not an exact/probable duplicate, partial allocation, or warning case
+record/event type is inside the accepted auto-commit boundary
 ```
 
-## Always review by default
+Do not use one global numeric AI confidence threshold as the trust boundary. Confidence may help rank review items, but provider-package qualification plus deterministic checks decide eligibility.
+
+Classification and parsing continue when a configured source reveals new account candidates. Those records remain staged until the Money Source identity contract permits commit to that account.
+
+## Event-type boundary still requiring design
 
 ```text
 credit card repayments
@@ -52,6 +59,16 @@ broker deposits
 crypto deposits/withdrawals
 stock/ETF/fund trades
 insurance premiums if policy classification is ambiguous
+refunds
+cash withdrawals
+interest and standalone fees
+```
+
+Clear provider documents may eventually allow some of these types to auto-commit, but document readability alone is not yet an executable financial rule. Until the next decision is accepted, these types remain review-only.
+
+The following always require review under the accepted matching rules:
+
+```text
 partial matches
 one-to-many matches
 ambiguous account mappings
@@ -74,6 +91,8 @@ Recommended interaction:
 Do not force every simple item into a heavy wizard.
 
 CanCan is a polished personal finance and account-record product, not professional accounting software. Normal UI should use language such as `Looks related`, `Needs your check`, and `Review details`; allocation, match-edge, and audit terminology belongs behind progressive disclosure.
+
+Auto-committed records appear quietly in Recent Activity with a clear one-click `Undo`. Do not send a notification for every record. A non-disruptive optional daily summary may aggregate automatic additions.
 
 ## Match and allocation policy
 
@@ -129,7 +148,10 @@ may affect current displayed asset value
 ## Acceptance criteria
 
 - User can disable auto-commit.
-- Safe standalone-purchase auto-commit is enabled by default but never relies on AI confidence alone.
+- Qualified clear-record auto-commit is the desired default, but live execution stays blocked until its event-type and first-seen-account boundaries are accepted.
+- Normal settings expose one simple toggle rather than numeric confidence or parser controls.
+- Provider/package qualification and deterministic checks, not a global AI confidence threshold, decide eligibility.
+- Auto-committed records appear quietly in Recent Activity with one-click reversal-backed Undo.
 - Exact duplicate handling is auditable.
 - Partial and one-to-many matches remain simple in normal UI and block auto-commit.
 - Repayments do not double-count spending.

@@ -83,6 +83,23 @@ Manulife
      -> Policy value snapshots
 ```
 
+## User-configured Money Sources
+
+A Money Source is a user-created provider root and the home for its ingestion configuration. Depending on product-supported capabilities, its channels may include:
+
+```text
+provider-specific Gmail search rules
+manual PDF/CSV import
+watched/import folders when later supported
+a product-defined official provider API connector when one is implemented
+```
+
+CanCan may ship useful default search rules or official connector setup for supported providers. Users configure and control those channels; they do not create arbitrary live provider implementations in MVP.
+
+Documents discovered through a source channel still pass provider/document classification. If a document matches the configured provider and exposes multiple child accounts, parsing and staging continue and the detected accounts become candidates under that Money Source. Discovery must not stop merely because the child accounts were not entered manually first.
+
+Whether a first-seen account candidate may immediately receive committed records remains part of the unresolved stable account-identity decision. Until then, detection can continue without granting commit authority.
+
 ## Source taxonomy
 
 `source_type` describes the kind of external financial source or platform.
@@ -151,6 +168,8 @@ Manulife statement -> Manulife / Policy
 
 If the parser can identify the source but not the child container, create a review item rather than silently committing.
 
+If it identifies multiple child containers, create or update distinct account candidates under the configured Money Source and preserve the source identifiers used for each candidate.
+
 ## Acceptance criteria
 
 - MVP onboarding does not ask for base currency.
@@ -159,6 +178,9 @@ If the parser can identify the source but not the child container, create a revi
 - Source-provided equivalent values can be displayed with evidence.
 - Estimated totals require explicit future network activity settings.
 - Source model remains two-level from the user's perspective.
+- Money Sources are user-configured roots for provider-specific discovery/import channels.
+- A supported provider can ship default Gmail rules or an official API connector without allowing arbitrary providers.
+- Matching documents continue through parsing when they reveal multiple child-account candidates.
 - Source type, account or container type, and instrument type are distinct.
 - Product copy avoids defensive limitation messaging.
 - Parser mapping targets the child container/account whenever possible.

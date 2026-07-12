@@ -117,13 +117,16 @@ Gmail rules should use fixed supported provider hints. Users should not create a
 
 Manual source/support requests should be tracked as future feature requests, not custom live integrations.
 
-A Gmail rule may have a provider hint, but downloaded documents still go through classifier/parser verification. Do not trust the rule alone.
+Each Gmail rule belongs to a user-configured Money Source and defines how that source searches for evidence. CanCan may provide a useful default rule for a supported provider, and the user may edit or override its query.
+
+A Gmail rule may have a provider hint, but downloaded documents still go through classifier/parser verification. Do not trust the rule or source assignment alone.
 
 ## Data model
 
 ```text
 gmail_search_rules
 - id
+- money_source_id
 - name
 - provider_hint
 - document_type_hint
@@ -301,6 +304,7 @@ message body not stored by default
 - Refresh token is stored in local secret storage.
 - Only read-only Gmail scope is requested.
 - User can create guided rules and edit expert query.
+- Every rule belongs to a configured Money Source; supported providers may supply editable default rules.
 - User can test a rule before enabling it.
 - App supports startup/wake/manual/configurable polling sync.
 - Re-running sync does not duplicate already imported attachments.

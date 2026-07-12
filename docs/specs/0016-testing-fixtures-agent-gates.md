@@ -113,6 +113,26 @@ Wise PDF/CSV/export
 
 Additional samples for password-protected PDFs are required once locked-PDF handling is implemented.
 
+## Auto-commit qualification gate
+
+The three-fixture baseline is enough to begin parser development, not enough to grant auto-commit eligibility.
+
+Each `provider + document_type + parser_contract_version` must qualify independently with:
+
+```text
+at least 100 labeled representative record cases across normal and edge-case statements
+deterministic expected classification, account mapping, normalized fields, and eligibility outcome
+zero incorrect auto-commit-eligible outcomes in the qualification suite
+at least 20 user-confirmed shadow candidates from local use before live auto-commit
+zero incorrect account mappings or financial fields among those shadow candidates
+```
+
+The 100 cases may be distributed across synthetic, redacted, and private statement fixtures. Private cases stay local and must never be uploaded to CI or logs.
+
+Shadow mode performs the complete eligibility decision but creates review suggestions instead of committed events. User decisions are recorded as qualification evidence.
+
+Any classifier prompt, extraction prompt, parser, validator, canonical mapping, or eligibility-rule version change revokes the affected package version's qualification. The user-level auto-commit toggle remains enabled, but records from the changed version fall back to shadow/review until it qualifies again.
+
 ## Expected output contract
 
 Each fixture should include an `expected.json` with assertion intent.
@@ -269,6 +289,8 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - `fixtures-private/` is ignored by Git.
 - Fixture policy distinguishes private, redacted, and synthetic samples.
 - Each supported document type has a target fixture minimum.
+- Auto-commit qualification requires 100 labeled record cases, 20 confirmed shadow candidates, and zero incorrect eligible outcomes per provider/document/parser version.
+- Parser or prompt version changes revoke only the affected package version's qualification and fall back to shadow mode.
 - Expected outputs are versioned and assertion-oriented.
 - LLM-dependent tests are deterministic in CI.
 - DB reset cannot target a real vault by default.

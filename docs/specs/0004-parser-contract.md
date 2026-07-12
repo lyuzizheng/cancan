@@ -24,6 +24,39 @@ source_document
 -> reconciliation candidates
 ```
 
+## Provider parser package contract
+
+Each supported provider/document type is a versioned parser package with the same contract. DBS bank statements and DBS credit-card statements are separate document-type configurations under the DBS provider.
+
+Each package defines:
+
+```text
+provider key and supported document type
+classifier prompt/config and positive/negative examples
+deterministic provider/document fingerprints
+extraction and normalization prompt templates
+canonical output schema mapping
+account/container detection rules
+deterministic financial validators
+supported capabilities and record types
+parser, prompt, schema, and validator versions
+fixture/eval references and qualification state
+human-readable implementation notes
+```
+
+Prompt templates and provider rules must be versioned artifacts, not scattered inline strings. The package's human-readable notes explain supported layouts, known limitations, account identifiers, validation rules, and how to add the next provider using the same shape.
+
+Classification flow:
+
+```text
+Money Source/provider hint narrows candidates
+AI classifier identifies provider and document type
+selected provider package verifies deterministic fingerprints and schema
+mismatch or uncertainty creates review work instead of using the parser blindly
+```
+
+For example, the DBS parser runs only after classification identifies a supported DBS statement type. The AI classification is necessary but not sufficient for auto-commit eligibility.
+
 ## Extraction bundle
 
 ```ts
@@ -66,6 +99,8 @@ new uncommitted records supersede prior uncommitted versions
 committed ledger events are never rewritten automatically by reparse
 changed output that conflicts with committed facts creates review work
 ```
+
+Changing a classifier prompt, extraction prompt, parser, validator, or canonical mapping creates a new package version. A new version does not inherit auto-commit qualification; it returns to fixture evaluation and shadow mode.
 
 ## Parser result layers
 
@@ -144,6 +179,8 @@ expected review items if any
 ## Acceptance criteria
 
 - Parser output never bypasses schema validation.
+- Every supported provider/document type follows the same versioned parser-package contract.
+- AI classification selects a provider parser, while deterministic provider/schema checks prevent a classifier label from becoming authority by itself.
 - A failed parse creates a visible review/repair item.
 - Exact PDF/file deduplication uses SHA-256, with semantic document identity handled separately.
 - Reparse versions supersede proposals without rewriting committed ledger events.

@@ -58,8 +58,8 @@ Welcome / product promise
 -> Choose vault password / local key setup
 -> AI provider setup
 -> Create first money source from supported providers
--> Create source sub-account(s)
 -> Configure Gmail using Desktop OAuth + PKCE loopback, or import manually
+-> Detect or create source sub-account(s) as evidence arrives
 -> Optional statement password setup when a supported provider needs it
 -> Land in Command Center
 ```
