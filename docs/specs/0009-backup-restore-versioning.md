@@ -6,7 +6,45 @@ Define how CanCan preserves local-first data safely across app upgrades, backups
 
 ## Implementation blocker
 
-Key management, atomic restore, destructive-job behavior, backup operations, and portability remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not implement a backup/restore format from the directional bundle alone.
+The user-facing key model is accepted. Exact Argon2id parameters, file-encryption format, platform Keychain behavior, recovery-wrapper format, temporary-plaintext crash cleanup, atomic restore, destructive jobs, and portability require implementation/security validation in the [active alignment register](../alignment-temp/alignment-progress.md).
+
+## Simple user security model
+
+MVP exposes only three security concepts:
+
+```text
+Vault password
+Remember on this Mac
+Recovery file
+```
+
+Do not expose key hierarchies, KDF parameters, per-file keys, key rotation, or a separate backup password in normal UI.
+
+Rules:
+
+- the vault password creates and unlocks the local vault;
+- `Remember on this Mac` is an explicit opt-in backed by OS Keychain/secret storage;
+- the recovery file is generated once, strongly recommended, and saved outside the vault;
+- CanCan has no server-side password reset or recovery service;
+- losing both password access and the recovery file makes the vault unrecoverable;
+- MVP has no user-facing key-rotation workflow;
+- system sleep/lock locks the vault, with a fixed conservative inactivity lock in MVP rather than another settings panel.
+
+## Internal key model
+
+Keep implementation robust but hidden:
+
+```text
+random vault master key
+password -> Argon2id wrapping key -> wrapped master key
+master key -> context-separated DB, file, identifier-digest, and backup subkeys
+optional Keychain wrapper for Remember on this Mac
+recovery file wrapper for the same master key
+```
+
+Changing the password re-wraps the master key rather than re-encrypting every record and file. Context-separated subkeys are implementation details and must not become user concepts.
+
+Exact KDF cost, salt, nonce, authenticated-encryption, key-version, and recovery-file formats must be fixed by the desktop/storage security spike and covered by compatibility fixtures before real data is accepted.
 
 ## Backup target
 
@@ -26,6 +64,8 @@ YYYY-MM-DD_HHMMSS.financevault
 ```
 
 The bundle should be encrypted before it leaves the local vault area.
+
+Use the same vault/recovery model for backup access. MVP must not ask the user to remember a second backup password. A backup may carry independently salted/wrapped key metadata, but it must be recoverable through the accepted vault password or recovery-file flow without storing raw vault key material.
 
 ## Manifest requirements
 
@@ -111,6 +151,9 @@ After restore:
 ## Acceptance criteria
 
 - Backup has manifest, checksums, schema/app version markers.
+- User-facing security is limited to vault password, optional Keychain remembering, and one recovery file.
+- MVP has no server recovery, key-rotation UI, or separate backup password.
+- Internal DB/file/identifier/backup keys are context-separated without becoming user settings.
 - New app can migrate old vaults when supported.
 - Old app refuses newer vaults with a clear upgrade message.
 - Restore verifies integrity before replacing active data.

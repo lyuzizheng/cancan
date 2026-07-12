@@ -8,11 +8,11 @@ Lead with findings. Prioritize bugs, behavioral regressions, missing tests, secu
 
 ## Steps
 
-1. Identify the changed files with `git diff --name-only` or the PR context.
-2. Read relevant specs before judging behavior.
-3. Check task-relevant canonical specs and status-bearing ADRs.
+1. Identify the implementation slice ID and review base.
+2. Generate `.agents/scripts/implementation-review-packet.sh <slice-id> <base>`.
+3. Use that packet's shared specs, ADRs, current state, blockers, and diff before judging behavior.
 4. Check financial correctness, data/security boundaries, and unresolved implementation blockers if touched.
-5. Check tests and UI inspection evidence.
+5. Check the slice's test gates and UI inspection evidence.
 6. Return findings ordered by severity with file/line references.
 7. If no findings, say so and name residual risk.
 

@@ -18,12 +18,14 @@ Fixture privacy and live-service boundaries are owned by `docs/specs/0016-testin
 
 ## Once App Code Exists
 
-1. Reset only the test database.
-2. Seed or import deterministic fixtures.
-3. Use mocked/stored AI outputs for parser tests.
-4. Run the flow end-to-end.
-5. Capture logs, screenshots, and resulting records.
-6. Compare against expected source evidence, staged records, review items, jobs, and committed ledger state.
-7. File findings or patch the smallest cause.
+1. Select the same implementation slice ID used by the feature.
+2. Generate `.agents/scripts/context-for-slice.sh <slice-id>` and obey its `STOP`, `EVIDENCE ONLY`, or `READY` boundary.
+3. Reset only the test database.
+4. Seed or import deterministic fixtures.
+5. Use mocked/stored AI outputs for parser tests.
+6. Run the flow end-to-end.
+7. Capture logs, screenshots, and resulting records.
+8. Compare against expected source evidence, staged records, review items, jobs, and committed ledger state.
+9. File findings or patch the smallest cause.
 
 Scenario requirements are owned by `docs/specs/0016-testing-fixtures-agent-gates.md`. Report the scenario, expected state transitions, actual result, gaps, and follow-up tests.

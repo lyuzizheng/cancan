@@ -33,9 +33,9 @@ Single-currency subtotal cards are allowed when the underlying values are compat
 
 `0013-ledger-assets-valuation.md` owns storage and evidence rules for source-provided equivalent values. Money Overview may display only values permitted by that valuation contract.
 
-## Optional network activity for future estimated totals
+## Optional fixed FX-rate estimates
 
-`0013-ledger-assets-valuation.md` owns future network-valuation policy. This spec only requires Money Overview to avoid presenting an estimated aggregate unless that valuation contract permits it.
+`0013-ledger-assets-valuation.md` owns the optional fixed FX-rate policy. Money Overview may present a converted estimate only when that user setting is enabled and must label the result as estimated with source/timestamp context.
 
 ## Product copy guardrail
 
@@ -235,7 +235,7 @@ If it identifies multiple child containers, create or update distinct account ca
 - Command Center uses Money Overview or Source Overview language, not default Net Worth.
 - Multi-currency values are shown in native buckets.
 - Source-provided equivalent values can be displayed with evidence.
-- Estimated totals require explicit future network activity settings.
+- FX-converted estimated totals require the explicit optional fixed-rate setting and remain visually distinct from source-backed facts.
 - Source model remains two-level from the user's perspective.
 - Money Sources are user-configured roots for provider-specific discovery/import channels.
 - A supported provider can ship default Gmail rules or an official API connector without allowing arbitrary providers.

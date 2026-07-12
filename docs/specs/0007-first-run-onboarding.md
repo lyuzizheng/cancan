@@ -8,7 +8,7 @@ The first-run experience must communicate technology, safety, and local ownershi
 
 ## Implementation blocker
 
-First-run optionality, Gmail/cloud-AI consent, and the vault key/encryption model remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not make steps mandatory, choose consent defaults, or promise encryption/recovery behavior by inference.
+First-run optionality and exact Gmail/cloud-AI data consent remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). The simple password/Keychain/recovery-file model is accepted; exact cryptographic claims still depend on validated implementation evidence.
 
 ## Experience goal
 
@@ -111,11 +111,31 @@ AI provider / cloud processing
 Gmail connection
 Automatic Gmail scan
 Automatically add qualified records
+Optional FX-rate source
+Update checks
 Backup
 Crash reporting or diagnostics when later defined
 ```
 
 Each row shows `On`, `Off`, `Not configured`, or `Needs attention`, a one-line consequence, and an edit action. Do not hide privacy-sensitive defaults or force the user to revisit earlier steps to understand what is enabled.
+
+## Network and telemetry boundary
+
+CanCan has no CanCan-owned application backend. Network access is capability-scoped and performed directly by the local client only after the user enables or configures that capability.
+
+User-visible network capabilities may include:
+
+```text
+Gmail API through user OAuth
+BYO AI provider through the user's provider/key and consent
+optional product-defined read-only FX-rate source
+optional update checks backed by GitHub Releases
+future product-supported read-only connectors
+```
+
+Each capability appears separately in onboarding/setup review and Settings, explains what data leaves the device, and can be disabled without disabling the local vault.
+
+MVP contains no product analytics or behavioral telemetry. If analytics is ever added, it must be explicit opt-in, default off, independently disableable, and absent from the vault's core functionality. Crash reporting follows the same explicit-consent rule when later defined.
 
 ## AI provider setup
 
@@ -198,6 +218,8 @@ Open app
 - First launch explains CanCan clearly.
 - Onboarding has dedicated local-first and encryption/privacy explanation screens whose claims come from accepted security specs.
 - The final setup review clearly shows which applicable capabilities and privacy-sensitive switches are on, off, or unconfigured.
+- Network access is capability-scoped, user-authorized, direct from the local client, and not dependent on a CanCan backend.
+- MVP has no analytics/behavioral telemetry; any future analytics or crash reporting is explicit opt-in and default off.
 - Motion follows design tokens, communicates setup state, and has a reduced-motion fallback.
 - User cannot accidentally create arbitrary unsupported providers.
 - User can create a vault and at least one supported money source.

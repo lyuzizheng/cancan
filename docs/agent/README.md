@@ -21,6 +21,7 @@ Neither folder owns product truth. Product and implementation truth belongs in `
 
 ```text
 current-state.md          phase, focus, and current implementation state
+implementation-slices.md  machine-checked vertical-slice order and minimal spec sets
 reading-order.md          canonical read path and conflict resolution order
 progress-log.md           dated progress entries and next actions
 iteration-protocol.md     how AI agents should plan, implement, validate, and update docs

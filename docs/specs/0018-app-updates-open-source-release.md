@@ -52,7 +52,7 @@ Publish binaries from CI, not an unrecorded developer-machine build. A platform 
 
 ## Incremental app update behavior
 
-The app may check release metadata backed by GitHub Releases. It must verify signed update metadata and artifact signatures before installation.
+The app may check release metadata backed by GitHub Releases only when the user enables update checks or invokes a manual check. It must verify signed update metadata and artifact signatures before installation.
 
 The normal UX should show:
 

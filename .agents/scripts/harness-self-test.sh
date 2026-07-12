@@ -14,6 +14,7 @@ cp AGENTS.md README.md .gitignore "$TEST_ROOT/"
   cd "$TEST_ROOT"
   git init -q
   git add .
+  git -c user.name='Harness Self-Test' -c user.email='harness@example.invalid' commit -qm baseline
 )
 
 run_check() {
@@ -35,6 +36,23 @@ run_check .agents/scripts/check-links.sh
 run_check .agents/scripts/check-docs-consistency.sh
 run_check .agents/scripts/check-agent-skills.sh
 run_check .agents/scripts/check-ci-workflow.sh
+run_check .agents/scripts/check-implementation-slices.sh
+
+context_packet="$TEST_ROOT/../cancan-context-packet.txt"
+CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/context-for-slice.sh" desktop-feasibility > "$context_packet"
+if ! rg -q 'docs/specs/0001-repo-structure[.]md' "$context_packet" || ! rg -q 'Implementation readiness: EVIDENCE ONLY' "$context_packet"; then
+  echo "Slice context packet is missing required sources or blocker state."
+  exit 1
+fi
+rm "$context_packet"
+
+context_packet="$TEST_ROOT/../cancan-dependent-context-packet.txt"
+CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/context-for-slice.sh" app-foundation > "$context_packet"
+if ! rg -q 'incomplete dependencies: desktop-feasibility' "$context_packet"; then
+  echo "Dependent slice context omitted incomplete dependency state."
+  exit 1
+fi
+rm "$context_packet"
 
 CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/new-spec.sh" "Harness Probe" >/dev/null
 generated_spec="$(find "$TEST_ROOT/docs/specs" -maxdepth 1 -type f -name '*-harness-probe.md')"
@@ -112,6 +130,72 @@ syntax_probe="$TEST_ROOT/.agents/scripts/syntax-probe.sh"
 printf '#!/usr/bin/env bash\nif then\n' > "$syntax_probe"
 expect_failure "invalid shell syntax" bash -n "$syntax_probe"
 rm "$syntax_probe"
+
+ruby_probe="$TEST_ROOT/.agents/scripts/syntax-probe.rb"
+printf 'def broken(\n' > "$ruby_probe"
+expect_failure "invalid Ruby syntax" ruby -c "$ruby_probe"
+rm "$ruby_probe"
+
+manifest="$TEST_ROOT/docs/agent/implementation-slices.md"
+cp "$manifest" "$manifest.bak"
+awk 'BEGIN {changed=0} !changed && /docs\/specs\/0001-repo-structure[.]md/ {sub(/docs\/specs\/0001-repo-structure[.]md/, "docs/specs/9999-missing.md"); changed=1} {print}' "$manifest.bak" > "$manifest"
+expect_failure "slice references missing spec" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$manifest.bak" "$manifest"
+
+cp "$manifest" "$manifest.bak"
+awk 'BEGIN {changed=0} !changed && /Desktop\/storage architecture feasibility/ {sub(/Desktop\/storage architecture feasibility/, "Missing architecture blocker"); changed=1} {print}' "$manifest.bak" > "$manifest"
+expect_failure "slice references missing blocker" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$manifest.bak" "$manifest"
+
+cp "$manifest" "$manifest.bak"
+sed 's/desktop build spike, SQLCipher smoke, FTS5 smoke, file encryption and Keychain\/recovery smoke/none/' "$manifest.bak" > "$manifest"
+expect_failure "slice missing test gates" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$manifest.bak" "$manifest"
+
+cp "$manifest" "$manifest.bak"
+sed 's/| desktop-feasibility | investigating | none |/| desktop-feasibility | investigating | backup-release |/' "$manifest.bak" > "$manifest"
+expect_failure "slice dependency cycle or invalid order" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$manifest.bak" "$manifest"
+
+cp "$manifest" "$manifest.bak"
+sed 's/| desktop-feasibility | investigating |/| desktop-feasibility | unknown |/' "$manifest.bak" > "$manifest"
+expect_failure "slice invalid status" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$manifest.bak" "$manifest"
+
+cp "$manifest" "$manifest.bak"
+sed 's/| desktop-feasibility | investigating |/| desktop-feasibility | ready |/' "$manifest.bak" > "$manifest"
+expect_failure "ready slice retains blockers" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$manifest.bak" "$manifest"
+
+cp "$manifest" "$manifest.bak"
+sed 's/| app-foundation | blocked |/| app-foundation | ready |/' "$manifest.bak" > "$manifest"
+expect_failure "ready slice has incomplete dependency" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$manifest.bak" "$manifest"
+
+cp "$manifest" "$manifest.bak"
+sed 's/, Security observability and sensitive-data lifecycle | connectors/ | connectors/' "$manifest.bak" > "$manifest"
+expect_failure "sensitive slice loses safety blocker" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$manifest.bak" "$manifest"
+
+cp "$manifest" "$manifest.bak"
+sed -e 's/| desktop-feasibility | investigating |/| desktop-feasibility | ready |/' -e 's/Desktop\/storage architecture feasibility, Vault\/file\/backup security validation | disposable/none | disposable/' "$manifest.bak" > "$manifest"
+expect_failure "ready slice uses proposed ADR" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$manifest.bak" "$manifest"
+
+implementation_review="$TEST_ROOT/.agents/scripts/implementation-review-packet.sh"
+cp "$implementation_review" "$implementation_review.bak"
+grep -v 'context-for-slice[.]sh.*slice_id' "$implementation_review.bak" > "$implementation_review"
+expect_failure "implementation review loses shared context" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_review.bak" "$implementation_review"
+
+printf 'implementation packet untracked probe\n' > "$TEST_ROOT/implementation-packet-probe.txt"
+review_packet="$TEST_ROOT/../cancan-implementation-review-packet.txt"
+CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/implementation-review-packet.sh" desktop-feasibility HEAD > "$review_packet"
+if ! rg -q 'implementation-packet-probe[.]txt' "$review_packet"; then
+  echo "Implementation review packet omitted an untracked file."
+  exit 1
+fi
+rm "$review_packet" "$TEST_ROOT/implementation-packet-probe.txt"
 
 workflow="$TEST_ROOT/.github/workflows/docs-harness.yml"
 cp "$workflow" "$workflow.bak"

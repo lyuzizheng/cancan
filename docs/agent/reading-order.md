@@ -30,6 +30,20 @@ Use the concern-based source contract in `docs/STRUCTURE.md`. Do not reproduce i
 
 The maintained spec map lives only in `docs/specs/README.md`. Read the relevant entries from that index.
 
+## App implementation context
+
+Do not read all canonical specs for one coding task.
+
+```text
+1. Select a slice from docs/agent/implementation-slices.md.
+2. Run .agents/scripts/context-for-slice.sh <slice-id>.
+3. Use the packet's exact specs, ADRs, and blockers.
+4. Obey `STOP`, `EVIDENCE ONLY`, or `READY`; evidence-only work is disposable and limited to the named spike/test gates.
+5. Give implementation, testing, and review the same slice ID.
+```
+
+The slice manifest is current implementation planning, not a second product-spec layer. Canonical behavior remains in the referenced specs and status-bearing ADRs.
+
 ## Conflict handling protocol
 
 If a conflict is found:

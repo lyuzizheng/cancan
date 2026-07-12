@@ -16,6 +16,8 @@ Define a small repo-local harness that helps coding agents read the right source
 - Docs and harness changes require semantic review by an agent that did not author the patch; without one, the gate cannot pass.
 - A semantic reviewer may return `needs_design`, but must not decide unresolved product, financial, security, privacy, or irreversible data questions.
 - App commands must not be invented before real package scripts and paths exist.
+- App implementation is routed through a machine-checked vertical-slice manifest.
+- Implementers, testers, and reviewers use the same generated slice context and implementation review packet.
 
 ## Current folder shape
 
@@ -48,10 +50,14 @@ AGENTS.md
     check-agent-skills.sh
     check-ci-workflow.sh
     check-docs-consistency.sh
+    check-implementation-slices.sh
     check-links.sh
     check-spec-index.sh
+    context-for-slice.sh
     docs-review-packet.sh
     harness-self-test.sh
+    implementation-review-packet.sh
+    implementation-slices.rb
     new-spec.sh
 ```
 
@@ -70,6 +76,13 @@ every spec has required headings
 every spec appears exactly once in docs/specs/README.md
 the spec index contains no missing files
 local Markdown links resolve
+implementation slice IDs and dependencies are valid and acyclic
+slice readiness/status agrees with active blockers and completed dependencies
+ready, in-progress, and completed slices use only Accepted required ADRs
+slice spec/ADR paths and active blocker names resolve
+every active P0/P1 alignment area is referenced by at least one non-completed slice
+every slice declares packages/surfaces, test gates, and an outcome
+implementation review uses the same generated context as implementation/testing
 skill frontmatter is valid and skill names match directories
 private fixtures are not tracked
 removed harness layers are not referenced
@@ -97,6 +110,19 @@ rerun both gates
 
 The judge contract and required output shape live in `.agents/docs-semantic-review.md`.
 
+## Implementation context gate
+
+`docs/agent/implementation-slices.md` is the machine-checked implementation plan. It maps each vertical slice to the minimum required specs/ADRs, exact active blockers, dependencies, packages/surfaces, test evidence, and outcome.
+
+```text
+.agents/scripts/context-for-slice.sh <slice-id>
+.agents/scripts/implementation-review-packet.sh <slice-id> [base]
+```
+
+The context generator always includes root instructions, the source contract, current state, active alignment register, and only the selected slice's canonical specs/ADRs. It must label each slice `STOP`, `EVIDENCE ONLY`, `READY`, or `COMPLETE`. `EVIDENCE ONLY` permits the named disposable spike/test work needed to resolve blockers, never production implementation or downstream work.
+
+The implementation review packet combines that exact context with tracked and untracked changes. Reviewers must also receive the user's exact task, author assumptions, success criteria, and verification evidence; the packet cannot infer those.
+
 ## Future app-code gates
 
 Once application code exists, add command-backed checks only when the referenced scripts are real:
@@ -120,6 +146,7 @@ The harness should call existing package scripts rather than wrap them in redund
 - Product truth and current priorities are not duplicated in `.agents/`.
 - Every canonical spec is uniquely numbered and indexed.
 - Broken links, stale harness references, invalid skill metadata, and shell syntax errors fail preflight.
+- Broken slice dependencies, missing spec/ADR/blocker references, missing test gates, and context-parity drift fail preflight.
 - Harness self-tests prove that representative faults are detected.
 - GitHub pull requests and pushes to `main` that change docs or harness files run the deterministic gate.
 - Docs and harness changes require an independent semantic verdict.

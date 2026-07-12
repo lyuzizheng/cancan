@@ -12,7 +12,7 @@ Implementation rules:
 
 ```text
 Do not fetch market prices in MVP.
-Do not fetch external FX rates in MVP.
+Do not fetch external FX rates unless the user enables the one fixed read-only FX-rate source.
 Do not calculate tax or tax-grade realized gains.
 Do not create analytics that imply unsupported truth.
 Do not derive values without source evidence or explicit user-approved settings.
@@ -117,9 +117,9 @@ Store valuation_at or statement date when available.
 Do not relabel source-provided values as app-calculated values.
 ```
 
-## Optional network activity for future estimated totals
+## Optional fixed FX-rate source for estimated totals
 
-A future user setting may enable network activity for external FX rates, market prices, or estimated total views.
+A user setting may enable one product-defined read-only FX-rate source for estimated total views. This is the only MVP network valuation capability.
 
 MVP default:
 
@@ -130,7 +130,9 @@ external FX fetch = off
 estimated total = unavailable unless source-backed
 ```
 
-If added later, network activity must be explicitly enabled by the user, visible in Settings, reversible, versioned, and separate from source-provided facts.
+When enabled, the fixed FX-rate source must be visible in Settings, reversible, versioned, cached with its timestamp/source, and clearly separated from source-provided facts. It may produce labeled estimates only and must never create or mutate ledger events.
+
+MVP does not fetch market prices or allow arbitrary valuation providers.
 
 ## FX events
 
@@ -288,7 +290,7 @@ Docs may state technical constraints clearly for implementation safety, but prod
 
 ## Acceptance criteria
 
-- MVP does not fetch market prices or external FX rates.
+- MVP does not fetch market prices; its only optional network valuation is one user-enabled, product-defined read-only FX-rate source.
 - Native values are preserved and displayed.
 - Posting and observation events are explicit; only postings change ledger-derived balances.
 - The first source-backed balance is an observation anchor, not invented historical income or an adjustment transaction.
@@ -296,7 +298,7 @@ Docs may state technical constraints clearly for implementation safety, but prod
 - Committed events are immutable and corrections use reversal/replacement events.
 - Statement/source snapshots can drive current position/value display.
 - Source-provided equivalent values can be shown with evidence.
-- Future estimated totals require explicit network activity settings.
+- FX-based estimated totals require the explicit optional FX-rate setting and remain labeled estimates.
 - Trades can be represented without a specialized table in MVP.
 - Future specialized trade table remains possible without data loss.
 - Insurance policy values are snapshots.

@@ -248,6 +248,8 @@ docs consistency check
 build/package check when app code changes
 ```
 
+The applicable subset is declared by the selected row in `docs/agent/implementation-slices.md`. Testing and review generate the same slice context used by implementation; they do not independently guess a different spec set.
+
 UI feature slices additionally require:
 
 ```text
@@ -309,4 +311,5 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - LLM-dependent tests are deterministic in CI.
 - DB reset cannot target a real vault by default.
 - UI changes require visual inspection once UI exists.
+- Every implementation slice declares deterministic test evidence and shares its generated context with testing/review.
 - Future application CI gates are defined without inventing scripts that do not exist.

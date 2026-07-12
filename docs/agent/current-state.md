@@ -6,7 +6,7 @@ Last updated: 2026-07-13
 
 CanCan is in documentation/design alignment. Application code has not started.
 
-The current product target is a Gmail-first local financial evidence vault and polished personal finance/account-record workspace with AI-assisted parsing, deterministic validation, policy-gated ledger commit, and source-backed money views.
+The current product target is a Gmail-first local financial evidence vault and polished personal finance/account-record workspace with AI-assisted parsing, deterministic validation, policy-gated ledger commit, and source-backed money views. CanCan has no hosted service/backend; Gmail, BYO AI, optional fixed FX rates, update checks, and future connectors are capability-scoped local-client connections controlled by the user.
 
 ## Implementation state
 
@@ -21,7 +21,9 @@ The current product target is a Gmail-first local financial evidence vault and p
 - ADR authority follows each ADR's explicit status; ADR 0001 remains `Proposed` and ADR 0002 is `Accepted`.
 - `docs/alignment-temp/alignment-progress.md` is the only active unresolved decision register.
 - `docs/specs/0018-app-updates-open-source-release.md` owns the accepted open-source GitHub release/update direction and its remaining blockers.
+- MVP excludes analytics and behavioral telemetry.
 - `.agents/scripts/agent-preflight.sh` provides deterministic gates.
+- `docs/agent/implementation-slices.md` and `.agents/scripts/context-for-slice.sh` provide the machine-checked app implementation order and minimal per-slice context.
 - `.agents/docs-semantic-review.md` defines the independent semantic gate for docs and harness changes.
 
 The old broad numbered product-doc layer and duplicated alignment/harness projections have been removed. Do not recreate them.

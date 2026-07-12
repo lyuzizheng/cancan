@@ -9,19 +9,22 @@ Define how a solo developer and AI coding agent should develop CanCan autonomous
 For each feature slice:
 
 ```text
-1. Read docs/agent/current-state.md
-2. Read relevant docs/specs/*.md
-3. Plan files, tests, build, and docs impact
-4. Implement the smallest complete slice
-5. Reset test database if data layer is involved
-6. Run unit and integration tests
-7. Run benchmark/checks if hot SQL paths are touched
-8. Build/package app when relevant
-9. Inspect UI with browser/computer-use/Chrome MCP when UI changed
-10. Fix issues and repeat
-11. Update docs/progress
-12. Run the repo harness gates required by 0012
-13. Ask user when product/security/data decisions are unclear
+1. Select a machine-checked ID from docs/agent/implementation-slices.md
+2. Generate .agents/scripts/context-for-slice.sh <slice-id>
+3. Obey the packet's STOP, EVIDENCE ONLY, or READY boundary
+4. For EVIDENCE ONLY, run only the named disposable spike/test work and add no production code
+5. Plan files, tests, build, and docs impact from the packet
+6. Implement the smallest complete part of a READY slice
+7. Reset test database if data layer is involved
+8. Run the slice's unit/integration/fixture/visual gates with real commands
+9. Run benchmark/checks if hot SQL paths are touched
+10. Build/package app when relevant
+11. Inspect UI with browser/computer-use/Chrome MCP when UI changed
+12. Fix issues and repeat
+13. Update docs/progress
+14. Generate the shared implementation review packet
+15. Run the repo harness gates required by 0012
+16. Ask user when product/security/data decisions are unclear
 ```
 
 ## Browser/computer-use policy
@@ -84,6 +87,7 @@ Ask instead of guessing when the decision affects:
 ## Acceptance criteria
 
 - Agents have a repeatable loop for autonomous development.
+- Implementation, testing, and review use one machine-checked slice context rather than loading all specs or choosing different contracts.
 - Documentation/harness validation follows `0012-repo-agent-workflows.md`.
 - UI changes cannot be completed without visual inspection.
 - Integration flows require database reset coverage.

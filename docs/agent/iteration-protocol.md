@@ -25,7 +25,9 @@ build/package
 
 ## 3. Plan from specs
 
-For implementation work, identify the relevant spec in `docs/specs/`. If no spec exists, create or update the spec before coding.
+For implementation work, select a slice from `docs/agent/implementation-slices.md` and generate `.agents/scripts/context-for-slice.sh <slice-id>`. If no slice/spec owns the behavior, update the focused plan/spec before coding.
+
+Obey the generated readiness result. `STOP` blocks coding. `EVIDENCE ONLY` permits only the bounded disposable spike/test work named by the slice and never production code. `READY` permits implementation.
 
 A coding plan should include:
 
@@ -69,6 +71,8 @@ manual run log
 schema validation output
 build/package output
 ```
+
+Implementation, simulated testing, and code review must use the same slice ID and generated context packet.
 
 For UI work, the agent should run the app, inspect it in browser/computer-use when available, check layout visually, fix issues, and iterate.
 

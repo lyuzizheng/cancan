@@ -13,6 +13,8 @@ Use this before considering a docs or code change complete. This checklist verif
 
 ## Implementation evidence
 
+- [ ] Does app work use one ID from `docs/agent/implementation-slices.md`, with status/dependencies/blockers allowing implementation?
+- [ ] Did implementation, testing, and review use the same generated slice context?
 - [ ] Does code behavior match the relevant canonical spec, or is the divergence explicitly recorded?
 - [ ] Do tests prove the changed behavior and important failure paths?
 - [ ] Do financial/data invariants trace to their canonical spec and source evidence?

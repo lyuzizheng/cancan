@@ -12,6 +12,10 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added cross-channel duplicate outcomes and an import completion summary that identifies files already present or already archived/removed without deciding deletion semantics.
 - Expanded onboarding into a polished animated local-first/vault story with encryption/privacy explanation and a final enabled-capabilities review.
 - Added `0018-app-updates-open-source-release.md` for semantic versions, public GitHub Releases, signed CI artifacts, forward compatibility, safe parser delivery, and conditional desktop updater integration.
+- Clarified that CanCan has no hosted service/backend: Gmail, BYO AI, optional fixed FX rates, update checks, and future connectors are separately authorized local-client connections; MVP has no analytics or behavioral telemetry.
+- Simplified user-facing security to vault password, optional `Remember on this Mac`, and one recovery file. Internal key separation remains hidden, backup adds no second password, and exact cryptographic/restore details move to feasibility validation.
+- Added a machine-checked eight-slice implementation sequence so coding agents load only the selected slice's specs/ADRs/blockers instead of all canonical specs.
+- Added shared context and implementation-review packet generators for implementer/tester/reviewer parity, plus deterministic dependency/path/blocker/test/outcome validation.
 
 ### Next
 
