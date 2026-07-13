@@ -13,6 +13,11 @@ fixtures-private/
 node_modules/
 dist/
 build/
+target/
 coverage/
 .playwright/
 test-results/
+
+# Disposable feasibility output
+spikes/**/.tmp/
+spikes/**/src-tauri/gen/

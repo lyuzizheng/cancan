@@ -6,7 +6,7 @@ Design SQLite/SQLCipher schema for a local-first finance vault that supports evi
 
 ## Implementation blocker
 
-Vault/storage feasibility remains open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not finalize affected storage constraints until that entry is resolved.
+SQLCipher plus FTS5 feasibility is verified by the [desktop spike](../../spikes/desktop-feasibility/EVIDENCE.md). Exact vault keys, encrypted-file format, temporary plaintext, recovery compatibility, and restore behavior remain open in the [active alignment register](../alignment-temp/alignment-progress.md); do not freeze those security fields by inference.
 
 ## Database policy
 

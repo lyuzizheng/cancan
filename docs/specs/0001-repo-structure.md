@@ -4,9 +4,9 @@
 
 Create a monorepo shape that lets AI coding agents implement, test, build, inspect, and iterate without mixing UI, domain logic, privileged desktop APIs, and parser logic.
 
-## Implementation blocker
+## Accepted architecture evidence
 
-Desktop/storage architecture remains blocked on the feasibility and ADR-status entry in the [active alignment register](../alignment-temp/alignment-progress.md). Do not treat the target layout as accepted runtime architecture until that entry is resolved.
+ADR 0001 is accepted. The [disposable feasibility spike](../../spikes/desktop-feasibility/EVIDENCE.md) proved a Tauri 2 desktop build, bundled SQLCipher with FTS5, and the Rust privileged boundary on macOS arm64. Exact vault cryptography and release targets remain owned by their focused specs and do not block creation of the package skeleton.
 
 ## Target layout
 
@@ -19,6 +19,7 @@ cancan/
       src/                  # React app shell and pages
       src-tauri/            # Tauri/Rust privileged commands
       tests/                # app-level integration/e2e tests
+    website/                # static landing, privacy, security, help, and download surface
   packages/
     core/                   # pure TypeScript domain engine
     db/                     # SQL migrations, query helpers, repositories
@@ -27,6 +28,7 @@ cancan/
     ai/                     # Vercel AI SDK adapters and structured extraction helpers
     ui/                     # reusable UI components and design tokens
     fixtures/               # redacted fixtures and expected outputs when approved
+  spikes/                   # disposable architecture/security evidence; never a production dependency
   docs/
     agent/
     specs/
@@ -106,6 +108,10 @@ AI permission boundary helpers
 
 Owns reusable product UI components, not page-specific business logic.
 
+### apps/website
+
+Owns the static Cloudflare Pages surface defined by `0018`. It may reuse tokens and present verified release metadata, but it must not become a hosted CanCan backend or own desktop product behavior.
+
 ## Agent implementation rule
 
 An AI coding agent should implement one vertical slice at a time and keep packages isolated. Example slice:
@@ -113,6 +119,8 @@ An AI coding agent should implement one vertical slice at a time and keep packag
 ```text
 migration -> repository -> core service -> UI page -> tests -> docs update
 ```
+
+Production packages must not import from `spikes/`. A spike may remain as reproducible evidence until equivalent production tests exist.
 
 ## Acceptance criteria
 

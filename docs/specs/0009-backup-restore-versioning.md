@@ -44,7 +44,19 @@ recovery file wrapper for the same master key
 
 Changing the password re-wraps the master key rather than re-encrypting every record and file. Context-separated subkeys are implementation details and must not become user concepts.
 
-Exact KDF cost, salt, nonce, authenticated-encryption, key-version, and recovery-file formats must be fixed by the desktop/storage security spike and covered by compatibility fixtures before real data is accepted.
+Exact KDF cost, salt, nonce, authenticated-encryption, key-version, and recovery-file formats must be fixed by the production security-validation work and covered by compatibility fixtures before real data is accepted.
+
+## Feasibility evidence
+
+The [2026-07-13 disposable spike](../../spikes/desktop-feasibility/EVIDENCE.md) verified that the accepted user model is technically feasible on macOS arm64:
+
+- Argon2id derived a wrapping key in 250-266 ms across two runs on the test machine;
+- one random master key can be recovered through independent password and recovery wrappers;
+- XChaCha20-Poly1305 file encryption rejects tampering and does not expose the synthetic plaintext;
+- macOS Keychain can write, read, and delete the binary remember-on-device secret;
+- SQLCipher can reject a wrong database key while supporting FTS5.
+
+The spike parameters and envelope are not the production compatibility contract. The implementation blocker above remains for exact formats, temporary plaintext, cross-platform secret stores, backup/restore, and security review.
 
 ## Backup target
 

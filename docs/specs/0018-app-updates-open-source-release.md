@@ -6,7 +6,7 @@ Define how CanCan ships frequent app and provider-parser updates through a class
 
 ## Implementation blocker
 
-MVP operating systems, project license, desktop runtime acceptance, signing/notarization identities, updater key management, update channels, release approval policy, and whether parser packages may ever update independently remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md).
+MVP operating systems, project license, public identity/domain/contacts, signing/notarization identities, updater-key custody, update channels, release approval policy, and whether parser packages may ever update independently remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md).
 
 Do not implement an unsigned updater, remote prompt/config download, or platform-specific release pipeline by inference.
 
@@ -18,22 +18,83 @@ Do not implement an unsigned updater, remote prompt/config download, or platform
 - A release is traceable from artifact to immutable source tag and CI run.
 - MVP does not require a proprietary CanCan update backend.
 - App/parser updates never silently rewrite committed ledger events.
+- The public website is a static Cloudflare Pages project backed by the public GitHub repository. CanCan does not maintain a duplicate GitHub Pages site.
+- GitHub owns source, releases, issue/PR workflow, discussions, and security reporting; the website presents the product, policy, help, and verified download links.
+
+## Public website and project surfaces
+
+The static site should deploy through Cloudflare Pages Git integration:
+
+```text
+pull request -> preview deployment for review
+main branch -> production deployment
+custom domain -> public canonical site
+```
+
+First public pages:
+
+```text
+landing and product story
+downloads and release notes linking to verified GitHub Releases artifacts
+local-first/privacy explanation and Google API Services User Data Policy Limited Use disclosure
+security model, vulnerability-reporting route, and supported-version policy
+documentation/help and Gmail connection explanation
+community/contributing links
+```
+
+Keep the site static. Do not add Cloudflare Workers/Pages Functions, hosted accounts, behavioral analytics, trackers, or a second product backend for the landing page. Any future telemetry requires a separate explicit product/privacy decision.
+
+Cloudflare Pages provides GitHub push deploys, pull-request preview deployments, and custom-domain support. The domain, Cloudflare account/zone owner, copy, privacy-policy owner, and public support/security contacts remain launch blockers.
+
+References:
+
+- [Cloudflare Pages GitHub integration](https://developers.cloudflare.com/pages/configuration/git-integration/github-integration/)
+- [Cloudflare Pages preview deployments](https://developers.cloudflare.com/pages/configuration/preview-deployments/)
+- [Cloudflare Pages custom domains](https://developers.cloudflare.com/pages/configuration/custom-domains/)
+
+## GitHub community operating model
+
+Before the repository is promoted publicly, add and maintain:
+
+```text
+LICENSE
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md with private vulnerability-reporting instructions
+SUPPORT.md
+.github issue forms for reproducible bugs and feature proposals
+.github pull request template
+GitHub Discussions categories for Questions, Ideas, and Show and tell
+```
+
+Route work deliberately:
+
+- Discussions `Questions` is the first stop for usage/support questions; `Ideas` is for early proposals and community design discussion.
+- Issues are for reproducible bugs and implementation-ready accepted work. Templates collect version, operating system, reproduction, expected/actual behavior, and redacted diagnostics without financial data or secrets.
+- Security reports use GitHub private vulnerability reporting or the private route in `SECURITY.md`, never a public issue.
+- Pull requests should be small, linked to an issue/spec when behavior changes, include tests/evidence, and pass the same harness as `main`.
+- Maintainers triage labels and unanswered Discussions on a documented cadence; exact ownership and service expectations wait for named maintainers.
+
+The project license and governance authority must be chosen before these files become normative. Use GitHub's native templates rather than maintaining a second intake system.
+
+Reference: [GitHub issue and pull request templates](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/about-issue-and-pull-request-templates).
 
 ## GitHub release pipeline
 
 Target flow:
 
 ```text
-version change and changelog
+version/changelog pull request
 -> reviewed commit on main
--> immutable semantic-version tag
+-> immutable semantic-version source tag
 -> GitHub Actions deterministic tests and harness gates
 -> platform builds
 -> platform signing/notarization where required
--> checksums, signatures, update metadata, and dependency/license report
+-> checksums, signatures, update metadata, SBOM/dependency-license report, and artifact provenance attestation
 -> draft GitHub Release
--> release approval
--> publish artifacts and release notes
+-> human release approval
+-> publish the approved GitHub Release and release notes
+-> update website download metadata from the verified release
 ```
 
 Release artifacts should include, where applicable:
@@ -45,10 +106,19 @@ platform installer/package
 SHA-256 checksums
 cryptographic signatures and signed update metadata
 dependency/license or SBOM-style report
+artifact provenance attestation
 migration/compatibility notes
 ```
 
-Publish binaries from CI, not an unrecorded developer-machine build. A platform artifact must not be advertised as supported when its required signing or compatibility gate did not pass.
+Publish binaries from CI, not an unrecorded developer-machine build. A platform artifact must not be advertised as supported when its required signing or compatibility gate did not pass. Whether to enable GitHub's immutable release protection is part of the unresolved release policy; use it only if it fits the finalized approval, correction, and revocation workflow. Public repositories can add artifact attestations and SBOM attestations to improve supply-chain verification.
+
+References:
+
+- [Tauri distribution overview](https://v2.tauri.app/distribute/)
+- [Tauri GitHub Actions pipeline](https://v2.tauri.app/distribute/pipelines/github/)
+- [Tauri macOS signing and notarization](https://v2.tauri.app/distribute/sign/macos/)
+- [GitHub artifact attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
+- [GitHub supply-chain security](https://docs.github.com/en/code-security/concepts/supply-chain-security/supply-chain-security)
 
 ## Incremental app update behavior
 
@@ -67,7 +137,9 @@ install now / remind later
 
 Do not force an update silently. Security-critical update policy and stable/beta channels remain unresolved.
 
-If ADR 0001 is accepted, the implementation may use the Tauri signed updater with GitHub-hosted artifacts. Until then, this spec does not make Tauri an accepted release dependency.
+ADR 0001 is accepted, so implementation may use the Tauri signed updater with GitHub-hosted artifacts and `latest.json`. The updater signing public key may be embedded in the app; the private key and password must remain release secrets. Back up the private key through a documented offline recovery path because losing it prevents signed updates to installed clients.
+
+Reference: [Tauri updater signing and GitHub release metadata](https://v2.tauri.app/plugin/updater/).
 
 ## Provider-parser delivery
 
@@ -103,6 +175,32 @@ Keep prior public release artifacts available unless a security incident require
 
 Application rollback does not imply data rollback. An older app must refuse write access when the current vault/schema/parser metadata requires a newer reader. Data rollback uses verified backup/restore behavior owned by [0009](0009-backup-restore-versioning.md).
 
+## Developer and maintainer preparation
+
+The app-foundation slice should document reproducible local tools without requiring public launch accounts:
+
+```text
+current Node.js LTS
+Corepack/pinned pnpm
+Rust stable plus rustfmt and clippy
+platform build tools (Apple Command Line Tools or Xcode on macOS)
+repository bootstrap, test, lint/typecheck, desktop build, and docs-harness commands
+```
+
+Before public release, a maintainer must deliberately provision and record ownership/recovery for:
+
+```text
+GitHub repository, Actions, Releases, Discussions, private vulnerability reporting, environments, and release approvers
+Cloudflare account/zone, custom domain, Pages project, and least-privilege repository integration
+Google Cloud development and production projects, Gmail API, OAuth consent screen/client, test users, Search Console domain ownership, and public support contact
+Apple Developer Program signing/notarization credentials if macOS is distributed outside the App Store
+platform code-signing credentials for every other supported operating system
+Tauri updater signing key, Actions secret, and offline recovery copy
+public privacy, support, and security contacts
+```
+
+BYO-AI provider keys belong only in the user's local OS secret store. They are not project deployment credentials and must not be added to CI. Account creation, domain purchase, OAuth submission, paid signing enrollment, and secret generation happen only when their slice is authorized; documentation must never imply that they already exist.
+
 ## Acceptance criteria
 
 - Every published app artifact traces to a public immutable source tag and GitHub Actions run.
@@ -111,4 +209,7 @@ Application rollback does not imply data rollback. An older app must refuse writ
 - Parser updates are versioned, qualified independently, and cannot silently rewrite committed facts.
 - MVP does not download unsigned parser/prompt/config updates.
 - Older incompatible apps refuse mutation and explain the required version.
-- Tauri-specific updater implementation remains conditional on ADR 0001 acceptance.
+- Tauri updater work remains gated on finalized signing-key custody, release channels, supported operating systems, and release approval.
+- Static public pages deploy to preview and production environments without adding an application backend or analytics.
+- GitHub community files route support, bugs, contributions, and private security reports without asking users to expose financial data.
+- A release is not promoted until its public website/privacy claims, supported platforms, license, signing, updater-key recovery, and approval owner are complete.

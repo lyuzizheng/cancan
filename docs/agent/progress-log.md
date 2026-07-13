@@ -6,6 +6,14 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Completed a disposable macOS arm64 desktop feasibility spike: Tauri 2 built, bundled SQLCipher 4.14.0 and FTS5 worked together, wrong database keys failed, authenticated file tampering failed, password and recovery wrappers opened one master key, and macOS Keychain binary-secret write/read/delete passed.
+- Accepted ADR 0001 for the Tauri/React/Rust/SQLite package boundary while keeping exact production cryptographic formats, temporary plaintext, cross-platform secret storage, backup/restore, and release signing blocked in their owning specs.
+- Marked `desktop-feasibility` complete and `app-foundation` ready. The next production work is the package/CI skeleton, followed by the synthetic core flow.
+- Fixed two broad-grill checkpoints in the implementation plan: after the synthetic core flow and before vault/manual import, then after the review-ledger UI and before public OAuth/release work.
+- Added the public project surface to the implementation sequence: a static Cloudflare Pages landing/privacy/security/docs/download site and GitHub-native Discussions, issue forms, PR, security, and release surfaces.
+- Defined the public Gmail direction as a project-owned Desktop OAuth client with separate development/test credentials, local PKCE loopback authorization, and an explicit Google restricted-scope verification track.
+- Expanded the classic open-source release plan with signed/notarized CI artifacts, checksums, SBOM/provenance evidence, immutable source tags, approved releases, updater-key custody, and developer account/setup requirements.
+
 - Allowed every financial event type to auto-commit only when the user toggle is on, all record/provider/account gates pass, package-calibrated required fields are very-high confidence, and every affected native-unit reconciliation window closes exactly against source-backed snapshots.
 - Kept mixed-statement behavior record-level: semantic-only ambiguities can remain in Review while eligible records commit after full arithmetic closure; missing or uncertain financial fields block the window.
 - Finalized account identity fields and resolver order, one-time first-account confirmation, idempotent aliases, and audited rename/merge/archive behavior without rewriting committed ledger legs.
@@ -14,13 +22,14 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added `0018-app-updates-open-source-release.md` for semantic versions, public GitHub Releases, signed CI artifacts, forward compatibility, safe parser delivery, and conditional desktop updater integration.
 - Clarified that CanCan has no hosted service/backend: Gmail, BYO AI, optional fixed FX rates, update checks, and future connectors are separately authorized local-client connections; MVP has no analytics or behavioral telemetry.
 - Simplified user-facing security to vault password, optional `Remember on this Mac`, and one recovery file. Internal key separation remains hidden, backup adds no second password, and exact cryptographic/restore details move to feasibility validation.
-- Added a machine-checked eight-slice implementation sequence so coding agents load only the selected slice's specs/ADRs/blockers instead of all canonical specs.
+- Added a machine-checked implementation sequence so coding agents load only the selected slice's specs/ADRs/blockers instead of all canonical specs.
 - Added shared context and implementation-review packet generators for implementer/tester/reviewer parity, plus deterministic dependency/path/blocker/test/outcome validation.
 
 ### Next
 
-- Continue the remaining P0 security, evidence lifecycle, parser-evidence, consent, restore, and desktop feasibility decisions.
-- Resolve the P1 license/platform/signing/update-channel details before implementing release automation.
+- Implement `app-foundation` and verify real workspace typecheck, unit-test, desktop-build, and docs harness commands.
+- Implement `synthetic-core-flow`, then resume a grouped 5-10 question grill before touching real vault/manual-import behavior.
+- Configure public domain/identity/accounts only when their owning slice is reached; resolve license/platform/signing/update-channel details before release automation.
 
 ## 2026-07-12
 

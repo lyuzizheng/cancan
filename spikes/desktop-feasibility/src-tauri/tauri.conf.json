@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CanCan Feasibility Spike",
+  "version": "0.0.0",
+  "identifier": "app.cancan.feasibility",
+  "build": {
+    "frontendDist": "../frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "CanCan Feasibility Spike",
+        "width": 800,
+        "height": 600
+      }
+    ]
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/64x64.png"]
+  }
+}

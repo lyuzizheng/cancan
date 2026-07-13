@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -25,6 +25,21 @@ Tauri/Rust privileged commands for filesystem, database, backup, and secrets
 Do not use Rails/Sure as the app base. Use Sure only as a domain/product reference.
 
 Do not use SwiftUI for MVP.
+
+## Feasibility evidence
+
+The disposable [desktop feasibility spike](../../spikes/desktop-feasibility/EVIDENCE.md) passed on macOS arm64 on 2026-07-13:
+
+```text
+Tauri 2 debug desktop build
+bundled SQLCipher 4.14.0 with FTS5 enabled
+encrypted database reopen and wrong-key rejection
+authenticated file encryption and tamper rejection
+password and recovery wrappers around one master key
+macOS Keychain binary-secret write/read/delete
+```
+
+This accepts the runtime and package-boundary architecture. It does not accept a production cryptographic format, exact Argon2id parameters, temporary-plaintext policy, cross-platform secret-store behavior, or release/signing configuration; those remain blocked in their owning specs.
 
 ## Consequences
 

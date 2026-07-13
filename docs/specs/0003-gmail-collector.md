@@ -6,7 +6,7 @@ Automatically collect financial statement evidence from Gmail while preserving l
 
 ## Implementation blocker
 
-Public OAuth distribution and Gmail-data transfer to cloud AI remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not finalize those paths from this directional spec.
+Public OAuth verification and Gmail-data transfer to cloud AI remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not claim public Gmail availability, freeze the AI disclosure, or submit verification until the real data flow and public identity are reviewable.
 
 ## MVP decision
 
@@ -39,16 +39,21 @@ Desktop apps cannot safely keep a client secret. PKCE is required to protect the
 
 ## Google Cloud setup
 
-For development/MVP, Google Cloud side needs:
+Use separate Google Cloud projects and credentials for development/testing and public production. Normal users authorize their own Gmail account through the project-owned production Desktop OAuth client; they should not need to create a Google Cloud project or paste OAuth credentials.
+
+For development/testing, Google Cloud needs:
 
 ```text
 Gmail API enabled
 OAuth consent screen configured
 OAuth client application type: Desktop app
 redirect URI using loopback pattern
+explicit test users while the consent screen remains in testing
 ```
 
-Early development can require bring-your-own Google OAuth client configuration if needed. A later public release may use a CanCan-owned OAuth client.
+The production Desktop OAuth `client_id` is a public identifier and may be distributed in the app's build configuration. A Desktop app cannot keep a `client_secret`; do not rely on one. Developer-only client-ID override may exist outside the committed repository for local integration tests. OAuth tokens and any mistakenly issued client secret must never enter source control, fixtures, logs, or release artifacts.
+
+The public production project needs its own project-owned Desktop OAuth client and completed verification before Gmail is advertised as generally available.
 
 ## Scope policy
 
@@ -59,6 +64,8 @@ Required scope:
 ```text
 https://www.googleapis.com/auth/gmail.readonly
 ```
+
+Google classifies `gmail.readonly` as a Restricted scope. Request no broader scope and keep the implementation/data-use justification aligned with read-only statement discovery and import.
 
 Allowed actions:
 
@@ -80,6 +87,29 @@ mark read/unread
 delete email
 change mailbox settings
 ```
+
+## Public OAuth verification track
+
+Treat verification as a release workstream, not a last-minute console toggle. Before submission:
+
+```text
+choose the public app identity, support contact, and authorized domain
+prove authorized-domain ownership in Google Search Console
+publish a public homepage and privacy policy on that domain
+explain local storage, optional AI transfer, retention, deletion, and Google API Services User Data Policy Limited Use compliance
+prepare a complete OAuth demo video and per-scope justification
+verify that the consent-screen copy exactly matches the running app and website
+submit brand and restricted-scope verification, then leave schedule margin for review questions
+```
+
+Google states that verification can take several weeks. A security assessment may also be required depending on whether Restricted-scope data is stored on or transmitted through servers or third-party services. CanCan has no hosted backend, but optional BYO-AI transfer is part of the real data flow and must be disclosed; Google makes the final verification and assessment determination.
+
+Authoritative references:
+
+- [Gmail API scopes](https://developers.google.com/workspace/gmail/api/auth/scopes)
+- [OAuth for native apps](https://developers.google.com/identity/protocols/oauth2/native-app)
+- [Restricted-scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification)
+- [Google Workspace API user-data policy](https://developers.google.com/workspace/workspace-api-user-data-developer-policy)
 
 ## UX model
 
@@ -310,3 +340,5 @@ message body not stored by default
 - Re-running sync does not duplicate already imported attachments.
 - Password-protected PDFs can be detected, unlocked locally, and optionally tied to a saved secret reference.
 - Errors are visible and actionable.
+- Development/test credentials and test users are isolated from the production OAuth project.
+- Public release does not advertise Gmail connection until the production consent screen, website disclosures, restricted-scope justification, and required Google verification are complete.
