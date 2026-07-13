@@ -7,8 +7,11 @@ cd "$ROOT"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/cancan-harness.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
-cp -R docs .agents .github "$TEST_ROOT/"
-cp AGENTS.md README.md .gitignore "$TEST_ROOT/"
+cp -R docs .agents .github scripts "$TEST_ROOT/"
+cp AGENTS.md README.md .gitignore .node-version rust-toolchain.toml "$TEST_ROOT/"
+mkdir -p "$TEST_ROOT/spikes/desktop-feasibility"
+cp spikes/desktop-feasibility/package.json spikes/desktop-feasibility/EVIDENCE.md \
+  "$TEST_ROOT/spikes/desktop-feasibility/"
 
 (
   cd "$TEST_ROOT"
@@ -37,10 +40,11 @@ run_check .agents/scripts/check-docs-consistency.sh
 run_check .agents/scripts/check-agent-skills.sh
 run_check .agents/scripts/check-ci-workflow.sh
 run_check .agents/scripts/check-implementation-slices.sh
+run_check scripts/test-setup-dev.sh
 
 context_packet="$TEST_ROOT/../cancan-context-packet.txt"
 CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/context-for-slice.sh" desktop-feasibility > "$context_packet"
-if ! rg -q 'docs/specs/0001-repo-structure[.]md' "$context_packet" || ! rg -q 'Implementation readiness: EVIDENCE ONLY' "$context_packet"; then
+if ! rg -q 'docs/specs/0001-repo-structure[.]md' "$context_packet" || ! rg -q 'Implementation readiness: COMPLETE' "$context_packet"; then
   echo "Slice context packet is missing required sources or blocker state."
   exit 1
 fi
@@ -48,8 +52,8 @@ rm "$context_packet"
 
 context_packet="$TEST_ROOT/../cancan-dependent-context-packet.txt"
 CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/context-for-slice.sh" app-foundation > "$context_packet"
-if ! rg -q 'incomplete dependencies: desktop-feasibility' "$context_packet"; then
-  echo "Dependent slice context omitted incomplete dependency state."
+if ! rg -q 'Depends on: desktop-feasibility' "$context_packet" || ! rg -q 'Implementation readiness: READY' "$context_packet"; then
+  echo "Ready slice context omitted completed dependency or readiness state."
   exit 1
 fi
 rm "$context_packet"
@@ -104,7 +108,7 @@ mv "$readme.bak" "$readme"
 
 adr="$TEST_ROOT/docs/adr/0001-local-first-tauri-react-sqlite.md"
 cp "$adr" "$adr.bak"
-awk 'found && $0 == "Proposed" {$0 = "Unknown"} /^## Status$/ {found = 1} {print}' "$adr.bak" > "$adr"
+awk 'found && $0 == "Accepted" {$0 = "Unknown"} /^## Status$/ {found = 1} {print}' "$adr.bak" > "$adr"
 expect_failure "invalid ADR status" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-docs-consistency.sh"
 mv "$adr.bak" "$adr"
 
@@ -143,7 +147,7 @@ expect_failure "slice references missing spec" env CANCAN_ROOT="$TEST_ROOT" "$TE
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-awk 'BEGIN {changed=0} !changed && /Desktop\/storage architecture feasibility/ {sub(/Desktop\/storage architecture feasibility/, "Missing architecture blocker"); changed=1} {print}' "$manifest.bak" > "$manifest"
+awk 'BEGIN {changed=0} !changed && /Public project identity and website launch/ {sub(/Public project identity and website launch/, "Missing public-project blocker"); changed=1} {print}' "$manifest.bak" > "$manifest"
 expect_failure "slice references missing blocker" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
@@ -153,22 +157,22 @@ expect_failure "slice missing test gates" env CANCAN_ROOT="$TEST_ROOT" "$TEST_RO
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-sed 's/| desktop-feasibility | investigating | none |/| desktop-feasibility | investigating | backup-release |/' "$manifest.bak" > "$manifest"
+sed 's/| desktop-feasibility | completed | none |/| desktop-feasibility | completed | backup-release |/' "$manifest.bak" > "$manifest"
 expect_failure "slice dependency cycle or invalid order" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-sed 's/| desktop-feasibility | investigating |/| desktop-feasibility | unknown |/' "$manifest.bak" > "$manifest"
+sed 's/| desktop-feasibility | completed |/| desktop-feasibility | unknown |/' "$manifest.bak" > "$manifest"
 expect_failure "slice invalid status" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-sed 's/| desktop-feasibility | investigating |/| desktop-feasibility | ready |/' "$manifest.bak" > "$manifest"
+sed 's/| public-project-surface | blocked |/| public-project-surface | ready |/' "$manifest.bak" > "$manifest"
 expect_failure "ready slice retains blockers" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-sed 's/| app-foundation | blocked |/| app-foundation | ready |/' "$manifest.bak" > "$manifest"
+sed 's/| synthetic-core-flow | blocked |/| synthetic-core-flow | ready |/' "$manifest.bak" > "$manifest"
 expect_failure "ready slice has incomplete dependency" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
@@ -177,10 +181,17 @@ sed 's/, Security observability and sensitive-data lifecycle | connectors/ | con
 expect_failure "sensitive slice loses safety blocker" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
-cp "$manifest" "$manifest.bak"
-sed -e 's/| desktop-feasibility | investigating |/| desktop-feasibility | ready |/' -e 's/Desktop\/storage architecture feasibility, Vault\/file\/backup security validation | disposable/none | disposable/' "$manifest.bak" > "$manifest"
+adr="$TEST_ROOT/docs/adr/0001-local-first-tauri-react-sqlite.md"
+cp "$adr" "$adr.bak"
+awk 'found && $0 == "Accepted" {$0 = "Proposed"} /^## Status$/ {found = 1} {print}' "$adr.bak" > "$adr"
 expect_failure "ready slice uses proposed ADR" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
-mv "$manifest.bak" "$manifest"
+mv "$adr.bak" "$adr"
+
+node_version="$TEST_ROOT/.node-version"
+cp "$node_version" "$node_version.bak"
+printf '0.0.0\n' > "$node_version"
+expect_failure "setup toolchain version drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/scripts/test-setup-dev.sh"
+mv "$node_version.bak" "$node_version"
 
 implementation_review="$TEST_ROOT/.agents/scripts/implementation-review-packet.sh"
 cp "$implementation_review" "$implementation_review.bak"

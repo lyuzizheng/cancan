@@ -89,6 +89,7 @@ removed harness layers are not referenced
 current priorities are not copied into .agents
 ADR statuses use the allowed vocabulary
 the current tree and pending diff have no whitespace errors
+developer-setup scripts parse, pinned toolchain versions agree, checksums reject tampering, platform routing is explicit, foreign tool paths are preserved, and shell-profile updates are idempotent
 ```
 
 `.agents/scripts/harness-self-test.sh` copies the docs/harness to a temporary repository and injects known faults. The self-test passes only when the relevant gate rejects each fault.
@@ -152,3 +153,4 @@ The harness should call existing package scripts rather than wrap them in redund
 - Docs and harness changes require an independent semantic verdict.
 - Semantic review distinguishes mechanical fixes from `needs_design` questions.
 - No workflow claims app commands that do not exist.
+- The real developer-setup test runs through preflight/CI and the harness self-test proves that version-pin drift is rejected.

@@ -14,7 +14,7 @@ The current product target is a Gmail-first local financial evidence vault and p
 - No production app packages, migrations, runtime commands, build scripts, or UI implementation exist yet.
 - App-specific test, DB reset, package, and visual-inspection commands must be added only after their real implementations exist.
 - The `desktop-feasibility` slice is complete. ADR 0001 is accepted after a real Tauri 2, SQLCipher/FTS5, authenticated-file-encryption, Argon2id wrapper, and macOS Keychain smoke test.
-- The `app-foundation` slice is ready and is the next implementation slice. Exact production cryptographic formats and restore behavior remain blocked.
+- The `app-foundation` slice is in progress. Its reproducible macOS toolchain/setup subpart is complete; production workspace packages, typecheck/unit/build commands, and CI remain next. Exact production cryptographic formats and restore behavior remain blocked.
 
 ## Documentation state
 
@@ -33,7 +33,7 @@ The old broad numbered product-doc layer and duplicated alignment/harness projec
 
 ## Immediate next work
 
-Implement `app-foundation`, then `synthetic-core-flow`, using their generated slice contexts and real command-backed gates. Resume broad design grilling after the synthetic flow and before the vault/manual-import slice. Run a second public-launch grill after the review/ledger UI and before public OAuth/release work.
+Continue `app-foundation` with the production workspace/package skeleton and real typecheck, unit-test, desktop-build, and CI commands; then implement `synthetic-core-flow`. Resume broad design grilling after the synthetic flow and before the vault/manual-import slice. Run a second public-launch grill after the review/ledger UI and before public OAuth/release work.
 
 Do not implement behavior covered by an active blocker. A ready slice may use a spec for its explicitly unblocked outcome without implementing that spec's blocked release, security, privacy, or product behavior; the generated slice context is the executable boundary.
 

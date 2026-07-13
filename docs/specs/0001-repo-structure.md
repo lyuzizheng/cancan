@@ -13,7 +13,10 @@ ADR 0001 is accepted. The [disposable feasibility spike](../../spikes/desktop-fe
 ```text
 cancan/
   AGENTS.md                 # tool-neutral coding-agent entry point
+  .node-version             # pinned Node.js LTS version
+  rust-toolchain.toml       # pinned Rust plus clippy/rustfmt
   .agents/                  # skills, workflows, deterministic and semantic gates
+  scripts/                  # one-command developer setup and its deterministic tests
   apps/
     desktop/
       src/                  # React app shell and pages
@@ -121,6 +124,8 @@ migration -> repository -> core service -> UI page -> tests -> docs update
 ```
 
 Production packages must not import from `spikes/`. A spike may remain as reproducible evidence until equivalent production tests exist.
+
+Developer setup is a root concern. `scripts/setup-dev.sh` installs only the pinned toolchain and invokes real package/harness commands; it must not duplicate product behavior or hide package-specific build logic.
 
 ## Acceptance criteria
 

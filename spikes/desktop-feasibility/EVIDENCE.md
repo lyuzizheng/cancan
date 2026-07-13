@@ -10,8 +10,8 @@ This evidence applies only to the disposable `desktop-feasibility` slice. It acc
 macOS 26.5.2 arm64
 Apple Command Line Tools / clang 21.0.0
 Rust 1.97.0 stable
-Node.js 24.14.0
-pnpm 11.7.0
+Node.js 24.18.0
+pnpm 11.12.0
 Tauri CLI 2.11.4
 Tauri crate 2.11.5
 rusqlite 0.40.1

@@ -19,7 +19,17 @@ abort "Workflow must be a mapping: #{path}" unless document.is_a?(Hash)
 events = document["on"] || document[true]
 abort "Workflow must define pull_request and push events" unless events.is_a?(Hash)
 
-required_paths = ["AGENTS.md", ".agents/**", "docs/**", ".github/workflows/docs-harness.yml"]
+required_paths = [
+  "AGENTS.md",
+  "README.md",
+  ".agents/**",
+  "scripts/**",
+  ".node-version",
+  "rust-toolchain.toml",
+  "spikes/desktop-feasibility/package.json",
+  "docs/**",
+  ".github/workflows/docs-harness.yml"
+]
 %w[pull_request push].each do |event|
   config = events[event]
   abort "Workflow is missing #{event}" unless config.is_a?(Hash)

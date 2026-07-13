@@ -26,6 +26,12 @@ required=(
   ".agents/scripts/implementation-review-packet.sh"
   ".agents/scripts/implementation-slices.rb"
   ".agents/scripts/new-spec.sh"
+  ".node-version"
+  "rust-toolchain.toml"
+  "scripts/dev-toolchain.env"
+  "scripts/setup-dev.sh"
+  "scripts/test-setup-dev.sh"
+  "spikes/desktop-feasibility/package.json"
 )
 
 echo "CanCan agent preflight"
@@ -42,6 +48,10 @@ for script in .agents/scripts/*.sh; do
   bash -n "$script"
 done
 
+for script in scripts/*.sh; do
+  bash -n "$script"
+done
+
 for script in .agents/scripts/*.rb; do
   ruby -c "$script" >/dev/null
 done
@@ -52,6 +62,7 @@ done
 .agents/scripts/check-implementation-slices.sh
 .agents/scripts/check-docs-consistency.sh
 .agents/scripts/check-agent-skills.sh
+scripts/test-setup-dev.sh
 
 echo
 echo "Read order: docs/agent/reading-order.md"

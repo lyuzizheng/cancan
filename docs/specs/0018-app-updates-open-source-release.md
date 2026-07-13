@@ -177,15 +177,47 @@ Application rollback does not imply data rollback. An older app must refuse writ
 
 ## Developer and maintainer preparation
 
-The app-foundation slice should document reproducible local tools without requiring public launch accounts:
+The app-foundation slice provides one real macOS command without requiring public launch accounts:
 
 ```text
-current Node.js LTS
-Corepack/pinned pnpm
-Rust stable plus rustfmt and clippy
-platform build tools (Apple Command Line Tools or Xcode on macOS)
-repository bootstrap, test, lint/typecheck, desktop build, and docs-harness commands
+./scripts/setup-dev.sh
 ```
+
+The setup command:
+
+- supports Apple Silicon macOS, verified end to end, and has deterministic setup coverage for Intel macOS pending a real Intel hardware run;
+- requests Apple Command Line Tools when missing, then asks the developer to rerun after Apple's installer finishes;
+- installs the pinned official Node.js binary under the user's home directory and verifies its published SHA-256 checksum;
+- refuses to replace regular files, directories, or foreign symlinks already occupying its `~/.local/bin` tool paths;
+- when an existing `fnm` installation controls the interactive shell, installs the same Node/Corepack/pnpm pins there without changing the user's default Node version;
+- installs pinned Corepack and pnpm, then installs the pinned Rust toolchain with clippy/rustfmt through rustup;
+- uses project-local Tauri CLI dependencies rather than a global Tauri installation;
+- adds only `~/.local/bin` and `~/.cargo/bin` to the shell profile, idempotently;
+- bootstraps the current package root with its frozen lockfile and runs preflight plus the desktop feasibility gate by default;
+- requires neither Homebrew nor `sudo`.
+
+`scripts/dev-toolchain.env` is the setup version source. `.node-version`, `rust-toolchain.toml`, and package-manager/Tauri pins must match it, and `scripts/test-setup-dev.sh` enforces that invariant. Versions are intentionally pinned for reproducibility rather than floating to an unreviewed future `latest` on each machine.
+
+Latest supported stable pins verified against official upstreams on 2026-07-13. Node uses the latest LTS line rather than the short-lived Current line; the remaining tools use their latest stable release:
+
+```text
+Node.js 24.18.0 LTS
+Corepack 0.35.0
+pnpm 11.12.0
+Rust 1.97.0 stable
+Tauri CLI 2.11.4 (project-local)
+```
+
+When upgrading, verify the new upstream releases, update every pin in one patch, and run the setup simulation, a real repeat setup, application gates, preflight, harness self-test, and independent semantic review.
+
+References:
+
+- [Node.js 24.18.0 LTS release](https://nodejs.org/en/blog/release/v24.18.0)
+- [pnpm installation and Corepack pinning](https://pnpm.io/installation#using-corepack)
+- [Corepack 0.35.0 release](https://github.com/nodejs/corepack/releases/tag/v0.35.0)
+- [Rust 1.97.0 release](https://blog.rust-lang.org/releases/latest/)
+- [official rustup installer](https://rustup.rs/)
+- [Tauri macOS prerequisites](https://v2.tauri.app/start/prerequisites/#macos)
 
 Before public release, a maintainer must deliberately provision and record ownership/recovery for:
 
@@ -213,3 +245,4 @@ BYO-AI provider keys belong only in the user's local OS secret store. They are n
 - Static public pages deploy to preview and production environments without adding an application backend or analytics.
 - GitHub community files route support, bugs, contributions, and private security reports without asking users to expose financial data.
 - A release is not promoted until its public website/privacy claims, supported platforms, license, signing, updater-key recovery, and approval owner are complete.
+- A fresh supported development machine can install and verify the pinned toolchain with one repository command; setup version drift and non-idempotent profile edits fail deterministic tests.
