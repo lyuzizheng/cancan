@@ -239,6 +239,11 @@ sed 's/^      - main$/      - develop/' "$workflow.bak" > "$workflow"
 expect_failure "docs CI missing main push branch" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$workflow.bak" "$workflow"
 
+cp "$workflow" "$workflow.bak"
+sed 's#actions/checkout@v7#actions/checkout@v4#' "$workflow.bak" > "$workflow"
+expect_failure "docs CI uses deprecated action runtime" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$workflow.bak" "$workflow"
+
 application_workflow="$TEST_ROOT/.github/workflows/application.yml"
 cp "$application_workflow" "$application_workflow.bak"
 grep -v '^        run: pnpm verify$' "$application_workflow.bak" > "$application_workflow"

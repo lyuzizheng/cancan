@@ -50,6 +50,9 @@ job = jobs.is_a?(Hash) ? jobs["deterministic-docs-gate"] : nil
 abort "Workflow is missing deterministic-docs-gate job" unless job.is_a?(Hash)
 
 steps = Array(job["steps"])
+docs_uses = steps.map { |step| step.is_a?(Hash) ? step["uses"] : nil }.compact
+abort "Docs workflow is missing actions/checkout@v7" unless docs_uses.include?("actions/checkout@v7")
+
 runs = steps.map { |step| step.is_a?(Hash) ? step["run"] : nil }.compact
 required_runs = [
   ".agents/scripts/agent-preflight.sh",
@@ -99,11 +102,11 @@ abort "Application workflow must run on macos-14" unless application_job["runs-o
 
 application_steps = Array(application_job["steps"])
 application_uses = application_steps.map { |step| step.is_a?(Hash) ? step["uses"] : nil }.compact
-%w[actions/checkout@v4 actions/setup-node@v4].each do |required|
+%w[actions/checkout@v7 actions/setup-node@v6].each do |required|
   abort "Application workflow is missing #{required}" unless application_uses.include?(required)
 end
 
-setup_node = application_steps.find { |step| step.is_a?(Hash) && step["uses"] == "actions/setup-node@v4" }
+setup_node = application_steps.find { |step| step.is_a?(Hash) && step["uses"] == "actions/setup-node@v6" }
 unless setup_node.is_a?(Hash) && setup_node.fetch("with", {})["node-version-file"] == ".node-version"
   abort "Application workflow must source Node from .node-version"
 end

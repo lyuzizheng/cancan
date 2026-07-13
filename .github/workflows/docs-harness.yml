@@ -33,7 +33,7 @@ jobs:
   deterministic-docs-gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install harness dependency
         run: sudo apt-get update && sudo apt-get install --yes libdigest-sha-perl ripgrep ruby
       - name: Run preflight
