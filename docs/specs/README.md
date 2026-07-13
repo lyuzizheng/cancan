@@ -17,7 +17,7 @@ Do not load every spec by default unless the task spans the whole system.
 | `0001-repo-structure.md` | Monorepo/package layout and code boundaries |
 | `0002-database-schema.md` | SQLite/SQLCipher schema policy, indexes, benchmark, DB reset |
 | `0003-gmail-collector.md` | Gmail OAuth/API, rules, sync, attachments, protected PDF passwords |
-| `0004-parser-contract.md` | Native extraction + OCR + AI normalization contracts |
+| `0004-parser-contract.md` | Source observations, bounded AI normalization, evidence grounding, and parser qualification |
 | `0005-review-and-commit-policy.md` | Review, deterministic validation, auto-commit policy |
 | `0006-command-center-ui.md` | Main app shell, dashboard modules, review surface, AI Assistant entry |
 | `0007-first-run-onboarding.md` | First launch, vault setup, provider setup, startup sequence |

@@ -82,16 +82,19 @@ future Wise/Moomoo/Bitget read-only APIs
 
 ### packages/parsers
 
-Owns extraction and parse contracts:
+Owns document-normalization contracts and product parser skills:
 
 ```text
 native PDF text extraction interface
 OCR result interface
 extraction bundle shape
-provider parser interfaces
+job-scoped document-agent tool interfaces
+versioned provider/document parser skills
 structured parser schemas
 parser versioning
 ```
+
+Product parser skills are runtime artifacts for supported documents. They must not load or depend on the repo-development skills under `.agents/skills/`.
 
 ### packages/ai
 
@@ -101,11 +104,19 @@ Owns:
 
 ```text
 provider routing
-structured generation helpers
+single-pass structured normalization
+bounded document-agent runtime adapters
+ToolLoopAgent / Pi Agent Core comparison boundary until the runtime spike selects one
 prompt/version logging helpers
 model configuration types
 AI permission boundary helpers
 ```
+
+The document agent is a small normalizer with fixed parser tools. It is not a coding agent and must not expose shell, generic filesystem, arbitrary network, database, secret, or ledger tools.
+
+Both current runtime candidates require Node 22 or newer. Production execution and packaging remain evidence-gated: the preferred candidate is a trusted Node worker/sidecar bundled and controlled by Tauri, while renderer execution may be accepted only if the spike proves compatibility without exposing OS secrets or broad Tauri capabilities. The product must not require users to install Node, Docker, a VM, QEMU, or a separate sandbox runtime.
+
+The Tauri/Rust boundary continues to own user-selected file access and OS-secret retrieval. A sidecar, if selected, is process separation and packaging, not an assumed permission sandbox.
 
 ### packages/ui
 

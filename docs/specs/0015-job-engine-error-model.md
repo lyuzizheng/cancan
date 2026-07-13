@@ -73,7 +73,7 @@ It should checkpoint cursor/history/processed message ids in `step_state_json` o
 
 ### `source_document_ingest`
 
-Prepares a source document for parsing.
+Prepares a source document and initial source observations for parsing.
 
 Can internally perform:
 
@@ -83,27 +83,33 @@ mime detection
 password-protected PDF detection
 password unlock when a saved secret exists
 native text extraction
-OCR/layout extraction
-extraction bundle creation
+structured table extraction
+initial input-quality assessment
+job-scoped extraction bundle creation
 ```
 
 If the PDF is locked and no saved password works, the job becomes `blocked` with `blocked_reason = password_required`.
 
 ### `parse_document`
 
-Turns an extraction bundle into validated staged external records.
+Turns a source document plus job-scoped observations into a validated structured proposal and staged external records.
 
 Can internally perform:
 
 ```text
-AI normalization
+provider/document skill selection
+bounded AI normalization through single-pass or document-agent runtime
+conditional OCR/page-region/tool requests
 schema validation
+evidence grounding
 deterministic financial validation
 parse_run creation
 external_record staging
 ```
 
 AI retries must create or preserve distinct parse run history. Do not silently overwrite previous model/prompt/input/output metadata.
+
+The document agent receives only the current parse job and the fixed parser tools from `0004-parser-contract.md`. Step/submission budget exhaustion, invalid structured completion, and ungrounded required evidence become explicit parse outcomes rather than hidden retries.
 
 ### `reconcile_document`
 
@@ -241,7 +247,8 @@ Recommended defaults:
 Gmail/network transient errors: auto retry with backoff
 file IO/transient extraction errors: limited auto retry
 AI parse transient/provider errors: retry allowed, preserve parse history
-validation failure: no blind retry, create review/error
+normalizer budget exhaustion or invalid structured completion: no blind retry, create review/error
+evidence or financial validation failure: no blind retry, create review/error
 password_required: blocked until user action
 Gmail auth revoked: blocked until reconnect
 backup target unavailable: blocked or failed with retry action
@@ -279,6 +286,8 @@ retryable
 related ids
 raw cause when safe
 ```
+
+Parser-specific codes distinguish at least `normalizer_budget_exhausted`, `structured_proposal_invalid`, and `evidence_grounding_failed` from transient provider/network failures so the job engine does not spend money retrying deterministic rejection.
 
 Do not put secrets, statement passwords, OAuth tokens, AI keys, or full sensitive document text in `error_json`.
 

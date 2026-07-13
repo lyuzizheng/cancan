@@ -34,6 +34,7 @@ gmail_search_rules
 gmail_sync_states
 parse_runs
 external_records
+external_record_evidence_refs
 ledger_events
 ledger_legs
 match_edges
@@ -80,6 +81,16 @@ idempotent account resolution and audited merge/archive transitions
 
 `0004-parser-contract.md` owns document/record identity and reparse behavior. The schema keeps its SHA-256 file identity, semantic document identity, stable external-record key, and record version as separate fields.
 
+It must also support field-level evidence grounding without an unbounded assumptions payload:
+
+```text
+parse_runs store the complete normalization-profile and runtime/tool/model versions
+external_record_evidence_refs map a record version and field to source-document page/row/column/region evidence
+evidence references may retain a hash and safe excerpt while raw extraction retention remains separately governed
+date-only fields remain date-only rather than receiving an invented timezone
+no generic assumptions_json column is added for speculative inference
+```
+
 ## Index policy
 
 Every table must have indexes for the access paths used by UI/services.
@@ -98,6 +109,9 @@ gmail_search_rules(enabled)
 parse_runs(source_document_id, created_at)
 external_records(stable_record_key, version)
 external_records(status, record_type)
+external_record_evidence_refs(external_record_id, field_name)
+external_record_evidence_refs(source_document_id, page_number)
+external_record_evidence_refs(source_document_id, row_number, column_number)
 ledger_events(event_date)
 ledger_events(status, event_type)
 ledger_events(commit_idempotency_key)
@@ -166,6 +180,7 @@ Acceptance requires integration tests to run from a clean database without manua
 - Schema changes use hand-written, versioned migrations.
 - Core query dimensions are columns rather than hidden in JSON.
 - Exact source-file identity uses SHA-256 and remains separate from semantic document identity.
+- Structured record fields can be traced through explicit field-level evidence references without requiring permanent raw full-text retention or a generic assumptions JSON field.
 - Account identity supports unique keyed provider aliases, first-seen candidates, archive, and merge redirects without using display names or bare hashes as identity.
 - The schema supports immutable committed events, reversals, commit idempotency, many-to-many allocations, and atomic audit records.
 - Required UI/service access paths have deliberate indexes.

@@ -11,7 +11,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added real root `typecheck`, unit-test, Rust fmt/clippy, web-build, Tauri debug-build, and combined `verify` commands. Added a macOS application workflow that uses the pinned toolchain, frozen install, repository preflight, and the same root gate.
 - Added application-CI structural gates and fault injections, bringing the harness self-test to 32 detected faults. The gate rejects removal of `pnpm verify`, either setup verification path, unlocked production Cargo resolution, or regression to the deprecated GitHub Actions runtime. Updated setup to verify both the production application and the still-relevant desktop feasibility evidence while keeping the spike's nested pnpm/Cargo lockfiles isolated and frozen.
 - Ran test-first UI work from a missing `AppShell` failure to a passing deterministic render test, then passed `pnpm verify`. Playwright desktop and 390px checks showed the neutral local-first shell correctly with zero console errors or warnings after adding its favicon.
-- Marked `app-foundation` complete. `synthetic-core-flow` remains blocked only by the focused `Parser evidence contract`; no parser, financial, storage, or security behavior was inferred.
+- Marked `app-foundation` complete, then resolved the focused parser-evidence contract through explicit user decisions. `synthetic-core-flow` is now ready without inferring production storage, security, or live-provider behavior.
 - Added `./scripts/setup-dev.sh` as an idempotent, Homebrew-free, no-`sudo` macOS setup. Apple Silicon is verified end to end; Intel archive routing is deterministically tested but awaits a real hardware run. It checksum-verifies the pinned official Node binary, installs pinned Corepack/pnpm and rustup/Rust with clippy/rustfmt, bootstraps frozen lockfiles, and runs preflight plus production application and desktop feasibility gates.
 - Verified the current supported toolchain pins on 2026-07-13: latest-LTS Node.js 24.18.0, plus latest-stable Corepack 0.35.0, pnpm 11.12.0, Rust 1.97.0, and project-local Tauri CLI 2.11.4.
 - Added deterministic setup tests for architecture selection, checksum rejection, pin consistency, unsupported OS handling, missing Command Line Tools UX, foreign tool-path preservation, existing-`fnm` coexistence, rustup shell/global-default isolation, and idempotent shell-profile changes; wired them into preflight and docs CI.
@@ -34,10 +34,13 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Simplified user-facing security to vault password, optional `Remember on this Mac`, and one recovery file. Internal key separation remains hidden, backup adds no second password, and exact cryptographic/restore details move to feasibility validation.
 - Added a machine-checked implementation sequence so coding agents load only the selected slice's specs/ADRs/blockers instead of all canonical specs.
 - Added shared context and implementation-review packet generators for implementer/tester/reviewer parity, plus deterministic dependency/path/blocker/test/outcome validation.
+- Defined extraction and OCR as source-observation producers and made AI normalization mandatory for the single canonical structured proposal. Added smart multimodal and advanced separate-extraction modes, field-level evidence grounding, date-only/timezone rules, and professional separation between source Debit/Credit, signed account-balance delta, and UI signs.
+- Defined the optional agentic normalizer as a bounded seven-tool document agent with no coding, shell, arbitrary file/network, database, secret, or ledger capability. Product parser skills remain versioned provider packages and are separate from repo `.agents/skills`.
+- Selected Vercel AI SDK ToolLoopAgent as the first runtime candidate and Pi Agent Core as the comparison candidate, while excluding the full Pi Coding Agent. Added a shared deterministic/adversarial/single-pass comparison harness and a blocked Node/Tauri execution-and-packaging evidence slice; an OS sandbox is optional and no user-installed runtime is allowed.
 
 ### Next
 
-- Resolve `Parser evidence contract`, implement `synthetic-core-flow`, then resume a grouped 5-10 question grill before touching real vault/manual-import behavior.
+- Implement the ready `synthetic-core-flow` with deterministic mocked AI output. Then run the document-normalizer runtime/packaging spike and a grouped 5-10 question grill before touching real vault/manual-import behavior.
 - Configure public domain/identity/accounts only when their owning slice is reached; resolve license/platform/signing/update-channel details before release automation.
 
 ## 2026-07-12
