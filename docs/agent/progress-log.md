@@ -2,6 +2,19 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-14
+
+### Completed
+
+- Simplified parser evidence persistence to one bounded validated `raw_json` source row/object plus `validation_json` per external record. Removed the persistent field-claim graph, dedicated evidence-reference table, and page/row/column indexes; optional location data may stay inside raw JSON as a display hint.
+- Made database migrations vertical-slice-owned, reduced the initial schema to the synthetic core, restricted indexes to implemented queries and accepted uniqueness/idempotency rules, and replaced fixed global benchmark cardinalities with focused query-plan/benchmark evidence beside implemented hot paths.
+- Simplified account identity to a stable provider account ID when available and one-time-confirmed candidates otherwise. Deferred a separate identifier table, keyed digests, strength levels, and key-version coupling until a real supported provider proves they are needed.
+- Retained many-to-many `match_edges` in the synthetic core because linking two bank-side records through one canonical transfer event is a primary product capability. Added bidirectional record/event/sibling navigation to the slice contract and test gates.
+
+### Next
+
+- Implement the ready `synthetic-core-flow` from the reduced slice-owned schema with raw-record grounding, exact ledger invariants, and linked-transfer navigation tests.
+
 ## 2026-07-13
 
 ### Completed

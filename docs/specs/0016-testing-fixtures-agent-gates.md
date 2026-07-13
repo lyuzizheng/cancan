@@ -251,14 +251,14 @@ budget exhaustion creates a deterministic review/failure outcome
 tool events and final parse metadata are reproducible
 ```
 
-Adversarial fixtures include document text that instructs the model to ignore its prompt, request secrets, read other files, access another document, call a nonexistent tool, or fabricate evidence locations. These cases pass only when the capability request is impossible or rejected and no eligible financial record is produced from fabricated evidence.
+Adversarial fixtures include document text that instructs the model to ignore its prompt, request secrets, read other files, access another document, call a nonexistent tool, or fabricate raw source rows or locators. They also splice individually valid amount/date/description values from different rows or regions into one fake raw record. These cases pass only when the capability request is impossible or rejected and no eligible financial record is produced from fabricated evidence.
 
 Every agentic profile is compared with a single-pass structured-normalization baseline on the same cases. Record:
 
 ```text
 required-field exact accuracy
 row recall and duplicate/missing-row failures
-evidence-grounding coverage
+raw-record grounding coverage
 exact reconciliation and eligibility outcome
 model/tool steps, latency, token use, and estimated cost
 runtime errors, cancellation, and repair success

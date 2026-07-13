@@ -33,7 +33,7 @@ AI classifier selected the configured supported provider and document type
 provider package deterministic fingerprints and schema checks passed
 the complete provider/document normalization profile is currently qualified
 schema_valid = true
-every event-type-required financial field is grounded to source observations
+every event-type-required financial field is grounded to a validated raw source record
 deterministic_validation_passed = true
 account/container identity is resolved for commit
 not an exact/probable duplicate, partial allocation, or warning case
@@ -44,7 +44,7 @@ all event-type-required legs and evidence are present
 
 All financial event types may qualify, including repayments, transfers, FX, trades, refunds, withdrawals, interest, and fees. There is no document-type shortcut and no permanently trusted event-type list.
 
-Do not use raw LLM self-reported confidence or one global numeric threshold. Each complete normalization profile calibrates required-field confidence against its labeled qualification fixtures. A record is `very-high confidence` only when every event-type-required field meets that profile's accepted calibration, is grounded to source observations, and has no competing parse or mapping.
+Do not use raw LLM self-reported confidence or one global numeric threshold. Each complete normalization profile calibrates required-field confidence against its labeled qualification fixtures. A record is `very-high confidence` only when every event-type-required field meets that profile's accepted calibration, is grounded to its validated raw source record, and has no competing parse or mapping.
 
 ## Exact reconciliation-window gate
 
@@ -117,6 +117,8 @@ the system never invents a synthetic remainder event
 
 The default review surface presents one recommended relationship and one primary action. Exact allocations and evidence details are available on expansion, not required as the user's first mental model.
 
+Cross-account transfers are a core relationship, not a future matching extension. The two bank-side records may both link to one canonical transfer event so either record detail can show the other side without duplicating income or spending.
+
 ## Commit, reversal, and audit policy
 
 Uncommitted proposals may be edited or removed. Committed correction requests follow the immutable reversal/replacement lifecycle owned by `0013-ledger-assets-valuation.md`; they never directly mutate or delete an original committed event.
@@ -164,6 +166,7 @@ may affect current displayed asset value
 - Auto-committed records appear quietly in Recent Activity with one-click reversal-backed Undo.
 - Exact duplicate handling is auditable.
 - Partial and one-to-many matches remain simple in normal UI and block auto-commit.
+- Two bank-side records can link to one canonical transfer event and be discovered from either side.
 - Repayments do not double-count spending.
 - Committed events are corrected through reversal/replacement, never mutation or deletion.
 - Financial mutations and review decisions create atomic append-only audit entries.

@@ -28,7 +28,7 @@ source_document
 -> schema validation
 -> evidence grounding
 -> deterministic financial validation
--> external_records and source-backed observations
+-> external_records and source-backed ledger observations
 -> reconciliation candidates
 ```
 
@@ -129,7 +129,7 @@ export interface ExtractionBundle {
 
 Coordinates are normalized to one documented origin and unit. CSV evidence uses stable row/column coordinates. PDF evidence uses page plus native-text span, OCR block, or normalized page region.
 
-Production retention may keep only the location, hash, safe excerpt, and information needed to reproduce an observation from the encrypted source document. This spec does not authorize permanent raw full-document text retention.
+These observations are job-scoped validation inputs. They are not persisted as a field-claim graph or dedicated page/row/column schema. Durable record-level source context is the bounded `raw` object defined below. This spec does not authorize permanent raw full-document text retention.
 
 ## Document-agent contract
 
@@ -195,22 +195,7 @@ export interface CanonicalExternalRecordInput {
   accountBalanceDelta?: ExactMoneyInput;
   balanceAfter?: ExactMoneyInput;
   valuation?: ExactMoneyInput;
-  evidenceClaimIds: string[];
-  raw: unknown;
-}
-
-export type EvidenceTarget =
-  | { kind: 'document'; field: string }
-  | { kind: 'account'; proposalAccountId: string; field: string }
-  | { kind: 'record'; proposalRecordId: string; field: string };
-
-export interface EvidenceClaim {
-  id: string;
-  target: EvidenceTarget;
-  observedText: string;
-  page?: number;
-  observationIds: string[];
-  modelConfidence?: number;
+  raw: Record<string, unknown>;
 }
 
 export interface StructuredDocumentIdentity {
@@ -218,7 +203,6 @@ export interface StructuredDocumentIdentity {
   documentType: string;
   statementId?: string;
   statementPeriod?: { from?: string; to?: string };
-  evidenceClaimIds: string[];
 }
 
 export interface StructuredAccountCandidate {
@@ -236,7 +220,6 @@ export interface StructuredAccountCandidate {
   providerAccountId?: string;
   maskedIdentifier?: string;
   currency?: string;
-  evidenceClaimIds: string[];
 }
 
 export interface StructuredParseProposal {
@@ -245,11 +228,12 @@ export interface StructuredParseProposal {
   openingSnapshots: CanonicalExternalRecordInput[];
   records: CanonicalExternalRecordInput[];
   closingSnapshots: CanonicalExternalRecordInput[];
-  evidenceClaims: EvidenceClaim[];
 }
 ```
 
-`proposalRecordId` and `proposalAccountId` are unique only within one proposal and exist so evidence and records can refer to each other without array-position coupling. They are validated for uniqueness and are not stable database identity inputs. `providerRecordId`, when evidenced, is the preferred stable external-record identity described below.
+`proposalRecordId` and `proposalAccountId` are unique only within one proposal and let records refer to detected accounts without array-position coupling. They are validated for uniqueness and are not stable database identity inputs. `providerRecordId`, when grounded, is the preferred stable external-record identity described below.
+
+`raw` is the bounded original row/object used to normalize that record. It preserves the source values needed to understand the result, not the complete extracted document. Provider-specific page, table, row, column, region, or other locator data may be included inside this JSON object when available, but no locator shape is required and no persistent field-to-location graph is created.
 
 `ExactDecimalString` uses a canonical plain-decimal representation with no exponent and is validated before exact decimal/native-unit arithmetic. `amount.value` is a non-negative magnitude. `accountBalanceDelta.value` is signed: positive means the source account's reported balance increases, including an increase in a credit-card liability.
 
@@ -282,24 +266,24 @@ Do not add a generic `assumptions` JSON field. If a future repeated use case gen
 
 ## Evidence grounding
 
-Every event-type-required financial field must be grounded to source observations before auto-commit eligibility.
+Every event-type-required financial field must be grounded to the record's raw source object before auto-commit eligibility, and that raw object must first be validated against the current job's source observations.
 
 Rules:
 
 ```text
-proposal record IDs, proposal account IDs, evidence claim IDs, and observation IDs are unique in their own scope
-every document/account/record evidenceClaimId resolves to exactly one claim
-every claim target resolves to the named proposal object and a schema-valid field path for that object type
-a claim referenced by an object targets that same object; orphaned or cross-target claims fail validation
-every observationId resolves inside the current extraction bundle and current source document
-observedText must match the referenced source observation under documented normalization rules
-the app resolves AI evidence claims back to native/OCR/table observations
-an AI-supplied bounding box or confidence is a claim, not authority
-amount/date/currency/balance text must match a locatable observation
-native/OCR disagreement is retained as conflict evidence
+proposal record IDs, proposal account IDs, and observation IDs are unique in their own scope
+every record contains one bounded raw JSON object copied from the current document's extracted row/region
+the validator proves that the raw object corresponds as a whole to one coherent deterministic table row or one bounded source record/region returned by a current-job tool
+individual values occurring somewhere in the document is insufficient; values from different rows/regions must not be spliced into one raw object
+required amount/date/currency/balance fields must reproduce or deterministically map from values in that raw object
+provider-defined transformations and validation outcomes are summarized in external_records.validation_json
+native/OCR disagreement remains a validation conflict
 multimodal-only output that cannot be grounded may enter Review but cannot auto-commit
-every committed event remains traceable to source document, parse run, record version, field, and location
+optional page/row/region data inside raw JSON is a display hint, not grounding authority or a required query dimension
+every committed event remains traceable to source document, parse run, record version, raw source object, and validation summary
 ```
+
+Grounding happens during parsing; the database does not persist an evidence-claim graph. A missing, fabricated, oversized, or ungrounded raw object rejects auto-commit eligibility.
 
 ## Identity and reparse behavior
 
@@ -318,7 +302,7 @@ semantic conflict or changed financial content -> retain both files and create r
 
 Every completed import returns per-file outcomes so the UI can distinguish newly imported files, files already in CanCan, probable existing statements, archived/removed existing evidence, and failures.
 
-Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity, source row coordinates, and normalized stable financial fields. Confidence, runtime version, prompt version, and mutable descriptions are not identity inputs.
+Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity and a provider-owned canonical identity projection of the validated raw record. That projection contains only stable source values: it excludes optional locators, OCR/model confidence, observation IDs, extraction/runtime metadata, and mutable normalized descriptions. If the source contains literally identical projected rows, an occurrence ordinal within that identical-row group distinguishes them.
 
 Reparse rules:
 
@@ -418,7 +402,7 @@ synthetic/redacted source file or private local source reference
 source-observation/extraction fixture
 mocked agent transcript or stored structured model output
 expected structured parse proposal
-expected evidence-grounding and financial-validation results
+expected raw-record grounding and financial-validation results
 expected review items and eligibility outcome
 ```
 
@@ -433,7 +417,7 @@ The agentic candidate must be tested against a simpler single-pass structured-no
 - Product parser skills are versioned provider packages and never load repo `.agents/skills/`.
 - The document agent exposes only the seven fixed job-scoped parser tools and has no shell, generic file, arbitrary network, database, secret, or ledger capability.
 - Free text cannot complete a parse; completion requires a schema-valid structured proposal within the accepted step/submission budget.
-- Every required financial field is grounded to source observations before auto-commit eligibility.
+- Every required financial field is grounded to a bounded raw source object that was validated against current-job observations before auto-commit eligibility.
 - Dates remain date-only unless a justified timezone exists; the OS locale and generic assumption JSON are not used as silent inference mechanisms.
 - Debit/Credit source labels, signed source-account balance deltas, and UI plus/minus presentation remain separate concepts.
 - Exact PDF/file deduplication uses SHA-256, with semantic document identity handled separately.

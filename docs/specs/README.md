@@ -15,7 +15,7 @@ Do not load every spec by default unless the task spans the whole system.
 | Spec | Canonical topic |
 | --- | --- |
 | `0001-repo-structure.md` | Monorepo/package layout and code boundaries |
-| `0002-database-schema.md` | SQLite/SQLCipher schema policy, indexes, benchmark, DB reset |
+| `0002-database-schema.md` | Slice-owned SQLite/SQLCipher migrations, raw-record storage, query-driven indexes, and DB reset |
 | `0003-gmail-collector.md` | Gmail OAuth/API, rules, sync, attachments, protected PDF passwords |
 | `0004-parser-contract.md` | Source observations, bounded AI normalization, evidence grounding, and parser qualification |
 | `0005-review-and-commit-policy.md` | Review, deterministic validation, auto-commit policy |
