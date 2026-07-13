@@ -127,6 +127,24 @@ Production packages must not import from `spikes/`. A spike may remain as reprod
 
 Developer setup is a root concern. `scripts/setup-dev.sh` installs only the pinned toolchain and invokes real package/harness commands; it must not duplicate product behavior or hide package-specific build logic.
 
+## Implemented app foundation
+
+The production workspace currently contains `apps/desktop`, `packages/core`, `packages/db`, and `packages/ui`. Empty core/database entry points establish import boundaries without inventing blocked schema, storage, or money behavior. The desktop shell imports the reusable UI package and exposes no network, vault, secret, database, or Tauri command capability yet.
+
+Root commands are real package scripts:
+
+```text
+pnpm dev
+pnpm typecheck
+pnpm test:unit
+pnpm check:rust
+pnpm build:web
+pnpm build:desktop
+pnpm verify
+```
+
+`pnpm verify` is the local application gate. The macOS application workflow installs from the pinned toolchain files, uses frozen pnpm and Cargo lockfiles, runs repository preflight, and then runs that same gate. Production packages remain forbidden from importing the disposable spike.
+
 ## Acceptance criteria
 
 - App can be built from root with one documented command.

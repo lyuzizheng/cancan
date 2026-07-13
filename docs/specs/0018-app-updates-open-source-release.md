@@ -193,7 +193,7 @@ The setup command:
 - installs pinned Corepack and pnpm, then installs the pinned Rust toolchain with clippy/rustfmt through rustup;
 - uses project-local Tauri CLI dependencies rather than a global Tauri installation;
 - adds only `~/.local/bin` and `~/.cargo/bin` to the shell profile, idempotently;
-- bootstraps the current package root with its frozen lockfile and runs preflight plus the desktop feasibility gate by default;
+- bootstraps the production workspace with its frozen lockfile and runs preflight, the production application gate, and the desktop feasibility gate by default;
 - requires neither Homebrew nor `sudo`.
 
 `scripts/dev-toolchain.env` is the setup version source. `.node-version`, `rust-toolchain.toml`, and package-manager/Tauri pins must match it, and `scripts/test-setup-dev.sh` enforces that invariant. Versions are intentionally pinned for reproducibility rather than floating to an unreviewed future `latest` on each machine.
@@ -209,6 +209,8 @@ Tauri CLI 2.11.4 (project-local)
 ```
 
 When upgrading, verify the new upstream releases, update every pin in one patch, and run the setup simulation, a real repeat setup, application gates, preflight, harness self-test, and independent semantic review.
+
+The development-only Tauri identifier is `dev.cancan.desktop`, the app version is `0.0.0`, bundling is disabled, and the generated icon is provisional. These values exist only to make the local debug build real; they do not resolve the public identity, release version, platform support, signing, or packaging blockers above.
 
 References:
 

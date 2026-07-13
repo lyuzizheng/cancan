@@ -3,13 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "spike:check": "cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
-    "spike:test": "cd src-tauri && cargo test",
-    "spike:storage": "cd src-tauri && cargo run -- storage-smoke ../.tmp",
-    "spike:security": "cd src-tauri && cargo run -- security-smoke ../.tmp",
-    "spike:keychain": "cd src-tauri && cargo run -- keychain-smoke",
+    "spike:check": "cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked",
+    "spike:test": "cd src-tauri && cargo test --locked",
+    "spike:storage": "cd src-tauri && cargo run --locked -- storage-smoke ../.tmp",
+    "spike:security": "cd src-tauri && cargo run --locked -- security-smoke ../.tmp",
+    "spike:keychain": "cd src-tauri && cargo run --locked -- keychain-smoke",
     "spike:verify": "bash scripts/verify.sh",
-    "tauri:build": "tauri build --debug --no-bundle"
+    "tauri:build": "tauri build --debug --no-bundle -- --locked"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4"

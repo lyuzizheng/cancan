@@ -1,0 +1,16 @@
+[package]
+name = "cancan-desktop"
+version = "0.0.0"
+description = "CanCan local-first desktop application"
+edition = "2024"
+publish = false
+
+[lib]
+name = "cancan_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "=2.11.5", features = [] }

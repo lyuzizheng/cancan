@@ -6,15 +6,19 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
-- Added `./scripts/setup-dev.sh` as an idempotent, Homebrew-free, no-`sudo` macOS setup. Apple Silicon is verified end to end; Intel archive routing is deterministically tested but awaits a real hardware run. It checksum-verifies the pinned official Node binary, installs pinned Corepack/pnpm and rustup/Rust with clippy/rustfmt, bootstraps the frozen lockfile, and runs real preflight plus desktop feasibility gates.
+- Completed `app-foundation`: added the production pnpm workspace, React/Vite desktop shell, Tauri/Rust runtime, empty core/database boundaries, reusable UI package, exact dependency pins, and frozen JavaScript/Rust lockfiles without adding product, network, vault, database, or secret behavior.
+- Verified current upstream package releases on 2026-07-13 and pinned React 19.2.7, TypeScript 7.0.2, Vite 8.1.4, Vitest 4.1.10, Tauri CLI 2.11.4, Tauri crate 2.11.5, and tauri-build 2.6.3. The pnpm workspace keeps a seven-day maturity policy with exact/pattern exceptions only for the newly released pinned TypeScript, Vite, and matching Node type packages.
+- Added real root `typecheck`, unit-test, Rust fmt/clippy, web-build, Tauri debug-build, and combined `verify` commands. Added a macOS application workflow that uses the pinned toolchain, frozen install, repository preflight, and the same root gate.
+- Added application-CI structural gates and fault injections, bringing the harness self-test to 31 detected faults. The gate rejects removal of `pnpm verify`, either setup verification path, or unlocked production Cargo resolution. Updated setup to verify both the production application and the still-relevant desktop feasibility evidence while keeping the spike's nested pnpm/Cargo lockfiles isolated and frozen.
+- Ran test-first UI work from a missing `AppShell` failure to a passing deterministic render test, then passed `pnpm verify`. Playwright desktop and 390px checks showed the neutral local-first shell correctly with zero console errors or warnings after adding its favicon.
+- Marked `app-foundation` complete. `synthetic-core-flow` remains blocked only by the focused `Parser evidence contract`; no parser, financial, storage, or security behavior was inferred.
+- Added `./scripts/setup-dev.sh` as an idempotent, Homebrew-free, no-`sudo` macOS setup. Apple Silicon is verified end to end; Intel archive routing is deterministically tested but awaits a real hardware run. It checksum-verifies the pinned official Node binary, installs pinned Corepack/pnpm and rustup/Rust with clippy/rustfmt, bootstraps frozen lockfiles, and runs preflight plus production application and desktop feasibility gates.
 - Verified the current supported toolchain pins on 2026-07-13: latest-LTS Node.js 24.18.0, plus latest-stable Corepack 0.35.0, pnpm 11.12.0, Rust 1.97.0, and project-local Tauri CLI 2.11.4.
 - Added deterministic setup tests for architecture selection, checksum rejection, pin consistency, unsupported OS handling, missing Command Line Tools UX, foreign tool-path preservation, existing-`fnm` coexistence, rustup shell/global-default isolation, and idempotent shell-profile changes; wired them into preflight and docs CI.
 - Repeated setup on the current macOS arm64 machine: the cold run completed the full Tauri/SQLCipher gate; later runs converged to the same exact versions, the login shell resolved every pin correctly even with existing `fnm`, and the profile PATH line remained exactly once.
 - Repaired stale harness self-test assumptions left from the pre-feasibility slice state and added a fault injection proving setup-version drift is rejected.
-- Marked `app-foundation` in progress. Developer toolchain setup is complete; the production workspace/package/CI skeleton remains.
 - Completed a disposable macOS arm64 desktop feasibility spike: Tauri 2 built, bundled SQLCipher 4.14.0 and FTS5 worked together, wrong database keys failed, authenticated file tampering failed, password and recovery wrappers opened one master key, and macOS Keychain binary-secret write/read/delete passed.
 - Accepted ADR 0001 for the Tauri/React/Rust/SQLite package boundary while keeping exact production cryptographic formats, temporary plaintext, cross-platform secret storage, backup/restore, and release signing blocked in their owning specs.
-- Marked `desktop-feasibility` complete; `app-foundation` then moved from ready to in progress when this setup implementation began. The remaining foundation work is the package/CI skeleton, followed by the synthetic core flow.
 - Fixed two broad-grill checkpoints in the implementation plan: after the synthetic core flow and before vault/manual import, then after the review-ledger UI and before public OAuth/release work.
 - Added the public project surface to the implementation sequence: a static Cloudflare Pages landing/privacy/security/docs/download site and GitHub-native Discussions, issue forms, PR, security, and release surfaces.
 - Defined the public Gmail direction as a project-owned Desktop OAuth client with separate development/test credentials, local PKCE loopback authorization, and an explicit Google restricted-scope verification track.
@@ -33,8 +37,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Continue `app-foundation` with the production workspace skeleton and verify real typecheck, unit-test, desktop-build, and application CI commands.
-- Implement `synthetic-core-flow`, then resume a grouped 5-10 question grill before touching real vault/manual-import behavior.
+- Resolve `Parser evidence contract`, implement `synthetic-core-flow`, then resume a grouped 5-10 question grill before touching real vault/manual-import behavior.
 - Configure public domain/identity/accounts only when their owning slice is reached; resolve license/platform/signing/update-channel details before release automation.
 
 ## 2026-07-12

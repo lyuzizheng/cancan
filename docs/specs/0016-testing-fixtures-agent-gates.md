@@ -15,7 +15,7 @@ This spec is canonical for fixture policy, parser/reconciliation test expectatio
 - LLM-dependent tests should not call live LLMs in CI.
 - DB reset must only affect test databases, never a real vault.
 - UI work requires visual inspection when app code exists.
-- App/typecheck/test/build gates wait until real app/package scripts exist.
+- App/typecheck/test/build gates are added only when real app/package scripts exist; the app-foundation commands now satisfy that boundary.
 
 ## Fixture privacy layers
 
@@ -250,6 +250,17 @@ build/package check when app code changes
 
 The applicable subset is declared by the selected row in `docs/agent/implementation-slices.md`. Testing and review generate the same slice context used by implementation; they do not independently guess a different spec set.
 
+The current foundation commands are:
+
+```text
+pnpm typecheck
+pnpm test:unit
+pnpm check:rust
+pnpm build:web
+pnpm build:desktop
+pnpm verify
+```
+
 UI feature slices additionally require:
 
 ```text
@@ -284,9 +295,9 @@ UI screenshots can be useful artifacts, but visual review and targeted assertion
 
 ## Application CI design stance
 
-Add application CI gates when the app skeleton and package scripts exist. The existing docs-harness CI is outside this spec's ownership.
+The production skeleton and package scripts now exist. `.github/workflows/application.yml` runs the pinned macOS toolchain, frozen pnpm/Cargo resolution, repository preflight, and `pnpm verify`. The docs-harness CI remains outside this spec's ownership.
 
-Future CI should include:
+Later slices should extend application CI with:
 
 ```text
 lint/typecheck
@@ -312,4 +323,5 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - DB reset cannot target a real vault by default.
 - UI changes require visual inspection once UI exists.
 - Every implementation slice declares deterministic test evidence and shares its generated context with testing/review.
-- Future application CI gates are defined without inventing scripts that do not exist.
+- Later application CI gates are added only with real scripts and implementations.
+- The foundation application CI invokes real typecheck, unit-test, Rust-check, web-build, and Tauri debug-build commands.

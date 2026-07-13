@@ -1,0 +1,20 @@
+{
+  "name": "cancan",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.12.0",
+  "scripts": {
+    "dev": "pnpm --filter @cancan/desktop dev",
+    "desktop:dev": "pnpm --filter @cancan/desktop desktop:dev",
+    "typecheck": "pnpm --recursive --if-present typecheck",
+    "test:unit": "vitest run",
+    "check:rust": "pnpm --filter @cancan/desktop check:rust",
+    "build:web": "pnpm --filter @cancan/desktop build:web",
+    "build:desktop": "pnpm --filter @cancan/desktop build:desktop",
+    "verify": "pnpm typecheck && pnpm test:unit && pnpm check:rust && pnpm build:desktop"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

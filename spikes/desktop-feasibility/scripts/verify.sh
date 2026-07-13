@@ -11,7 +11,7 @@ for command in cargo pnpm; do
   fi
 done
 
-CI=true pnpm install --frozen-lockfile
+CI=true pnpm --ignore-workspace install --frozen-lockfile
 pnpm spike:check
 pnpm spike:storage
 pnpm spike:security

@@ -71,6 +71,7 @@ Roles, repeated product/security/UI/testing rules, generic report templates, pla
 required entry files exist
 every shell script parses with bash -n
 the docs-harness workflow parses as YAML and retains required triggers, paths, permissions, and commands
+the macOS application workflow parses as YAML and retains required source paths, read-only permissions, pinned-toolchain inputs, preflight, frozen pnpm/Cargo resolution, and the real root verification command
 spec numbers are unique
 every spec has required headings
 every spec appears exactly once in docs/specs/README.md
@@ -124,22 +125,20 @@ The context generator always includes root instructions, the source contract, cu
 
 The implementation review packet combines that exact context with tracked and untracked changes. Reviewers must also receive the user's exact task, author assumptions, success criteria, and verification evidence; the packet cannot infer those.
 
-## Future app-code gates
+## Application-code gates
 
-Once application code exists, add command-backed checks only when the referenced scripts are real:
+The app foundation introduced these real root commands:
 
 ```text
-typecheck
-unit tests
-safe test DB reset
-migration check
-fixture/parser tests
-integration tests
-build/package
-UI visual inspection
+pnpm typecheck
+pnpm test:unit
+pnpm check:rust
+pnpm build:web
+pnpm build:desktop
+pnpm verify
 ```
 
-The harness should call existing package scripts rather than wrap them in redundant orchestration.
+`.github/workflows/application.yml` runs preflight plus `pnpm verify` on macOS. Later slices add safe test-DB reset, migration, fixture/parser, integration, and richer UI gates only when their implementations exist. The harness calls existing package scripts rather than wrapping them in redundant orchestration.
 
 ## Acceptance criteria
 
@@ -154,3 +153,4 @@ The harness should call existing package scripts rather than wrap them in redund
 - Semantic review distinguishes mechanical fixes from `needs_design` questions.
 - No workflow claims app commands that do not exist.
 - The real developer-setup test runs through preflight/CI and the harness self-test proves that version-pin drift is rejected.
+- The application workflow, root verification composition, and setup's production-plus-spike gate sequence are machine-checked; fault injection proves that removing any of those gates is rejected.

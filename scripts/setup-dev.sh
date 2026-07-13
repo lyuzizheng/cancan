@@ -284,7 +284,7 @@ check_versions() {
   rustc --version | grep -Fq "rustc $RUST_VERSION " || die "Rust version mismatch"
   cargo clippy --version >/dev/null
   cargo fmt --version >/dev/null
-  actual="$(cd "$ROOT/spikes/desktop-feasibility" && pnpm exec tauri --version)"
+  actual="$(cd "$ROOT" && pnpm --filter @cancan/desktop exec tauri --version)"
   [[ "$actual" == *"$TAURI_CLI_VERSION"* ]] || die "Tauri CLI version mismatch: $actual"
   log "Verified Node $(node --version), Corepack $(corepack --version), pnpm $(pnpm --version), $(rustc --version)"
   log "Verified $actual (project-local)"
@@ -295,10 +295,11 @@ run_verification() {
     return 0
   fi
   if [[ "$DRY_RUN" == "1" ]]; then
-    log "Would run agent preflight and the desktop feasibility gate"
+    log "Would run agent preflight, the production application gate, and the desktop feasibility gate"
     return
   fi
   "$ROOT/.agents/scripts/agent-preflight.sh"
+  (cd "$ROOT" && pnpm verify)
   (cd "$ROOT/spikes/desktop-feasibility" && pnpm spike:verify)
 }
 

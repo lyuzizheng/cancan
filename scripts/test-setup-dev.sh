@@ -31,12 +31,27 @@ source "$VERSIONS"
 assert_equal "$(tr -d '[:space:]' < "$ROOT/.node-version")" "$NODE_VERSION"
 grep -Fq "channel = \"$RUST_VERSION\"" "$ROOT/rust-toolchain.toml" || fail "Rust pin drifted"
 grep -Fq "\"packageManager\": \"pnpm@$PNPM_VERSION\"" \
+  "$ROOT/package.json" || fail "root pnpm pin drifted"
+grep -Fq "\"packageManager\": \"pnpm@$PNPM_VERSION\"" \
   "$ROOT/spikes/desktop-feasibility/package.json" || fail "pnpm pin drifted"
 grep -Fq "\"@tauri-apps/cli\": \"$TAURI_CLI_VERSION\"" \
+  "$ROOT/apps/desktop/package.json" || fail "application Tauri CLI pin drifted"
+grep -Fq "\"@tauri-apps/cli\": \"$TAURI_CLI_VERSION\"" \
   "$ROOT/spikes/desktop-feasibility/package.json" || fail "Tauri CLI pin drifted"
+grep -Fq 'pnpm --ignore-workspace install --frozen-lockfile' \
+  "$ROOT/spikes/desktop-feasibility/scripts/verify.sh" || fail "spike lockfile isolation drifted"
+grep -Fq 'cargo clippy --locked' \
+  "$ROOT/spikes/desktop-feasibility/package.json" || fail "spike Cargo lock drifted"
 
 # shellcheck source=setup-dev.sh
 source "$SETUP"
+
+verification_function="$(declare -f run_verification)"
+assert_contains "$verification_function" 'pnpm verify'
+assert_contains "$verification_function" 'pnpm spike:verify'
+production_gate_line="$(printf '%s\n' "$verification_function" | grep -nF 'pnpm verify' | cut -d: -f1)"
+spike_gate_line="$(printf '%s\n' "$verification_function" | grep -nF 'pnpm spike:verify' | cut -d: -f1)"
+[[ "$production_gate_line" -lt "$spike_gate_line" ]] || fail "verification gate order drifted"
 
 assert_equal "$(node_archive_arch arm64)" "arm64"
 assert_equal "$(node_archive_arch x86_64)" "x64"

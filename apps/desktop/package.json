@@ -1,0 +1,28 @@
+{
+  "name": "@cancan/desktop",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "desktop:dev": "tauri dev",
+    "typecheck": "tsc --project tsconfig.json",
+    "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings",
+    "build:web": "vite build",
+    "build:desktop": "tauri build --debug --no-bundle -- --locked"
+  },
+  "dependencies": {
+    "@cancan/ui": "workspace:*",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "typescript": "7.0.2",
+    "vite": "8.1.4"
+  }
+}

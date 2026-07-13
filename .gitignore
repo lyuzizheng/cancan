@@ -21,3 +21,4 @@ test-results/
 # Disposable feasibility output
 spikes/**/.tmp/
 spikes/**/src-tauri/gen/
+apps/**/src-tauri/gen/
