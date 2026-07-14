@@ -13,10 +13,13 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Made database migrations vertical-slice-owned, reduced the initial schema to the synthetic core, restricted indexes to implemented queries and accepted uniqueness/idempotency rules, and replaced fixed global benchmark cardinalities with focused query-plan/benchmark evidence beside implemented hot paths.
 - Simplified account identity to a stable provider account ID when available and one-time-confirmed candidates otherwise. Deferred a separate identifier table, keyed digests, strength levels, and key-version coupling until a real supported provider proves they are needed.
 - Retained many-to-many `match_edges` in the synthetic core because linking two bank-side records through one canonical transfer event is a primary product capability. Added bidirectional record/event/sibling navigation to the slice contract and test gates.
+- Completed `synthetic-core-flow` with a deterministic structured-proposal validator, bounded raw-record grounding, exact-decimal reconciliation, source-backed opening/closing balance observations, review routing, and one canonical two-account transfer.
+- Added the first slice-owned production migration and repository with transaction rollback, commit idempotency, immutable committed events/legs, append-only audit, focused query-plan assertions, and a destructive-reset guard limited to marked test paths.
+- Added `pnpm test:synthetic-core` as the focused script-level harness. The integration flow starts from a clean temporary database, reapplies its migration, persists raw and validation JSON, and verifies record-to-event, event-to-record, and sibling transfer navigation without live AI or network access.
 
 ### Next
 
-- Implement the ready `synthetic-core-flow` from the reduced slice-owned schema with raw-record grounding, exact ledger invariants, and linked-transfer navigation tests.
+- Run the evidence-only `document-normalizer-runtime` comparison and packaging spike, then hold the planned grouped 5-10 question grill before vault/manual-import implementation.
 
 ## 2026-07-13
 

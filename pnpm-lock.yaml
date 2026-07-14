@@ -57,6 +57,21 @@ importers:
 
   packages/db:
     devDependencies:
+      '@cancan/core':
+        specifier: workspace:*
+        version: link:../core
+      '@cancan/parsers':
+        specifier: workspace:*
+        version: link:../parsers
+      '@types/node':
+        specifier: 24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
+  packages/parsers:
+    devDependencies:
       typescript:
         specifier: 7.0.2
         version: 7.0.2

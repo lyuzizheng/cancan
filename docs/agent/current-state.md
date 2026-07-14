@@ -4,18 +4,19 @@ Last updated: 2026-07-14
 
 ## Product phase
 
-CanCan has crossed from documentation/design alignment into production implementation. The app foundation is complete; source-evidence and financial product behavior have not started.
+CanCan has crossed from documentation/design alignment into production implementation. The app foundation and synthetic core flow are complete; production vault, live-document normalization, and user-facing financial behavior have not started.
 
 The current product target is a Gmail-first local financial evidence vault and polished personal finance/account-record workspace with AI-assisted parsing, deterministic validation, policy-gated ledger commit, and source-backed money views. CanCan has no hosted service/backend; Gmail, BYO AI, optional fixed FX rates, update checks, and future connectors are capability-scoped local-client connections controlled by the user.
 
 ## Implementation state
 
-- The repository contains a real pnpm workspace with a React/Vite desktop shell, Tauri/Rust runtime, empty pure TypeScript core/database boundaries, a reusable UI package, and a disposable desktop feasibility spike. Production packages do not import the spike.
+- The repository contains a real pnpm workspace with a React/Vite desktop shell, Tauri/Rust runtime, pure TypeScript core and parser packages, a slice-owned SQLite repository/migration boundary, a reusable UI package, and a disposable desktop feasibility spike. Production packages do not import the spike.
 - Root typecheck, unit-test, Rust-check, web-build, Tauri debug-build, and combined verification commands are real. The application workflow runs the same gate on macOS with the pinned toolchain.
 - The foundation UI has been visually inspected at desktop and narrow viewports. It has no network, vault, database, secret, connector, or privileged command behavior.
-- App-specific DB reset, migration, fixture, integration, and product UI gates remain absent until their real slices exist.
+- The synthetic-core harness safely resets only marked test databases, reapplies its migration idempotently, validates deterministic structured proposals against coherent raw rows, and exercises review, source-backed balance observations, exact transfer reconciliation, atomic commit, immutable audit, idempotency, and bidirectional record/event navigation. It uses no live model, network, vault, or production document.
 - The `desktop-feasibility` slice is complete. ADR 0001 is accepted after a real Tauri 2, SQLCipher/FTS5, authenticated-file-encryption, Argon2id wrapper, and macOS Keychain smoke test.
 - The `app-foundation` slice is complete. Exact production cryptographic formats and restore behavior remain blocked in later owning slices.
+- The `synthetic-core-flow` slice is complete. Its schema and repository cover only exercised synthetic queries; production document storage, reparse lifecycle, duplicate import, and runtime selection remain in later slices.
 
 ## Documentation state
 
@@ -38,9 +39,9 @@ The old broad numbered product-doc layer and duplicated alignment/harness projec
 
 ## Immediate next work
 
-`synthetic-core-flow` is ready and is the immediate implementation slice. It uses deterministic mocked AI output, bounded raw source-record fixtures, and linked-transfer assertions; it does not select a live agent framework or retain production full-document extraction.
+`document-normalizer-runtime` is now the immediate evidence-only slice. Compare ToolLoopAgent, Pi Agent Core, and the simpler single-pass baseline through the shared deterministic contract, then prove or reject a bundled Node/Tauri execution boundary. Do not connect a live model or promote the spike into production while collecting this evidence.
 
-After that slice completes, run the bounded `document-normalizer-runtime` evidence spike and the planned broad 5-10 question grill before vault/manual-import work. Run a second public-launch grill after the review/ledger UI and before public OAuth/release work.
+After the runtime evidence is recorded, run the planned grouped 5-10 question grill before vault/manual-import work. Run a second public-launch grill after the review/ledger UI and before public OAuth/release work.
 
 Do not implement behavior covered by an active blocker. A ready slice may use a spec for its explicitly unblocked outcome without implementing that spec's blocked release, security, privacy, or product behavior; the generated slice context is the executable boundary.
 
