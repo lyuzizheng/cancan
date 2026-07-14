@@ -18,7 +18,7 @@ Define a small repo-local harness that helps coding agents read the right source
 - App commands must not be invented before real package scripts and paths exist.
 - App implementation is routed through a machine-checked vertical-slice manifest.
 - Implementers, testers, and reviewers use the same generated slice context and implementation review packet.
-- Project-scoped custom agents pin executable role, model, reasoning, and permission boundaries without duplicating workflow or product truth.
+- Project-scoped custom agents pin executable role, model, reasoning, and intentional subagent permission defaults without duplicating workflow or product truth. Main-agent permissions remain user/session-owned, and the implementer imposes no repo-level sandbox default. The parent turn's live permission selection is reapplied to every child and may supersede any subagent default.
 - Non-trivial app work uses one production-code writer, an independent tester, and an independent read-only reviewer. Complex planning, exploration, document-conflict analysis, redesign, refactoring, performance analysis, and architecture optimization use the optional read-only explorer.
 - Independent review has separate correctness/safety and critical-cleanup gates. Cleanup rejects unjustified complexity, incomplete replacements, diff-created orphans, dirty package/API boundaries, unexplained magic logic, and tests that miss the active path.
 - Review begins only after the frozen diff passes every selected-slice test gate, repository preflight, root application verification, and any triggered UI or harness evidence. A later file change invalidates that evidence and requires full applicable testing plus review of the entire cumulative diff.
@@ -98,7 +98,7 @@ every slice declares packages/surfaces, test gates, and an outcome
 implementation review uses the same generated context as implementation/testing
 the development/review loop retains preflight, root verification, a unique critical-cleanup gate, and cumulative-diff re-review after fixes
 skill frontmatter is valid and skill names match directories
-project agent files retain their required model, reasoning, and permission boundaries
+project agent files retain their required model, reasoning, explicit subagent permission defaults, and implementer omission of a repo-local sandbox default
 the reviewer binding delegates detailed judgment to the canonical review workflow
 private fixtures are not tracked
 removed harness layers are not referenced
@@ -155,7 +155,7 @@ findings return to the implementer; any file change restarts full applicable tes
 
 Do not run multiple source-writing agents concurrently. A tester may write tests only when the root task explicitly delegates test authoring; otherwise it reports reproducible failures. UI inspection is required for user-visible behavior, not for unrelated backend-only changes.
 
-The executable bindings live in `.codex/agents/`. `.codex/config.toml` caps agent nesting at direct children so workers cannot create an uncontrolled hierarchy. `.agents/scripts/check-codex-agents.sh` rejects role, model, reasoning, permission, or concurrency drift.
+The executable bindings live in `.codex/agents/`. `.codex/config.toml` caps agent nesting at direct children so workers cannot create an uncontrolled hierarchy; it intentionally does not copy personal `approval_policy` or `sandbox_mode` values into the repo. Explorer/reviewer declare read-only defaults, tester declares workspace-write, and implementer omits `sandbox_mode`. The parent turn's live permission selection is reapplied to every child regardless of these defaults, so explorer/reviewer no-edit behavior is enforced by their role/workflow instructions and independent-authorship rule rather than claimed as hard sandbox isolation. `.agents/scripts/check-codex-agents.sh` rejects role, model, reasoning, permission-default ownership, or concurrency drift; it does not claim to validate a future session's effective runtime sandbox.
 
 ## Application-code gates
 
@@ -178,7 +178,7 @@ pnpm verify
 - Product truth and current priorities are not duplicated in `.agents/`.
 - Every canonical spec is uniquely numbered and indexed.
 - Broken links, stale harness references, invalid skill metadata, and shell syntax errors fail preflight.
-- Custom agent model, reasoning, permission, and nesting drift fails preflight.
+- Custom agent model, reasoning, permission-default ownership, and nesting drift fails preflight.
 - Broken slice dependencies, missing spec/ADR/blocker references, missing test gates, and context-parity drift fail preflight.
 - Harness self-tests prove that representative faults are detected.
 - GitHub pull requests and pushes to `main` that change docs, harness, or project agent configuration files run the deterministic gate.

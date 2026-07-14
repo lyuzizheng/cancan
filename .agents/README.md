@@ -25,7 +25,7 @@ This folder contains procedure only. Intended product and implementation behavio
 
 Narrative role files, repeated product rules, static priority lists, generic templates, and placeholder plugin guidance are intentionally excluded. They created additional sources of truth without adding executable guarantees.
 
-Project-scoped executable agent bindings live separately in `.codex/agents/`. Those small TOML files pin only role instructions, model, reasoning effort, and permissions. The workflow contract remains here and product behavior remains in `docs/specs/`.
+Project-scoped executable agent bindings live separately in `.codex/agents/`. Those small TOML files pin role instructions, model, reasoning effort, and only intentional subagent permission defaults. Implementer has no repo-local sandbox default; explorer/reviewer default to read-only and tester defaults to workspace-write. A parent turn's live permission selection is reapplied to every child and can supersede those defaults, so no-edit explorer/reviewer behavior is also a workflow contract rather than a hard isolation claim. Main-agent permissions stay user/session-owned rather than being copied into the repo. The workflow contract remains here and product behavior remains in `docs/specs/`.
 
 ## Two-layer gate
 

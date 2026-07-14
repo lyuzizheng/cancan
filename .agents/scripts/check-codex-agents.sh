@@ -90,7 +90,7 @@ begin
 
   expected_agents = {
     "explorer" => ["gpt-5.6-sol", "high", "read-only"],
-    "implementer" => ["gpt-5.6-terra", "max", "workspace-write"],
+    "implementer" => ["gpt-5.6-terra", "max", nil],
     "tester" => ["gpt-5.6-luna", "max", "workspace-write"],
     "reviewer" => ["gpt-5.6-sol", "high", "read-only"],
   }
@@ -101,26 +101,27 @@ begin
     raise "Unexpected Codex agent files in #{agents_dir}: expected #{expected_files.inspect}, found #{actual_files.inspect}"
   end
 
-  required_keys = %w[
+  base_required_keys = %w[
     name
     description
     developer_instructions
     model
     model_reasoning_effort
-    sandbox_mode
   ].sort
 
   expected_agents.each do |name, (model, effort, sandbox)|
     path = ".codex/agents/#{name}.toml"
     agent = parse_toml(path, sectioned: false)
+    required_keys = base_required_keys + (sandbox ? ["sandbox_mode"] : [])
     raise "Unexpected keys in #{path}: #{agent.keys.sort.inspect}" unless agent.keys.sort == required_keys
 
-    {
+    expected_values = {
       "name" => name,
       "model" => model,
       "model_reasoning_effort" => effort,
-      "sandbox_mode" => sandbox,
-    }.each do |key, expected|
+    }
+    expected_values["sandbox_mode"] = sandbox if sandbox
+    expected_values.each do |key, expected|
       raise "Unexpected #{key} in #{path}: #{agent[key].inspect}" unless agent[key] == expected
     end
 

@@ -70,6 +70,11 @@ printf '\nmodel = "gpt-5.6-terra"\n' >> "$implementer_agent"
 expect_failure "duplicate agent key" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
 mv "$implementer_agent.bak" "$implementer_agent"
 
+cp "$implementer_agent" "$implementer_agent.bak"
+printf '\nsandbox_mode = "danger-full-access"\n' >> "$implementer_agent"
+expect_failure "implementer gains a repo-local sandbox default" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$implementer_agent.bak" "$implementer_agent"
+
 codex_config="$TEST_ROOT/.codex/config.toml"
 cp "$codex_config" "$codex_config.bak"
 sed 's/max_threads = 4/max_threads = 5/' "$codex_config.bak" > "$codex_config"
@@ -89,7 +94,7 @@ mv "$tester_agent.bak" "$tester_agent"
 
 cp "$reviewer_agent" "$reviewer_agent.bak"
 sed 's/sandbox_mode = "read-only"/sandbox_mode = "workspace-write"/' "$reviewer_agent.bak" > "$reviewer_agent"
-expect_failure "reviewer sandbox drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+expect_failure "reviewer read-only default drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
 mv "$reviewer_agent.bak" "$reviewer_agent"
 
 cp "$reviewer_agent" "$reviewer_agent.bak"

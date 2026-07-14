@@ -10,4 +10,4 @@ This file is the tool-neutral entry point for coding agents working in this repo
 6. Do not implement through a slice's active blockers or infer unresolved product, financial, security, or irreversible data decisions.
 7. If any docs, harness, or project agent configuration files change, run an independent semantic review using `.agents/docs-semantic-review.md` before finishing.
 
-`docs/specs/` owns intended product and implementation behavior. `.agents/` owns procedure only. `.codex/agents/` contains only executable role, model, and permission bindings.
+`docs/specs/` owns intended product and implementation behavior. `.agents/` owns procedure only. `.codex/agents/` contains only executable role, model, and subagent permission defaults; it does not set the main agent's permission mode or guarantee a child's effective runtime sandbox.
