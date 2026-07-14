@@ -20,6 +20,8 @@ Define a small repo-local harness that helps coding agents read the right source
 - Implementers, testers, and reviewers use the same generated slice context and implementation review packet.
 - Project-scoped custom agents pin executable role, model, reasoning, and permission boundaries without duplicating workflow or product truth.
 - Non-trivial app work uses one production-code writer, an independent tester, and an independent read-only reviewer. Complex planning, exploration, document-conflict analysis, redesign, refactoring, performance analysis, and architecture optimization use the optional read-only explorer.
+- Independent review has separate correctness/safety and critical-cleanup gates. Cleanup rejects unjustified complexity, incomplete replacements, diff-created orphans, dirty package/API boundaries, unexplained magic logic, and tests that miss the active path.
+- Review begins only after the frozen diff passes every selected-slice test gate, repository preflight, root application verification, and any triggered UI or harness evidence. A later file change invalidates that evidence and requires full applicable testing plus review of the entire cumulative diff.
 
 ## Current folder shape
 
@@ -94,8 +96,10 @@ slice spec/ADR paths and active blocker names resolve
 every active P0/P1 alignment area is referenced by at least one non-completed slice
 every slice declares packages/surfaces, test gates, and an outcome
 implementation review uses the same generated context as implementation/testing
+the development/review loop retains preflight, root verification, a unique critical-cleanup gate, and cumulative-diff re-review after fixes
 skill frontmatter is valid and skill names match directories
 project agent files retain their required model, reasoning, and permission boundaries
+the reviewer binding delegates detailed judgment to the canonical review workflow
 private fixtures are not tracked
 removed harness layers are not referenced
 current priorities are not copied into .agents
@@ -134,7 +138,7 @@ The judge contract and required output shape live in `.agents/docs-semantic-revi
 
 The context generator always includes root instructions, the source contract, current state, active alignment register, and only the selected slice's canonical specs/ADRs. It must label each slice `STOP`, `EVIDENCE ONLY`, `READY`, or `COMPLETE`. `EVIDENCE ONLY` permits the named disposable spike/test work needed to resolve blockers, never production implementation or downstream work.
 
-The implementation review packet combines that exact context with tracked and untracked changes. Reviewers must also receive the user's exact task, author assumptions, success criteria, and verification evidence; the packet cannot infer those.
+The implementation review packet combines that exact context with tracked and untracked changes, a compact diff stat, and rename/deletion evidence. It also names the required external handoff: the user's exact task, author assumptions and scope, success criteria, exact verification commands/results, and UI evidence when relevant. The packet cannot infer those inputs.
 
 ## Subagent execution boundary
 
@@ -144,9 +148,9 @@ The root agent owns orchestration and final reporting. For non-trivial app chang
 optional read-only explorer for complex planning and structural analysis
 one implementer as the only production-code writer
 stable diff
-independent tester running the strongest relevant gates
-independent read-only reviewer judging diff plus evidence
-findings return to the implementer before testing and review repeat
+independent tester running every selected-slice gate plus preflight and root verification, with triggered UI/harness evidence
+independent read-only reviewer applying correctness/safety and critical-cleanup gates to the full diff plus evidence
+findings return to the implementer; any file change restarts full applicable testing and entire cumulative-diff review
 ```
 
 Do not run multiple source-writing agents concurrently. A tester may write tests only when the root task explicitly delegates test authoring; otherwise it reports reproducible failures. UI inspection is required for user-visible behavior, not for unrelated backend-only changes.
@@ -180,7 +184,7 @@ pnpm verify
 - GitHub pull requests and pushes to `main` that change docs, harness, or project agent configuration files run the deterministic gate.
 - Docs, harness, and project agent configuration changes require an independent semantic verdict.
 - Semantic review distinguishes mechanical fixes from `needs_design` questions.
-- Non-trivial app work has one production-code writer and independent testing/review evidence.
+- Non-trivial app work has one production-code writer, complete applicable testing evidence, and independent correctness/cleanup review of the entire cumulative diff.
 - No workflow claims app commands that do not exist.
 - The real developer-setup test runs through preflight/CI and the harness self-test proves that version-pin drift is rejected.
 - The application workflow, root verification composition, and setup's production-plus-spike gate sequence are machine-checked; fault injection proves that removing any of those gates is rejected.

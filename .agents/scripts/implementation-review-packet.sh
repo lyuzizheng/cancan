@@ -16,6 +16,17 @@ git rev-parse --verify "$base" >/dev/null
 .agents/scripts/context-for-slice.sh "$slice_id"
 
 echo
+echo "# Required External Handoff"
+echo
+echo "Provide these author/tester inputs alongside this generated packet:"
+echo
+echo "- Exact user request"
+echo "- Author assumptions and scope boundary"
+echo "- Verifiable success criteria"
+echo "- Exact verification commands and results"
+echo "- UI evidence when the change is user-visible"
+
+echo
 echo "# Implementation Diff"
 echo
 echo "## Working tree"
@@ -25,6 +36,14 @@ echo
 echo "## Changed files against $base"
 git diff --name-status "$base" -- .
 git ls-files --others --exclude-standard | sed 's/^/A\t/'
+
+echo
+echo "## Diff stat"
+git diff --stat "$base" -- .
+
+echo
+echo "## Rename and deletion summary"
+git diff --summary --find-renames "$base" -- .
 
 echo
 echo "## Diff"

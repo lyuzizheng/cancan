@@ -16,6 +16,8 @@ Use this before considering a docs or code change complete. This checklist verif
 - [ ] Does app work use one ID from `docs/agent/implementation-slices.md`, with status/dependencies/blockers allowing implementation?
 - [ ] Did implementation, testing, and review use the same generated slice context?
 - [ ] For non-trivial app work, was there one production-code writer plus independent testing and read-only review?
+- [ ] Did the reviewer run separate correctness/safety and critical-cleanup gates over the entire cumulative diff?
+- [ ] Did cleanup check task traceability, unjustified complexity, superseded paths, diff-created orphans, package/public API boundaries, magic logic, and whether tests hit the active path?
 - [ ] Does code behavior match the relevant canonical spec, or is the divergence explicitly recorded?
 - [ ] Do tests prove the changed behavior and important failure paths?
 - [ ] Do financial/data invariants trace to their canonical spec and source evidence?
@@ -24,7 +26,7 @@ Use this before considering a docs or code change complete. This checklist verif
 
 ## Verification evidence
 
-- [ ] Were the strongest real repository commands used without inventing missing commands?
+- [ ] Did the frozen diff pass every selected-slice test gate, `.agents/scripts/agent-preflight.sh`, and `pnpm verify`?
 - [ ] Did data-layer work use a safe test-only reset path?
 - [ ] Did parser/LLM work use deterministic fixtures or mocked outputs according to `0016-testing-fixtures-agent-gates.md`?
 - [ ] Did UI work include visual inspection and relevant state/accessibility checks once UI exists?
@@ -32,6 +34,7 @@ Use this before considering a docs or code change complete. This checklist verif
 - [ ] Did `.agents/scripts/agent-preflight.sh` pass?
 - [ ] If the harness changed, did `.agents/scripts/harness-self-test.sh` pass?
 - [ ] If project agent configuration changed, did `.agents/scripts/check-codex-agents.sh` pass?
+- [ ] After any fix, was the full applicable evidence regenerated and the entire cumulative diff reviewed again?
 
 ## Documentation projection
 

@@ -44,4 +44,62 @@ if ! rg -q 'context-for-slice[.]sh' "$ROOT/.agents/workflows/simulated-testing.m
   exit 1
 fi
 
+development_cycle="$ROOT/.agents/workflows/development-cycle.md"
+review_workflow="$ROOT/.agents/workflows/review-code.md"
+review_packet="$ROOT/.agents/scripts/implementation-review-packet.sh"
+
+if ! rg -q '[.]agents/scripts/agent-preflight[.]sh' "$development_cycle"; then
+  echo "Development cycle must require the repository preflight before review."
+  exit 1
+fi
+
+if ! rg -q '`pnpm verify`' "$development_cycle"; then
+  echo "Development cycle must require the application verification command before review."
+  exit 1
+fi
+
+cleanup_gate_count="$(rg -c '^## Critical cleanup gate$' "$review_workflow" || true)"
+if [ "${cleanup_gate_count:-0}" -ne 1 ]; then
+  echo "Review workflow must contain exactly one Critical cleanup gate."
+  exit 1
+fi
+
+cleanup_anchors=(
+  'Reject overengineering:'
+  'superseded paths and diff-created orphans'
+  'package boundaries and public APIs'
+  'magic logic:.*tests that hit the active path'
+)
+for anchor in "${cleanup_anchors[@]}"; do
+  if ! rg -q "$anchor" "$review_workflow"; then
+    echo "Critical cleanup gate is missing required review content: $anchor"
+    exit 1
+  fi
+done
+
+if ! rg -q 're-review the entire cumulative diff' "$development_cycle" ||
+   ! rg -q 're-review the entire cumulative diff' "$review_workflow"; then
+  echo "Testing and review must repeat over the entire cumulative diff after fixes."
+  exit 1
+fi
+
+packet_anchors=(
+  '^echo "# Required External Handoff"$'
+  'Exact user request'
+  'Author assumptions and scope boundary'
+  'Verifiable success criteria'
+  'Exact verification commands and results'
+  'UI evidence when the change is user-visible'
+  '^echo "## Diff stat"$'
+  'git diff --stat "[$]base" -- [.]'
+  '^echo "## Rename and deletion summary"$'
+  'git diff --summary --find-renames "[$]base" -- [.]'
+)
+for anchor in "${packet_anchors[@]}"; do
+  if ! rg -q "$anchor" "$review_packet"; then
+    echo "Implementation review packet is missing required evidence: $anchor"
+    exit 1
+  fi
+done
+
 exec ruby "$ROOT/.agents/scripts/implementation-slices.rb" check

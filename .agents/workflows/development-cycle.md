@@ -14,11 +14,12 @@ Use this workflow for any non-trivial coding or documentation task.
 8. For a non-trivial app change, delegate the stable-diff loop within these boundaries:
    - use one implementer as the sole production-code writer;
    - freeze the implementation diff before independent testing and review;
-   - let the tester report reproducible failures without patching production code;
-   - let the read-only reviewer judge the stable diff after testing evidence exists;
-   - route findings back to the implementer, then rerun testing and review.
+   - let the tester run every test gate declared by the selected slice, `.agents/scripts/agent-preflight.sh`, and `pnpm verify`, reporting exact commands and results without patching production code;
+   - require UI evidence for user-visible behavior and `.agents/scripts/harness-self-test.sh` when the change touches `docs/`, `.agents/`, `.codex/`, root `AGENTS.md`, or the docs-harness CI workflow;
+   - let the read-only reviewer apply `.agents/workflows/review-code.md` only after that evidence passes;
+   - route findings back to the implementer. Any file change invalidates the prior evidence: freeze the new diff, rerun the full applicable set, and re-review the entire cumulative diff.
 9. Make the smallest complete change. Trivial changes may stay in the root thread when delegation adds no independent evidence.
-10. Verify with the strongest available checks. UI flow inspection is required only for user-visible behavior, not unrelated backend-only changes.
+10. Verify with the applicable checks above. UI flow inspection is required only for user-visible behavior, not unrelated backend-only changes.
 11. Update specs/current-state/progress when meaning changes.
 12. Apply the independent semantic gate in `.agents/docs-semantic-review.md` whenever its change-scope trigger matches.
 13. Report what changed, what was verified, and what remains.

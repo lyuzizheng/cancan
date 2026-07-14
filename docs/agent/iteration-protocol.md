@@ -43,7 +43,7 @@ required doc updates
 
 ## 4. Implement in small slices
 
-For non-trivial app work, use the project custom agents: the explorer is optional and read-only, one implementer owns production-code writes, the tester verifies the stable diff, and an independent read-only reviewer judges it. Findings return to the implementer before gates repeat. Do not run multiple source-writing agents concurrently.
+For non-trivial app work, use the project custom agents: the explorer is optional and read-only, one implementer owns production-code writes, the tester verifies the stable diff, and an independent read-only reviewer judges it. The frozen diff must first pass every selected-slice gate, `.agents/scripts/agent-preflight.sh`, `pnpm verify`, and triggered harness or UI evidence. Findings return to the implementer; any file change invalidates prior evidence, so rerun the full applicable set and re-review the entire cumulative diff. Do not run multiple source-writing agents concurrently.
 
 Prefer slices that produce a verifiable result:
 

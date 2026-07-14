@@ -15,18 +15,12 @@ For each feature slice:
 4. For EVIDENCE ONLY, run only the named disposable spike/test work and add no production code
 5. Plan files, tests, build, and docs impact from the packet
 6. Use the read-only explorer for complex planning, unclear boundaries, document conflicts, redesign, refactoring, performance analysis, or architecture optimization
-7. Let one implementer write the smallest complete part of a READY slice and its focused tests
-8. Freeze the implementation diff before independent testing and review
-9. Let the tester run the strongest relevant deterministic, database, Tauri, and UI gates without patching production code
-10. Let an independent read-only reviewer judge the stable diff and evidence
-11. Route findings back to the implementer, then repeat testing and review
-12. Reset test database if data layer is involved
-13. Run benchmark/checks if hot SQL paths are touched
-14. Build/package app when relevant
-15. Inspect UI with browser/computer-use/Chrome MCP when user-visible behavior changed
-16. Update docs/progress and generate the shared implementation review packet
-17. Run the repo harness gates required by 0012
-18. Ask user when product/security/data decisions are unclear
+7. Let one implementer complete the smallest READY-slice change, focused tests, and required docs/progress updates
+8. Freeze the complete diff and generate the shared implementation review packet
+9. Let the tester run every selected-slice gate, .agents/scripts/agent-preflight.sh, and pnpm verify without patching production code; include triggered harness, UI, data-reset, and benchmark evidence
+10. Let an independent read-only reviewer judge the stable cumulative diff only after that evidence passes
+11. Route findings back to the implementer; any file change invalidates prior evidence, so repeat the full applicable evidence set and re-review the entire cumulative diff
+12. Ask the user whenever product, security, or data decisions remain unresolved
 ```
 
 Trivial changes may stay in the root thread when delegation would add no independent evidence. Multiple source-writing agents must not run concurrently.
