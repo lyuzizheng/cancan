@@ -9,22 +9,26 @@ Use this workflow for any non-trivial coding or documentation task.
 3. Read the selected skill and workflow.
 4. For app work, select a slice and generate `.agents/scripts/context-for-slice.sh <slice-id>`.
 5. Obey the packet readiness: `STOP` blocks coding; `EVIDENCE ONLY` permits only its named disposable spike/test work; `READY` permits implementation.
-6. State assumptions and success criteria.
-7. For complex planning, unclear boundaries, document conflicts, redesign, refactoring, performance analysis, or architecture optimization, delegate analysis to the read-only explorer before deciding the implementation approach.
-8. For a non-trivial app change, delegate the stable-diff loop within these boundaries:
-   - use one implementer as the sole production-code writer;
-   - freeze the implementation diff before independent testing and review;
-   - let the tester run every test gate declared by the selected slice, `.agents/scripts/agent-preflight.sh`, and `pnpm verify`, reporting exact commands and results without patching production code;
-   - require UI evidence for user-visible behavior and `.agents/scripts/harness-self-test.sh` when the change touches `docs/`, `.agents/`, `.codex/`, root `AGENTS.md`, or the docs-harness CI workflow;
-   - let the read-only reviewer apply `.agents/workflows/review-code.md` only after that evidence passes;
-   - route findings back to the implementer. Any file change invalidates the prior evidence: freeze the new diff, rerun the full applicable set, and re-review the entire cumulative diff.
-9. Make the smallest complete change. Trivial changes may stay in the root thread when delegation adds no independent evidence.
-10. Verify with the applicable checks above. UI flow inspection is required only for user-visible behavior, not unrelated backend-only changes.
+6. State assumptions, success criteria, and the smallest justified execution tier:
+   - **Fast:** localized PR-comment fixes or mechanical maintenance with no contract, migration, security, financial, or harness-authority change. Keep work in the root thread; run the focused regression test, the affected package/type check, and `git diff --check`, then let PR CI provide broader repository coverage.
+   - **Standard:** a localized behavior change with bounded consequences. Keep one production-code writer and focused tests. Add at most one independent tester or reviewer only when it supplies evidence the root agent or CI cannot; do not use both by default.
+   - **High risk:** financial/data correctness, ledger or auto-commit behavior, migrations or irreversible data, security/privacy/secrets, release/update, or agent-harness authority. Keep one production-code writer, require the applicable independent review or semantic gate, and run the full relevant local gate once on the final stable diff. Use a separate tester only when the user requests it or execution independence materially changes the evidence.
+7. Risk follows consequences, not line count. The user may explicitly raise a tier. Do not raise it merely because a custom agent exists.
+8. Use the read-only explorer only when complex planning, unclear boundaries, document conflicts, redesign, refactoring, performance analysis, or architecture optimization makes separate exploration useful.
+9. Make the smallest complete change. Never run multiple source-writing agents concurrently.
+10. Verify in this order:
+   - while editing, run only focused checks that can guide the next change;
+   - when independent code review is required, freeze the cumulative diff after focused checks and review it before the expensive final app gate;
+   - after review findings, rerun affected focused checks and re-review the entire cumulative diff, but do not repeat unrelated full builds;
+   - after the required code review passes, run the tier's final applicable app gate once. High-risk app code may require selected-slice gates and `pnpm verify`;
+   - for docs/harness-only changes, run preflight and harness self-test before the required semantic review, and do not run an unrelated app build;
+   - if that final gate causes a code fix, re-review the changed cumulative diff and rerun the failed/final gate.
+   UI flow inspection is required only for user-visible behavior.
 11. Update specs/current-state/progress when meaning changes.
 12. Apply the independent semantic gate in `.agents/docs-semantic-review.md` whenever its change-scope trigger matches.
 13. Report what changed, what was verified, and what remains.
 
-Never run multiple source-writing agents concurrently. The runtime bindings and pinned models live in `.codex/agents/`; this workflow owns when each role is used.
+The runtime bindings and pinned models live in `.codex/agents/`; this workflow owns when each role is used.
 
 ## Ask Instead Of Guessing
 

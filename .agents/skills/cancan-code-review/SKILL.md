@@ -7,4 +7,4 @@ description: Review CanCan changes for correctness, safety, canonical-spec consi
 
 ## Workflow
 
-Run `.agents/workflows/review-code.md` against the complete stable diff, task-relevant canonical specs, and status-bearing ADRs. Require passing test evidence before review and repeat the full review after fixes. Apply `.agents/docs-semantic-review.md` separately whenever its change-scope trigger matches.
+Run `.agents/workflows/review-code.md` against the complete stable diff, task-relevant canonical specs, and status-bearing ADRs. Require the focused evidence selected by `.agents/workflows/development-cycle.md` before review and repeat the full cumulative-diff review after fixes. Apply `.agents/docs-semantic-review.md` separately whenever its change-scope trigger matches.

@@ -49,12 +49,12 @@ review_workflow="$ROOT/.agents/workflows/review-code.md"
 review_packet="$ROOT/.agents/scripts/implementation-review-packet.sh"
 
 if ! rg -q '[.]agents/scripts/agent-preflight[.]sh' "$development_cycle"; then
-  echo "Development cycle must require the repository preflight before review."
+  echo "Development cycle must retain the repository preflight."
   exit 1
 fi
 
 if ! rg -q '`pnpm verify`' "$development_cycle"; then
-  echo "Development cycle must require the application verification command before review."
+  echo "Development cycle must retain the application verification command."
   exit 1
 fi
 

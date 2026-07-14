@@ -6,6 +6,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Replaced the always-full multi-agent loop with consequence-based Fast, Standard, and High-risk paths. Simple PR comments now stay in the root thread with focused checks and PR CI; standard work uses at most one independent role when useful; high-risk work keeps applicable independent review but runs the full relevant local gate once on the final stable diff instead of after every edit.
 - Added project-scoped custom agents with pinned model/reasoning assignments: Sol High for complex planning, exploration, document conflicts, redesign, refactoring, performance, and architecture analysis; Terra Max for implementation; Luna Max for testing; and Sol High for independent review. Limited nesting to direct children, kept one production-code writer, and made explorer/reviewer read-only.
 - Tightened the development loop around a stable diff: implementer writes code and focused tests, tester independently reports reproducible failures using the narrowest sufficient database/Tauri/UI layer, reviewer judges the stable diff read-only, and findings route back to the implementer before gates repeat.
 - Added a deterministic Codex-agent configuration check and harness fault injection so role, model, reasoning, permission, concurrency, and nesting drift fail preflight/CI.

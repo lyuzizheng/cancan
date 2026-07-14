@@ -15,7 +15,7 @@ Use this before considering a docs or code change complete. This checklist verif
 
 - [ ] Does app work use one ID from `docs/agent/implementation-slices.md`, with status/dependencies/blockers allowing implementation?
 - [ ] Did implementation, testing, and review use the same generated slice context?
-- [ ] For non-trivial app work, was there one production-code writer plus independent testing and read-only review?
+- [ ] Was the smallest justified execution tier used, with one production-code writer and only the independent roles that materially added evidence?
 - [ ] Did the reviewer run separate correctness/safety and critical-cleanup gates over the entire cumulative diff?
 - [ ] Did cleanup check task traceability, unjustified complexity, superseded paths, diff-created orphans, package/public API boundaries, magic logic, and whether tests hit the active path?
 - [ ] Does code behavior match the relevant canonical spec, or is the divergence explicitly recorded?
@@ -26,7 +26,7 @@ Use this before considering a docs or code change complete. This checklist verif
 
 ## Verification evidence
 
-- [ ] Did the frozen diff pass every selected-slice test gate, `.agents/scripts/agent-preflight.sh`, and `pnpm verify`?
+- [ ] Did iterative work use focused checks, and did the final stable app diff run its applicable final app gate once after required code review?
 - [ ] Did data-layer work use a safe test-only reset path?
 - [ ] Did parser/LLM work use deterministic fixtures or mocked outputs according to `0016-testing-fixtures-agent-gates.md`?
 - [ ] Did UI work include visual inspection and relevant state/accessibility checks once UI exists?
@@ -34,11 +34,11 @@ Use this before considering a docs or code change complete. This checklist verif
 - [ ] Did `.agents/scripts/agent-preflight.sh` pass?
 - [ ] If the harness changed, did `.agents/scripts/harness-self-test.sh` pass?
 - [ ] If project agent configuration changed, did `.agents/scripts/check-codex-agents.sh` pass?
-- [ ] After any fix, was the full applicable evidence regenerated and the entire cumulative diff reviewed again?
+- [ ] After a review finding, were affected focused checks rerun and the entire cumulative diff reviewed again without repeating unrelated full builds?
 
 ## Documentation projection
 
 - [ ] Did `docs/agent/current-state.md` change only if phase, focus, or current implementation state changed?
 - [ ] Did `docs/agent/progress-log.md` get a dated entry for meaningful progress?
 - [ ] Were resolved alignment entries removed after moving decisions to their canonical home?
-- [ ] When the change-scope trigger in `.agents/docs-semantic-review.md` matched, did an independent semantic reviewer return `pass`?
+- [ ] When the change-scope trigger in `.agents/docs-semantic-review.md` matched, did deterministic preflight/harness evidence run before an independent semantic reviewer returned `pass`?

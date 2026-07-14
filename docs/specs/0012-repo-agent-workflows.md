@@ -19,9 +19,9 @@ Define a small repo-local harness that helps coding agents read the right source
 - App implementation is routed through a machine-checked vertical-slice manifest.
 - Implementers, testers, and reviewers use the same generated slice context and implementation review packet.
 - Project-scoped custom agents pin executable role, model, reasoning, and intentional subagent permission defaults without duplicating workflow or product truth. Main-agent permissions remain user/session-owned, and the implementer imposes no repo-level sandbox default. The parent turn's live permission selection is reapplied to every child and may supersede any subagent default.
-- Non-trivial app work uses one production-code writer, an independent tester, and an independent read-only reviewer. Complex planning, exploration, document-conflict analysis, redesign, refactoring, performance analysis, and architecture optimization use the optional read-only explorer.
+- Execution is sized by consequence. Fast PR-comment maintenance stays in the root thread with focused checks and PR CI. Standard work adds at most one independent tester or reviewer when it materially improves evidence. High-risk financial/data, migration, security/privacy/secret, auto-commit, release/update, or agent-harness work keeps one production-code writer, its applicable independent review, and one final full relevant local gate. A separate tester is required only when the user requests it or execution independence changes the evidence. Complex structural analysis may use the optional read-only explorer.
 - Independent review has separate correctness/safety and critical-cleanup gates. Cleanup rejects unjustified complexity, incomplete replacements, diff-created orphans, dirty package/API boundaries, unexplained magic logic, and tests that miss the active path.
-- Review begins only after the frozen diff passes every selected-slice test gate, repository preflight, root application verification, and any triggered UI or harness evidence. A later file change invalidates that evidence and requires full applicable testing plus review of the entire cumulative diff.
+- Required independent code review begins after the cumulative diff passes focused pre-review checks. Findings return to the production-code writer, affected focused checks rerun, and the reviewer re-reviews the entire cumulative diff. The expensive final app gate runs once after code review passes; unrelated full builds are not repeated after each edit. Docs/harness changes instead run deterministic preflight and harness self-test before their required semantic review.
 
 ## Current folder shape
 
@@ -142,18 +142,17 @@ The implementation review packet combines that exact context with tracked and un
 
 ## Subagent execution boundary
 
-The root agent owns orchestration and final reporting. For non-trivial app changes:
+The root agent owns orchestration and final reporting and normally owns production-code writes. It selects the smallest justified path:
 
 ```text
-optional read-only explorer for complex planning and structural analysis
-one implementer as the only production-code writer
-stable diff
-independent tester running every selected-slice gate plus preflight and root verification, with triggered UI/harness evidence
-independent read-only reviewer applying correctness/safety and critical-cleanup gates to the full diff plus evidence
-findings return to the implementer; any file change restarts full applicable testing and entire cumulative-diff review
+Fast     root writer -> focused checks -> push -> PR CI
+Standard root writer -> focused checks -> optional one independent role -> final applicable check
+High     one writer -> focused checks -> applicable independent review -> one final full relevant gate
 ```
 
-Do not run multiple source-writing agents concurrently. A tester may write tests only when the root task explicitly delegates test authoring; otherwise it reports reproducible failures. UI inspection is required for user-visible behavior, not for unrelated backend-only changes.
+Do not run multiple source-writing agents concurrently. A separate implementer is optional, not mandatory. A tester is used only when requested or when an independent environment, UI execution, database state, or other execution boundary materially changes the evidence; otherwise the writer runs deterministic commands and the independent reviewer judges the cumulative diff. Docs/harness changes run preflight and harness self-test before the semantic reviewer required by `.agents/docs-semantic-review.md`, but do not run unrelated application builds. UI inspection is required for user-visible behavior only.
+
+Review findings return to the sole writer. The writer reruns affected focused checks, and the reviewer must re-review the entire cumulative diff. The full selected-slice or root application gate runs after review passes rather than before every review round. If that final gate requires a code fix, the changed cumulative diff returns to review and the failed/final gate reruns.
 
 The executable bindings live in `.codex/agents/`. `.codex/config.toml` caps agent nesting at direct children so workers cannot create an uncontrolled hierarchy; it intentionally does not copy personal `approval_policy` or `sandbox_mode` values into the repo. Explorer/reviewer declare read-only defaults, tester declares workspace-write, and implementer omits `sandbox_mode`. The parent turn's live permission selection is reapplied to every child regardless of these defaults, so explorer/reviewer no-edit behavior is enforced by their role/workflow instructions and independent-authorship rule rather than claimed as hard sandbox isolation. `.agents/scripts/check-codex-agents.sh` rejects role, model, reasoning, permission-default ownership, or concurrency drift; it does not claim to validate a future session's effective runtime sandbox.
 
@@ -184,7 +183,7 @@ pnpm verify
 - GitHub pull requests and pushes to `main` that change docs, harness, or project agent configuration files run the deterministic gate.
 - Docs, harness, and project agent configuration changes require an independent semantic verdict.
 - Semantic review distinguishes mechanical fixes from `needs_design` questions.
-- Non-trivial app work has one production-code writer, complete applicable testing evidence, and independent correctness/cleanup review of the entire cumulative diff.
+- Work uses the smallest consequence-based execution tier, never multiple source-writing agents, and only the independent roles justified by material evidence. High-risk work retains complete final applicable evidence and independent review of the cumulative diff.
 - No workflow claims app commands that do not exist.
 - The real developer-setup test runs through preflight/CI and the harness self-test proves that version-pin drift is rejected.
 - The application workflow, root verification composition, and setup's production-plus-spike gate sequence are machine-checked; fault injection proves that removing any of those gates is rejected.

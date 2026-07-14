@@ -53,8 +53,8 @@ For app code, tests, or implementation review:
 .agents/scripts/implementation-review-packet.sh <slice-id> [base]
 ```
 
-The implementer, tester, and reviewer use the same generated slice context. The slice checker validates dependencies, spec/ADR paths, active blockers, test gates, and outcomes.
+Every role used for a task shares the same generated slice context. The slice checker validates dependencies, spec/ADR paths, active blockers, test gates, and outcomes.
 
-Use the read-only explorer for complex planning, unclear boundaries, document conflicts, redesign, refactoring, performance analysis, or architecture optimization. For non-trivial app changes, the implementer is the only production-code writer, the tester verifies a stable diff without fixing production code, and the reviewer is independent and read-only. Do not run multiple source-writing agents concurrently.
+Use the risk-sized paths in `.agents/workflows/development-cycle.md`. Simple PR-comment fixes stay in the root thread with focused checks; standard changes add at most one independent role when useful; high-risk changes receive their applicable independent review and one final full relevant gate. Use the read-only explorer only when separate structural analysis helps, and never run multiple source-writing agents concurrently.
 
 Read implementation state from `docs/agent/current-state.md`; do not copy it into the harness. App commands may be added only when the referenced scripts and paths are real.

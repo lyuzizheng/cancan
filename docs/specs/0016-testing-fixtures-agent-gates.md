@@ -16,7 +16,7 @@ This spec is canonical for fixture policy, parser/reconciliation test expectatio
 - DB reset must only affect test databases, never a real vault.
 - UI work requires visual inspection when app code exists.
 - App/typecheck/test/build gates are added only when real app/package scripts exist; the app-foundation commands now satisfy that boundary.
-- The independent tester verifies a stable implementation diff and reports reproducible failures instead of patching production code.
+- When the consequence-based path in `0012-repo-agent-workflows.md` justifies a separate tester, that tester verifies the stable implementation diff and reports reproducible failures instead of patching production code.
 
 ## Fixture privacy layers
 

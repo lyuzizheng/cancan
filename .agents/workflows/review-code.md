@@ -6,8 +6,8 @@ Use this when the user asks for review, risk analysis, or PR feedback.
 
 1. Identify the implementation slice ID and review base.
 2. Generate `.agents/scripts/implementation-review-packet.sh <slice-id> <base>`.
-3. Require the external handoff named by the packet: exact request, assumptions and scope, success criteria, exact commands and results, and UI evidence when relevant.
-4. Start only after the diff is frozen and the tester has passed every applicable gate required by `.agents/workflows/development-cycle.md`.
+3. Require the external handoff named by the packet: exact request, assumptions and scope, success criteria, execution tier, focused commands and results, and UI evidence when relevant.
+4. Start after the cumulative diff is frozen and the tier's focused pre-review checks pass. Do not require an independent tester or the expensive final full gate unless the selected tier has a concrete reason for it.
 5. Use the packet's shared specs, ADRs, current state, blockers, full cumulative diff, and tracked/untracked file inventory.
 
 ## Correctness and safety gate
@@ -34,7 +34,7 @@ Return findings ordered by severity with file/line references, then one verdict:
 verdict: pass | changes_requested | blocked
 ```
 
-`pass` requires no actionable P0/P1/P2 correctness or cleanup findings. `blocked` is reserved for missing evidence or a decision the reviewer cannot make. If changes are requested, the implementer owns the fix; all applicable evidence must be regenerated, and the reviewer must re-review the entire cumulative diff rather than only the latest fix.
+`pass` requires no actionable P0/P1/P2 correctness or cleanup findings. `blocked` is reserved for missing evidence or a decision the reviewer cannot make. If changes are requested, the production-code writer owns the fix; rerun the affected focused evidence and re-review the entire cumulative diff rather than only the latest fix. Run the tier's expensive final gate once after review passes.
 
 When `.agents/docs-semantic-review.md` is triggered, return its semantic verdict separately; neither verdict substitutes for the other. If both passes have no findings, say so and name residual risk.
 
