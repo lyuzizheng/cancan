@@ -8,6 +8,7 @@
     "desktop:dev": "pnpm --filter @cancan/desktop desktop:dev",
     "typecheck": "pnpm --recursive --if-present typecheck",
     "test:unit": "vitest run",
+    "test:synthetic-core": "vitest run packages/core packages/parsers packages/db",
     "check:rust": "pnpm --filter @cancan/desktop check:rust",
     "build:web": "pnpm --filter @cancan/desktop build:web",
     "build:desktop": "pnpm --filter @cancan/desktop build:desktop",

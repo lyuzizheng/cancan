@@ -330,6 +330,7 @@ The current foundation commands are:
 ```text
 pnpm typecheck
 pnpm test:unit
+pnpm test:synthetic-core
 pnpm check:rust
 pnpm build:web
 pnpm build:desktop
@@ -370,17 +371,14 @@ UI screenshots can be useful artifacts, but visual review and targeted assertion
 
 ## Application CI design stance
 
-The production skeleton and package scripts now exist. `.github/workflows/application.yml` runs the pinned macOS toolchain, frozen pnpm/Cargo resolution, repository preflight, and `pnpm verify`. The docs-harness CI remains outside this spec's ownership.
+The production skeleton and package scripts now exist. `.github/workflows/application.yml` runs the pinned macOS toolchain, frozen pnpm/Cargo resolution, repository preflight, and `pnpm verify`. The unit-test gate includes the synthetic core's safe-reset, repeatable-migration, deterministic parser, exact reconciliation, review, commit, read-model, and relationship integration tests; `pnpm test:synthetic-core` exposes the same focused subset locally. The docs-harness CI remains outside this spec's ownership.
 
-Later slices should extend application CI with:
+Later slices extend these existing gate categories with their own migrations, repositories, parser fixtures, and builds rather than creating duplicate CI paths. Gates that do not exist yet are added only when their owning behavior exists, including:
 
 ```text
-lint/typecheck
-unit tests
-migration check
-integration tests with reset test DB
-fixture parser tests using mocked AI output
-build check
+encrypted-vault and destructive-job integration
+document-agent budget, cancellation, and bundled-runtime packaging
+browser accessibility, error-state, and reduced-motion checks for user-facing flows
 ```
 
 Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI.

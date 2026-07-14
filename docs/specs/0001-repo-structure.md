@@ -138,9 +138,9 @@ Production packages must not import from `spikes/`. A spike may remain as reprod
 
 Developer setup is a root concern. `scripts/setup-dev.sh` installs only the pinned toolchain and invokes real package/harness commands; it must not duplicate product behavior or hide package-specific build logic.
 
-## Implemented app foundation
+## Implemented workspace and application gates
 
-The production workspace currently contains `apps/desktop`, `packages/core`, `packages/db`, and `packages/ui`. Empty core/database entry points establish import boundaries without inventing blocked schema, storage, or money behavior. The desktop shell imports the reusable UI package and exposes no network, vault, secret, database, or Tauri command capability yet.
+The production workspace currently contains `apps/desktop`, `packages/core`, `packages/db`, `packages/parsers`, and `packages/ui`. The synthetic core slice implements pure financial preparation rules, the canonical proposal/grounding boundary, and a slice-owned SQLite migration/repository used only by deterministic tests. The desktop shell imports the reusable UI package and still exposes no network, vault, secret, database, or Tauri command capability.
 
 Root commands are real package scripts:
 
@@ -148,6 +148,7 @@ Root commands are real package scripts:
 pnpm dev
 pnpm typecheck
 pnpm test:unit
+pnpm test:synthetic-core
 pnpm check:rust
 pnpm build:web
 pnpm build:desktop
