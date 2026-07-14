@@ -9,7 +9,7 @@ description: Implement CanCan feature slices with docs, tests, build, UI inspect
 
 1. Orient with `.agents/scripts/agent-preflight.sh`.
 2. Run `.agents/workflows/development-cycle.md` and the task-specific workflow from `.agents/ROUTER.md`.
-3. If docs or harness files changed, run `.agents/docs-semantic-review.md` with a reviewer that did not author the patch. If unavailable, report the gate as blocked.
+3. Apply the change-scope trigger in `.agents/docs-semantic-review.md` with a reviewer that did not author the patch. If unavailable, report the gate as blocked.
 
 ## Stop And Ask
 

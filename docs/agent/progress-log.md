@@ -6,6 +6,9 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Added project-scoped custom agents with pinned model/reasoning assignments: Sol High for complex planning, exploration, document conflicts, redesign, refactoring, performance, and architecture analysis; Terra Max for implementation; Luna Max for testing; and Sol High for independent review. Limited nesting to direct children, kept one production-code writer, and made explorer/reviewer read-only.
+- Tightened the development loop around a stable diff: implementer writes code and focused tests, tester independently reports reproducible failures using the narrowest sufficient database/Tauri/UI layer, reviewer judges the stable diff read-only, and findings route back to the implementer before gates repeat.
+- Added a deterministic Codex-agent configuration check and harness fault injection so role, model, reasoning, permission, concurrency, and nesting drift fail preflight/CI.
 - Simplified parser evidence persistence to one bounded validated `raw_json` source row/object plus `validation_json` per external record. Removed the persistent field-claim graph, dedicated evidence-reference table, and page/row/column indexes; optional location data may stay inside raw JSON as a display hint.
 - Made database migrations vertical-slice-owned, reduced the initial schema to the synthetic core, restricted indexes to implemented queries and accepted uniqueness/idempotency rules, and replaced fixed global benchmark cardinalities with focused query-plan/benchmark evidence beside implemented hot paths.
 - Simplified account identity to a stable provider account ID when available and one-time-confirmed candidates otherwise. Deferred a separate identifier table, keyed digests, strength levels, and key-version coupling until a real supported provider proves they are needed.

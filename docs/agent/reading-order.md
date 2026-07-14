@@ -67,5 +67,5 @@ relevant docs match code behavior
 progress log is updated
 no known conflicts remain in touched topics
 agent-preflight passes
-independent semantic review passes when docs or harness files changed
+independent semantic review passes whenever the change-scope trigger in `.agents/docs-semantic-review.md` matches
 ```

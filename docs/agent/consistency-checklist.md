@@ -15,6 +15,7 @@ Use this before considering a docs or code change complete. This checklist verif
 
 - [ ] Does app work use one ID from `docs/agent/implementation-slices.md`, with status/dependencies/blockers allowing implementation?
 - [ ] Did implementation, testing, and review use the same generated slice context?
+- [ ] For non-trivial app work, was there one production-code writer plus independent testing and read-only review?
 - [ ] Does code behavior match the relevant canonical spec, or is the divergence explicitly recorded?
 - [ ] Do tests prove the changed behavior and important failure paths?
 - [ ] Do financial/data invariants trace to their canonical spec and source evidence?
@@ -27,12 +28,14 @@ Use this before considering a docs or code change complete. This checklist verif
 - [ ] Did data-layer work use a safe test-only reset path?
 - [ ] Did parser/LLM work use deterministic fixtures or mocked outputs according to `0016-testing-fixtures-agent-gates.md`?
 - [ ] Did UI work include visual inspection and relevant state/accessibility checks once UI exists?
+- [ ] Did testing use the narrowest sufficient layer while covering the full boundary of user-visible flows?
 - [ ] Did `.agents/scripts/agent-preflight.sh` pass?
 - [ ] If the harness changed, did `.agents/scripts/harness-self-test.sh` pass?
+- [ ] If project agent configuration changed, did `.agents/scripts/check-codex-agents.sh` pass?
 
 ## Documentation projection
 
 - [ ] Did `docs/agent/current-state.md` change only if phase, focus, or current implementation state changed?
 - [ ] Did `docs/agent/progress-log.md` get a dated entry for meaningful progress?
 - [ ] Were resolved alignment entries removed after moving decisions to their canonical home?
-- [ ] Did an independent semantic reviewer return `pass` for docs or harness changes?
+- [ ] When the change-scope trigger in `.agents/docs-semantic-review.md` matched, did an independent semantic reviewer return `pass`?

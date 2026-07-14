@@ -14,18 +14,22 @@ For each feature slice:
 3. Obey the packet's STOP, EVIDENCE ONLY, or READY boundary
 4. For EVIDENCE ONLY, run only the named disposable spike/test work and add no production code
 5. Plan files, tests, build, and docs impact from the packet
-6. Implement the smallest complete part of a READY slice
-7. Reset test database if data layer is involved
-8. Run the slice's unit/integration/fixture/visual gates with real commands
-9. Run benchmark/checks if hot SQL paths are touched
-10. Build/package app when relevant
-11. Inspect UI with browser/computer-use/Chrome MCP when UI changed
-12. Fix issues and repeat
-13. Update docs/progress
-14. Generate the shared implementation review packet
-15. Run the repo harness gates required by 0012
-16. Ask user when product/security/data decisions are unclear
+6. Use the read-only explorer for complex planning, unclear boundaries, document conflicts, redesign, refactoring, performance analysis, or architecture optimization
+7. Let one implementer write the smallest complete part of a READY slice and its focused tests
+8. Freeze the implementation diff before independent testing and review
+9. Let the tester run the strongest relevant deterministic, database, Tauri, and UI gates without patching production code
+10. Let an independent read-only reviewer judge the stable diff and evidence
+11. Route findings back to the implementer, then repeat testing and review
+12. Reset test database if data layer is involved
+13. Run benchmark/checks if hot SQL paths are touched
+14. Build/package app when relevant
+15. Inspect UI with browser/computer-use/Chrome MCP when user-visible behavior changed
+16. Update docs/progress and generate the shared implementation review packet
+17. Run the repo harness gates required by 0012
+18. Ask user when product/security/data decisions are unclear
 ```
+
+Trivial changes may stay in the root thread when delegation would add no independent evidence. Multiple source-writing agents must not run concurrently.
 
 ## Browser/computer-use policy
 
@@ -88,6 +92,7 @@ Ask instead of guessing when the decision affects:
 
 - Agents have a repeatable loop for autonomous development.
 - Implementation, testing, and review use one machine-checked slice context rather than loading all specs or choosing different contracts.
+- One implementer owns production-code writes; testing and review remain independent from implementation.
 - Documentation/harness validation follows `0012-repo-agent-workflows.md`.
 - UI changes cannot be completed without visual inspection.
 - Integration flows require database reset coverage.

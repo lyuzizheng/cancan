@@ -7,7 +7,7 @@ cd "$ROOT"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/cancan-harness.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
-cp -R docs .agents .github scripts "$TEST_ROOT/"
+cp -R docs .agents .codex .github scripts "$TEST_ROOT/"
 cp AGENTS.md README.md .gitignore .node-version rust-toolchain.toml \
   package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json "$TEST_ROOT/"
 mkdir -p "$TEST_ROOT/apps/desktop"
@@ -42,9 +42,59 @@ run_check .agents/scripts/check-spec-index.sh
 run_check .agents/scripts/check-links.sh
 run_check .agents/scripts/check-docs-consistency.sh
 run_check .agents/scripts/check-agent-skills.sh
+run_check .agents/scripts/check-codex-agents.sh
 run_check .agents/scripts/check-ci-workflow.sh
 run_check .agents/scripts/check-implementation-slices.sh
 run_check scripts/test-setup-dev.sh
+
+explorer_agent="$TEST_ROOT/.codex/agents/explorer.toml"
+cp "$explorer_agent" "$explorer_agent.bak"
+sed 's/model = "gpt-5.6-sol"/model = "gpt-5.6-terra"/' "$explorer_agent.bak" > "$explorer_agent"
+expect_failure "explorer model drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$explorer_agent.bak" "$explorer_agent"
+
+reviewer_agent="$TEST_ROOT/.codex/agents/reviewer.toml"
+
+cp "$TEST_ROOT/.codex/agents/implementer.toml" "$TEST_ROOT/.codex/agents/extra-writer.toml"
+expect_failure "unexpected extra writer role" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+rm "$TEST_ROOT/.codex/agents/extra-writer.toml"
+
+cp "$explorer_agent" "$explorer_agent.bak"
+printf '\nbroken = [\n' >> "$explorer_agent"
+expect_failure "malformed agent TOML" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$explorer_agent.bak" "$explorer_agent"
+
+implementer_agent="$TEST_ROOT/.codex/agents/implementer.toml"
+cp "$implementer_agent" "$implementer_agent.bak"
+printf '\nmodel = "gpt-5.6-terra"\n' >> "$implementer_agent"
+expect_failure "duplicate agent key" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$implementer_agent.bak" "$implementer_agent"
+
+codex_config="$TEST_ROOT/.codex/config.toml"
+cp "$codex_config" "$codex_config.bak"
+sed 's/max_threads = 4/max_threads = 5/' "$codex_config.bak" > "$codex_config"
+expect_failure "agent concurrency drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$codex_config.bak" "$codex_config"
+
+tester_agent="$TEST_ROOT/.codex/agents/tester.toml"
+cp "$tester_agent" "$tester_agent.bak"
+sed 's/model_reasoning_effort = "max"/model_reasoning_effort = "high"/' "$tester_agent.bak" > "$tester_agent"
+expect_failure "tester reasoning drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$tester_agent.bak" "$tester_agent"
+
+cp "$reviewer_agent" "$reviewer_agent.bak"
+sed 's/sandbox_mode = "read-only"/sandbox_mode = "workspace-write"/' "$reviewer_agent.bak" > "$reviewer_agent"
+expect_failure "reviewer sandbox drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$reviewer_agent.bak" "$reviewer_agent"
+
+printf 'name = "packet-probe"\n' > "$TEST_ROOT/.codex/agents/packet-probe.toml"
+docs_review_packet="$TEST_ROOT/../cancan-docs-review-packet.txt"
+CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/docs-review-packet.sh" HEAD > "$docs_review_packet"
+if ! rg -q '[.]codex/agents/packet-probe[.]toml' "$docs_review_packet"; then
+  echo "Docs review packet omitted an untracked project agent file."
+  exit 1
+fi
+rm "$docs_review_packet" "$TEST_ROOT/.codex/agents/packet-probe.toml"
 
 context_packet="$TEST_ROOT/../cancan-context-packet.txt"
 CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/context-for-slice.sh" desktop-feasibility > "$context_packet"

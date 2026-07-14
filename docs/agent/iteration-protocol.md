@@ -43,6 +43,8 @@ required doc updates
 
 ## 4. Implement in small slices
 
+For non-trivial app work, use the project custom agents: the explorer is optional and read-only, one implementer owns production-code writes, the tester verifies the stable diff, and an independent read-only reviewer judges it. Findings return to the implementer before gates repeat. Do not run multiple source-writing agents concurrently.
+
 Prefer slices that produce a verifiable result:
 
 ```text
@@ -78,6 +80,8 @@ For UI work, the agent should run the app, inspect it in browser/computer-use wh
 
 For flow work, the agent should reset the database and run integration tests covering the intended path.
 
+Use the narrowest layer that proves the change. Add Tauri and UI flow evidence only when the slice crosses those boundaries; user-visible flows must not stop at a mocked component.
+
 ## 6. Keep docs/code aligned
 
 At the end of a meaningful change:
@@ -87,7 +91,7 @@ At the end of a meaningful change:
 - update `docs/specs/` when implementation contracts change;
 - update ADRs when a major architecture decision is accepted or replaced.
 - run `.agents/scripts/agent-preflight.sh`;
-- run independent semantic review when docs or harness files changed.
+- run independent semantic review when docs, harness, or project agent configuration files changed.
 
 ## 7. Ask when blocked
 

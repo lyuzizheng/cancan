@@ -13,6 +13,7 @@ ADR 0001 is accepted. The [disposable feasibility spike](../../spikes/desktop-fe
 ```text
 cancan/
   AGENTS.md                 # tool-neutral coding-agent entry point
+  .codex/                   # project-scoped executable agent and model bindings
   .node-version             # pinned Node.js LTS version
   rust-toolchain.toml       # pinned Rust plus clippy/rustfmt
   .agents/                  # skills, workflows, deterministic and semantic gates

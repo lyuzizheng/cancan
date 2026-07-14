@@ -19,6 +19,7 @@ required=(
   ".agents/README.md"
   ".agents/ROUTER.md"
   ".agents/docs-semantic-review.md"
+  ".agents/scripts/check-codex-agents.sh"
   ".agents/scripts/check-ci-workflow.sh"
   ".agents/scripts/check-implementation-slices.sh"
   ".agents/scripts/context-for-slice.sh"
@@ -27,6 +28,11 @@ required=(
   ".agents/scripts/implementation-review-packet.sh"
   ".agents/scripts/implementation-slices.rb"
   ".agents/scripts/new-spec.sh"
+  ".codex/config.toml"
+  ".codex/agents/explorer.toml"
+  ".codex/agents/implementer.toml"
+  ".codex/agents/tester.toml"
+  ".codex/agents/reviewer.toml"
   ".node-version"
   "rust-toolchain.toml"
   "scripts/dev-toolchain.env"
@@ -75,12 +81,13 @@ done
 .agents/scripts/check-implementation-slices.sh
 .agents/scripts/check-docs-consistency.sh
 .agents/scripts/check-agent-skills.sh
+.agents/scripts/check-codex-agents.sh
 scripts/test-setup-dev.sh
 
 echo
 echo "Read order: docs/agent/reading-order.md"
 
-echo "Semantic review rule: required for changes under docs/, .agents/, AGENTS.md, or the docs-harness workflow"
+echo "Semantic review rule: required for changes under docs/, .agents/, .codex/, AGENTS.md, or the docs-harness workflow"
 echo "Deterministic CI does not attest semantic review."
 echo "Packet: .agents/scripts/docs-review-packet.sh <base>"
 echo "Slices: .agents/scripts/implementation-slices.rb list"

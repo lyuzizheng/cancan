@@ -21,10 +21,14 @@ Use this when the user asks to build, add, fix, or change behavior.
    - fixture/test strategy;
    - docs updates.
 8. Implement it.
+   - When delegated, the implementer is the only production-code writer.
+   - The implementer owns focused tests for the changed behavior and failure paths.
 9. Run the manifest's test gates using real commands that already exist.
 10. For data changes, reset only the test DB once a DB exists.
 11. For parser/AI changes, use deterministic mocked/stored AI outputs.
 12. For UI changes, inspect visually once an app exists.
 13. Update docs/progress and generate `.agents/scripts/implementation-review-packet.sh <slice-id> <base>` for review.
+
+Freeze the diff before handing it to the independent tester and reviewer. Route their findings back to the implementer instead of allowing concurrent fixes.
 
 Read current implementation state from the generated packet. Do not copy state or planned command names into this workflow.

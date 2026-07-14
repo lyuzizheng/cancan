@@ -27,8 +27,9 @@ The current product target is a Gmail-first local financial evidence vault and p
 - Public launch uses a static Cloudflare Pages surface plus GitHub-native releases, discussions, issue forms, pull requests, and security reporting. Accounts, domain, identity, license, signing keys, and public contacts are not configured yet.
 - MVP excludes analytics and behavioral telemetry.
 - `.agents/scripts/agent-preflight.sh` provides deterministic gates.
+- Project-scoped explorer, implementer, tester, and reviewer bindings now pin their models, reasoning effort, and permissions under `.codex/agents/`; preflight rejects drift. Non-trivial app work permits one production-code writer and requires independent testing and read-only review.
 - `docs/agent/implementation-slices.md` and `.agents/scripts/context-for-slice.sh` provide the machine-checked app implementation order and minimal per-slice context.
-- `.agents/docs-semantic-review.md` defines the independent semantic gate for docs and harness changes.
+- `.agents/docs-semantic-review.md` defines the independent semantic gate and its complete change-scope trigger.
 - The parser evidence contract is accepted: extraction/OCR produce job-scoped observations, a mandatory AI normalizer produces one structured proposal shape, and each record persists one bounded validated raw source object plus a validation summary rather than a field-evidence graph. Dates do not receive invented timezones, and Debit/Credit remains separate from signed source-account balance movement.
 - Database migrations grow by vertical slice. The synthetic core keeps many-to-many `match_edges` because two bank-side records linking through one canonical transfer event is a core query, while speculative evidence-reference tables, identifier machinery, indexes, and fixed benchmark sizes are excluded.
 - A bounded document agent may implement the normalizer with seven fixed parser tools, but ToolLoopAgent versus Pi Agent Core and the bundled Node/Tauri execution path remain an evidence-only runtime decision. Full Pi Coding Agent is excluded; users will not install a sandbox runtime.

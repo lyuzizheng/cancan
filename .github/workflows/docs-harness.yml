@@ -6,6 +6,7 @@ on:
       - AGENTS.md
       - README.md
       - .agents/**
+      - .codex/**
       - scripts/**
       - .node-version
       - rust-toolchain.toml
@@ -19,6 +20,7 @@ on:
       - AGENTS.md
       - README.md
       - .agents/**
+      - .codex/**
       - scripts/**
       - .node-version
       - rust-toolchain.toml
