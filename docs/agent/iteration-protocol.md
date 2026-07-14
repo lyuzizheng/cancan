@@ -43,7 +43,7 @@ required doc updates
 
 ## 4. Implement in small slices
 
-For non-trivial app work, use the project custom agents: the explorer is optional and read-only, one implementer owns production-code writes, the tester verifies the stable diff, and an independent read-only reviewer judges it. Findings return to the implementer before gates repeat. Do not run multiple source-writing agents concurrently.
+Size execution by consequence using `.agents/workflows/development-cycle.md`. Fast PR-comment maintenance stays in the root thread with focused checks and PR CI. Standard work adds at most one independent role when it provides material evidence. High-risk app changes use one production-code writer, applicable independent code review, and one final full relevant app gate after that review passes. Docs/harness changes run preflight and harness self-test before semantic review. After a finding, rerun affected focused checks and re-review the entire cumulative diff; do not repeat unrelated full builds. Never run multiple source-writing agents concurrently.
 
 Prefer slices that produce a verifiable result:
 
@@ -74,7 +74,7 @@ schema validation output
 build/package output
 ```
 
-Implementation, simulated testing, and code review must use the same slice ID and generated context packet.
+Every implementation, simulated-testing, or code-review role used for a task must share the same slice ID and generated context packet.
 
 For UI work, the agent should run the app, inspect it in browser/computer-use when available, check layout visually, fix issues, and iterate.
 

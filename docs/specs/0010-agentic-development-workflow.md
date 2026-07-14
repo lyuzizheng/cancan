@@ -14,19 +14,12 @@ For each feature slice:
 3. Obey the packet's STOP, EVIDENCE ONLY, or READY boundary
 4. For EVIDENCE ONLY, run only the named disposable spike/test work and add no production code
 5. Plan files, tests, build, and docs impact from the packet
-6. Use the read-only explorer for complex planning, unclear boundaries, document conflicts, redesign, refactoring, performance analysis, or architecture optimization
-7. Let one implementer write the smallest complete part of a READY slice and its focused tests
-8. Freeze the implementation diff before independent testing and review
-9. Let the tester run the strongest relevant deterministic, database, Tauri, and UI gates without patching production code
-10. Let an independent read-only reviewer judge the stable diff and evidence
-11. Route findings back to the implementer, then repeat testing and review
-12. Reset test database if data layer is involved
-13. Run benchmark/checks if hot SQL paths are touched
-14. Build/package app when relevant
-15. Inspect UI with browser/computer-use/Chrome MCP when user-visible behavior changed
-16. Update docs/progress and generate the shared implementation review packet
-17. Run the repo harness gates required by 0012
-18. Ask user when product/security/data decisions are unclear
+6. Select the smallest consequence-based execution tier and only the roles justified by 0012-repo-agent-workflows.md and .agents/workflows/development-cycle.md
+7. Let one production-code writer complete the smallest READY-slice change, focused tests, and required docs/progress updates
+8. Freeze the cumulative diff and generate the shared implementation review packet when the selected tier requires review
+9. Route findings back to the writer, rerun affected focused checks, and re-review the cumulative diff as required by 0012
+10. Run the selected tier's final relevant gate once after required code review passes; docs/harness changes follow their deterministic-then-semantic order
+11. Ask the user whenever product, security, or data decisions remain unresolved
 ```
 
 Trivial changes may stay in the root thread when delegation would add no independent evidence. Multiple source-writing agents must not run concurrently.
@@ -91,8 +84,8 @@ Ask instead of guessing when the decision affects:
 ## Acceptance criteria
 
 - Agents have a repeatable loop for autonomous development.
-- Implementation, testing, and review use one machine-checked slice context rather than loading all specs or choosing different contracts.
-- One implementer owns production-code writes; testing and review remain independent from implementation.
+- Every implementation, testing, or review role used for a task shares one machine-checked slice context rather than loading all specs or choosing different contracts.
+- One writer owns production-code changes; independent testing and review are applied only when required by the consequence-based path in `0012-repo-agent-workflows.md`.
 - Documentation/harness validation follows `0012-repo-agent-workflows.md`.
 - UI changes cannot be completed without visual inspection.
 - Integration flows require database reset coverage.

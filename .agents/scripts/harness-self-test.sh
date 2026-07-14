@@ -64,10 +64,43 @@ printf '\nbroken = [\n' >> "$explorer_agent"
 expect_failure "malformed agent TOML" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
 mv "$explorer_agent.bak" "$explorer_agent"
 
+cp "$explorer_agent" "$explorer_agent.bak"
+ruby -0pi -e '
+  valid = %q{Valid escapes: \" \\\\ \u0041 \U0001F600 \"""}
+  $_.sub!("Plan or explore when") { "#{valid}\nPlan or explore when" }
+  continuation = "Final continuation: " + "\\" + "\n"
+  $_.sub!("\n\"\"\"\n") { "\n#{continuation}\"\"\"\n" }
+' "$explorer_agent"
+if ! env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh" >/dev/null; then
+  echo "Valid multiline TOML escapes or line continuation were rejected."
+  exit 1
+fi
+mv "$explorer_agent.bak" "$explorer_agent"
+
+cp "$explorer_agent" "$explorer_agent.bak"
+awk '1; /^Plan or explore when/ { print "Invalid TOML escape: \\q" }' "$explorer_agent.bak" > "$explorer_agent"
+expect_failure "invalid multiline TOML escape" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$explorer_agent.bak" "$explorer_agent"
+
+cp "$explorer_agent" "$explorer_agent.bak"
+awk '1; /^Plan or explore when/ { print "Invalid delimiter \"\"\" trailing" }' "$explorer_agent.bak" > "$explorer_agent"
+expect_failure "unescaped multiline TOML delimiter" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$explorer_agent.bak" "$explorer_agent"
+
+cp "$explorer_agent" "$explorer_agent.bak"
+ruby -0pi -e 'sub("Plan or explore when", "Invalid TOML control: \x7F\nPlan or explore when")' "$explorer_agent"
+expect_failure "invalid multiline TOML control character" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$explorer_agent.bak" "$explorer_agent"
+
 implementer_agent="$TEST_ROOT/.codex/agents/implementer.toml"
 cp "$implementer_agent" "$implementer_agent.bak"
 printf '\nmodel = "gpt-5.6-terra"\n' >> "$implementer_agent"
 expect_failure "duplicate agent key" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$implementer_agent.bak" "$implementer_agent"
+
+cp "$implementer_agent" "$implementer_agent.bak"
+printf '\nsandbox_mode = "danger-full-access"\n' >> "$implementer_agent"
+expect_failure "implementer gains a repo-local sandbox default" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
 mv "$implementer_agent.bak" "$implementer_agent"
 
 codex_config="$TEST_ROOT/.codex/config.toml"
@@ -82,9 +115,19 @@ sed 's/model_reasoning_effort = "max"/model_reasoning_effort = "high"/' "$tester
 expect_failure "tester reasoning drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
 mv "$tester_agent.bak" "$tester_agent"
 
+cp "$tester_agent" "$tester_agent.bak"
+grep -v '[.]agents/workflows/development-cycle[.]md' "$tester_agent.bak" > "$tester_agent"
+expect_failure "tester loses workflow reference" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$tester_agent.bak" "$tester_agent"
+
 cp "$reviewer_agent" "$reviewer_agent.bak"
 sed 's/sandbox_mode = "read-only"/sandbox_mode = "workspace-write"/' "$reviewer_agent.bak" > "$reviewer_agent"
-expect_failure "reviewer sandbox drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+expect_failure "reviewer read-only default drift" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$reviewer_agent.bak" "$reviewer_agent"
+
+cp "$reviewer_agent" "$reviewer_agent.bak"
+grep -v '[.]agents/workflows/review-code[.]md' "$reviewer_agent.bak" > "$reviewer_agent"
+expect_failure "reviewer loses workflow reference" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
 mv "$reviewer_agent.bak" "$reviewer_agent"
 
 printf 'name = "packet-probe"\n' > "$TEST_ROOT/.codex/agents/packet-probe.toml"
@@ -264,14 +307,54 @@ grep -v 'context-for-slice[.]sh.*slice_id' "$implementation_review.bak" > "$impl
 expect_failure "implementation review loses shared context" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$implementation_review.bak" "$implementation_review"
 
+development_cycle="$TEST_ROOT/.agents/workflows/development-cycle.md"
+cp "$development_cycle" "$development_cycle.bak"
+sed 's#[.]agents/scripts/agent-preflight[.]sh#.agents/scripts/preflight-removed.sh#' "$development_cycle.bak" > "$development_cycle"
+expect_failure "development cycle loses preflight evaluation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$development_cycle.bak" "$development_cycle"
+
+cp "$development_cycle" "$development_cycle.bak"
+sed 's/`pnpm verify`/`pnpm evaluate`/' "$development_cycle.bak" > "$development_cycle"
+expect_failure "development cycle loses application evaluation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$development_cycle.bak" "$development_cycle"
+
+review_workflow="$TEST_ROOT/.agents/workflows/review-code.md"
+cp "$review_workflow" "$review_workflow.bak"
+grep -v '^## Critical cleanup gate$' "$review_workflow.bak" > "$review_workflow"
+expect_failure "review workflow loses critical cleanup gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$review_workflow.bak" "$review_workflow"
+
+cp "$review_workflow" "$review_workflow.bak"
+sed 's/Reject overengineering:/Consider complexity:/' "$review_workflow.bak" > "$review_workflow"
+expect_failure "review workflow loses critical cleanup content" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$review_workflow.bak" "$review_workflow"
+
+cp "$development_cycle" "$development_cycle.bak"
+sed 's/re-review the entire cumulative diff/review the latest fix/' "$development_cycle.bak" > "$development_cycle"
+expect_failure "development cycle loses whole cumulative diff re-review" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$development_cycle.bak" "$development_cycle"
+
 printf 'implementation packet untracked probe\n' > "$TEST_ROOT/implementation-packet-probe.txt"
 review_packet="$TEST_ROOT/../cancan-implementation-review-packet.txt"
 CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/implementation-review-packet.sh" desktop-feasibility HEAD > "$review_packet"
-if ! rg -q 'implementation-packet-probe[.]txt' "$review_packet"; then
-  echo "Implementation review packet omitted an untracked file."
+if ! rg -q 'implementation-packet-probe[.]txt' "$review_packet" ||
+   ! rg -q '^# Required External Handoff$' "$review_packet" ||
+   ! rg -q '^## Diff stat$' "$review_packet" ||
+   ! rg -q '^## Rename and deletion summary$' "$review_packet"; then
+  echo "Implementation review packet omitted required context or evidence sections."
   exit 1
 fi
 rm "$review_packet" "$TEST_ROOT/implementation-packet-probe.txt"
+
+cp "$implementation_review" "$implementation_review.bak"
+grep -v 'Exact user request' "$implementation_review.bak" > "$implementation_review"
+expect_failure "implementation review loses required handoff evidence" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_review.bak" "$implementation_review"
+
+cp "$implementation_review" "$implementation_review.bak"
+grep -v 'git diff --summary --find-renames' "$implementation_review.bak" > "$implementation_review"
+expect_failure "implementation review loses rename and deletion evidence" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_review.bak" "$implementation_review"
 
 workflow="$TEST_ROOT/.github/workflows/docs-harness.yml"
 cp "$workflow" "$workflow.bak"

@@ -25,7 +25,7 @@ This folder contains procedure only. Intended product and implementation behavio
 
 Narrative role files, repeated product rules, static priority lists, generic templates, and placeholder plugin guidance are intentionally excluded. They created additional sources of truth without adding executable guarantees.
 
-Project-scoped executable agent bindings live separately in `.codex/agents/`. Those small TOML files pin only role instructions, model, reasoning effort, and permissions. The workflow contract remains here and product behavior remains in `docs/specs/`.
+Project-scoped executable agent bindings live separately in `.codex/agents/`. Those small TOML files pin role instructions, model, reasoning effort, and only intentional subagent permission defaults. Implementer has no repo-local sandbox default; explorer/reviewer default to read-only and tester defaults to workspace-write. A parent turn's live permission selection is reapplied to every child and can supersede those defaults, so no-edit explorer/reviewer behavior is also a workflow contract rather than a hard isolation claim. Main-agent permissions stay user/session-owned rather than being copied into the repo. The workflow contract remains here and product behavior remains in `docs/specs/`.
 
 ## Two-layer gate
 
@@ -53,8 +53,8 @@ For app code, tests, or implementation review:
 .agents/scripts/implementation-review-packet.sh <slice-id> [base]
 ```
 
-The implementer, tester, and reviewer use the same generated slice context. The slice checker validates dependencies, spec/ADR paths, active blockers, test gates, and outcomes.
+Every role used for a task shares the same generated slice context. The slice checker validates dependencies, spec/ADR paths, active blockers, test gates, and outcomes.
 
-Use the read-only explorer for complex planning, unclear boundaries, document conflicts, redesign, refactoring, performance analysis, or architecture optimization. For non-trivial app changes, the implementer is the only production-code writer, the tester verifies a stable diff without fixing production code, and the reviewer is independent and read-only. Do not run multiple source-writing agents concurrently.
+Use the risk-sized paths in `.agents/workflows/development-cycle.md`. Simple PR-comment fixes stay in the root thread with focused checks; standard changes add at most one independent role when useful; high-risk changes receive their applicable independent review and one final full relevant gate. Use the read-only explorer only when separate structural analysis helps, and never run multiple source-writing agents concurrently.
 
 Read implementation state from `docs/agent/current-state.md`; do not copy it into the harness. App commands may be added only when the referenced scripts and paths are real.
