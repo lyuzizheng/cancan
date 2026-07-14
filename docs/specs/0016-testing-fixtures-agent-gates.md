@@ -269,21 +269,21 @@ An agentic runtime is adopted only when it demonstrates a material accuracy or r
 
 ## Runtime and packaging evidence
 
-Before selecting ToolLoopAgent or Pi Agent Core for production, a disposable evidence slice must run both candidates with the same mock model, fixed tools, fixture, structured proposal, validation feedback, cancellation, and budget limits.
+The 2026-07-14 disposable evidence slice ran ToolLoopAgent and Pi Agent Core with the same mock model, fixed tools, fixture, structured proposal, validation feedback, cancellation, and budget limits. Both produced the same accepted proposal as single-pass, but required four or five model steps instead of one. Single-pass is therefore selected until real qualification fixtures demonstrate a material agentic accuracy or recovery advantage.
 
-The spike also verifies the Node/Tauri execution boundary:
+The spike also verified the Node/Tauri execution boundary:
 
 ```text
 current pinned Node compatibility and frozen dependency resolution
 dev worker startup and stdio/IPC framing
 Tauri-bundled sidecar feasibility on the supported macOS target
 startup latency, packaged size, clean shutdown, cancellation, and crash isolation
-OS-secret retrieval that does not expose keys to the renderer or model/tool payloads
-signed/notarized packaging implications and third-party license inventory
+inherited-environment clearing and protocol rejection without secret echo
+signed/notarized packaging implications and conservative third-party license inventory
 no user-installed Node, Docker, VM, QEMU, or sandbox requirement
 ```
 
-Node single-executable packaging is not assumed. The spike must either prove a reproducible signed packaging route or leave the runtime unselected. An OS permission sandbox is optional; fixed tools and job scoping are mandatory regardless of process placement.
+The [runtime evidence](../../spikes/document-normalizer-runtime/EVIDENCE.md) proves a reproducible Node 24 single-executable and ad-hoc signed Tauri sidecar route on macOS arm64, including startup, cancellation, clean shutdown, crash isolation, inherited-environment clearing, protocol secret-field rejection, bundle size, and an over-inclusive comparison-workspace license inventory. Exact production credential delivery/redaction and an artifact-specific SBOM/license inventory remain owning-slice gates alongside production signing and notarization. An OS permission sandbox is optional; fixed tools and job scoping are mandatory regardless of process placement.
 
 ## Test database reset policy
 
@@ -406,7 +406,7 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - Expected outputs are versioned and assertion-oriented.
 - LLM-dependent tests are deterministic in CI.
 - Document-agent contract, recorded-loop, adversarial, budget, cancellation, and single-pass comparison tests are required before production adoption.
-- ToolLoopAgent and Pi Agent Core share one disposable runtime/packaging spike; neither is selected from documentation alone.
+- Single-pass is selected by the shared disposable runtime/packaging evidence; any later ToolLoopAgent or Pi Agent Core adoption requires material qualification-fixture evidence.
 - DB reset cannot target a real vault by default.
 - UI changes require visual inspection once UI exists.
 - Every implementation slice declares deterministic test evidence and shares its generated context with testing/review.

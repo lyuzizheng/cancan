@@ -19,10 +19,13 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Completed `synthetic-core-flow` with a deterministic structured-proposal validator, bounded raw-record grounding, exact-decimal reconciliation, source-backed opening/closing balance observations, review routing, and one canonical two-account transfer.
 - Added the first slice-owned production migration and repository with transaction rollback, commit idempotency, immutable committed events/legs, append-only audit, focused query-plan assertions, and a destructive-reset guard limited to marked test paths.
 - Added `pnpm test:synthetic-core` as the focused script-level harness. The integration flow starts from a clean temporary database, reapplies its migration, persists raw and validation JSON, and verifies record-to-event, event-to-record, and sibling transfer navigation without live AI or network access.
+- Completed the disposable `document-normalizer-runtime` comparison with one shared fixture, proposal schema, production validator, mock transcript, fixed seven-tool capability surface, adversarial assertions, step/submission budgets, and cancellation. Single-pass, ToolLoopAgent, and Pi Agent Core produced the same accepted proposal; the agent loops required four or five model steps instead of one and showed no accuracy or recovery advantage.
+- Selected single-pass structured normalization for initial implementation and recorded ADR 0003. ToolLoopAgent and Pi Agent Core remain unselected until real qualification fixtures justify their extra lifecycle and dependency surface.
+- Proved the selected macOS arm64 execution boundary as a pinned Node 24 single executable bundled and controlled by Tauri. The smoke gate covers frozen dependencies, ad-hoc signing, startup, inherited-environment clearing, protocol framing and secret-field rejection, clean shutdown, cancellation, crash isolation, bundle size, and a conservative comparison-workspace license inventory; exact credential delivery/redaction, an artifact-specific SBOM/license inventory, and production signing/notarization remain owning-slice gates.
 
 ### Next
 
-- Run the evidence-only `document-normalizer-runtime` comparison and packaging spike, then hold the planned grouped 5-10 question grill before vault/manual-import implementation.
+- Hold the planned grouped 5-10 question grill before vault/manual-import implementation, focusing on evidence lifecycle and production vault/file security blockers.
 
 ## 2026-07-13
 

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CanCan Document Normalizer Spike",
+  "version": "0.0.0",
+  "identifier": "app.cancan.document-normalizer-spike",
+  "build": {
+    "frontendDist": "../frontend"
+  },
+  "app": {
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "externalBin": ["binaries/cancan-document-agent"],
+    "icon": ["icons/64x64.png"]
+  }
+}

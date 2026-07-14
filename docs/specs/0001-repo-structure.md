@@ -105,9 +105,8 @@ Owns:
 
 ```text
 provider routing
-single-pass structured normalization
-bounded document-agent runtime adapters
-ToolLoopAgent / Pi Agent Core comparison boundary until the runtime spike selects one
+single-pass structured normalization as the initial runtime
+bounded document-agent runtime adapters only after qualification evidence justifies one
 prompt/version logging helpers
 model configuration types
 AI permission boundary helpers
@@ -115,9 +114,9 @@ AI permission boundary helpers
 
 The document agent is a small normalizer with fixed parser tools. It is not a coding agent and must not expose shell, generic filesystem, arbitrary network, database, secret, or ledger tools.
 
-Both current runtime candidates require Node 22 or newer. Production execution and packaging remain evidence-gated: the preferred candidate is a trusted Node worker/sidecar bundled and controlled by Tauri, while renderer execution may be accepted only if the spike proves compatibility without exposing OS secrets or broad Tauri capabilities. The product must not require users to install Node, Docker, a VM, QEMU, or a separate sandbox runtime.
+The initial runtime is single-pass structured normalization in a trusted Node worker/sidecar bundled and controlled by Tauri. The macOS arm64 evidence route uses the pinned Node 24 single-executable format; production signing and notarization remain release gates. The product must not require users to install Node, Docker, a VM, QEMU, or a separate sandbox runtime.
 
-The Tauri/Rust boundary continues to own user-selected file access and OS-secret retrieval. A sidecar, if selected, is process separation and packaging, not an assumed permission sandbox.
+The Tauri/Rust boundary continues to own user-selected file access and OS-secret retrieval. The sidecar is process separation and packaging, not an assumed permission sandbox. ToolLoopAgent and Pi Agent Core remain unselected until qualification fixtures show a material advantage over the same single-pass contract.
 
 ### packages/ui
 
