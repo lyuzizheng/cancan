@@ -13,16 +13,25 @@ Define a small repo-local harness that helps coding agents read the right source
 - Skills are trigger-oriented entry points; workflows own detailed task loops.
 - Deterministic checks are blocking and must be dependency-light.
 - The real deterministic docs harness runs locally and in GitHub Actions.
-- Docs and harness changes require semantic review by an agent that did not author the patch; without one, the gate cannot pass.
+- Changes in the scope defined by `.agents/docs-semantic-review.md` require review by an agent that did not author the patch; without one, the gate cannot pass.
 - A semantic reviewer may return `needs_design`, but must not decide unresolved product, financial, security, privacy, or irreversible data questions.
 - App commands must not be invented before real package scripts and paths exist.
 - App implementation is routed through a machine-checked vertical-slice manifest.
 - Implementers, testers, and reviewers use the same generated slice context and implementation review packet.
+- Project-scoped custom agents pin executable role, model, reasoning, and permission boundaries without duplicating workflow or product truth.
+- Non-trivial app work uses one production-code writer, an independent tester, and an independent read-only reviewer. Complex planning, exploration, document-conflict analysis, redesign, refactoring, performance analysis, and architecture optimization use the optional read-only explorer.
 
 ## Current folder shape
 
 ```text
 AGENTS.md
+.codex/
+  config.toml
+  agents/
+    explorer.toml
+    implementer.toml
+    tester.toml
+    reviewer.toml
 .github/workflows/docs-harness.yml
 .agents/
   README.md
@@ -48,6 +57,7 @@ AGENTS.md
   scripts/
     agent-preflight.sh
     check-agent-skills.sh
+    check-codex-agents.sh
     check-ci-workflow.sh
     check-docs-consistency.sh
     check-implementation-slices.sh
@@ -61,7 +71,7 @@ AGENTS.md
     new-spec.sh
 ```
 
-Roles, repeated product/security/UI/testing rules, generic report templates, placeholder plugin guidance, keyword-routing scripts, and copied priority lists are intentionally excluded.
+Narrative role layers, repeated product/security/UI/testing rules, generic report templates, placeholder plugin guidance, keyword-routing scripts, and copied priority lists are intentionally excluded. `.codex/agents/` contains only executable bindings; detailed loops stay in `.agents/workflows/`.
 
 ## Deterministic gate
 
@@ -85,6 +95,7 @@ every active P0/P1 alignment area is referenced by at least one non-completed sl
 every slice declares packages/surfaces, test gates, and an outcome
 implementation review uses the same generated context as implementation/testing
 skill frontmatter is valid and skill names match directories
+project agent files retain their required model, reasoning, and permission boundaries
 private fixtures are not tracked
 removed harness layers are not referenced
 current priorities are not copied into .agents
@@ -99,7 +110,7 @@ developer-setup scripts parse, pinned toolchain versions agree, checksums reject
 
 Deterministic scripts cannot reliably detect contradictions such as two valid specs assigning different navigation or lifecycle behavior.
 
-For changes under `docs/` or `.agents/`, root `AGENTS.md`, or the docs-harness workflow:
+For changes under `docs/`, `.agents/`, or `.codex/`, root `AGENTS.md`, or the docs-harness workflow:
 
 ```text
 run deterministic preflight
@@ -125,6 +136,23 @@ The context generator always includes root instructions, the source contract, cu
 
 The implementation review packet combines that exact context with tracked and untracked changes. Reviewers must also receive the user's exact task, author assumptions, success criteria, and verification evidence; the packet cannot infer those.
 
+## Subagent execution boundary
+
+The root agent owns orchestration and final reporting. For non-trivial app changes:
+
+```text
+optional read-only explorer for complex planning and structural analysis
+one implementer as the only production-code writer
+stable diff
+independent tester running the strongest relevant gates
+independent read-only reviewer judging diff plus evidence
+findings return to the implementer before testing and review repeat
+```
+
+Do not run multiple source-writing agents concurrently. A tester may write tests only when the root task explicitly delegates test authoring; otherwise it reports reproducible failures. UI inspection is required for user-visible behavior, not for unrelated backend-only changes.
+
+The executable bindings live in `.codex/agents/`. `.codex/config.toml` caps agent nesting at direct children so workers cannot create an uncontrolled hierarchy. `.agents/scripts/check-codex-agents.sh` rejects role, model, reasoning, permission, or concurrency drift.
+
 ## Application-code gates
 
 The app foundation introduced these real root commands:
@@ -146,11 +174,13 @@ pnpm verify
 - Product truth and current priorities are not duplicated in `.agents/`.
 - Every canonical spec is uniquely numbered and indexed.
 - Broken links, stale harness references, invalid skill metadata, and shell syntax errors fail preflight.
+- Custom agent model, reasoning, permission, and nesting drift fails preflight.
 - Broken slice dependencies, missing spec/ADR/blocker references, missing test gates, and context-parity drift fail preflight.
 - Harness self-tests prove that representative faults are detected.
-- GitHub pull requests and pushes to `main` that change docs or harness files run the deterministic gate.
-- Docs and harness changes require an independent semantic verdict.
+- GitHub pull requests and pushes to `main` that change docs, harness, or project agent configuration files run the deterministic gate.
+- Docs, harness, and project agent configuration changes require an independent semantic verdict.
 - Semantic review distinguishes mechanical fixes from `needs_design` questions.
+- Non-trivial app work has one production-code writer and independent testing/review evidence.
 - No workflow claims app commands that do not exist.
 - The real developer-setup test runs through preflight/CI and the harness self-test proves that version-pin drift is rejected.
 - The application workflow, root verification composition, and setup's production-plus-spike gate sequence are machine-checked; fault injection proves that removing any of those gates is rejected.

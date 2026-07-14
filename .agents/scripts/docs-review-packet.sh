@@ -11,13 +11,13 @@ sed -n '1,240p' .agents/docs-semantic-review.md
 
 echo
 echo "## Changed files against $base"
-git diff --name-status "$base" -- AGENTS.md .github/workflows/docs-harness.yml docs .agents
-git ls-files --others --exclude-standard -- AGENTS.md .github/workflows/docs-harness.yml docs .agents | sed 's/^/A\t/'
+git diff --name-status "$base" -- AGENTS.md .github/workflows/docs-harness.yml docs .agents .codex
+git ls-files --others --exclude-standard -- AGENTS.md .github/workflows/docs-harness.yml docs .agents .codex | sed 's/^/A\t/'
 
 echo
 echo "## Diff"
-git diff --no-ext-diff "$base" -- AGENTS.md .github/workflows/docs-harness.yml docs .agents
+git diff --no-ext-diff "$base" -- AGENTS.md .github/workflows/docs-harness.yml docs .agents .codex
 
 while IFS= read -r file; do
   git diff --no-index -- /dev/null "$file" || true
-done < <(git ls-files --others --exclude-standard -- AGENTS.md .github/workflows/docs-harness.yml docs .agents)
+done < <(git ls-files --others --exclude-standard -- AGENTS.md .github/workflows/docs-harness.yml docs .agents .codex)

@@ -23,7 +23,9 @@ This folder contains procedure only. Intended product and implementation behavio
   scripts/     deterministic gates, slice context, and review packets
 ```
 
-Roles, repeated product rules, static priority lists, generic templates, and placeholder plugin guidance are intentionally excluded. They created additional sources of truth without adding executable guarantees.
+Narrative role files, repeated product rules, static priority lists, generic templates, and placeholder plugin guidance are intentionally excluded. They created additional sources of truth without adding executable guarantees.
+
+Project-scoped executable agent bindings live separately in `.codex/agents/`. Those small TOML files pin only role instructions, model, reasoning effort, and permissions. The workflow contract remains here and product behavior remains in `docs/specs/`.
 
 ## Two-layer gate
 
@@ -42,7 +44,7 @@ semantic gate
 
 Run the deterministic gate with `.agents/scripts/agent-preflight.sh`. Test the gate itself with `.agents/scripts/harness-self-test.sh`.
 
-For docs or harness changes, prepare the semantic review with `.agents/scripts/docs-review-packet.sh HEAD` and follow `.agents/docs-semantic-review.md`. A semantic reviewer may identify a decision that needs user input, but must not decide it.
+For docs, harness, or project agent configuration changes, prepare the semantic review with `.agents/scripts/docs-review-packet.sh HEAD` and follow `.agents/docs-semantic-review.md`. A semantic reviewer may identify a decision that needs user input, but must not decide it.
 
 For app code, tests, or implementation review:
 
@@ -52,5 +54,7 @@ For app code, tests, or implementation review:
 ```
 
 The implementer, tester, and reviewer use the same generated slice context. The slice checker validates dependencies, spec/ADR paths, active blockers, test gates, and outcomes.
+
+Use the read-only explorer for complex planning, unclear boundaries, document conflicts, redesign, refactoring, performance analysis, or architecture optimization. For non-trivial app changes, the implementer is the only production-code writer, the tester verifies a stable diff without fixing production code, and the reviewer is independent and read-only. Do not run multiple source-writing agents concurrently.
 
 Read implementation state from `docs/agent/current-state.md`; do not copy it into the harness. App commands may be added only when the referenced scripts and paths are real.

@@ -24,6 +24,7 @@ required_paths = [
   "AGENTS.md",
   "README.md",
   ".agents/**",
+  ".codex/**",
   "scripts/**",
   ".node-version",
   "rust-toolchain.toml",

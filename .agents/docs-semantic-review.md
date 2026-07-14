@@ -1,6 +1,6 @@
 # Independent Docs Semantic Review
 
-Use this gate after deterministic checks when a change touches anything under `docs/` or `.agents/`, root `AGENTS.md`, or the docs-harness CI workflow.
+Use this gate after deterministic checks when a change touches anything under `docs/`, `.agents/`, or `.codex/`, root `AGENTS.md`, or the docs-harness CI workflow.
 
 The reviewer must not be the agent that authored the patch. If no independent reviewer is available, the semantic gate cannot return `pass`; report the gate as blocked.
 

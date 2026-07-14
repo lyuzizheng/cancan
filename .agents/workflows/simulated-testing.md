@@ -26,6 +26,8 @@ Fixture privacy and live-service boundaries are owned by `docs/specs/0016-testin
 6. Run the flow end-to-end.
 7. Capture logs, screenshots, and resulting records.
 8. Compare against expected source evidence, staged records, review items, jobs, and committed ledger state.
-9. File findings or patch the smallest cause.
+9. Report reproducible findings to the root agent. Do not patch production code in the tester role.
 
 Scenario requirements are owned by `docs/specs/0016-testing-fixtures-agent-gates.md`. Report the scenario, expected state transitions, actual result, gaps, and follow-up tests.
+
+Use the narrowest layer that proves the changed behavior. Add Tauri-boundary or UI-flow inspection only when the slice crosses those boundaries; do not turn backend-only changes into artificial UI tests.

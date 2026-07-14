@@ -16,6 +16,7 @@ This spec is canonical for fixture policy, parser/reconciliation test expectatio
 - DB reset must only affect test databases, never a real vault.
 - UI work requires visual inspection when app code exists.
 - App/typecheck/test/build gates are added only when real app/package scripts exist; the app-foundation commands now satisfy that boundary.
+- The independent tester verifies a stable implementation diff and reports reproducible failures instead of patching production code.
 
 ## Fixture privacy layers
 
@@ -324,6 +325,17 @@ build/package check when app code changes
 ```
 
 The applicable subset is declared by the selected row in `docs/agent/implementation-slices.md`. Testing and review generate the same slice context used by implementation; they do not independently guess a different spec set.
+
+Use the narrowest test layer that proves the changed behavior:
+
+```text
+pure domain behavior -> unit tests
+repository or migration behavior -> safe temporary SQLite integration
+privileged desktop behavior -> Tauri command and build checks
+user-visible vertical flow -> UI interaction, persisted result, reload, and visual-state inspection
+```
+
+Do not require artificial UI tests for backend-only behavior. When a slice changes a user-visible flow, test the complete boundary it owns rather than stopping at a mocked component.
 
 The current foundation commands are:
 

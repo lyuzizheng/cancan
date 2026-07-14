@@ -7,4 +7,4 @@ description: Review CanCan changes against canonical specs, safety rules, tests,
 
 ## Workflow
 
-Run `.agents/workflows/review-code.md` against task-relevant canonical specs and status-bearing ADRs. For docs or harness review, also apply `.agents/docs-semantic-review.md`.
+Run `.agents/workflows/review-code.md` against task-relevant canonical specs and status-bearing ADRs. Also apply `.agents/docs-semantic-review.md` whenever its change-scope trigger matches.
