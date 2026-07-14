@@ -6,7 +6,7 @@ Define when records can auto-commit, when they require review, and how reconcili
 
 ## Implementation blocker
 
-The auto-commit rule is accepted. Live implementation still depends on the unresolved parser-evidence and vault/storage blockers in the [active alignment register](../alignment-temp/alignment-progress.md); do not weaken the accepted gates to work around them.
+The auto-commit rule is accepted. The synthetic core flow may exercise it with deterministic mocked proposals; live normalization and qualification still wait for the document-normalizer runtime evidence plus their upstream vault/Gmail slices in the [active alignment register](../alignment-temp/alignment-progress.md). Do not weaken the accepted gates to work around those boundaries.
 
 ## MVP user setting
 
@@ -31,8 +31,9 @@ user auto-commit toggle is enabled
 document arrived through a configured Money Source channel or explicit import into that source
 AI classifier selected the configured supported provider and document type
 provider package deterministic fingerprints and schema checks passed
-provider/document/parser package version is currently qualified
+the complete provider/document normalization profile is currently qualified
 schema_valid = true
+every event-type-required financial field is grounded to a validated raw source record
 deterministic_validation_passed = true
 account/container identity is resolved for commit
 not an exact/probable duplicate, partial allocation, or warning case
@@ -43,7 +44,7 @@ all event-type-required legs and evidence are present
 
 All financial event types may qualify, including repayments, transfers, FX, trades, refunds, withdrawals, interest, and fees. There is no document-type shortcut and no permanently trusted event-type list.
 
-Do not use raw LLM self-reported confidence or one global numeric threshold. Each provider/document/parser package calibrates required-field confidence against its labeled qualification fixtures. A record is `very-high confidence` only when every event-type-required field meets that package's accepted calibration and no competing parse or mapping remains.
+Do not use raw LLM self-reported confidence or one global numeric threshold. Each complete normalization profile calibrates required-field confidence against its labeled qualification fixtures. A record is `very-high confidence` only when every event-type-required field meets that profile's accepted calibration, is grounded to its validated raw source record, and has no competing parse or mapping.
 
 ## Exact reconciliation-window gate
 
@@ -76,7 +77,7 @@ A source-backed balance, position, or valuation observation may be accepted as a
 
 Auto-commit eligibility is record-level, not all-or-nothing per PDF.
 
-A staged record with verified amount/sign/account but unresolved semantic classification may participate in arithmetic closure while remaining in Review. The other individually eligible records may auto-commit after the full window closes. A record with uncertain financial fields or a missing amount creates a reconciliation gap and blocks auto-commit for that window.
+A staged record with verified amount/account-balance delta/account but unresolved semantic classification may participate in arithmetic closure while remaining in Review. The other individually eligible records may auto-commit after the full window closes. A record with uncertain financial fields, ungrounded required evidence, or a missing amount creates a reconciliation gap and blocks auto-commit for that window.
 
 Until every staged record is committed, rejected, or otherwise resolved, the window remains visibly `Needs review`. Do not present the committed subset alone as a fully reconciled/completed window.
 
@@ -115,6 +116,8 @@ the system never invents a synthetic remainder event
 ```
 
 The default review surface presents one recommended relationship and one primary action. Exact allocations and evidence details are available on expansion, not required as the user's first mental model.
+
+Cross-account transfers are a core relationship, not a future matching extension. The two bank-side records may both link to one canonical transfer event so either record detail can show the other side without duplicating income or spending.
 
 ## Commit, reversal, and audit policy
 
@@ -163,6 +166,7 @@ may affect current displayed asset value
 - Auto-committed records appear quietly in Recent Activity with one-click reversal-backed Undo.
 - Exact duplicate handling is auditable.
 - Partial and one-to-many matches remain simple in normal UI and block auto-commit.
+- Two bank-side records can link to one canonical transfer event and be discovered from either side.
 - Repayments do not double-count spending.
 - Committed events are corrected through reversal/replacement, never mutation or deletion.
 - Financial mutations and review decisions create atomic append-only audit entries.

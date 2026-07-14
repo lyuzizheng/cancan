@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 
 ## Product phase
 
@@ -29,12 +29,17 @@ The current product target is a Gmail-first local financial evidence vault and p
 - `.agents/scripts/agent-preflight.sh` provides deterministic gates.
 - `docs/agent/implementation-slices.md` and `.agents/scripts/context-for-slice.sh` provide the machine-checked app implementation order and minimal per-slice context.
 - `.agents/docs-semantic-review.md` defines the independent semantic gate for docs and harness changes.
+- The parser evidence contract is accepted: extraction/OCR produce job-scoped observations, a mandatory AI normalizer produces one structured proposal shape, and each record persists one bounded validated raw source object plus a validation summary rather than a field-evidence graph. Dates do not receive invented timezones, and Debit/Credit remains separate from signed source-account balance movement.
+- Database migrations grow by vertical slice. The synthetic core keeps many-to-many `match_edges` because two bank-side records linking through one canonical transfer event is a core query, while speculative evidence-reference tables, identifier machinery, indexes, and fixed benchmark sizes are excluded.
+- A bounded document agent may implement the normalizer with seven fixed parser tools, but ToolLoopAgent versus Pi Agent Core and the bundled Node/Tauri execution path remain an evidence-only runtime decision. Full Pi Coding Agent is excluded; users will not install a sandbox runtime.
 
 The old broad numbered product-doc layer and duplicated alignment/harness projections have been removed. Do not recreate them.
 
 ## Immediate next work
 
-Resolve the focused `Parser evidence contract` blocker before implementing `synthetic-core-flow`. After that slice completes, resume the planned broad 5-10 question grill before vault/manual-import work. Run a second public-launch grill after the review/ledger UI and before public OAuth/release work.
+`synthetic-core-flow` is ready and is the immediate implementation slice. It uses deterministic mocked AI output, bounded raw source-record fixtures, and linked-transfer assertions; it does not select a live agent framework or retain production full-document extraction.
+
+After that slice completes, run the bounded `document-normalizer-runtime` evidence spike and the planned broad 5-10 question grill before vault/manual-import work. Run a second public-launch grill after the review/ledger UI and before public OAuth/release work.
 
 Do not implement behavior covered by an active blocker. A ready slice may use a spec for its explicitly unblocked outcome without implementing that spec's blocked release, security, privacy, or product behavior; the generated slice context is the executable boundary.
 

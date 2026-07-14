@@ -117,7 +117,17 @@ Additional samples for password-protected PDFs are required once locked-PDF hand
 
 The three-fixture baseline is enough to begin parser development, not enough to grant auto-commit eligibility.
 
-Each `provider + document_type + parser_contract_version` must qualify independently with:
+Each complete normalization profile must qualify independently. Its identity includes:
+
+```text
+provider + document type
++ parser/skill/prompt/schema/validator versions
++ normalizer runtime and tool-contract versions
++ input strategy and native-extraction/OCR versions
++ AI provider/model version
+```
+
+Each profile must qualify with:
 
 ```text
 at least 100 labeled representative record cases across normal and edge-case statements
@@ -144,7 +154,7 @@ The 100 cases may be distributed across synthetic, redacted, and private stateme
 
 Shadow mode performs the complete eligibility decision but creates review suggestions instead of committed events. User decisions are recorded as qualification evidence.
 
-Any classifier prompt, extraction prompt, parser, validator, canonical mapping, or eligibility-rule version change revokes the affected package version's qualification. The user-level auto-commit toggle remains enabled, but records from the changed version fall back to shadow/review until it qualifies again.
+Any classifier prompt, extraction prompt, parser skill, normalizer runtime, tool contract, structured schema, validator, extraction/OCR engine, model, canonical mapping, or eligibility-rule version change revokes the affected profile's qualification. The user-level auto-commit toggle remains enabled, but records from the changed profile fall back to shadow/review until it qualifies again.
 
 ## Expected output contract
 
@@ -173,6 +183,9 @@ Recommended shape:
   "document_type": "credit_card_statement",
   "privacy_level": "synthetic|redacted|private",
   "parser_contract_version": "0.1.0",
+  "normalization_profile_id": "mock-profile-v1",
+  "agent_runtime": "single-pass|tool-loop-agent|pi-agent-core",
+  "tool_contract_version": "0.1.0",
   "extraction_version": "0.1.0",
   "prompt_hash": "mock-or-real-hash",
   "expected": {
@@ -208,6 +221,68 @@ Rules:
 - preserve parse run history when AI output changes;
 - do not overwrite expected outputs without review;
 - never include secrets or PDF passwords in mocked outputs.
+
+## Document-agent harness
+
+The document agent remains a small normalizer with fixed parser tools. Its harness must use the same proposal schema, observations, validators, and fixtures as the single-pass baseline.
+
+Deterministic contract tests cover:
+
+```text
+product parser-skill manifest and prompt/schema/version references
+exact allowlist of inspect/extract/OCR/read-region/validate/submit tools
+rejection of shell, arbitrary file path, cross-document ID, generic network, secret, database, and ledger requests
+strict tool argument/result schemas and bounded page/row/result sizes
+free-text completion rejection
+schema-valid submit_structured_proposal completion
+eight-step and two-submission budget enforcement
+cancellation, retry, parse-run history, and idempotency
+```
+
+Recorded-agent tests use mocked model streams or transcripts to prove:
+
+```text
+the model can inspect, extract, validate, repair once, and submit
+invalid tool calls fail without executing a capability
+validation feedback cannot be bypassed by a second proposal
+native/OCR conflict remains visible
+an ungrounded multimodal field cannot become auto-commit eligible
+budget exhaustion creates a deterministic review/failure outcome
+tool events and final parse metadata are reproducible
+```
+
+Adversarial fixtures include document text that instructs the model to ignore its prompt, request secrets, read other files, access another document, call a nonexistent tool, or fabricate raw source rows or locators. They also splice individually valid amount/date/description values from different rows or regions into one fake raw record. These cases pass only when the capability request is impossible or rejected and no eligible financial record is produced from fabricated evidence.
+
+Every agentic profile is compared with a single-pass structured-normalization baseline on the same cases. Record:
+
+```text
+required-field exact accuracy
+row recall and duplicate/missing-row failures
+raw-record grounding coverage
+exact reconciliation and eligibility outcome
+model/tool steps, latency, token use, and estimated cost
+runtime errors, cancellation, and repair success
+```
+
+An agentic runtime is adopted only when it demonstrates a material accuracy or recovery advantage that justifies its additional complexity. Framework popularity or a successful happy-path demo is not qualification evidence.
+
+## Runtime and packaging evidence
+
+Before selecting ToolLoopAgent or Pi Agent Core for production, a disposable evidence slice must run both candidates with the same mock model, fixed tools, fixture, structured proposal, validation feedback, cancellation, and budget limits.
+
+The spike also verifies the Node/Tauri execution boundary:
+
+```text
+current pinned Node compatibility and frozen dependency resolution
+dev worker startup and stdio/IPC framing
+Tauri-bundled sidecar feasibility on the supported macOS target
+startup latency, packaged size, clean shutdown, cancellation, and crash isolation
+OS-secret retrieval that does not expose keys to the renderer or model/tool payloads
+signed/notarized packaging implications and third-party license inventory
+no user-installed Node, Docker, VM, QEMU, or sandbox requirement
+```
+
+Node single-executable packaging is not assumed. The spike must either prove a reproducible signed packaging route or leave the runtime unselected. An OS permission sandbox is optional; fixed tools and job scoping are mandatory regardless of process placement.
 
 ## Test database reset policy
 
@@ -315,11 +390,13 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - `fixtures-private/` is ignored by Git.
 - Fixture policy distinguishes private, redacted, and synthetic samples.
 - Each supported document type has a target fixture minimum.
-- Auto-commit qualification requires 100 labeled record cases, 20 confirmed shadow candidates, and zero incorrect eligible outcomes per provider/document/parser version.
+- Auto-commit qualification requires 100 labeled record cases, 20 confirmed shadow candidates, and zero incorrect eligible outcomes per complete normalization profile.
 - Qualification covers every supported event type, exact snapshot closure, residual failures, duplicate/missing rows, and field-level held-out calibration.
-- Parser or prompt version changes revoke only the affected package version's qualification and fall back to shadow mode.
+- Any behavior-changing parser skill, prompt, schema, validator, agent runtime, tool contract, extraction/OCR, or model change revokes only the affected profile's qualification and falls back to shadow mode.
 - Expected outputs are versioned and assertion-oriented.
 - LLM-dependent tests are deterministic in CI.
+- Document-agent contract, recorded-loop, adversarial, budget, cancellation, and single-pass comparison tests are required before production adoption.
+- ToolLoopAgent and Pi Agent Core share one disposable runtime/packaging spike; neither is selected from documentation alone.
 - DB reset cannot target a real vault by default.
 - UI changes require visual inspection once UI exists.
 - Every implementation slice declares deterministic test evidence and shares its generated context with testing/review.

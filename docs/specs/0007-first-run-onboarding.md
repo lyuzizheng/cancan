@@ -148,6 +148,17 @@ Rules:
 - user-owned provider settings should be preferred for privacy, cost transparency, and control;
 - Vercel AI SDK may be used behind CanCan-owned adapters.
 
+Normal onboarding exposes one simple `AI document analysis` setup. Its recommended mode uses a multimodal AI normalizer and lets the app combine the original document, native text extraction, and conditional local OCR without asking the user to understand those stages.
+
+Advanced settings may enable separate extraction:
+
+```text
+Text recognition: local or configured OCR service
+AI structuring: text-only or multimodal normalizer
+```
+
+The app chooses native text, OCR, both, or original page evidence using the accepted parser input-planning rules. The normal onboarding flow does not ask users to choose an OCR provider or a normalizer architecture. Exact cloud-data disclosure and consent text remain blocked by the Gmail/cloud-AI consent decision.
+
 ## Gmail setup decision
 
 Gmail MVP uses official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect.
