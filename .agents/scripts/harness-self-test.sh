@@ -64,6 +64,34 @@ printf '\nbroken = [\n' >> "$explorer_agent"
 expect_failure "malformed agent TOML" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
 mv "$explorer_agent.bak" "$explorer_agent"
 
+cp "$explorer_agent" "$explorer_agent.bak"
+ruby -0pi -e '
+  valid = %q{Valid escapes: \" \\\\ \u0041 \U0001F600 \"""}
+  $_.sub!("Plan or explore when") { "#{valid}\nPlan or explore when" }
+  continuation = "Final continuation: " + "\\" + "\n"
+  $_.sub!("\n\"\"\"\n") { "\n#{continuation}\"\"\"\n" }
+' "$explorer_agent"
+if ! env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh" >/dev/null; then
+  echo "Valid multiline TOML escapes or line continuation were rejected."
+  exit 1
+fi
+mv "$explorer_agent.bak" "$explorer_agent"
+
+cp "$explorer_agent" "$explorer_agent.bak"
+awk '1; /^Plan or explore when/ { print "Invalid TOML escape: \\q" }' "$explorer_agent.bak" > "$explorer_agent"
+expect_failure "invalid multiline TOML escape" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$explorer_agent.bak" "$explorer_agent"
+
+cp "$explorer_agent" "$explorer_agent.bak"
+awk '1; /^Plan or explore when/ { print "Invalid delimiter \"\"\" trailing" }' "$explorer_agent.bak" > "$explorer_agent"
+expect_failure "unescaped multiline TOML delimiter" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$explorer_agent.bak" "$explorer_agent"
+
+cp "$explorer_agent" "$explorer_agent.bak"
+ruby -0pi -e 'sub("Plan or explore when", "Invalid TOML control: \x7F\nPlan or explore when")' "$explorer_agent"
+expect_failure "invalid multiline TOML control character" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
+mv "$explorer_agent.bak" "$explorer_agent"
+
 implementer_agent="$TEST_ROOT/.codex/agents/implementer.toml"
 cp "$implementer_agent" "$implementer_agent.bak"
 printf '\nmodel = "gpt-5.6-terra"\n' >> "$implementer_agent"

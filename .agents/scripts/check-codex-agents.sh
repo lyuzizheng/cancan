@@ -18,6 +18,59 @@ def invalid(path, line, message)
   raise "Invalid Codex agent configuration #{location}: #{message}"
 end
 
+def validate_multiline_basic_string(path, start_line, value)
+  index = 0
+  while index < value.length
+    character = value[index]
+    if character == "\\"
+      line = start_line + value[0...index].count("\n") + 1
+      cursor = index + 1
+      invalid(path, line, "unterminated escape in multiline string") if cursor >= value.length
+
+      escape = value[cursor]
+      if ['"', "\\", "b", "t", "n", "f", "r"].include?(escape)
+        index = cursor + 1
+        next
+      end
+
+      if escape == "u" || escape == "U"
+        digits = escape == "u" ? 4 : 8
+        encoded = value[(cursor + 1), digits]
+        unless encoded&.match?(/\A[0-9A-Fa-f]{#{digits}}\z/)
+          invalid(path, line, "invalid Unicode escape in multiline string")
+        end
+        scalar = encoded.to_i(16)
+        if scalar > 0x10FFFF || (0xD800..0xDFFF).cover?(scalar)
+          invalid(path, line, "invalid Unicode scalar in multiline string")
+        end
+        index = cursor + digits + 1
+        next
+      end
+
+      cursor += 1 while cursor < value.length && [" ", "\t"].include?(value[cursor])
+      if value[cursor] == "\n"
+        cursor += 1
+        cursor += 1 while cursor < value.length && [" ", "\t", "\n"].include?(value[cursor])
+        index = cursor
+        next
+      end
+
+      invalid(path, line, "invalid escape \\#{escape} in multiline string")
+    end
+
+    if character == '"' && value[index, 3] == '"""'
+      line = start_line + value[0...index].count("\n") + 1
+      invalid(path, line, 'unescaped """ in multiline string')
+    end
+
+    if (character.ord < 0x20 && character != "\n" && character != "\t") || character.ord == 0x7F
+      line = start_line + value[0...index].count("\n") + 1
+      invalid(path, line, "control character in multiline string")
+    end
+    index += 1
+  end
+end
+
 def parse_toml(path, sectioned:)
   invalid(path, nil, "file is missing") unless File.file?(path)
 
@@ -33,7 +86,9 @@ def parse_toml(path, sectioned:)
 
     if multiline_key
       if line.strip == '"""'
-        values[multiline_key] = multiline_value.join("\n")
+        value = multiline_value.join("\n")
+        validate_multiline_basic_string(path, multiline_start, "#{value}\n")
+        values[multiline_key] = value
         multiline_key = nil
         multiline_start = nil
         multiline_value = []
