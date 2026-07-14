@@ -146,6 +146,195 @@ describe("validateStructuredProposal", () => {
     });
   });
 
+  it.each([
+    {
+      label: "numeric substring",
+      column: 3,
+      sourceText: "250.00",
+      mutateRecord(record: ReturnType<typeof createSyntheticTransferFixture>["proposal"]["records"][number]) {
+        record.raw.debit = "25";
+        record.amount = { value: "25", currency: "SGD" };
+        record.accountBalanceDelta = { value: "-25", currency: "SGD" };
+      },
+    },
+    {
+      label: "numeric identifier substring",
+      column: 3,
+      sourceText: "REF25A",
+      mutateRecord(record: ReturnType<typeof createSyntheticTransferFixture>["proposal"]["records"][number]) {
+        record.raw.debit = "25";
+        record.amount = { value: "25", currency: "SGD" };
+        record.accountBalanceDelta = { value: "-25", currency: "SGD" };
+      },
+    },
+    {
+      label: "date prefix",
+      column: 1,
+      sourceText: "2026-07-010",
+      mutateRecord() {},
+    },
+    {
+      label: "currency substring",
+      column: 4,
+      sourceText: "XSGD",
+      mutateRecord() {},
+    },
+    {
+      label: "currency identifier substring",
+      column: 4,
+      sourceText: "REF_SGD_X",
+      mutateRecord() {},
+    },
+  ])("does not ground a $label from OCR text", async ({ column, sourceText, mutateRecord }) => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    const observation = fixture.extractionBundle.observations.find(
+      ({ row, column: observationColumn }) => row === 2 && observationColumn === column,
+    );
+    if (!record || !observation) {
+      throw new Error("synthetic fixture is incomplete");
+    }
+    observation.kind = "ocr_text";
+    observation.text = sourceText;
+    mutateRecord(record);
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      errors: [
+        {
+          proposalRecordId: "record-checking-out",
+          code: "raw_record_not_grounded",
+        },
+      ],
+    });
+  });
+
+  it("grounds an exact numeric OCR token followed by punctuation", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const observation = fixture.extractionBundle.observations.find(
+      ({ row, column }) => row === 2 && column === 3,
+    );
+    if (!observation) {
+      throw new Error("synthetic fixture is missing its debit observation");
+    }
+    observation.kind = "ocr_text";
+    observation.text = "Amount 250.00, SGD";
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result.status).toBe("valid");
+  });
+
+  it.each([
+    { sourceText: "11,250.00", expectedStatus: "invalid" },
+    { sourceText: "Amount 1,250.00, SGD", expectedStatus: "valid" },
+  ] as const)(
+    "handles a grouped numeric OCR token without substring matching: $sourceText",
+    async ({ sourceText, expectedStatus }) => {
+      const fixture = createSyntheticTransferFixture();
+      const observation = fixture.extractionBundle.observations.find(
+        ({ row, column }) => row === 2 && column === 3,
+      );
+      if (!observation) {
+        throw new Error("synthetic fixture is missing its debit observation");
+      }
+      observation.kind = "ocr_text";
+      observation.text = sourceText;
+      const recordContract: typeof syntheticBankRecordContract = {
+        inspect(raw) {
+          const inspection = syntheticBankRecordContract.inspect(raw);
+          return raw.description === "Transfer to savings"
+            ? {
+                ...inspection,
+                groundingValues: inspection.groundingValues.map((value) =>
+                  value === "250.00" ? "1,250.00" : value,
+                ),
+              }
+            : inspection;
+        },
+      };
+
+      const result = await validateStructuredProposal({ ...fixture, recordContract });
+
+      if (expectedStatus === "valid") {
+        expect(result.status).toBe("valid");
+      } else {
+        expect(result).toEqual({
+          status: "invalid",
+          errors: [
+            {
+              proposalRecordId: "record-checking-out",
+              code: "raw_record_not_grounded",
+            },
+          ],
+        });
+      }
+    },
+  );
+
+  it.each([
+    "",
+    "not-a-dateZ",
+    "2026-07-01T12:00:00+99:99",
+    "2026-07-01T12:00:00+23:59",
+    "2026-07-01T12:00:00+14:01",
+    "2026-02-30T12:00:00Z",
+    "2026-07-01T24:00:00Z",
+  ])("rejects an invalid postedAt timestamp: %s", async (postedAt) => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    if (!record) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    record.postedAt = postedAt;
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      errors: [
+        {
+          proposalRecordId: "record-checking-out",
+          code: "schema_invalid",
+        },
+      ],
+    });
+  });
+
+  it.each([
+    "2026-07-01T12:34:56Z",
+    "2026-07-01T12:34:56.789+08:00",
+    "2026-07-01T12:34:56+14:00",
+  ])(
+    "accepts a complete offset-bearing postedAt timestamp: %s",
+    async (postedAt) => {
+      const fixture = createSyntheticTransferFixture();
+      const record = fixture.proposal.records[0];
+      if (!record) {
+        throw new Error("synthetic fixture is missing its first record");
+      }
+      record.postedAt = postedAt;
+
+      const result = await validateStructuredProposal({
+        ...fixture,
+        recordContract: syntheticBankRecordContract,
+      });
+
+      expect(result.status).toBe("valid");
+    },
+  );
+
   it("rejects a proposal-supplied provider record ID that is not grounded", async () => {
     const fixture = createSyntheticTransferFixture();
     const record = fixture.proposal.records[0];

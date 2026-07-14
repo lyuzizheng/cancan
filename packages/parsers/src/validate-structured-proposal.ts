@@ -19,6 +19,58 @@ function observationGroupKey(observation: SourceObservation): string {
   return `observation:${observation.id}`;
 }
 
+function containsDelimitedValue(text: string, expected: string, adjacent: RegExp): boolean {
+  let start = text.indexOf(expected);
+  while (start !== -1) {
+    const before = text[start - 1];
+    const after = text[start + expected.length];
+    if ((!before || !adjacent.test(before)) && (!after || !adjacent.test(after))) {
+      return true;
+    }
+    start = text.indexOf(expected, start + 1);
+  }
+  return false;
+}
+
+function numericBoundaryIsValid(text: string, index: number, neighborIndex: number): boolean {
+  const adjacent = text[index];
+  if (adjacent === undefined) {
+    return true;
+  }
+  if (/[A-Za-z0-9_+-]/.test(adjacent)) {
+    return false;
+  }
+  return !/[.,]/.test(adjacent) || !/\d/.test(text[neighborIndex] ?? "");
+}
+
+function containsNumericToken(text: string, expected: string): boolean {
+  let start = text.indexOf(expected);
+  while (start !== -1) {
+    const end = start + expected.length;
+    if (
+      numericBoundaryIsValid(text, start - 1, start - 2) &&
+      numericBoundaryIsValid(text, end, end + 1)
+    ) {
+      return true;
+    }
+    start = text.indexOf(expected, start + 1);
+  }
+  return false;
+}
+
+function nonTableTextGroundsValue(text: string, expected: string): boolean {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(expected)) {
+    return containsDelimitedValue(text, expected, /[A-Za-z0-9_-]/);
+  }
+  if (exactDecimal(expected) || /^-?[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?$/.test(expected)) {
+    return containsNumericToken(text, expected);
+  }
+  if (/^[A-Z]{3}$/.test(expected)) {
+    return containsDelimitedValue(text, expected, /[A-Za-z0-9_]/);
+  }
+  return text.includes(expected);
+}
+
 function rawRecordIsGrounded(values: string[], bundle: ExtractionBundle): boolean {
   if (
     values.length === 0 ||
@@ -40,7 +92,10 @@ function rawRecordIsGrounded(values: string[], bundle: ExtractionBundle): boolea
       const expected = normalized(value);
       return observations.some((observation) => {
         const text = normalized(observation.text);
-        return text === expected || (observation.kind !== "table_cell" && text.includes(expected));
+        return (
+          text === expected ||
+          (observation.kind !== "table_cell" && nonTableTextGroundsValue(text, expected))
+        );
       });
     }),
   );
@@ -95,6 +150,14 @@ function validDateOnly(value: string): boolean {
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
 
+function validOffsetTimestamp(value: string): boolean {
+  const match = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:(?:0\d|1[0-3]):[0-5]\d|14:00))$/.exec(
+    value,
+  );
+  const date = match?.[1];
+  return date !== undefined && validDateOnly(date);
+}
+
 function recordSchemaIsValid(record: CanonicalExternalRecordInput): boolean {
   if (record.postedOn && !validDateOnly(record.postedOn)) {
     return false;
@@ -102,7 +165,7 @@ function recordSchemaIsValid(record: CanonicalExternalRecordInput): boolean {
   if (record.transactionOn && !validDateOnly(record.transactionOn)) {
     return false;
   }
-  if (record.postedAt && !/(?:Z|[+-]\d{2}:\d{2})$/.test(record.postedAt)) {
+  if (record.postedAt !== undefined && !validOffsetTimestamp(record.postedAt)) {
     return false;
   }
   if (record.amount && !exactDecimal(record.amount.value, false)) {
