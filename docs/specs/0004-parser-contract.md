@@ -348,7 +348,7 @@ The selected execution boundary is a trusted, bundled Node worker/sidecar contro
 
 An OS sandbox is not an MVP requirement because the model has no arbitrary execution, filesystem, or network tool. The Tauri sidecar provides packaging and crash/process separation but is not itself a permission sandbox.
 
-The disposable [runtime spike](../../spikes/document-normalizer-runtime/EVIDENCE.md) proves dependency bundling, deterministic mock execution, startup, cancellation, crash isolation, inherited-environment clearing, protocol secret-field rejection, ad-hoc signed Tauri packaging, debug size, and a conservative comparison-workspace license inventory on macOS arm64. Exact production credential delivery/redaction, an artifact-specific SBOM/license inventory, Developer ID signing, and notarization remain owning-slice gates rather than runtime-selection evidence. ADR 0003 records the accepted package/runtime boundary.
+The disposable [runtime spike](../../spikes/document-normalizer-runtime/EVIDENCE.md) proves dependency bundling, deterministic mock execution, startup, cancellation, crash isolation, inherited-environment clearing, protocol secret-field rejection, ad-hoc signed Tauri packaging, debug size, and a conservative comparison-workspace license inventory on macOS `arm64`. Phase 1 still requires the equivalent architecture-matched sidecar evidence on macOS `x86_64`. Exact production credential delivery/redaction, an artifact-specific SBOM/license inventory, Developer ID signing, and notarization remain owning-slice gates rather than runtime-selection evidence. ADR 0003 records the accepted package/runtime boundary.
 
 Primary references:
 

@@ -283,7 +283,7 @@ signed/notarized packaging implications and conservative third-party license inv
 no user-installed Node, Docker, VM, QEMU, or sandbox requirement
 ```
 
-The [runtime evidence](../../spikes/document-normalizer-runtime/EVIDENCE.md) proves a reproducible Node 24 single-executable and ad-hoc signed Tauri sidecar route on macOS arm64, including startup, cancellation, clean shutdown, crash isolation, inherited-environment clearing, protocol secret-field rejection, bundle size, and an over-inclusive comparison-workspace license inventory. Exact production credential delivery/redaction and an artifact-specific SBOM/license inventory remain owning-slice gates alongside production signing and notarization. An OS permission sandbox is optional; fixed tools and job scoping are mandatory regardless of process placement.
+The [runtime evidence](../../spikes/document-normalizer-runtime/EVIDENCE.md) proves a reproducible Node 24 single-executable and ad-hoc signed Tauri sidecar route on macOS `arm64`, including startup, cancellation, clean shutdown, crash isolation, inherited-environment clearing, protocol secret-field rejection, bundle size, and an over-inclusive comparison-workspace license inventory. Phase 1 also requires the same architecture-matched build, launch, lifecycle, and packaging evidence on a real macOS `x86_64` runner or machine. Exact production credential delivery/redaction and an artifact-specific SBOM/license inventory remain owning-slice gates alongside production signing and notarization. An OS permission sandbox is optional; fixed tools and job scoping are mandatory regardless of process placement.
 
 ## Test database reset policy
 

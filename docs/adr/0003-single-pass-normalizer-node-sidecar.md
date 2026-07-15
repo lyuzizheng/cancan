@@ -15,9 +15,9 @@ user-installed runtime or expose privileged capabilities to the renderer.
 ## Decision
 
 Use single-pass structured normalization for the initial production implementation.
-Run it in a trusted Node worker/sidecar bundled and controlled by Tauri. On the
-supported macOS arm64 development target, package the pinned Node 24 runtime as a
-single executable external binary.
+Run it in a trusted Node worker/sidecar bundled and controlled by Tauri. For both
+Phase 1 macOS targets, `arm64` and `x86_64`, package the pinned Node 24 runtime as
+an architecture-matched single-executable external binary.
 
 The Tauri/Rust host owns user-selected file access and OS-secret retrieval. The
 worker is launched with a cleared inherited environment and limited to the current parse job, runtime configuration, the shared
@@ -46,7 +46,8 @@ This accepts the runtime and packaging architecture. It does not qualify a live
 model or parser profile, define production credential transport/redaction, produce
 an artifact-specific SBOM/license inventory, or accept Developer ID signing and
 notarization; those remain gates in their owning provider, security, and release
-slices.
+slices. The spike proves the path only on `arm64`; Phase 1 support also requires an
+equivalent real `x86_64` build, launch, lifecycle, and packaging pass.
 
 ## Consequences
 

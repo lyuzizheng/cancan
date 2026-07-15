@@ -6,6 +6,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Fixed the platform roadmap: Phase 1 supports macOS on both `arm64` and Intel `x86_64`; Windows desktop is Phase 2 and does not block the first macOS release. Existing end-to-end evidence remains `arm64`-only, so real Intel build/runtime/Vault/Keychain/sidecar evidence is now an explicit gate rather than an implied support claim.
 - Completed the evidence-lifecycle and Vault-security design grill. In MVP, `source_documents` is both the imported evidence row and encrypted-file registry/tombstone; no separate `vault_files` table is added. Exact-hash re-import reuses or restores that row, while byte-different files under one statement identity remain separate evidence.
 - Replaced ambiguous document Archive/Remove behavior with explicit `Delete source file`: remove the current encrypted Vault blob, retain the source-document tombstone and every parse/record/review/ledger/audit relationship, block future auto-commit from deleted evidence, and require explicit reversal for committed corrections.
 - Accepted CanCan-only source viewing through in-memory Rust/Tauri page rendering with no plaintext temporary file. `Save a copy` is the separate warned plaintext export to a user-selected path.

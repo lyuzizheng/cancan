@@ -6,7 +6,7 @@ Define how CanCan ships frequent app and provider-parser updates through a class
 
 ## Implementation blocker
 
-MVP operating systems, project license, public identity/domain/contacts, signing/notarization identities, updater-key custody, update channels, release approval policy, and whether parser packages may ever update independently remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md).
+Minimum supported macOS version, project license, public identity/domain/contacts, signing/notarization identities, updater-key custody, update channels, release approval policy, and whether parser packages may ever update independently remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md).
 
 Do not implement an unsigned updater, remote prompt/config download, or platform-specific release pipeline by inference.
 
@@ -20,6 +20,25 @@ Do not implement an unsigned updater, remote prompt/config download, or platform
 - App/parser updates never silently rewrite committed ledger events.
 - The public website is a static Cloudflare Pages project backed by the public GitHub repository. CanCan does not maintain a duplicate GitHub Pages site.
 - GitHub owns source, releases, issue/PR workflow, discussions, and security reporting; the website presents the product, policy, help, and verified download links.
+- Phase 1 supports macOS on both Apple Silicon (`arm64`) and Intel (`x86_64`).
+- Windows desktop support is Phase 2 and does not block the Phase 1 macOS release.
+
+## Platform scope
+
+Phase 1 has one macOS product contract across both architectures:
+
+```text
+macOS arm64
+macOS x86_64
+```
+
+Both architectures must pass the same Vault, SQLCipher, Keychain, sidecar, parser, backup/restore, signing/notarization, updater, and user-flow gates before they are advertised as supported. Current end-to-end evidence exists only for `arm64`; deterministic Intel setup routing is not a substitute for a real `x86_64` build and runtime pass.
+
+The release pipeline may later choose separate architecture artifacts or one universal macOS artifact. That packaging choice is not part of the platform-support decision and must be validated before release rather than inferred here.
+
+The minimum supported macOS version is still a release compatibility decision. Do not infer it from the current developer machine or GitHub runner image.
+
+Windows is a Phase 2 port. Phase 2 must separately define supported Windows versions and architectures, installer/update format, code signing, OS secret storage, filesystem semantics, and equivalent Vault/security tests. Do not add Windows-specific production branches, dependencies, CI, or release claims during Phase 1 unless a focused Phase 2 slice is explicitly started.
 
 ## Public website and project surfaces
 
@@ -110,6 +129,8 @@ artifact provenance attestation
 migration/compatibility notes
 ```
 
+For Phase 1, release evidence must identify whether each artifact targets macOS `arm64`, macOS `x86_64`, or a validated universal binary. Passing on one architecture does not qualify the other.
+
 Publish binaries from CI, not an unrecorded developer-machine build. A platform artifact must not be advertised as supported when its required signing or compatibility gate did not pass. Whether to enable GitHub's immutable release protection is part of the unresolved release policy; use it only if it fits the finalized approval, correction, and revocation workflow. Public repositories can add artifact attestations and SBOM attestations to improve supply-chain verification.
 
 References:
@@ -185,7 +206,7 @@ The app-foundation slice provides one real macOS command without requiring publi
 
 The setup command:
 
-- supports Apple Silicon macOS, verified end to end, and has deterministic setup coverage for Intel macOS pending a real Intel hardware run;
+- targets Apple Silicon and Intel macOS; Apple Silicon is verified end to end, while Intel setup routing is deterministic-test-covered and still requires a real Intel build/runtime pass before support can ship;
 - requests Apple Command Line Tools when missing, then asks the developer to rerun after Apple's installer finishes;
 - installs the pinned official Node.js binary under the user's home directory and verifies its published SHA-256 checksum;
 - refuses to replace regular files, directories, or foreign symlinks already occupying its `~/.local/bin` tool paths;
@@ -248,3 +269,5 @@ BYO-AI provider keys belong only in the user's local OS secret store. They are n
 - GitHub community files route support, bugs, contributions, and private security reports without asking users to expose financial data.
 - A release is not promoted until its public website/privacy claims, supported platforms, license, signing, updater-key recovery, and approval owner are complete.
 - A fresh supported development machine can install and verify the pinned toolchain with one repository command; setup version drift and non-idempotent profile edits fail deterministic tests.
+- Phase 1 release evidence covers both macOS `arm64` and `x86_64`; evidence from one architecture never qualifies the other.
+- Windows remains Phase 2 and creates no Phase 1 implementation or release requirement.

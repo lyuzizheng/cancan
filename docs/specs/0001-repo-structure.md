@@ -114,7 +114,7 @@ AI permission boundary helpers
 
 The document agent is a small normalizer with fixed parser tools. It is not a coding agent and must not expose shell, generic filesystem, arbitrary network, database, secret, or ledger tools.
 
-The initial runtime is single-pass structured normalization in a trusted Node worker/sidecar bundled and controlled by Tauri. The macOS arm64 evidence route uses the pinned Node 24 single-executable format; production signing and notarization remain release gates. The product must not require users to install Node, Docker, a VM, QEMU, or a separate sandbox runtime.
+The initial runtime is single-pass structured normalization in a trusted Node worker/sidecar bundled and controlled by Tauri. The existing macOS `arm64` evidence route uses the pinned Node 24 single-executable format. Phase 1 must package and validate an architecture-matched sidecar on both macOS `arm64` and `x86_64`; production signing and notarization remain release gates. The product must not require users to install Node, Docker, a VM, QEMU, or a separate sandbox runtime.
 
 The Tauri/Rust boundary continues to own user-selected file access and OS-secret retrieval. The sidecar is process separation and packaging, not an assumed permission sandbox. ToolLoopAgent and Pi Agent Core remain unselected until qualification fixtures show a material advantage over the same single-pass contract.
 
