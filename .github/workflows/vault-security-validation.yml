@@ -1,0 +1,31 @@
+name: Vault security validation
+
+on:
+  pull_request:
+    paths:
+      - spikes/vault-security-validation/**
+      - rust-toolchain.toml
+      - .github/workflows/vault-security-validation.yml
+  push:
+    branches:
+      - main
+    paths:
+      - spikes/vault-security-validation/**
+      - rust-toolchain.toml
+      - .github/workflows/vault-security-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  vault-security-validation-gate:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare Rust toolchain
+        run: |
+          rustup show active-toolchain
+          rustc --version
+          cargo clippy --version
+      - name: Run Vault security validation
+        run: bash spikes/vault-security-validation/scripts/verify.sh

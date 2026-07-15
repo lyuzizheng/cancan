@@ -203,6 +203,58 @@ runtime_combined_runs = runtime_runs.join("\n")
   abort "Runtime workflow is missing toolchain step: #{required}" unless runtime_combined_runs.include?(required)
 end
 
+vault_path = ".github/workflows/vault-security-validation.yml"
+vault = YAML.load_file(vault_path)
+abort "Workflow must be a mapping: #{vault_path}" unless vault.is_a?(Hash)
+
+vault_events = vault["on"] || vault[true]
+abort "Vault workflow must define pull_request and push events" unless vault_events.is_a?(Hash)
+allowed_vault_events = %w[pull_request push]
+unless vault_events.keys.map(&:to_s).sort == allowed_vault_events.sort
+  abort "Vault workflow must define only pull_request and push events"
+end
+
+vault_paths = [
+  "spikes/vault-security-validation/**",
+  "rust-toolchain.toml",
+  vault_path
+]
+%w[pull_request push].each do |event|
+  config = vault_events[event]
+  abort "Vault workflow is missing #{event}" unless config.is_a?(Hash)
+  paths = Array(config["paths"])
+  unless paths.sort == vault_paths.sort
+    abort "Vault #{event} paths must exactly match the allowed paths"
+  end
+end
+
+vault_push_branches = Array(vault_events.fetch("push")["branches"])
+abort "Vault push must include main branch" unless vault_push_branches.include?("main")
+
+vault_permissions = vault["permissions"]
+unless vault_permissions.is_a?(Hash) && vault_permissions["contents"] == "read"
+  abort "Vault workflow must use read-only contents permission"
+end
+
+vault_jobs = vault["jobs"]
+vault_job = vault_jobs.is_a?(Hash) ? vault_jobs["vault-security-validation-gate"] : nil
+abort "Vault workflow is missing vault-security-validation-gate job" unless vault_job.is_a?(Hash)
+abort "Vault workflow must run on macos-14" unless vault_job["runs-on"] == "macos-14"
+
+vault_steps = Array(vault_job["steps"])
+vault_uses = vault_steps.map { |step| step.is_a?(Hash) ? step["uses"] : nil }.compact
+abort "Vault workflow is missing actions/checkout@v7" unless vault_uses.include?("actions/checkout@v7")
+
+vault_runs = vault_steps.map { |step| step.is_a?(Hash) ? step["run"] : nil }.compact
+unless vault_runs.include?("bash spikes/vault-security-validation/scripts/verify.sh")
+  abort "Vault workflow is missing the security validation command"
+end
+
+vault_combined_runs = vault_runs.join("\n")
+%w[rustup\ show\ active-toolchain cargo\ clippy\ --version].each do |required|
+  abort "Vault workflow is missing toolchain step: #{required}" unless vault_combined_runs.include?(required)
+end
+
 package = JSON.parse(File.read("package.json"))
 scripts = package.fetch("scripts", {})
 required_scripts = %w[typecheck test:unit check:rust build:web build:desktop verify]
