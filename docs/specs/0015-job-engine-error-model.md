@@ -8,7 +8,7 @@ The job engine exists to make long-running local-first finance workflows reliabl
 
 ## Implementation blocker
 
-Restore bootstrap, destructive-job behavior, cancellation, idempotency, log/error redaction, and crash-report consent remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not implement those paths from the coarse job and error examples alone.
+The source-file deletion outcome and restore-to-new-path/setup flow are accepted. Exact destructive-job state transitions, cancellation boundaries, idempotency keys, atomic-switch implementation, log/error redaction, and crash-report consent remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not implement those paths from the coarse job and error examples alone.
 
 ## Stable decisions
 
@@ -46,6 +46,7 @@ Use a small set of coarse jobs first:
 ```text
 gmail_sync_rule
 source_document_ingest
+delete_source_file
 parse_document
 reconcile_document
 commit_review_batch
@@ -89,6 +90,24 @@ job-scoped extraction bundle creation
 ```
 
 If the PDF is locked and no saved password works, the job becomes `blocked` with `blocked_reason = password_required`.
+
+The saved password scope is the related Money Source. A failed saved password never loops blindly: the user chooses a session-only password or replaces that Money Source's saved Keychain secret.
+
+### `delete_source_file`
+
+Deletes the current encrypted Vault file while preserving the source-document registry/tombstone and its relationships.
+
+Can internally perform:
+
+```text
+persist the append-only deletion decision and audit reference
+remove the current encrypted blob
+project source_documents.file_state = deleted and clear its current locator
+mark linked uncommitted records ineligible for automatic commit
+retain parse, record, review, ledger, and audit navigation
+```
+
+The job is idempotent: retry after a crash must converge on one deleted tombstone whether the blob removal or database projection completed first. It never reverses a committed ledger event. Exact crash-state transitions remain an implementation-validation blocker.
 
 ### `parse_document`
 
@@ -160,6 +179,22 @@ audit log write
 ```
 
 Backup should support progress, cancel, retry, and clear error reporting.
+
+### `restore_vault`
+
+Validates and restores a backup into a new local Vault path before switching the active Vault atomically.
+
+Can internally perform:
+
+```text
+manifest, checksum, encryption, and compatibility validation
+restore into a new inactive path
+open and validate the restored database and file inventory
+atomically switch the active Vault only after every check passes
+create a resumable Setup Checklist for excluded device secrets and configuration
+```
+
+Until the switch succeeds, the existing active Vault remains untouched. After switch, missing Gmail, AI, statement-password, and backup-folder setup blocks only dependent features; restored non-secret data remains readable.
 
 ## Job status model
 
@@ -379,5 +414,7 @@ Full DAG features can be added later if needed, but the MVP should stay easy for
 - AI parse retries preserve parse history.
 - Commit jobs do not duplicate ledger events when retried.
 - Backup runs as a job and reports progress/errors.
+- Source-file deletion converges idempotently on a tombstone, never breaks evidence navigation, and never changes committed ledger events.
+- Restore validates a new inactive Vault before the atomic switch and exposes resumable setup for device-local secrets afterward.
 - Command Center shows compact status; Jobs page shows details.
 - Implementation avoids over-splitting simple internal work into tiny jobs.

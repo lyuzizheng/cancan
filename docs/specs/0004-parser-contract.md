@@ -10,7 +10,7 @@ The AI normalizer may be a single structured-generation call or a small capabili
 
 The parser evidence and normalized-data contract is accepted. The product may implement it without inventing OCR, evidence, date, or sign semantics.
 
-The concrete agent framework and packaged execution environment remain evidence-gated in the [active alignment register](../alignment-temp/alignment-progress.md). Raw full-text retention and production deletion behavior remain owned by the separate sensitive-data-lifecycle blocker; they do not block synthetic fixtures or an ephemeral parse run.
+Single-pass structured normalization in the bundled Node sidecar is selected for initial production implementation. Production credential delivery/redaction remains an owning-slice gate. Raw full-text retention remains owned by the separate sensitive-data-lifecycle blocker; the source-file deletion behavior below is accepted.
 
 ## Pipeline
 
@@ -295,12 +295,15 @@ Cross-channel import behavior:
 
 ```text
 same SHA-256 -> reuse the existing source document and do not create duplicate records
+same SHA-256 after current file deletion/loss -> reuse the source-document tombstone and restore the encrypted current file
 same semantic document identity with different bytes -> retain the additional file evidence under the same statement identity
 same stable external-record keys -> reuse/version records rather than duplicate them
 semantic conflict or changed financial content -> retain both files and create review work
 ```
 
-Every completed import returns per-file outcomes so the UI can distinguish newly imported files, files already in CanCan, probable existing statements, archived/removed existing evidence, and failures.
+Each exact byte sequence has one `source_documents` row, which also owns its encrypted-file state and tombstone. Byte-different files under one semantic statement identity remain separate source-document rows.
+
+Every completed import returns per-file outcomes so the UI can distinguish newly imported files, files already in CanCan, restored source files, probable existing statements, and failures.
 
 Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity and a provider-owned canonical identity projection of the validated raw record. That projection contains only stable source values: it excludes optional locators, OCR/model confidence, observation IDs, extraction/runtime metadata, and mutable normalized descriptions. If the source contains literally identical projected rows, an occurrence ordinal within that identical-row group distinguishes them.
 
@@ -312,6 +315,7 @@ a changed profile creates a new parse run and external-record version
 new uncommitted records supersede prior uncommitted versions
 committed ledger events are never rewritten automatically by reparse
 changed output that conflicts with committed facts creates review work
+deleting the current source file makes its uncommitted records ineligible for future automatic commit but does not delete record history or alter committed events
 ```
 
 ## Normalization profiles and qualification
@@ -422,7 +426,8 @@ Any future agentic candidate must be tested against the selected single-pass str
 - Dates remain date-only unless a justified timezone exists; the OS locale and generic assumption JSON are not used as silent inference mechanisms.
 - Debit/Credit source labels, signed source-account balance deltas, and UI plus/minus presentation remain separate concepts.
 - Exact PDF/file deduplication uses SHA-256, with semantic document identity handled separately.
-- Re-import and reparse preserve evidence and record identity without rewriting committed ledger events.
+- Exact-hash re-import may restore a deleted current file without duplicating its source-document row; byte-different evidence remains separate under semantic identity.
+- Re-import, reparse, and source-file deletion preserve record identity without rewriting committed ledger events; deleted evidence cannot drive future automatic commit.
 - Complete normalization profiles qualify independently and reset to shadow mode after behavior-changing updates.
 - Single-pass structured normalization is the initial runtime; ToolLoopAgent or Pi Agent Core requires new qualification evidence showing a material accuracy or recovery advantage.
 - No sandbox installation is required for users; any process isolation is evidence-driven rather than permission theater.

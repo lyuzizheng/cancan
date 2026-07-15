@@ -33,7 +33,7 @@ observation  records a source-backed balance, position, or valuation at a point 
 
 Only posting events change ledger-derived balances. Observations validate or anchor displayed state and can reveal discrepancies without inventing a transaction.
 
-Draft proposals may change. Once committed, an event and its legs are immutable. Corrections use a typed reversal event and, when needed, a replacement event. Reparse, Remove, and retry flows must not mutate or delete committed events.
+Draft proposals may change. Once committed, an event and its legs are immutable. Corrections use a typed reversal event and, when needed, a replacement event. Reparse, staged-record removal, source-file deletion, and retry flows must not mutate or delete committed events.
 
 ## Initial balance anchor
 

@@ -191,17 +191,15 @@ gmail_sync_states
 ```text
 statement_secret_refs
 - id
-- provider_key
-- money_source_id
-- account_id nullable
-- document_type_hint
+- money_source_id unique
 - secret_storage_key
+- status
 - hint_label
 - created_at
 - updated_at
 ```
 
-`statement_secret_refs` stores only references and hints. Actual statement passwords must live in OS secret storage / Keychain / Stronghold.
+`statement_secret_refs.money_source_id` is unique, so it stores at most one reference and status per Money Source. Actual statement passwords live in macOS Keychain/OS secret storage, never SQLite.
 
 ## Storage policy
 
@@ -236,7 +234,7 @@ Attachment downloaded
 -> create review/job prompt: password needed
 -> user enters password
 -> app tests unlock locally
--> user may save password for matching provider/account/document type
+-> user may use it once or update the saved password for this Money Source
 -> extraction resumes
 ```
 
@@ -246,7 +244,9 @@ Rules:
 - password unlock happens locally;
 - passwords must not be sent to AI providers;
 - passwords must not be written to logs, parse payloads, raw_json, normalized_json, or backups by default;
-- saved passwords are referenced by `statement_secret_refs` and stored in OS secret storage;
+- one saved password per Money Source is referenced by `statement_secret_refs` and stored in OS secret storage;
+- Gmail and manual imports assigned to the same Money Source reuse that password;
+- if it fails, prompt for `Use once` or `Update saved password`; MVP stores no password history or unlocked duplicate PDF;
 - users can delete saved statement passwords from Settings.
 
 ## Sync strategy

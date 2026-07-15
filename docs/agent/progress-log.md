@@ -2,6 +2,22 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-15
+
+### Completed
+
+- Completed the evidence-lifecycle and Vault-security design grill. In MVP, `source_documents` is both the imported evidence row and encrypted-file registry/tombstone; no separate `vault_files` table is added. Exact-hash re-import reuses or restores that row, while byte-different files under one statement identity remain separate evidence.
+- Replaced ambiguous document Archive/Remove behavior with explicit `Delete source file`: remove the current encrypted Vault blob, retain the source-document tombstone and every parse/record/review/ledger/audit relationship, block future auto-commit from deleted evidence, and require explicit reversal for committed corrections.
+- Accepted CanCan-only source viewing through in-memory Rust/Tauri page rendering with no plaintext temporary file. `Save a copy` is the separate warned plaintext export to a user-selected path.
+- Defined automatic-add behavior: qualified records commit directly when enabled; when disabled, Review begins with no staged records selected and supports subset/all/none submission. Staged removal is an append-only decision over a rebuildable projection; committed Undo appends a reversal event.
+- Scoped one optional saved statement-PDF password per Money Source in macOS Keychain, shared by Gmail and manual import, with use-once/update behavior, no password history, no unlocked duplicate, and no backup inclusion.
+- Accepted versioned Argon2id wrapper profiles: prefer RFC 9106's 64 MiB, three-pass, four-lane profile inside a 750 ms supported-Mac unlock budget; otherwise use the OWASP 19 MiB, two-pass, one-lane minimum. `Remember on this Mac` bypasses the password KDF on the normal unlock path.
+- Accepted restore-to-new-path validation and atomic switch plus a resumable new-device Setup Checklist. Added a bounded `vault-security-validation` evidence slice before production manual import; deterministic security tests and independent code review are required, while a third-party audit is not an MVP release blocker.
+
+### Next
+
+- Execute `vault-security-validation`, then remove only the blockers its reproducible evidence actually resolves before starting `vault-manual-import`.
+
 ## 2026-07-14
 
 ### Completed
