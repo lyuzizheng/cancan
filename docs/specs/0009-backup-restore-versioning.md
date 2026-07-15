@@ -6,7 +6,7 @@ Define how CanCan preserves local-first data safely across app upgrades, backups
 
 ## Implementation blocker
 
-The user-facing key model is accepted. Exact Argon2id parameters, file-encryption format, platform Keychain behavior, recovery-wrapper format, temporary-plaintext crash cleanup, atomic restore, destructive jobs, and portability require implementation/security validation in the [active alignment register](../alignment-temp/alignment-progress.md).
+The user-facing key model, Argon2id profiles, macOS Keychain scope, no-temporary-plaintext viewer boundary, source-file deletion contract, and restore/setup behavior are accepted. Exact authenticated-file and recovery envelope formats, compatibility fixtures, atomic restore implementation, and destructive-job crash recovery still require production security validation in the [active alignment register](../alignment-temp/alignment-progress.md).
 
 ## Simple user security model
 
@@ -28,7 +28,8 @@ Rules:
 - CanCan has no server-side password reset or recovery service;
 - losing both password access and the recovery file makes the vault unrecoverable;
 - MVP has no user-facing key-rotation workflow;
-- system sleep/lock locks the vault, with a fixed conservative inactivity lock in MVP rather than another settings panel.
+- system sleep/lock locks the vault immediately;
+- fifteen minutes of inactivity locks the vault in MVP rather than adding another settings panel.
 
 ## Internal key model
 
@@ -44,7 +45,20 @@ recovery file wrapper for the same master key
 
 Changing the password re-wraps the master key rather than re-encrypting every record and file. Context-separated subkeys are implementation details and must not become user concepts.
 
-Exact KDF cost, salt, nonce, authenticated-encryption, key-version, and recovery-file formats must be fixed by the production security-validation work and covered by compatibility fixtures before real data is accepted.
+Argon2id derives a wrapping key only when creating the password wrapper or unlocking through the vault password. It is not run once per document and does not encrypt document bytes. Normal unlock may use the opt-in Keychain wrapper, so `Remember on this Mac` avoids the password KDF on the daily path while preserving immediate lock on system sleep/lock.
+
+The password-wrapper format stores a versioned KDF profile and its parameters. Phase 1 uses the same versioned profiles on macOS `arm64` and `x86_64`:
+
+```text
+rfc9106-low-memory-v1: Argon2id, m=64 MiB, t=3, p=4, 128-bit random salt, 256-bit wrapping key
+owasp-minimum-v1:      Argon2id, m=19 MiB (19,456 KiB), t=2, p=1, 128-bit random salt, 256-bit wrapping key
+```
+
+The primary values follow [RFC 9106 section 4's second recommended option](https://www.ietf.org/rfc/rfc9106.html#section-4); the fallback floor follows the [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#password-hashing-algorithms).
+
+New vault creation benchmarks the primary RFC 9106 low-memory profile on the supported Mac and uses it when a password unlock completes within 750 ms. If it misses that UX budget, creation uses the OWASP minimum profile. Existing wrappers always retain their stored profile; opening a vault never silently changes the KDF contract. These profiles are not user settings.
+
+Nonce, authenticated-encryption, key-version, and recovery-file formats must still be fixed by the production security-validation work and covered by compatibility fixtures before real data is accepted.
 
 ## Feasibility evidence
 
@@ -56,7 +70,17 @@ The [2026-07-13 disposable spike](../../spikes/desktop-feasibility/EVIDENCE.md) 
 - macOS Keychain can write, read, and delete the binary remember-on-device secret;
 - SQLCipher can reject a wrong database key while supporting FTS5.
 
-The spike parameters and envelope are not the production compatibility contract. The implementation blocker above remains for exact formats, temporary plaintext, cross-platform secret stores, backup/restore, and security review.
+The spike envelope is not the production compatibility contract. The implementation blocker above remains for exact authenticated formats, compatibility fixtures, atomic backup/restore, and crash recovery. MVP security gates require deterministic tamper, wrong-key, KDF-profile, Keychain, deletion, and restore tests plus independent code review; a third-party security audit is not a release blocker for the current local MVP.
+
+That feasibility evidence is `arm64`-only. Phase 1 support requires the production KDF benchmark, SQLCipher/file encryption, Keychain, in-memory viewer, deletion recovery, and backup/restore gates to pass independently on macOS `x86_64`; results from one architecture do not qualify the other.
+
+## Source-file and statement-password policy
+
+The encrypted file belongs to its `source_documents` registry row; MVP has no separate `vault_files` table and stores no second unlocked source copy.
+
+Normal viewing decrypts and renders requested pages in memory inside Rust/Tauri. It does not create a plaintext temporary file. `Save a copy` is an explicit warned export to a user-selected path outside the Vault.
+
+One optional statement-PDF password may be saved per Money Source in macOS Keychain. SQLite stores only its secret reference and status. Gmail and manual imports assigned to that Money Source try the same password. If it does not unlock a document, CanCan asks for a password and offers `Use once` or `Update saved password`; MVP stores no password history and no unlocked duplicate of the PDF.
 
 ## Backup target
 
@@ -76,6 +100,8 @@ YYYY-MM-DD_HHMMSS.financevault
 ```
 
 The bundle should be encrypted before it leaves the local vault area.
+
+File collection includes only `source_documents` whose current encrypted Vault file is available. A source-document tombstone, its metadata, bounded record evidence, audit, and ledger relationships remain in the database backup, but a deleted source file is not copied into a new backup. Existing immutable backups may still contain files deleted later.
 
 Use the same vault/recovery model for backup access. MVP must not ask the user to remember a second backup password. A backup may carry independently salted/wrapped key metadata, but it must be recoverable through the accepted vault password or recovery-file flow without storing raw vault key material.
 
@@ -135,7 +161,8 @@ Choose backup bundle
 -> verify checksums
 -> verify encryption/password/key
 -> check schema/app compatibility
--> restore to new local vault path or replace existing after confirmation
+-> restore to and validate a new inactive local Vault path
+-> atomically switch the active Vault after confirmation
 -> force re-authentication for secrets unless future secret backup is explicitly supported
 ```
 
@@ -153,12 +180,9 @@ future read-only API tokens
 vault key material
 ```
 
-After restore:
+Restore writes and validates a new local Vault path before an atomic switch. It must not mutate the active Vault while integrity, compatibility, or password/recovery validation is incomplete.
 
-- Gmail reconnect required;
-- AI provider key re-entry required unless a future explicit secret-backup design exists;
-- statement PDF password re-entry required unless a future explicit secret-backup design exists;
-- API connector token re-entry required.
+After restore on a new device, CanCan opens the restored non-secret data and a resumable Setup Checklist. The checklist includes Gmail reconnect, AI provider key re-entry, statement-PDF password re-entry for each affected Money Source, `Remember on this Mac`, future API connector tokens, and backup-folder selection. Missing secrets block only the jobs or features that depend on them; the user may browse restored records and finish setup later.
 
 ## Acceptance criteria
 
@@ -170,3 +194,10 @@ After restore:
 - Old app refuses newer vaults with a clear upgrade message.
 - Restore verifies integrity before replacing active data.
 - Secrets are not restored silently.
+- Argon2id parameters are stored as versioned wrapper profiles; new macOS vaults prefer RFC 9106's 64 MiB profile within the unlock budget and may fall back only to the OWASP minimum profile.
+- `Remember on this Mac` uses Keychain to keep the common unlock path fast; Argon2id is not a per-document encryption step.
+- Normal document viewing uses in-memory rendering without a plaintext temporary file; only explicit `Save a copy` exports plaintext.
+- Statement passwords are optional one-per-Money-Source Keychain secrets, excluded from backups, with use-once/update behavior and no password history.
+- Deleted source files are absent from future backups while their tombstones and relationships remain; older backup copies are not claimed to be erased.
+- Restore validates a new Vault before switching and opens a resumable new-device Setup Checklist without hiding restored non-secret data.
+- Phase 1 Vault/security compatibility is verified on both macOS `arm64` and `x86_64`; Windows uses a separate Phase 2 security/storage contract.

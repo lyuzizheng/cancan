@@ -6,7 +6,7 @@ Define when records can auto-commit, when they require review, and how reconcili
 
 ## Implementation blocker
 
-The auto-commit rule is accepted. The synthetic core flow may exercise it with deterministic mocked proposals; live normalization and qualification still wait for the document-normalizer runtime evidence plus their upstream vault/Gmail slices in the [active alignment register](../alignment-temp/alignment-progress.md). Do not weaken the accepted gates to work around those boundaries.
+The auto-commit rule and document-normalizer runtime selection are accepted. The synthetic core flow may exercise the policy with deterministic mocked proposals; live normalization still waits for its upstream Vault/Gmail slices, and auto-commit qualification still requires the fixture and shadow gates in the [implementation sequence](../agent/implementation-slices.md) plus its active alignment blockers. Do not weaken the accepted gates to work around those boundaries.
 
 ## MVP user setting
 
@@ -17,6 +17,15 @@ Automatically add qualified records = On | Off
 ```
 
 Recommended default is `On`. Turning it off sends otherwise eligible records to Review.
+
+Submission behavior:
+
+```text
+On  -> every record that passes all qualification gates commits without a pre-submit checkbox; all other records remain in Review
+Off -> staged records appear in a checkbox list with none selected by default; the user may select any subset, all, or none and choose Add selected
+```
+
+Turning automatic addition off does not weaken validation. A selected record still must satisfy the normal commit invariants; selection is user intent, not permission to create an invalid ledger event.
 
 Do not expose confidence numbers, provider allowlists, parser qualification internals, or a three-state policy selector in normal settings. [ADR 0002](../adr/0002-agent-is-advisor-not-ledger-owner.md) owns the accepted AI authority boundary.
 
@@ -121,7 +130,11 @@ Cross-account transfers are a core relationship, not a future matching extension
 
 ## Commit, reversal, and audit policy
 
-Uncommitted proposals may be edited or removed. Committed correction requests follow the immutable reversal/replacement lifecycle owned by `0013-ledger-assets-valuation.md`; they never directly mutate or delete an original committed event.
+Uncommitted staged proposals may be edited or removed. `Remove` on a staged record appends a review/domain decision and marks the rebuildable current-state projection as removed; it does not erase the parse run, raw source row, validation history, or audit entry.
+
+Committed correction requests follow the immutable reversal/replacement lifecycle owned by `0013-ledger-assets-valuation.md`; they never directly mutate or delete an original committed event. The user-facing `Undo` action appends the typed reversal event.
+
+Deleting a source file is a separate evidence action. It makes linked uncommitted records ineligible for future automatic commit and leaves them visibly tied to `Source file deleted`; it neither removes nor reverses committed ledger events.
 
 Each accepted proposal version has a stable commit idempotency key. Repeating the same commit returns the existing result rather than creating another ledger event.
 
@@ -156,6 +169,7 @@ may affect current displayed asset value
 ## Acceptance criteria
 
 - MVP exposes one default-on `Automatically add qualified records` toggle.
+- With automatic addition on, qualified records commit without a pre-submit checkbox; with it off, Review starts with no staged records selected and supports subset/all/none selection through `Add selected`.
 - Exact duplicate reuse is mandatory ingestion idempotency, not a user-selectable auto-commit level.
 - Any financial event type may auto-commit only after every accepted record-level and reconciliation-window gate passes.
 - Normal settings do not expose numeric confidence, parser controls, or a three-state policy selector.
@@ -169,6 +183,7 @@ may affect current displayed asset value
 - Two bank-side records can link to one canonical transfer event and be discovered from either side.
 - Repayments do not double-count spending.
 - Committed events are corrected through reversal/replacement, never mutation or deletion.
+- Removing a staged record is an append-only decision over a mutable projection, while deleting source evidence never implicitly corrects the ledger.
 - Financial mutations and review decisions create atomic append-only audit entries.
 - Repeated commit requests are idempotent.
 - Every committed event traces to source evidence and parse run.

@@ -175,7 +175,7 @@ MVP UX:
 If a downloaded/imported PDF is password protected:
   show a clear unlock prompt
   let user apply the password once
-  offer optional secure save for that provider/account pattern
+  offer optional secure save for that Money Source
   retry extraction after unlock
 ```
 
@@ -183,7 +183,9 @@ Security rules:
 
 - statement passwords are optional;
 - saved passwords go to OS secret storage / Keychain / Stronghold, never plain SQLite;
-- SQLite may store only a secret reference id and provider/account scope;
+- SQLite may store only one secret reference id and status per Money Source;
+- Gmail and manual imports for that Money Source reuse the saved password;
+- a mismatch offers use once or update saved password; MVP stores no password history or unlocked duplicate PDF;
 - passwords must not be logged, sent to AI, or included in backups by default;
 - user can remove saved passwords from Settings.
 

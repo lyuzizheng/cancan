@@ -134,6 +134,75 @@ combined_runs = application_runs.join("\n")
   abort "Application workflow is missing toolchain step: #{required}" unless combined_runs.include?(required)
 end
 
+runtime_path = ".github/workflows/document-normalizer-runtime.yml"
+runtime = YAML.load_file(runtime_path)
+abort "Workflow must be a mapping: #{runtime_path}" unless runtime.is_a?(Hash)
+
+runtime_events = runtime["on"] || runtime[true]
+abort "Runtime workflow must define pull_request and push events" unless runtime_events.is_a?(Hash)
+allowed_runtime_events = %w[pull_request push]
+unless runtime_events.keys.map(&:to_s).sort == allowed_runtime_events.sort
+  abort "Runtime workflow must define only pull_request and push events"
+end
+
+runtime_paths = [
+  "spikes/document-normalizer-runtime/**",
+  "packages/parsers/**",
+  "tsconfig.base.json",
+  ".node-version",
+  "rust-toolchain.toml",
+  "scripts/dev-toolchain.env",
+  runtime_path
+]
+%w[pull_request push].each do |event|
+  config = runtime_events[event]
+  abort "Runtime workflow is missing #{event}" unless config.is_a?(Hash)
+  paths = Array(config["paths"])
+  unless paths.sort == runtime_paths.sort
+    abort "Runtime #{event} paths must exactly match the allowed paths"
+  end
+end
+
+runtime_push_branches = Array(runtime_events.fetch("push")["branches"])
+abort "Runtime push must include main branch" unless runtime_push_branches.include?("main")
+
+runtime_permissions = runtime["permissions"]
+unless runtime_permissions.is_a?(Hash) && runtime_permissions["contents"] == "read"
+  abort "Runtime workflow must use read-only contents permission"
+end
+
+runtime_jobs = runtime["jobs"]
+runtime_job = runtime_jobs.is_a?(Hash) ? runtime_jobs["document-normalizer-runtime-gate"] : nil
+abort "Runtime workflow is missing document-normalizer-runtime-gate job" unless runtime_job.is_a?(Hash)
+abort "Runtime workflow must run on macos-14" unless runtime_job["runs-on"] == "macos-14"
+
+runtime_steps = Array(runtime_job["steps"])
+runtime_uses = runtime_steps.map { |step| step.is_a?(Hash) ? step["uses"] : nil }.compact
+%w[actions/checkout@v7 actions/setup-node@v6].each do |required|
+  abort "Runtime workflow is missing #{required}" unless runtime_uses.include?(required)
+end
+
+runtime_setup_node = runtime_steps.find { |step| step.is_a?(Hash) && step["uses"] == "actions/setup-node@v6" }
+unless runtime_setup_node.is_a?(Hash) && runtime_setup_node.fetch("with", {})["node-version-file"] == ".node-version"
+  abort "Runtime workflow must source Node from .node-version"
+end
+
+runtime_runs = runtime_steps.map { |step| step.is_a?(Hash) ? step["run"] : nil }.compact
+unless runtime_runs.include?("bash spikes/document-normalizer-runtime/scripts/verify.sh")
+  abort "Runtime workflow is missing the document normalizer verification command"
+end
+
+runtime_combined_runs = runtime_runs.join("\n")
+[
+  "source scripts/dev-toolchain.env",
+  "corepack@$COREPACK_VERSION",
+  "pnpm@$PNPM_VERSION",
+  "rustup show active-toolchain",
+  "cargo clippy --version"
+].each do |required|
+  abort "Runtime workflow is missing toolchain step: #{required}" unless runtime_combined_runs.include?(required)
+end
+
 package = JSON.parse(File.read("package.json"))
 scripts = package.fetch("scripts", {})
 required_scripts = %w[typecheck test:unit check:rust build:web build:desktop verify]

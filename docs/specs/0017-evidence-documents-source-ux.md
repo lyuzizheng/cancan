@@ -11,8 +11,9 @@ Evidence should feel like part of each money source, not a separate corporate do
 - Do not make Evidence Library a primary standalone sidebar section in MVP.
 - Evidence lives under each Money Source detail view as a `Documents` or `Evidence` subview.
 - The UI should feel polished, personal, and concise, not like an Ant Design/Excel admin table.
-- Document detail does not require embedded PDF preview in MVP.
-- Users can open the original file when needed.
+- Document detail does not require an always-visible embedded PDF preview in MVP.
+- Source files open only in CanCan's in-app viewer; normal viewing does not create a plaintext temporary file or hand the original to an OS viewer.
+- `Save a copy` is the explicit way to export a plaintext copy to a user-chosen location.
 - Default document detail shows metadata at the top and records below.
 - Technical extraction artifacts are hidden from normal UI.
 - Document status should stay simple; detailed state belongs to jobs, review items, and parse runs.
@@ -94,7 +95,8 @@ Recommended user-facing states:
 Ready
 Needs attention
 Processing
-Removed
+File deleted
+Missing
 ```
 
 How they are derived:
@@ -103,7 +105,8 @@ How they are derived:
 Ready             document has usable metadata/records and no blocking issue
 Needs attention   locked PDF, parse failed, mapping needed, or review action exists
 Processing        active job exists for this document
-Removed           user removed the document from the active source view
+File deleted      the current encrypted Vault file was intentionally deleted; metadata and relationships remain
+Missing           storage expected a current file but could not find or verify it
 ```
 
 The technical reason can be available in detail, but the main UI should not expose every pipeline state.
@@ -128,7 +131,8 @@ Top metadata panel
   statement period
   imported at
   related account/container
-  original file action
+  view/save-copy action when the current file exists
+  file-deleted state when only the registry/tombstone remains
   attention action if needed
 
 Records section
@@ -140,20 +144,23 @@ Records section
 
 Do not require a PDF preview panel in MVP.
 
-## Original file access
+## Source file access
 
-Provide `Open original` where the local file exists.
-
-Implementation blocker: the encrypted-vault-to-OS-viewer boundary is unresolved. Do not implement temporary plaintext extraction until the vault/file security design defines creation, permissions, cleanup, crash recovery, and audit behavior.
+Provide `View document` where the current encrypted Vault file exists.
 
 Rules:
 
 ```text
-open local file with OS/default viewer
-never upload it to a server for preview
-show missing-file state if local file is unavailable
-respect vault lock/encryption boundaries
+decrypt only inside the trusted Rust/Tauri boundary after Vault unlock
+render requested pages into memory for the in-app viewer
+send rendered page pixels, not the complete original file bytes, to the web UI
+do not create a plaintext temporary file for normal viewing
+release plaintext/page buffers on viewer close and Vault lock as far as the platform permits
+never upload the file to a server merely for preview
+show File deleted or Missing distinctly when the current file is unavailable
 ```
+
+`Save a copy` opens the OS save picker and writes a normal plaintext file only to the location the user selects. The confirmation states that the saved copy is outside CanCan's encrypted Vault and becomes the user's responsibility. Cancelling or failing the export must not leave a partial destination file.
 
 ## Technical artifacts
 
@@ -177,26 +184,39 @@ If needed later, expose them through a developer/debug panel, not the primary UX
 Document detail and row actions may include:
 
 ```text
-Open original
+View document
+Save a copy
 Unlock
 Retry processing
 Re-run parser
 Re-run matching
 Review records
-Remove
+Delete source file
 ```
 
 Use short human labels. Avoid exposing pipeline names such as `source_document_ingest` in the product UI.
 
-## Remove behavior
+## Delete source file behavior
 
-The UI should present one simple action: `Remove`.
+`Delete source file` deletes the current encrypted file stored in CanCan's Vault. It is not Archive, staged-record removal, ledger Undo, or `Save a copy`.
 
-Implementation must still protect data integrity.
+The destructive confirmation explains:
 
-Committed ledger events and legs are immutable: `Remove` must not delete or rewrite them. Remaining Remove persistence and file semantics are unresolved, including proposal cleanup, source-document archive versus deletion, local file retention, evidence navigation, audit, and re-import. Do not implement those remaining behaviors until their canonical security/evidence owner defines them.
+```text
+the current Vault file will be deleted
+the document registry entry, record history, audit trail, and ledger links remain
+linked views will show Source file deleted
+future backups will not include the deleted file
+older immutable backups or copies previously saved outside CanCan may still contain it
+```
 
-Do not expose multiple confusing actions like `remove from library`, `delete local file`, and `delete records` in the normal UI.
+After confirmation, CanCan appends the deletion decision/audit event, removes the current encrypted blob, and retains the `source_documents` row as a tombstone. The row keeps its exact hash, metadata, semantic grouping, parse and record relationships, and ledger navigation. There is no Archive action in MVP.
+
+Uncommitted linked records become ineligible for automatic commit and remain visibly associated with the deleted source; the user may separately remove those staged records. Committed ledger events and legs remain immutable. Correcting them requires the explicit reversal/replacement flow.
+
+An exact-hash re-import reuses the tombstone and restores its current encrypted file. A byte-different file with the same semantic statement identity remains separate evidence under that statement identity.
+
+CanCan guarantees application-level removal of the current Vault file, not forensic erasure from SSD wear-leveling, filesystem snapshots, or old backup media. A storage failure reports `Missing` rather than claiming that the user deleted the file.
 
 ## Search
 
@@ -270,25 +290,24 @@ After a Gmail, manual, folder, or API import completes, show a concise summary w
 Imported
 Already in CanCan
 Looks like an existing statement
-Already archived or removed
+Source file restored
 Needs attention
 ```
 
-Exact duplicates do not create duplicate records. A semantically matching file with different bytes remains available as additional evidence for the same statement identity.
-
-The summary reports an existing document's current archive/remove state; it does not define file deletion or retention semantics. Those remain in the Remove lifecycle blocker.
+Exact duplicates do not create duplicate records. Re-importing an exact file whose current Vault copy was deleted restores that source document. A semantically matching file with different bytes remains available as separate additional evidence for the same statement identity.
 
 ## Acceptance criteria
 
 - Evidence is accessed from Source detail, not as a dominant standalone sidebar section.
 - Document UI feels personal, polished, and concise.
-- No embedded PDF preview is required for MVP.
-- `Open original` exists when a local source file is available.
+- An always-visible embedded PDF preview is not required, but `View document` opens the available source only in CanCan's memory-backed viewer.
+- Normal viewing creates no plaintext temporary file and does not hand the original to an OS viewer.
+- `Save a copy` is an explicit warned plaintext export to a user-selected location.
 - Metadata appears above records in document detail.
 - Technical extraction artifacts are hidden from normal UI.
 - User-facing document states stay simple.
-- `Remove` is one user-facing action while implementation preserves data integrity.
-- Opening encrypted originals and the remaining Remove persistence/file behavior stay blocked until their canonical security and evidence semantics are accepted.
+- `Delete source file` removes the current encrypted Vault file while retaining a navigable source-document tombstone and every record/ledger/audit relationship.
+- There is no document Archive action in MVP; staged-record removal and committed-event Undo remain separate append-only actions.
 - MVP search works through indexed structured fields.
 - Future full-text search uses local SQLite FTS5, not a remote search service.
-- Import completion identifies which files were new, already present, probable prior statements, or already archived/removed.
+- Import completion identifies which files were new, already present, restored from a tombstone, or probable prior statements.

@@ -10,7 +10,7 @@ The AI normalizer may be a single structured-generation call or a small capabili
 
 The parser evidence and normalized-data contract is accepted. The product may implement it without inventing OCR, evidence, date, or sign semantics.
 
-The concrete agent framework and packaged execution environment remain evidence-gated in the [active alignment register](../alignment-temp/alignment-progress.md). Raw full-text retention and production deletion behavior remain owned by the separate sensitive-data-lifecycle blocker; they do not block synthetic fixtures or an ephemeral parse run.
+Single-pass structured normalization in the bundled Node sidecar is selected for initial production implementation. Production credential delivery/redaction remains an owning-slice gate. Raw full-text retention remains owned by the separate sensitive-data-lifecycle blocker; the source-file deletion behavior below is accepted.
 
 ## Pipeline
 
@@ -295,12 +295,15 @@ Cross-channel import behavior:
 
 ```text
 same SHA-256 -> reuse the existing source document and do not create duplicate records
+same SHA-256 after current file deletion/loss -> reuse the source-document tombstone and restore the encrypted current file
 same semantic document identity with different bytes -> retain the additional file evidence under the same statement identity
 same stable external-record keys -> reuse/version records rather than duplicate them
 semantic conflict or changed financial content -> retain both files and create review work
 ```
 
-Every completed import returns per-file outcomes so the UI can distinguish newly imported files, files already in CanCan, probable existing statements, archived/removed existing evidence, and failures.
+Each exact byte sequence has one `source_documents` row, which also owns its encrypted-file state and tombstone. Byte-different files under one semantic statement identity remain separate source-document rows.
+
+Every completed import returns per-file outcomes so the UI can distinguish newly imported files, files already in CanCan, restored source files, probable existing statements, and failures.
 
 Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity and a provider-owned canonical identity projection of the validated raw record. That projection contains only stable source values: it excludes optional locators, OCR/model confidence, observation IDs, extraction/runtime metadata, and mutable normalized descriptions. If the source contains literally identical projected rows, an occurrence ordinal within that identical-row group distinguishes them.
 
@@ -312,6 +315,7 @@ a changed profile creates a new parse run and external-record version
 new uncommitted records supersede prior uncommitted versions
 committed ledger events are never rewritten automatically by reparse
 changed output that conflicts with committed facts creates review work
+deleting the current source file makes its uncommitted records ineligible for future automatic commit but does not delete record history or alter committed events
 ```
 
 ## Normalization profiles and qualification
@@ -328,22 +332,23 @@ provider + document type
 
 Changing any behavior-relevant component creates a new profile. A new profile does not inherit auto-commit qualification; it returns to fixture evaluation and shadow mode.
 
-## Agent runtime candidates and execution environment
+## Normalizer runtime and execution environment
 
 The full Pi coding agent is excluded because its coding/session/resource behavior and default general-purpose tools are outside this product's scope.
 
-The bounded evidence spike compares:
+The 2026-07-14 bounded evidence spike compared:
 
-| Candidate | Strengths | Costs / open evidence |
+| Candidate | Evidence result | Selection |
 | --- | --- | --- |
-| Vercel AI SDK `ToolLoopAgent` | Built-in typed tools, structured output, step limits, tool approval, modular provider adapters, and alignment with the existing `packages/ai` direction | Higher-level lifecycle; must prove deterministic mocking, Tauri packaging, cancellation, and job-scoped tool enforcement |
-| `@earendil-works/pi-agent-core` | Small explicit agent state machine, detailed event stream, `beforeToolCall`/`afterToolCall`, custom model stream, and direct bounded-loop control | Structured completion is CanCan-owned; `pi-ai` brings a broader provider dependency surface; must prove the same packaging and qualification gates |
+| Single-pass structured normalization | Accepted the shared six-record proposal in one model step through the production proposal validator | Selected for initial production implementation |
+| Vercel AI SDK `ToolLoopAgent` | Accepted the same proposal in five model steps and enforced the fixed tools, cancellation, and budgets | Not selected; no accuracy or recovery advantage in current evidence |
+| `@earendil-works/pi-agent-core` | Accepted the same proposal in four model steps and enforced the fixed tools, cancellation, and budgets | Not selected; no accuracy or recovery advantage in current evidence |
 
-Both current packages require Node 22 or newer. The production candidate is a trusted, bundled Node worker/sidecar controlled by Tauri, not a user-installed runtime. The Tauri host owns source-file selection and OS-secret retrieval; the worker receives only the current parse job and the fixed parser tools. No Docker, VM, QEMU, or separate sandbox installation is required for users.
+The selected execution boundary is a trusted, bundled Node worker/sidecar controlled by Tauri, not a user-installed runtime. The Tauri host owns source-file selection and OS-secret retrieval; the worker receives only the current parse job, runtime configuration, and fixed parser capability surface. No Docker, VM, QEMU, or separate sandbox installation is required for users.
 
-An OS sandbox is not an MVP requirement because the model has no arbitrary execution, filesystem, or network tool. Process isolation may still be adopted if the packaging spike proves it useful at acceptable complexity. A Tauri sidecar provides packaging/process separation but is not itself a permission sandbox.
+An OS sandbox is not an MVP requirement because the model has no arbitrary execution, filesystem, or network tool. The Tauri sidecar provides packaging and crash/process separation but is not itself a permission sandbox.
 
-Do not freeze Node single-executable packaging without evidence: Node 24 documents that feature as active development and CommonJS-only. The spike must prove dependency bundling, startup/cancellation, signed Tauri packaging, release size, secret handling, and deterministic mock execution before a production runtime is selected. The accepted result should become an ADR if it changes the package/runtime architecture.
+The disposable [runtime spike](../../spikes/document-normalizer-runtime/EVIDENCE.md) proves dependency bundling, deterministic mock execution, startup, cancellation, crash isolation, inherited-environment clearing, protocol secret-field rejection, ad-hoc signed Tauri packaging, debug size, and a conservative comparison-workspace license inventory on macOS `arm64`. Phase 1 still requires the equivalent architecture-matched sidecar evidence on macOS `x86_64`. Exact production credential delivery/redaction, an artifact-specific SBOM/license inventory, Developer ID signing, and notarization remain owning-slice gates rather than runtime-selection evidence. ADR 0003 records the accepted package/runtime boundary.
 
 Primary references:
 
@@ -406,7 +411,7 @@ expected raw-record grounding and financial-validation results
 expected review items and eligibility outcome
 ```
 
-The agentic candidate must be tested against a simpler single-pass structured-normalization baseline. It enters production only if the qualification suite shows a material accuracy or recovery advantage that justifies its extra calls, latency, cost, and dependency surface.
+Any future agentic candidate must be tested against the selected single-pass structured-normalization baseline. It enters production only if the qualification suite shows a material accuracy or recovery advantage that justifies its extra calls, latency, cost, and dependency surface.
 
 ## Acceptance criteria
 
@@ -421,7 +426,8 @@ The agentic candidate must be tested against a simpler single-pass structured-no
 - Dates remain date-only unless a justified timezone exists; the OS locale and generic assumption JSON are not used as silent inference mechanisms.
 - Debit/Credit source labels, signed source-account balance deltas, and UI plus/minus presentation remain separate concepts.
 - Exact PDF/file deduplication uses SHA-256, with semantic document identity handled separately.
-- Re-import and reparse preserve evidence and record identity without rewriting committed ledger events.
+- Exact-hash re-import may restore a deleted current file without duplicating its source-document row; byte-different evidence remains separate under semantic identity.
+- Re-import, reparse, and source-file deletion preserve record identity without rewriting committed ledger events; deleted evidence cannot drive future automatic commit.
 - Complete normalization profiles qualify independently and reset to shadow mode after behavior-changing updates.
-- ToolLoopAgent and Pi Agent Core run through the same deterministic mocks, fixtures, adversarial tests, and packaging spike before runtime selection.
+- Single-pass structured normalization is the initial runtime; ToolLoopAgent or Pi Agent Core requires new qualification evidence showing a material accuracy or recovery advantage.
 - No sandbox installation is required for users; any process isolation is evidence-driven rather than permission theater.

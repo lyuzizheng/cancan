@@ -1,0 +1,49 @@
+name: Document normalizer runtime
+
+on:
+  pull_request:
+    paths:
+      - spikes/document-normalizer-runtime/**
+      - packages/parsers/**
+      - tsconfig.base.json
+      - .node-version
+      - rust-toolchain.toml
+      - scripts/dev-toolchain.env
+      - .github/workflows/document-normalizer-runtime.yml
+  push:
+    branches:
+      - main
+    paths:
+      - spikes/document-normalizer-runtime/**
+      - packages/parsers/**
+      - tsconfig.base.json
+      - .node-version
+      - rust-toolchain.toml
+      - scripts/dev-toolchain.env
+      - .github/workflows/document-normalizer-runtime.yml
+
+permissions:
+  contents: read
+
+jobs:
+  document-normalizer-runtime-gate:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - name: Install package manager
+        run: |
+          source scripts/dev-toolchain.env
+          npm install --global "corepack@$COREPACK_VERSION"
+          corepack enable
+          corepack install --global "pnpm@$PNPM_VERSION"
+          test "$(pnpm --version)" = "$PNPM_VERSION"
+      - name: Prepare Rust toolchain
+        run: |
+          rustup show active-toolchain
+          rustc --version
+          cargo clippy --version
+      - name: Run document normalizer runtime gate
+        run: bash spikes/document-normalizer-runtime/scripts/verify.sh

@@ -6,7 +6,7 @@ Design SQLite/SQLCipher schema for a local-first finance vault that supports evi
 
 ## Implementation blocker
 
-SQLCipher plus FTS5 feasibility is verified by the [desktop spike](../../spikes/desktop-feasibility/EVIDENCE.md). Exact vault keys, encrypted-file format, temporary plaintext, recovery compatibility, and restore behavior remain open in the [active alignment register](../alignment-temp/alignment-progress.md); do not freeze those security fields by inference.
+SQLCipher plus FTS5 feasibility is verified by the [desktop spike](../../spikes/desktop-feasibility/EVIDENCE.md). The source-document/file lifecycle is accepted. Exact encrypted-file and recovery envelope formats, compatibility fixtures, and atomic restore behavior still require the production security validation in the [active alignment register](../alignment-temp/alignment-progress.md); do not freeze unvalidated cryptographic fields by inference.
 
 ## Database policy
 
@@ -38,7 +38,7 @@ review_items
 audit_log
 ```
 
-Later slices add their own tables only when their behavior is implemented. Examples include vault/file storage, durable jobs, Gmail rules/sync state, and other connector state. A migration must name its owning slice and have an integration test that starts from a clean test database.
+Later slices add their own tables only when their behavior is implemented. Examples include the production `source_documents` file columns, durable jobs, Gmail rules/sync state, and other connector state. A migration must name its owning slice and have an integration test that starts from a clean test database.
 
 ## Ledger schema projection
 
@@ -88,6 +88,21 @@ Do not add a separate identifier table, keyed digests, strength levels, or key-v
 
 `0004-parser-contract.md` owns document/record identity and reparse behavior. The schema keeps its SHA-256 file identity, semantic document identity, stable external-record key, and record version as separate fields.
 
+In MVP, `source_documents` is both the imported physical-evidence row and the encrypted-file registry/tombstone. Do not add a separate `vault_files` table. One row represents one exact imported byte sequence and stores the queryable file identity and lifecycle needed by the product:
+
+```text
+file_sha256
+original filename, MIME type, and byte size
+encrypted Vault locator while the current file exists
+file state: available, deleted, or missing
+deletion timestamp and append-only audit reference when deleted
+semantic document key used to group byte-different evidence for one statement identity
+```
+
+`deleted` means the user intentionally deleted the current encrypted Vault file. `missing` means the file should exist but storage cannot find or verify it. In both states, the `source_documents` row remains so external records, parse runs, review history, ledger navigation, and audit history do not break. A nullable locator or equivalent state projection must not erase the exact hash or evidence relationships.
+
+Different byte sequences with the same semantic statement identity remain separate `source_documents` rows grouped by the semantic document key. An exact-hash re-import reuses the existing row and, when that row is deleted or missing, may restore its current encrypted file instead of creating a duplicate row.
+
 Each external record stores the bounded original source row/object used for normalization and a validation summary:
 
 ```text
@@ -100,7 +115,7 @@ date-only fields remain date-only rather than receiving an invented timezone
 no generic assumptions_json column is added for speculative inference
 ```
 
-The parser validates the raw record against job-scoped native/OCR/table observations before persistence. The raw record and validation summary are the durable audit context; optional location values are UI hints, not independently queried financial facts. Full-document extraction retention and deletion remain governed by the sensitive-data-lifecycle blocker.
+The parser validates the raw record against job-scoped native/OCR/table observations before persistence. The raw record and validation summary are the durable audit context; optional location values are UI hints, not independently queried financial facts. Deleting the source file does not delete these bounded record-level facts. Retention of raw full-document extraction remains governed by the separate sensitive-data-lifecycle blocker.
 
 ## Index policy
 
@@ -156,6 +171,9 @@ Acceptance requires integration tests to run from a clean database without manua
 - Schema changes use hand-written, versioned migrations.
 - Core query dimensions are columns rather than hidden in JSON.
 - Exact source-file identity uses SHA-256 and remains separate from semantic document identity.
+- `source_documents` is the MVP encrypted-file registry and tombstone; no separate `vault_files` table is required.
+- Deleting or losing a current Vault file preserves its source-document row and every record, parse, review, ledger, and audit relationship.
+- Byte-different evidence for one statement identity uses separate source-document rows grouped by semantic identity; exact-hash re-import is idempotent and may restore a deleted current file.
 - Every external record retains one bounded validated raw source record plus a validation summary, without a separate field-evidence graph or permanent raw full-document text.
 - Account identity supports a stable provider account ID when available, first-seen candidates, archive, and merge redirects without using display names or masked suffixes as automatic identity.
 - The schema supports immutable committed events, reversals, commit idempotency, many-to-many allocations, and atomic audit records.
