@@ -6,7 +6,7 @@ Define when records can auto-commit, when they require review, and how reconcili
 
 ## Implementation blocker
 
-The auto-commit rule is accepted. The synthetic core flow may exercise it with deterministic mocked proposals; live normalization and qualification still wait for the document-normalizer runtime evidence plus their upstream vault/Gmail slices in the [active alignment register](../alignment-temp/alignment-progress.md). Do not weaken the accepted gates to work around those boundaries.
+The auto-commit rule and document-normalizer runtime selection are accepted. The synthetic core flow may exercise the policy with deterministic mocked proposals; live normalization still waits for its upstream Vault/Gmail slices, and auto-commit qualification still requires the fixture and shadow gates in the [implementation sequence](../agent/implementation-slices.md) plus its active alignment blockers. Do not weaken the accepted gates to work around those boundaries.
 
 ## MVP user setting
 
