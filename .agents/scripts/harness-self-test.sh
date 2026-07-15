@@ -16,6 +16,9 @@ mkdir -p "$TEST_ROOT/spikes/desktop-feasibility/scripts"
 cp spikes/desktop-feasibility/package.json spikes/desktop-feasibility/EVIDENCE.md \
   "$TEST_ROOT/spikes/desktop-feasibility/"
 cp spikes/desktop-feasibility/scripts/verify.sh "$TEST_ROOT/spikes/desktop-feasibility/scripts/"
+mkdir -p "$TEST_ROOT/spikes/document-normalizer-runtime"
+cp spikes/document-normalizer-runtime/EVIDENCE.md \
+  "$TEST_ROOT/spikes/document-normalizer-runtime/"
 
 (
   cd "$TEST_ROOT"
@@ -382,6 +385,17 @@ cp "$application_workflow" "$application_workflow.bak"
 grep -v '^        run: pnpm verify$' "$application_workflow.bak" > "$application_workflow"
 expect_failure "application CI missing verify gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$application_workflow.bak" "$application_workflow"
+
+runtime_workflow="$TEST_ROOT/.github/workflows/document-normalizer-runtime.yml"
+cp "$runtime_workflow" "$runtime_workflow.bak"
+grep -v '^        run: bash spikes/document-normalizer-runtime/scripts/verify[.]sh$' "$runtime_workflow.bak" > "$runtime_workflow"
+expect_failure "runtime CI missing spike verify gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$runtime_workflow.bak" "$runtime_workflow"
+
+cp "$runtime_workflow" "$runtime_workflow.bak"
+ruby -0pi -e 'sub("      - .github/workflows/document-normalizer-runtime.yml\n", "      - .github/workflows/document-normalizer-runtime.yml\n      - unrelated/**\n")' "$runtime_workflow"
+expect_failure "runtime CI gains unrelated trigger path" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$runtime_workflow.bak" "$runtime_workflow"
 
 desktop_package="$TEST_ROOT/apps/desktop/package.json"
 cp "$desktop_package" "$desktop_package.bak"
