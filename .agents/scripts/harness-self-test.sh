@@ -19,6 +19,9 @@ cp spikes/desktop-feasibility/scripts/verify.sh "$TEST_ROOT/spikes/desktop-feasi
 mkdir -p "$TEST_ROOT/spikes/document-normalizer-runtime"
 cp spikes/document-normalizer-runtime/EVIDENCE.md \
   "$TEST_ROOT/spikes/document-normalizer-runtime/"
+mkdir -p "$TEST_ROOT/spikes/vault-security-validation"
+cp spikes/vault-security-validation/EVIDENCE.md \
+  "$TEST_ROOT/spikes/vault-security-validation/"
 
 (
   cd "$TEST_ROOT"
