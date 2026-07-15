@@ -4,9 +4,9 @@
 
 Define how CanCan preserves local-first data safely across app upgrades, backups, restores, and schema versions.
 
-## Implementation blocker
+## Validated security boundary
 
-The user-facing key model, Argon2id profiles, macOS Keychain scope, no-temporary-plaintext viewer boundary, source-file deletion contract, and restore/setup behavior are accepted. Exact authenticated-file and recovery envelope formats, compatibility fixtures, atomic restore implementation, and destructive-job crash recovery still require production security validation in the [active alignment register](../alignment-temp/alignment-progress.md).
+The user-facing key model, Argon2id profiles, macOS Keychain scope, no-temporary-plaintext viewer boundary, source-file deletion contract, authenticated envelope, and restore-to-new-path switch are accepted. The reproducible evidence and residual architecture boundary are recorded in the [Vault security validation](../../spikes/vault-security-validation/EVIDENCE.md). Backup scheduling, export/migration behavior, public release security, and real macOS `x86_64` qualification remain owned by their later slices; they do not block architecture-neutral manual-import implementation with synthetic or redacted data.
 
 ## Simple user security model
 
@@ -58,7 +58,9 @@ The primary values follow [RFC 9106 section 4's second recommended option](https
 
 New vault creation benchmarks the primary RFC 9106 low-memory profile on the supported Mac and uses it when a password unlock completes within 750 ms. If it misses that UX budget, creation uses the OWASP minimum profile. Existing wrappers always retain their stored profile; opening a vault never silently changes the KDF contract. These profiles are not user settings.
 
-Nonce, authenticated-encryption, key-version, and recovery-file formats must still be fixed by the production security-validation work and covered by compatibility fixtures before real data is accepted.
+The Phase 1 authenticated envelope is `CCENV001`, version 1. Its big-endian binary header contains the eight-byte magic, version, purpose, algorithm, KDF profile, salt length, nonce length, ciphertext length, salt, and nonce, followed by ciphertext and the authentication tag. Purpose values distinguish file, password-wrapper, recovery-wrapper, and backup envelopes. Algorithm 1 is XChaCha20-Poly1305 with a 256-bit key and 192-bit fresh random nonce; the complete serialized header is associated data.
+
+Password wrappers carry exactly one 128-bit salt and one of the stored Argon2id profiles. Non-KDF file, recovery, and backup envelopes carry no salt. HKDF-SHA-256 derives purpose-separated file and backup keys from the master key with the versioned contexts `cancan:file:v1` and `cancan:backup:v1`. A reader rejects unknown versions, purposes, algorithms, KDF profiles, invalid lengths, wrong-purpose keys, wrong credentials, and any header or ciphertext tampering. Changing these bytes or contexts requires a new envelope version; existing version-1 data is never silently rewritten.
 
 ## Feasibility evidence
 
@@ -70,7 +72,7 @@ The [2026-07-13 disposable spike](../../spikes/desktop-feasibility/EVIDENCE.md) 
 - macOS Keychain can write, read, and delete the binary remember-on-device secret;
 - SQLCipher can reject a wrong database key while supporting FTS5.
 
-The spike envelope is not the production compatibility contract. The implementation blocker above remains for exact authenticated formats, compatibility fixtures, atomic backup/restore, and crash recovery. MVP security gates require deterministic tamper, wrong-key, KDF-profile, Keychain, deletion, and restore tests plus independent code review; a third-party security audit is not a release blocker for the current local MVP.
+The later [Vault security validation](../../spikes/vault-security-validation/EVIDENCE.md) promoted the version-1 envelope and wrapper fixtures to the production compatibility contract and validated tamper, wrong-key, KDF-profile, Keychain, deletion, and logical restore crash behavior with independent review. A third-party security audit is not a release blocker for the current local MVP.
 
 That feasibility evidence is `arm64`-only. Phase 1 support requires the production KDF benchmark, SQLCipher/file encryption, Keychain, in-memory viewer, deletion recovery, and backup/restore gates to pass independently on macOS `x86_64`; results from one architecture do not qualify the other.
 

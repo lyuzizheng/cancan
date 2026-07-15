@@ -39,7 +39,7 @@ password and recovery wrappers around one master key
 macOS Keychain binary-secret write/read/delete
 ```
 
-This spike accepted the runtime and package-boundary architecture but did not itself prove a production cryptographic format, exact Argon2id parameters, plaintext-viewing policy, secret-store behavior, or release/signing configuration. The owning specs now accept versioned Argon2id profiles, macOS Keychain scope, and a no-temporary-plaintext viewer contract. Exact authenticated-file/recovery envelopes, compatibility evidence, crash recovery, atomic restore, and release/signing details remain blocked in their owning specs.
+This spike accepted the runtime and package-boundary architecture but did not itself prove a production cryptographic format, exact Argon2id parameters, plaintext-viewing policy, secret-store behavior, or release/signing configuration. The later [Vault security validation](../../spikes/vault-security-validation/EVIDENCE.md) accepted the versioned Argon2id profiles, authenticated envelope fixtures, macOS Keychain scope, no-temporary-plaintext viewer, deletion recovery, and restore locator switch. Release signing and real macOS `x86_64` qualification remain later release gates.
 
 ## Consequences
 

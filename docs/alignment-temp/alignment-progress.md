@@ -14,9 +14,7 @@ blocked       external evidence, feasibility work, or implementation is required
 
 | Area | Status | Decision still required | Canonical home after decision |
 | --- | --- | --- | --- |
-| Vault/file/backup security validation | blocked | Validate the accepted versioned Argon2id profiles and unlock budget, authenticated-file and recovery envelope formats, macOS Keychain behavior, no-temporary-plaintext viewer, deletion crash recovery, backup recovery, and atomic restore with compatibility fixtures and independent code review | `docs/specs/0009-backup-restore-versioning.md` and an ADR if architecture changes |
 | Gmail data and cloud AI consent | partial | Validate the project-owned public Desktop OAuth client and Google verification path; decide exact data sent to AI, consent granularity, provider retention, and Limited Use compatibility. Direct local-client access, explicit user authorization, and separate development/test credentials are accepted | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md` |
-| Restore and destructive job behavior | partial | Prove the accepted restore-to-new-path/atomic-switch and source-file-tombstone outcomes with exact cancellation boundaries, crash state transitions, and idempotency keys | `docs/specs/0015-job-engine-error-model.md`, `docs/specs/0009-backup-restore-versioning.md` |
 
 ## P1: required before the affected implementation slice
 
