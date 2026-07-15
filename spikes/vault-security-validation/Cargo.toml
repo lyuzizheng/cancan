@@ -1,0 +1,17 @@
+[package]
+name = "cancan-vault-security-validation"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+argon2 = { version = "0.5.3", features = ["std", "zeroize"] }
+chacha20poly1305 = { version = "0.10.1", features = ["std"] }
+hkdf = "0.12.4"
+keyring = "4.1.4"
+rand = "0.8.5"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sha2 = "0.10.9"
+tempfile = "3.27.0"
+zeroize = "1.9.0"

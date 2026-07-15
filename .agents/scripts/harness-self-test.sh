@@ -397,6 +397,12 @@ ruby -0pi -e 'sub("      - .github/workflows/document-normalizer-runtime.yml\n",
 expect_failure "runtime CI gains unrelated trigger path" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$runtime_workflow.bak" "$runtime_workflow"
 
+vault_workflow="$TEST_ROOT/.github/workflows/vault-security-validation.yml"
+cp "$vault_workflow" "$vault_workflow.bak"
+grep -v '^        run: bash spikes/vault-security-validation/scripts/verify[.]sh$' "$vault_workflow.bak" > "$vault_workflow"
+expect_failure "vault CI missing security validation gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$vault_workflow.bak" "$vault_workflow"
+
 desktop_package="$TEST_ROOT/apps/desktop/package.json"
 cp "$desktop_package" "$desktop_package.bak"
 sed 's/ --locked//g' "$desktop_package.bak" > "$desktop_package"
