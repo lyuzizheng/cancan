@@ -103,6 +103,19 @@ ensure_shell_path() {
   fi
 }
 
+configure_git_hooks() {
+  local actual
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "Would enable repository Git hooks from .githooks"
+    return
+  fi
+
+  git -C "$ROOT" config --local core.hooksPath .githooks
+  actual="$(git -C "$ROOT" config --local --get core.hooksPath)"
+  [[ "$actual" == ".githooks" ]] || die "repository Git hooks were not enabled"
+  log "Repository Git hooks enabled from .githooks"
+}
+
 cleanup() {
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
     rm -rf "$TEMP_DIR"
@@ -317,6 +330,7 @@ main() {
   trap cleanup EXIT
   require_macos
   require_command_line_tools
+  configure_git_hooks
   ensure_shell_path
   export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
   install_node
