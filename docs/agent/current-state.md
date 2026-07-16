@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ## Product phase
 
@@ -15,7 +15,7 @@ The current product target is a Gmail-first local financial evidence vault and p
 - The foundation UI has been visually inspected at desktop and narrow viewports. It has no network, vault, database, secret, connector, or privileged command behavior.
 - The synthetic-core harness safely resets only marked test databases, reapplies its migration idempotently, validates deterministic structured proposals against coherent raw rows, and exercises review, source-backed balance observations, exact transfer reconciliation, atomic commit, immutable audit, idempotency, and bidirectional record/event navigation. It uses no live model, network, vault, or production document.
 - The `desktop-feasibility` slice is complete. ADR 0001 is accepted after a real Tauri 2, SQLCipher/FTS5, authenticated-file-encryption, Argon2id wrapper, and macOS Keychain smoke test.
-- The `app-foundation` slice is complete. Accepted production security behavior now has a bounded `vault-security-validation` evidence slice before real Vault data is accepted.
+- The `app-foundation` and `vault-security-validation` slices are complete. The accepted version-1 envelope, KDF selection, Keychain scope, memory-only viewer boundary, deletion recovery, and restore locator switch have reproducible macOS `arm64` evidence before production Vault implementation begins.
 - The `synthetic-core-flow` slice is complete. Its schema and repository cover only exercised synthetic queries; production document storage, reparse lifecycle, duplicate import, and selected-runtime integration remain in later slices.
 
 ## Documentation state
@@ -34,6 +34,7 @@ The current product target is a Gmail-first local financial evidence vault and p
 - The parser evidence contract is accepted: extraction/OCR produce job-scoped observations, a mandatory AI normalizer produces one structured proposal shape, and each record persists one bounded validated raw source object plus a validation summary rather than a field-evidence graph. Dates do not receive invented timezones, and Debit/Credit remains separate from signed source-account balance movement.
 - Database migrations grow by vertical slice. The synthetic core keeps many-to-many `match_edges` because two bank-side records linking through one canonical transfer event is a core query, while speculative evidence-reference tables, identifier machinery, indexes, and fixed benchmark sizes are excluded.
 - The `document-normalizer-runtime` evidence slice is complete. Single-pass structured normalization is selected for initial implementation in a Tauri-controlled bundled Node sidecar; ToolLoopAgent and Pi Agent Core remain unselected until qualification fixtures demonstrate a material advantage. Full Pi Coding Agent is excluded, the sidecar is not treated as a sandbox, and users install no separate runtime.
+- The `vault-security-validation` evidence slice is complete. Its merged macOS CI gate and independent reviews accepted `CCENV001` version 1, both versioned Argon2id wrappers and the 750 ms selection rule, source-scoped Keychain password behavior, memory-only Core Graphics PDF rendering, tombstone-first deletion recovery, and inactive-Vault atomic locator switching. The `vault-manual-import` slice is ready.
 - Phase 1 supports macOS `arm64` and `x86_64`; Windows is Phase 2. Current end-to-end desktop, Vault, Keychain, and sidecar evidence exists only on `arm64`. Intel setup routing is test-covered, but a real `x86_64` build/runtime/security pass is still required before support can ship.
 - The evidence-lifecycle/security grill is complete. `source_documents` also owns the encrypted-file registry/tombstone in MVP; there is no separate `vault_files` table. Source-file deletion retains records and ledger navigation, normal viewing renders in memory inside CanCan, and plaintext leaves the Vault only through explicit `Save a copy`.
 - Vault password wrappers use versioned Argon2id profiles, with the RFC 9106 64 MiB profile preferred inside a 750 ms supported-Mac budget and the OWASP 19 MiB minimum as the only accepted fallback. Keychain keeps the normal remembered unlock path fast. One optional PDF password per Money Source is also stored in Keychain and excluded from backup.
@@ -43,7 +44,15 @@ The old broad numbered product-doc layer and duplicated alignment/harness projec
 
 ## Immediate next work
 
-Run the bounded `vault-security-validation` evidence slice next on the current `arm64` machine. It must prove the accepted KDF profiles and unlock budget, architecture-portable authenticated envelope fixtures, Keychain behavior, in-memory/no-temp-file viewing, tombstone deletion crash recovery, and restore-to-new-path atomic switching before `vault-manual-import` becomes ready. A real `x86_64` build/runtime/security pass remains mandatory in `backup-release` before Phase 1 ships, but does not block architecture-neutral feature implementation. Run the second public-launch grill after the review/ledger UI and before public OAuth/release work.
+Implement `vault-manual-import` as one controlled vertical slice: a synthetic or redacted manual statement enters the encrypted file Vault, is deduplicated, normalized through the selected sidecar boundary, and appears under its Money Source with in-app viewing, statement-password, deletion, and recovery behavior covered by the slice gates. Do not broaden this slice into Gmail OAuth, public release, backup scheduling, or real `x86_64` qualification. A real `x86_64` build/runtime/security pass remains mandatory in `backup-release` before Phase 1 ships. Run the second public-launch grill after the review/ledger UI and before public OAuth/release work.
+
+## External setup checkpoints
+
+No user-owned external account or credential blocks `vault-manual-import`. CI and deterministic development use synthetic/redacted documents and a mock model until the local storage, job, and sidecar boundaries are ready.
+
+- Before the first opt-in live-AI smoke test, the user chooses a supported AI provider, creates their own API key, and enters it through CanCan setup or an untracked local override. The key must never enter Git, fixtures, logs, or CI. Provider choice and the exact disclosure remain blocked by the AI-consent work; do not request a key earlier.
+- Before live Gmail development, the user creates a separate Google Cloud development/test project, enables Gmail API, configures a Desktop OAuth client, and adds explicit test users. Mocked Gmail work may precede this.
+- Before public Gmail availability, the user must provide the public app identity, domain ownership, privacy/support contacts, production Google Cloud project, and verification submission materials. Restricted-scope verification is a later release workstream and should not be started before the running data flow and disclosures are reviewable.
 
 Do not implement behavior covered by an active blocker. A ready slice may use a spec for its explicitly unblocked outcome without implementing that spec's blocked release, security, privacy, or product behavior; the generated slice context is the executable boundary.
 

@@ -2,6 +2,18 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-16
+
+### Completed
+
+- Closed the merged `vault-security-validation` slice after its macOS CI gate and independent reviews passed. Promoted the `CCENV001` version-1 envelope and compatibility hashes, versioned KDF selection, source-scoped Keychain behavior, memory-only PDF rendering, tombstone deletion convergence, and inactive-Vault locator switch into the canonical implementation boundary.
+- Removed only the resolved Vault/security evidence blockers. Kept production job idempotency/cancellation tests, real macOS `x86_64`, backup operations, public release, Gmail consent/verification, and security-observability work in their owning implementation slices.
+- Marked `vault-manual-import` ready and recorded when user-owned AI and Google credentials become necessary; neither is required for the controlled synthetic/redacted manual-import start.
+
+### Next
+
+- Implement `vault-manual-import` without Gmail, public OAuth, backup scheduling, or release expansion. Use CI-owned complete gates and request user credentials only at the recorded live-integration checkpoints.
+
 ## 2026-07-15
 
 ### Completed

@@ -8,7 +8,7 @@ The job engine exists to make long-running local-first finance workflows reliabl
 
 ## Implementation blocker
 
-The source-file deletion outcome and restore-to-new-path/setup flow are accepted. Exact destructive-job state transitions, cancellation boundaries, idempotency keys, atomic-switch implementation, log/error redaction, and crash-report consent remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not implement those paths from the coarse job and error examples alone.
+The source-file deletion and restore-to-new-path crash outcomes are accepted and validated by the [Vault security evidence](../../spikes/vault-security-validation/EVIDENCE.md). Production job wiring must still prove its durable idempotency key and cancellation boundaries in the owning implementation slice; the disposable spike did not model a persisted `jobs` row or user cancellation. Log/error redaction and crash-report consent remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Backup scheduling, migration, and portability remain later `backup-release` concerns and do not block the source-deletion path in manual import.
 
 ## Stable decisions
 
@@ -107,7 +107,18 @@ mark linked uncommitted records ineligible for automatic commit
 retain parse, record, review, ledger, and audit navigation
 ```
 
-The job is idempotent: retry after a crash must converge on one deleted tombstone whether the blob removal or database projection completed first. It never reverses a committed ledger event. Exact crash-state transitions remain an implementation-validation blocker.
+The database transaction commits the append-only deletion decision, audit reference, tombstone projection, and auto-commit ineligibility before blob removal. Retry or startup recovery then converges as follows:
+
+```text
+before decision commit -> source and blob remain available
+after decision commit  -> tombstone remains; recovery removes any blob
+after blob removal     -> tombstone remains; recovery is a no-op
+blob absent without a committed decision -> project Missing, not Deleted
+```
+
+The job never reverses a committed ledger event.
+
+Before this path is considered implemented, integration tests must bind repeated attempts to one durable deletion intent, prove that no second decision is appended, and freeze the user-visible cancellation boundary. A later exact-hash re-import restores the file as a new lifecycle transition; deleting that restored revision is a new intent.
 
 ### `parse_document`
 
@@ -195,6 +206,8 @@ create a resumable Setup Checklist for excluded device secrets and configuration
 ```
 
 Until the switch succeeds, the existing active Vault remains untouched. After switch, missing Gmail, AI, statement-password, and backup-folder setup blocks only dependent features; restored non-secret data remains readable.
+
+Candidate files and their directory are synced and validated before writing and syncing a temporary locator. Atomic rename plus parent-directory sync selects the validated candidate, and startup recovery validates whichever locator is present and removes a stale temporary locator. A failed or invalid candidate never changes the active locator. The later `backup-release` implementation must additionally prove that retries address one durable candidate and freeze the user-visible cancellation boundary; those job semantics were not exercised by the disposable spike.
 
 ## Job status model
 

@@ -4,9 +4,9 @@
 
 Design SQLite/SQLCipher schema for a local-first finance vault that supports evidence, parsing, review, ledger, assets, positions, snapshots, and reconciliation.
 
-## Implementation blocker
+## Validated storage boundary
 
-SQLCipher plus FTS5 feasibility is verified by the [desktop spike](../../spikes/desktop-feasibility/EVIDENCE.md). The source-document/file lifecycle is accepted. Exact encrypted-file and recovery envelope formats, compatibility fixtures, and atomic restore behavior still require the production security validation in the [active alignment register](../alignment-temp/alignment-progress.md); do not freeze unvalidated cryptographic fields by inference.
+SQLCipher plus FTS5 feasibility is verified by the [desktop spike](../../spikes/desktop-feasibility/EVIDENCE.md). The source-document/file lifecycle and version-1 encrypted envelope are accepted by the [backup/restore spec](0009-backup-restore-versioning.md) and [Vault security evidence](../../spikes/vault-security-validation/EVIDENCE.md). Keep cryptographic bytes out of ad hoc schema fields; the schema stores only the versioned wrapper/envelope metadata and file lifecycle needed by implemented queries.
 
 ## Database policy
 
