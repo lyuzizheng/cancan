@@ -1,3 +1,4 @@
+pub mod database;
 pub mod vault;
 
 pub fn run() {

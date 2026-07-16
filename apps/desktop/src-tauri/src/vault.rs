@@ -6,6 +6,7 @@ use hkdf::Hkdf;
 use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Component, Path, PathBuf},
@@ -25,8 +26,22 @@ const FILE_KEY_CONTEXT: &[u8] = b"cancan:file:v1";
 #[derive(Debug, Eq, PartialEq)]
 pub struct StoredFile {
     pub byte_size: u64,
+    pub created: bool,
     pub encrypted_locator: String,
     pub file_sha256: String,
+}
+
+#[derive(Debug)]
+pub(crate) struct PreparedSource {
+    byte_size: u64,
+    file_sha256: String,
+    plaintext: Zeroizing<Vec<u8>>,
+}
+
+impl PreparedSource {
+    pub(crate) fn file_sha256(&self) -> &str {
+        &self.file_sha256
+    }
 }
 
 #[derive(Debug)]
@@ -40,10 +55,29 @@ impl FileVault {
     }
 
     pub fn store(&self, master_key: &[u8; KEY_LEN], source_path: &Path) -> io::Result<StoredFile> {
+        let source = Self::prepare(source_path)?;
+        self.store_prepared(master_key, &source, false)
+    }
+
+    pub(crate) fn prepare(source_path: &Path) -> io::Result<PreparedSource> {
         let plaintext = Zeroizing::new(fs::read(source_path)?);
         let byte_size = u64::try_from(plaintext.len())
             .map_err(|_| io::Error::other("source file size does not fit u64"))?;
         let file_sha256 = hex_digest(&plaintext);
+        Ok(PreparedSource {
+            byte_size,
+            file_sha256,
+            plaintext,
+        })
+    }
+
+    pub(crate) fn store_prepared(
+        &self,
+        master_key: &[u8; KEY_LEN],
+        source: &PreparedSource,
+        replace_existing: bool,
+    ) -> io::Result<StoredFile> {
+        let file_sha256 = &source.file_sha256;
         let encrypted_locator = format!("files/{file_sha256}.ccenv");
         let target = self.resolve_locator(&encrypted_locator)?;
         let directory = target
@@ -52,23 +86,30 @@ impl FileVault {
         fs::create_dir_all(directory)?;
 
         let file_key = derive_file_key(master_key)?;
+        if replace_existing && target.exists() {
+            fs::remove_file(&target)?;
+            File::open(directory)?.sync_all()?;
+        }
+        let created = !target.exists();
         if target.exists() {
             let existing = fs::read(&target)?;
             let opened = open_file_envelope(&file_key, &existing)?;
-            if hex_digest(&opened) != file_sha256 {
-                return Err(io::Error::other(
+            if hex_digest(&opened) != *file_sha256 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
                     "existing encrypted file does not match its source hash",
                 ));
             }
         } else {
-            let envelope = seal_file_envelope(&file_key, &plaintext)?;
+            let envelope = seal_file_envelope(&file_key, &source.plaintext)?;
             self.write_atomically(directory, &target, &envelope)?;
         }
 
         Ok(StoredFile {
-            byte_size,
+            byte_size: source.byte_size,
+            created,
             encrypted_locator,
-            file_sha256,
+            file_sha256: file_sha256.clone(),
         })
     }
 
@@ -81,6 +122,48 @@ impl FileVault {
         let envelope = fs::read(path)?;
         let file_key = derive_file_key(master_key)?;
         open_file_envelope(&file_key, &envelope)
+    }
+
+    pub(crate) fn exists(&self, encrypted_locator: &str) -> io::Result<bool> {
+        Ok(self.resolve_locator(encrypted_locator)?.is_file())
+    }
+
+    pub(crate) fn remove(&self, encrypted_locator: &str) -> io::Result<()> {
+        let path = self.resolve_locator(encrypted_locator)?;
+        if path.exists() {
+            fs::remove_file(path)?;
+            let directory = self.root.join("files");
+            File::open(directory)?.sync_all()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn remove_unreferenced(
+        &self,
+        referenced_locators: &HashSet<String>,
+    ) -> io::Result<()> {
+        let directory = self.root.join("files");
+        if !directory.exists() {
+            return Ok(());
+        }
+        for entry in fs::read_dir(&directory)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            let locator = format!("files/{name}");
+            let stale_temporary = name.starts_with(".import-") && name.ends_with(".tmp");
+            let orphaned_envelope =
+                name.ends_with(".ccenv") && !referenced_locators.contains(&locator);
+            if stale_temporary || orphaned_envelope {
+                fs::remove_file(entry.path())?;
+            }
+        }
+        File::open(directory)?.sync_all()
     }
 
     fn resolve_locator(&self, locator: &str) -> io::Result<PathBuf> {
@@ -288,6 +371,8 @@ mod tests {
         let second_vault = FileVault::new(root.path().join("second"));
         let first = first_vault.store(&key, &source).expect("first store");
         let second = second_vault.store(&key, &source).expect("second store");
+        assert!(first.created);
+        assert!(second.created);
         let first_path = root.path().join("first").join(&first.encrypted_locator);
         let second_bytes = fs::read(root.path().join("second").join(&second.encrypted_locator))
             .expect("second encrypted file");
@@ -325,5 +410,37 @@ mod tests {
         envelope[16..24].copy_from_slice(&u64::MAX.to_be_bytes());
 
         assert!(open_file_envelope(&[0x71; KEY_LEN], &envelope).is_err());
+    }
+
+    #[test]
+    fn reuses_a_verified_envelope_and_removes_only_unreferenced_files() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let source = root.path().join("statement.pdf");
+        fs::write(&source, b"statement evidence").expect("write source fixture");
+        let key = [0x81; KEY_LEN];
+        let vault = FileVault::new(root.path().join("vault"));
+        let first = vault.store(&key, &source).expect("first store");
+        let second = vault.store(&key, &source).expect("second store");
+        assert!(!second.created);
+
+        vault
+            .remove_unreferenced(&HashSet::from([first.encrypted_locator.clone()]))
+            .expect("keep referenced file");
+        assert!(
+            root.path()
+                .join("vault")
+                .join(&first.encrypted_locator)
+                .exists()
+        );
+        vault
+            .remove_unreferenced(&HashSet::new())
+            .expect("remove orphaned file");
+        assert!(
+            !root
+                .path()
+                .join("vault")
+                .join(&first.encrypted_locator)
+                .exists()
+        );
     }
 }

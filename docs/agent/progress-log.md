@@ -6,13 +6,16 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Started `vault-manual-import` with a rollback-safe backend checkpoint: added the production `CCENV001` file store, source-document lifecycle migration, exact-hash/semantic import outcomes, and focused compatibility/tamper tests.
+- Resolved the runtime repository boundary without exposing SQLite to the renderer: `packages/db` owns canonical migrations and portable schema/query tests, while Rust/Tauri owns SQLCipher connections, transactions, typed production repositories, and file/database failure convergence. The normalizer sidecar remains database-free.
+- Froze `cancan:database:v1` as the HKDF-SHA-256 database-subkey context and use SQLCipher's raw 256-bit key form, keeping the password KDF out of normal database opens.
 - Closed the merged `vault-security-validation` slice after its macOS CI gate and independent reviews passed. Promoted the `CCENV001` version-1 envelope and compatibility hashes, versioned KDF selection, source-scoped Keychain behavior, memory-only PDF rendering, tombstone deletion convergence, and inactive-Vault locator switch into the canonical implementation boundary.
 - Removed only the resolved Vault/security evidence blockers. Kept production job idempotency/cancellation tests, real macOS `x86_64`, backup operations, public release, Gmail consent/verification, and security-observability work in their owning implementation slices.
 - Marked `vault-manual-import` ready and recorded when user-owned AI and Google credentials become necessary; neither is required for the controlled synthetic/redacted manual-import start.
 
 ### Next
 
-- Implement `vault-manual-import` without Gmail, public OAuth, backup scheduling, or release expansion. Use CI-owned complete gates and request user credentials only at the recorded live-integration checkpoints.
+- Continue `vault-manual-import` with narrow Tauri commands, mock normalization, and the first Money Source/Documents frontend review checkpoint. Keep Gmail, public OAuth, backup scheduling, and release work out of scope.
 
 ## 2026-07-15
 

@@ -16,7 +16,7 @@ The current product target is a Gmail-first local financial evidence vault and p
 - The synthetic-core harness safely resets only marked test databases, reapplies its migration idempotently, validates deterministic structured proposals against coherent raw rows, and exercises review, source-backed balance observations, exact transfer reconciliation, atomic commit, immutable audit, idempotency, and bidirectional record/event navigation. It uses no live model, network, vault, or production document.
 - The `desktop-feasibility` slice is complete. ADR 0001 is accepted after a real Tauri 2, SQLCipher/FTS5, authenticated-file-encryption, Argon2id wrapper, and macOS Keychain smoke test.
 - The `app-foundation` and `vault-security-validation` slices are complete. The accepted version-1 envelope, KDF selection, Keychain scope, memory-only viewer boundary, deletion recovery, and restore locator switch have reproducible macOS `arm64` evidence before production Vault implementation begins.
-- The `synthetic-core-flow` slice is complete. Its schema and repository cover only exercised synthetic queries; production document storage, reparse lifecycle, duplicate import, and selected-runtime integration remain in later slices.
+- The `synthetic-core-flow` slice is complete. Its schema and repository cover only exercised synthetic queries. `vault-manual-import` is now in progress: the production Rust host includes the canonical migrations, opens SQLCipher with a context-separated raw database subkey, writes `CCENV001` files, and coordinates exact-hash import outcomes with store-open/rollback recovery logic. Application-startup command/state wiring, parser, UI, viewer, statement-password, and deletion wiring remain in this slice.
 
 ## Documentation state
 
@@ -44,7 +44,7 @@ The old broad numbered product-doc layer and duplicated alignment/harness projec
 
 ## Immediate next work
 
-Implement `vault-manual-import` as one controlled vertical slice: a synthetic or redacted manual statement enters the encrypted file Vault, is deduplicated, normalized through the selected sidecar boundary, and appears under its Money Source with in-app viewing, statement-password, deletion, and recovery behavior covered by the slice gates. Do not broaden this slice into Gmail OAuth, public release, backup scheduling, or real `x86_64` qualification. A real `x86_64` build/runtime/security pass remains mandatory in `backup-release` before Phase 1 ships. Run the second public-launch grill after the review/ledger UI and before public OAuth/release work.
+Continue `vault-manual-import` from its Rust storage/database checkpoint: expose only narrow Tauri commands, normalize a synthetic/redacted statement through the selected mock sidecar boundary, and render it under its Money Source before adding viewer, statement-password, deletion, and recovery UX. Do not broaden this slice into Gmail OAuth, public release, backup scheduling, or real `x86_64` qualification. A real `x86_64` build/runtime/security pass remains mandatory in `backup-release` before Phase 1 ships. Run the second public-launch grill after the review/ledger UI and before public OAuth/release work.
 
 ## External setup checkpoints
 

@@ -62,13 +62,18 @@ Owns:
 ```text
 migrations/*.sql
 SQLite connection abstraction
-repositories
+portable migration/query tests
 query benchmarks
 index review notes
 seed/reset helpers for tests
 ```
 
 No Prisma. No ORM by default. Prefer explicit SQL plus typed repository functions.
+
+The production desktop runtime includes these canonical migrations from `packages/db`, but the
+SQLCipher connection, transactions, and narrow typed repositories live behind the Tauri/Rust
+privileged boundary. The renderer receives product commands and read models, never a generic SQL
+or database handle. The normalization sidecar remains database-free.
 
 ### packages/connectors
 
