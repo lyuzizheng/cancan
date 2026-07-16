@@ -58,7 +58,22 @@ The primary values follow [RFC 9106 section 4's second recommended option](https
 
 New vault creation benchmarks the primary RFC 9106 low-memory profile on the supported Mac and uses it when a password unlock completes within 750 ms. If it misses that UX budget, creation uses the OWASP minimum profile. Existing wrappers always retain their stored profile; opening a vault never silently changes the KDF contract. These profiles are not user settings.
 
-The Phase 1 authenticated envelope is `CCENV001`, version 1. Its big-endian binary header contains the eight-byte magic, version, purpose, algorithm, KDF profile, salt length, nonce length, ciphertext length, salt, and nonce, followed by ciphertext and the authentication tag. Purpose values distinguish file, password-wrapper, recovery-wrapper, and backup envelopes. Algorithm 1 is XChaCha20-Poly1305 with a 256-bit key and 192-bit fresh random nonce; the complete serialized header is associated data.
+The Phase 1 authenticated envelope is `CCENV001`, version 1. Its fixed header is 24 bytes and has this big-endian binary layout:
+
+```text
+offset  size  value
+0       8     ASCII `CCENV001`
+8       1     version: 1
+9       1     purpose: file=1, password-wrapper=2, recovery-wrapper=3, backup=4
+10      1     algorithm: XChaCha20-Poly1305=1
+11      1     KDF profile: none=0, rfc9106-low-memory-v1=1, owasp-minimum-v1=2
+12      2     salt length: unsigned 16-bit integer
+14      2     nonce length: unsigned 16-bit integer, always 24
+16      8     ciphertext length: unsigned 64-bit integer
+24      n     salt, then 24-byte nonce, then ciphertext and authentication tag
+```
+
+`ciphertext length` includes the 16-byte Poly1305 tag, so it is the plaintext length plus 16. Algorithm 1 uses a 256-bit key and a fresh 192-bit nonce; the complete serialized header through the nonce is associated data.
 
 Password wrappers carry exactly one 128-bit salt and one of the stored Argon2id profiles. Non-KDF file, recovery, and backup envelopes carry no salt. HKDF-SHA-256 derives purpose-separated file and backup keys from the master key with the versioned contexts `cancan:file:v1` and `cancan:backup:v1`. A reader rejects unknown versions, purposes, algorithms, KDF profiles, invalid lengths, wrong-purpose keys, wrong credentials, and any header or ciphertext tampering. Changing these bytes or contexts requires a new envelope version; existing version-1 data is never silently rewritten.
 
