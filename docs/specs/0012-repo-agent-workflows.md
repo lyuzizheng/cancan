@@ -164,12 +164,13 @@ The app foundation introduced these real root commands:
 pnpm typecheck
 pnpm test:unit
 pnpm check:rust
+pnpm test:rust
 pnpm build:web
 pnpm build:desktop
 pnpm verify
 ```
 
-`.github/workflows/application.yml` runs preflight plus `pnpm verify` on macOS. Later slices add safe test-DB reset, migration, fixture/parser, integration, and richer UI gates only when their implementations exist. The harness calls existing package scripts rather than wrapping them in redundant orchestration.
+`.github/workflows/application.yml` runs preflight, the privileged Rust test suite, and `pnpm verify` on macOS. The Rust suite is authoritative CI work rather than part of the default local gate. Later slices add safe test-DB reset, migration, fixture/parser, integration, and richer UI gates only when their implementations exist. The harness calls existing package scripts rather than wrapping them in redundant orchestration.
 
 ## Acceptance criteria
 

@@ -155,12 +155,13 @@ pnpm typecheck
 pnpm test:unit
 pnpm test:synthetic-core
 pnpm check:rust
+pnpm test:rust
 pnpm build:web
 pnpm build:desktop
 pnpm verify
 ```
 
-`pnpm verify` is the local application gate. The macOS application workflow installs from the pinned toolchain files, uses frozen pnpm and Cargo lockfiles, runs repository preflight, and then runs that same gate. Production packages remain forbidden from importing the disposable spike.
+`pnpm verify` is the local application gate. The macOS application workflow installs from the pinned toolchain files, uses frozen pnpm and Cargo lockfiles, runs repository preflight, executes `pnpm test:rust` for privileged security/data-integrity assertions, and then runs the local application gate. Production packages remain forbidden from importing the disposable spike.
 
 ## Acceptance criteria
 

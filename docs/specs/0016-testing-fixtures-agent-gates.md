@@ -344,6 +344,7 @@ pnpm typecheck
 pnpm test:unit
 pnpm test:synthetic-core
 pnpm check:rust
+pnpm test:rust
 pnpm build:web
 pnpm build:desktop
 pnpm verify
@@ -383,7 +384,7 @@ UI screenshots can be useful artifacts, but visual review and targeted assertion
 
 ## Application CI design stance
 
-The production skeleton and package scripts now exist. `.github/workflows/application.yml` runs the pinned macOS toolchain, frozen pnpm/Cargo resolution, repository preflight, and `pnpm verify`. The unit-test gate includes the synthetic core's safe-reset, repeatable-migration, deterministic parser, exact reconciliation, review, commit, read-model, and relationship integration tests; `pnpm test:synthetic-core` exposes the same focused subset locally. The docs-harness CI remains outside this spec's ownership.
+The production skeleton and package scripts now exist. `.github/workflows/application.yml` runs the pinned macOS toolchain, frozen pnpm/Cargo resolution, repository preflight, `pnpm test:rust`, and `pnpm verify`. The Rust gate executes privileged encrypted-file, SQLCipher, import rollback, and tombstone assertions in authoritative CI without adding them to the default local gate. The TypeScript unit-test gate includes the synthetic core's safe-reset, repeatable-migration, deterministic parser, exact reconciliation, review, commit, read-model, and relationship integration tests; `pnpm test:synthetic-core` exposes the same focused subset locally. The docs-harness CI remains outside this spec's ownership.
 
 Later slices extend these existing gate categories with their own migrations, repositories, parser fixtures, and builds rather than creating duplicate CI paths. Gates that do not exist yet are added only when their owning behavior exists, including:
 

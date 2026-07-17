@@ -56,5 +56,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run repository preflight
         run: .agents/scripts/agent-preflight.sh
+      - name: Run Rust security and data-integrity tests
+        run: pnpm test:rust
       - name: Run application gate
         run: pnpm verify

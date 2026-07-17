@@ -102,7 +102,7 @@ verify that the consent-screen copy exactly matches the running app and website
 submit brand and restricted-scope verification, then leave schedule margin for review questions
 ```
 
-Google states that verification can take several weeks. A security assessment may also be required depending on whether Restricted-scope data is stored on or transmitted through servers or third-party services. CanCan has no hosted backend, but optional BYO-AI transfer is part of the real data flow and must be disclosed; Google makes the final verification and assessment determination.
+Google states that verification can take several weeks. A security assessment may also be required depending on whether Restricted-scope data is stored on or transmitted through servers or third-party services. MVP has no CanCan-hosted backend, but optional BYO-AI transfer is part of the real data flow and must be disclosed; Google makes the final verification and assessment determination. Any future hosted AI relay requires a renewed Google-policy, privacy, and security-assessment review before it can receive Gmail-derived data.
 
 Authoritative references:
 

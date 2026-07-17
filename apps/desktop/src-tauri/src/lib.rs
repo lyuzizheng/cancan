@@ -1,5 +1,7 @@
-pub mod database;
-pub mod vault;
+#[allow(dead_code)]
+mod database;
+#[allow(dead_code)]
+mod vault;
 
 pub fn run() {
     tauri::Builder::default()

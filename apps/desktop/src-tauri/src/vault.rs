@@ -24,11 +24,11 @@ const HEADER_LEN: usize = 24 + NONCE_LEN;
 const FILE_KEY_CONTEXT: &[u8] = b"cancan:file:v1";
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct StoredFile {
-    pub byte_size: u64,
-    pub created: bool,
-    pub encrypted_locator: String,
-    pub file_sha256: String,
+pub(crate) struct StoredFile {
+    pub(crate) byte_size: u64,
+    pub(crate) created: bool,
+    pub(crate) encrypted_locator: String,
+    pub(crate) file_sha256: String,
 }
 
 #[derive(Debug)]
@@ -45,16 +45,21 @@ impl PreparedSource {
 }
 
 #[derive(Debug)]
-pub struct FileVault {
+pub(crate) struct FileVault {
     root: PathBuf,
 }
 
 impl FileVault {
-    pub fn new(root: impl Into<PathBuf>) -> Self {
+    pub(crate) fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
 
-    pub fn store(&self, master_key: &[u8; KEY_LEN], source_path: &Path) -> io::Result<StoredFile> {
+    #[cfg(test)]
+    pub(crate) fn store(
+        &self,
+        master_key: &[u8; KEY_LEN],
+        source_path: &Path,
+    ) -> io::Result<StoredFile> {
         let source = Self::prepare(source_path)?;
         self.store_prepared(master_key, &source, false)
     }
@@ -113,7 +118,8 @@ impl FileVault {
         })
     }
 
-    pub fn open_in_memory(
+    #[cfg(test)]
+    pub(crate) fn open_in_memory(
         &self,
         master_key: &[u8; KEY_LEN],
         encrypted_locator: &str,

@@ -10,6 +10,7 @@
     "test:unit": "vitest run",
     "test:synthetic-core": "vitest run packages/core packages/parsers packages/db",
     "check:rust": "pnpm --filter @cancan/desktop check:rust",
+    "test:rust": "pnpm --filter @cancan/desktop test:rust",
     "build:web": "pnpm --filter @cancan/desktop build:web",
     "build:desktop": "pnpm --filter @cancan/desktop build:desktop",
     "verify": "pnpm typecheck && pnpm test:unit && pnpm check:rust && pnpm build:desktop"

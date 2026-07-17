@@ -2,6 +2,20 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-17
+
+### Completed
+
+- Kept MVP AI setup direct and user-owned: the user supplies a supported provider endpoint/model and API key. Recorded an optional paid CanCan-hosted AI relay as a post-MVP possibility behind the same provider-adapter/capability boundary, without adding speculative runtime interfaces, accounts, payments, or entitlement storage now.
+- Confirmed that saving the recovery file may be deferred during setup as long as the product keeps the missing-recovery state and recovery action visible.
+- Completed the design-only Source/Documents exploration without landing a redesigned implementation. Archived the functional baseline, rejected directions, selected `Precision Vaultpunk — Obsidian Spine + Light Ledger` north star, and approved palette under `resources/design/vault-archive-2026-07/`.
+- Accepted version-1 visual tokens, Geologica plus limited Martian Mono roles, precision motion timing, and explicit rejection of Material Design 1/2 and generic 2024-2026 vibe-coded AI styling.
+- Added the production Rust security/data-integrity suite to the macOS application workflow as authoritative CI work; it remains separate from the default local `pnpm verify` gate.
+
+### Next
+
+- Submit the encrypted-storage and design-contract checkpoint without the redesigned UI. After merge, connect Source/Documents to production Tauri commands only through the accepted Vault unlock and secret boundary, then implement the selected design with responsive and motion inspection.
+
 ## 2026-07-16
 
 ### Completed
