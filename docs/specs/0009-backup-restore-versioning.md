@@ -75,7 +75,7 @@ offset  size  value
 
 `ciphertext length` includes the 16-byte Poly1305 tag, so it is the plaintext length plus 16. Algorithm 1 uses a 256-bit key and a fresh 192-bit nonce; the complete serialized header through the nonce is associated data.
 
-Password wrappers carry exactly one 128-bit salt and one of the stored Argon2id profiles. Non-KDF file, recovery, and backup envelopes carry no salt. HKDF-SHA-256 derives purpose-separated file and backup keys from the master key with the versioned contexts `cancan:file:v1` and `cancan:backup:v1`. A reader rejects unknown versions, purposes, algorithms, KDF profiles, invalid lengths, wrong-purpose keys, wrong credentials, and any header or ciphertext tampering. Changing these bytes or contexts requires a new envelope version; existing version-1 data is never silently rewritten.
+Password wrappers carry exactly one 128-bit salt and one of the stored Argon2id profiles. Non-KDF file, recovery, and backup envelopes carry no salt. HKDF-SHA-256 derives purpose-separated database, file, and backup keys from the master key with the versioned contexts `cancan:database:v1`, `cancan:file:v1`, and `cancan:backup:v1`. SQLCipher receives the 256-bit database subkey through its raw-key form so it does not repeat the password KDF. A reader rejects unknown versions, purposes, algorithms, KDF profiles, invalid lengths, wrong-purpose keys, wrong credentials, and any header or ciphertext tampering. Changing these bytes or contexts requires a new storage/envelope version; existing version-1 data is never silently rewritten.
 
 ## Feasibility evidence
 

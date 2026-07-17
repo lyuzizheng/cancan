@@ -6,43 +6,83 @@ Define CanCan's visual design direction before UI implementation.
 
 ## Implementation blocker
 
-Exact tokens, component major/version, and Figma's role remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Directional styling may guide discussion but must not be treated as a final token contract.
+The core visual direction, semantic palette, typography direction, and motion rhythm are accepted. Exact component-library major/version and Figma's role remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not delay code-native UI exploration on those two tooling decisions, but do not silently add a component library before its contract is accepted.
 
-CanCan should feel like a 2026 personal finance and account-record workspace: modern, warm, technical, secure, polished, and calm, with professional-grade detail available through progressive disclosure.
+CanCan should feel like a 2026 personal finance and account-record workspace: futuristic, classic, technical, secure, precise, and calm, with professional-grade detail available through progressive disclosure.
 
 ## Design personality
 
 Keywords:
 
 ```text
-modern
-technical
-secure
-warm
-precise
-premium
-local-first
-AI-assisted
+futuristic but not trend-led
+classic but not nostalgic
+technical and precise
+secure and local-first
+high-definition and materially refined
+quietly expressive
 finance-grade
 ```
 
-CanCan should not look like a generic blue fintech dashboard, a cold terminal app, or a Claude-style retro parchment template.
+The selected direction is `Precision Vaultpunk — Obsidian Spine + Light Ledger`.
+
+CanCan should not look like a generic fintech dashboard, a cold terminal app, an enterprise admin console, a Material Design application, or a vibe-coded AI product. The main product surface should carry a distinctive identity continuously; visual quality is not reserved only for onboarding or marketing moments.
 
 ## Theme direction
 
-MVP is light-first.
+MVP uses a deliberate hybrid theme rather than a global light or dark skin.
 
-Preferred palette direction:
+Physical scene:
 
 ```text
-Warm Off-White base with a small amount of warmth
-charcoal / graphite text
-green semantic accent for freshness, healthy sync, confirmation, and money-positive states
-amber/warm accent for pending/review states
-red only for real risk/errors
+A person sits at their Mac in focused ambient light, reviewing private financial evidence inside a precise local Vault.
+The Vault Spine feels like pristine 2026 financial equipment with classic bank-vault heritage.
+The ledger remains bright, calm, and readable for long sessions.
 ```
 
-The final palette should pass contrast checks and avoid beige-heavy AI-default styling.
+Structure:
+
+```text
+Obsidian/graphite Vault Spine for persistent navigation, source indexing, and system state
+Mineral-white Light Ledger for financial data, source detail, review, and document work
+Emerald for healthy/current/confirmed state
+Amber for unresolved attention
+Restrained cinnabar for source identity, destructive risk, or error
+```
+
+Material character comes from precise seams, restrained inset depth, typography, alignment, and optical status points. Do not ship raster textures, literal safe hardware, rust, distressed metal, exposed screws, or fake mechanical controls.
+
+The approved exploration and rejected alternatives are archived under [`resources/design/vault-archive-2026-07/`](../../resources/design/vault-archive-2026-07/README.md).
+
+## Anti-template guardrails
+
+CanCan must explicitly avoid two families of inherited style:
+
+```text
+Material Design 1/2:
+  floating actions, ripples, generic elevation stacks, raised cards, broad shadows,
+  rounded color-block navigation, and component-library-default composition
+
+2024-2026 vibe-coded AI UI:
+  cream/beige canvases, purple-blue gradients, glass panels, glowing orbs,
+  sparkle decoration, ubiquitous pills, repeated uppercase eyebrows,
+  oversized rounded cards, generic card grids, and chat-first visual framing
+```
+
+Also avoid fake terminal/cyberpunk styling, neon outlines, decorative grids/scanlines, black-and-gold luxury banking, and fashionable editorial serif-plus-mono templates. Familiar controls should remain familiar; originality belongs in the product's composition, material language, source identity, and state behavior.
+
+## Typography direction
+
+Use `Geologica` for interface hierarchy and body roles. Use `Martian Mono` only for dates, counts, identifiers, hashes, and machine-origin metadata where fixed-width alignment carries meaning.
+
+Rules:
+
+- self-host pinned font files when implementation begins; do not introduce a runtime Google Fonts dependency;
+- keep UI labels, buttons, and financial body copy in Geologica;
+- never turn the whole product into a monospace terminal;
+- use tabular numerals for financial values even outside the mono role;
+- use a fixed product type scale and no giant marketing typography inside the app;
+- avoid repeated small uppercase eyebrows as default hierarchy.
 
 ## Component strategy
 
@@ -121,18 +161,31 @@ Insurance: policy value, premiums, valuation date, confidence/freshness
 
 ## Motion and interaction
 
-Motion should communicate state:
+Motion should feel like precision equipment responding. It must communicate state, relationship, and feedback rather than decorate the page.
+
+Primary rhythm:
+
+```text
+120 ms  direct feedback
+180 ms  state change
+240 ms  page/structural transition
+easing  ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1)
+```
+
+Signature opportunities:
 
 - onboarding step transitions;
 - vault unlock/create progress;
+- Vault Spine lock/unlock and source-selection state;
+- tab indicators that travel along a stable track;
 - source sync progress;
-- evidence imported state;
+- evidence import that inserts/reflows rows without layout jumps;
 - review item confirm/reject transitions;
 - chart/value updates.
 
-Every motion needs reduced-motion fallback.
+Use transforms, opacity, bounded masks/clip paths, color, and FLIP-style reflow where they improve meaning. Avoid casual animation of layout-driving properties. Feedback must never block task completion.
 
-Avoid decorative animations that do not map to product state.
+Every motion needs a reduced-motion fallback. Avoid bounce/elastic easing, uniform page-load choreography, decorative loops, and animations that do not map to product state.
 
 ## Accessibility and quality
 
@@ -146,7 +199,9 @@ Avoid decorative animations that do not map to product state.
 ## Acceptance criteria
 
 - UI looks like a custom finance product, not default component-library output.
-- Warm Off-White + green direction is visible but not muddy or beige-heavy.
+- The Obsidian Vault Spine and Light Ledger form one coherent application rather than two unrelated themes.
+- Main surfaces retain CanCan's identity without sacrificing long-session readability.
+- No Material Design 1/2 or generic vibe-coded AI visual language remains.
 - Command Center balances overview, source activity, AI insight, and review status.
 - Each money source type can present tailored stats.
-- Motion is meaningful and has reduced-motion fallback.
+- Motion follows the accepted precision rhythm, is visually inspected, and has a reduced-motion fallback.

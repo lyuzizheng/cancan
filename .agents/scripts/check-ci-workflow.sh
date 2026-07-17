@@ -116,6 +116,7 @@ application_runs = application_steps.map { |step| step.is_a?(Hash) ? step["run"]
 required_application_runs = [
   "pnpm install --frozen-lockfile",
   ".agents/scripts/agent-preflight.sh",
+  "pnpm test:rust",
   "pnpm verify"
 ]
 missing_application_runs = required_application_runs - application_runs
@@ -257,9 +258,17 @@ end
 
 package = JSON.parse(File.read("package.json"))
 scripts = package.fetch("scripts", {})
-required_scripts = %w[typecheck test:unit check:rust build:web build:desktop verify]
+required_scripts = %w[typecheck test:unit test:rust check:rust build:web build:desktop verify]
 missing_scripts = required_scripts.reject { |name| scripts[name].is_a?(String) && !scripts[name].empty? }
 abort "Root package is missing scripts: #{missing_scripts.join(', ')}" unless missing_scripts.empty?
+
+unless scripts.fetch("test:rust").include?("pnpm --filter @cancan/desktop test:rust")
+  abort "Root test:rust must delegate to the desktop Rust test suite"
+end
+
+unless scripts.fetch("test:unit").include?("--exclude") && scripts.fetch("test:unit").include?("spikes/**")
+  abort "Root test:unit must exclude isolated spike tests"
+end
 
 %w[typecheck test:unit check:rust build:desktop].each do |name|
   abort "Root verify does not run #{name}" unless scripts.fetch("verify").include?("pnpm #{name}")
@@ -267,9 +276,13 @@ end
 
 desktop_package = JSON.parse(File.read("apps/desktop/package.json"))
 desktop_scripts = desktop_package.fetch("scripts", {})
-%w[check:rust build:desktop].each do |name|
+%w[check:rust test:rust build:desktop].each do |name|
   command = desktop_scripts[name]
   abort "Desktop #{name} must use Cargo.lock" unless command.is_a?(String) && command.include?("--locked")
+end
+
+unless desktop_scripts.fetch("test:rust").include?("cargo test")
+  abort "Desktop test:rust must execute Rust tests"
 end
 RUBY
 

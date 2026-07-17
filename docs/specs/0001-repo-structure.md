@@ -62,13 +62,18 @@ Owns:
 ```text
 migrations/*.sql
 SQLite connection abstraction
-repositories
+portable migration/query tests
 query benchmarks
 index review notes
 seed/reset helpers for tests
 ```
 
 No Prisma. No ORM by default. Prefer explicit SQL plus typed repository functions.
+
+The production desktop runtime includes these canonical migrations from `packages/db`, but the
+SQLCipher connection, transactions, and narrow typed repositories live behind the Tauri/Rust
+privileged boundary. The renderer receives product commands and read models, never a generic SQL
+or database handle. The normalization sidecar remains database-free.
 
 ### packages/connectors
 
@@ -150,12 +155,13 @@ pnpm typecheck
 pnpm test:unit
 pnpm test:synthetic-core
 pnpm check:rust
+pnpm test:rust
 pnpm build:web
 pnpm build:desktop
 pnpm verify
 ```
 
-`pnpm verify` is the local application gate. The macOS application workflow installs from the pinned toolchain files, uses frozen pnpm and Cargo lockfiles, runs repository preflight, and then runs that same gate. Production packages remain forbidden from importing the disposable spike.
+`pnpm verify` is the local application gate. The macOS application workflow installs from the pinned toolchain files, uses frozen pnpm and Cargo lockfiles, runs repository preflight, executes `pnpm test:rust` for privileged security/data-integrity assertions, and then runs the local application gate. Production packages remain forbidden from importing the disposable spike.
 
 ## Acceptance criteria
 

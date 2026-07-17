@@ -74,6 +74,7 @@ Welcome / product promise
 -> How the vault protects data
 -> Create local vault
 -> Choose vault password / local key setup
+-> Save the recovery file now, or continue with recovery visibly not configured
 -> AI provider setup
 -> Create first money source from supported providers
 -> Configure Gmail using Desktop OAuth + PKCE loopback, or import manually
@@ -119,15 +120,17 @@ Crash reporting or diagnostics when later defined
 
 Each row shows `On`, `Off`, `Not configured`, or `Needs attention`, a one-line consequence, and an edit action. Do not hide privacy-sensitive defaults or force the user to revisit earlier steps to understand what is enabled.
 
+Saving the recovery file is recommended but may be deferred. Deferring it does not block entry into Command Center; setup review and Settings must keep recovery visibly `Not configured`, explain the consequence, and provide a direct action to save it later.
+
 ## Network and telemetry boundary
 
-CanCan has no CanCan-owned application backend. Network access is capability-scoped and performed directly by the local client only after the user enables or configures that capability.
+MVP has no CanCan-owned application backend. Network access is capability-scoped and performed directly by the local client only after the user enables or configures that capability.
 
 User-visible network capabilities may include:
 
 ```text
 Gmail API through user OAuth
-BYO AI provider through the user's provider/key and consent
+BYO AI provider through the user's configured endpoint/model, API key, and consent
 optional product-defined read-only FX-rate source
 optional update checks backed by GitHub Releases
 future product-supported read-only connectors
@@ -139,13 +142,15 @@ MVP contains no product analytics or behavioral telemetry. If analytics is ever 
 
 ## AI provider setup
 
-CanCan may provide a default AI provider path, but should strongly prompt the user to bring their own key/provider.
+MVP uses bring-your-own AI. The user configures a supported provider endpoint/model and API key; the local client calls that provider directly after consent.
+
+A future release may add an optional CanCan-hosted AI relay with paid entitlement. That service is deliberately deferred: it is not required for local Vault use, must fit behind the same provider-adapter/capability boundary as BYO AI, and must not turn the current direct-provider path into a hosted dependency. Do not add relay endpoints, account/payment flows, entitlement storage, or service-specific runtime abstractions during MVP. Its exact identity, payment, minimal-state, retention, and privacy contracts require a separate design and release decision.
 
 Rules:
 
-- app should be usable enough to create vault, sources, and library without custom AI;
+- app should be usable enough to create a vault, create sources, and browse source documents without custom AI;
 - parser-quality features should clearly explain when AI setup is needed;
-- user-owned provider settings should be preferred for privacy, cost transparency, and control;
+- user-owned provider settings are the current supported path for privacy, cost transparency, and control;
 - Vercel AI SDK may be used behind CanCan-owned adapters.
 
 Normal onboarding exposes one simple `AI document analysis` setup. Its recommended mode uses a multimodal AI normalizer and lets the app combine the original document, native text extraction, and conditional local OCR without asking the user to understand those stages.
@@ -231,11 +236,12 @@ Open app
 - First launch explains CanCan clearly.
 - Onboarding has dedicated local-first and encryption/privacy explanation screens whose claims come from accepted security specs.
 - The final setup review clearly shows which applicable capabilities and privacy-sensitive switches are on, off, or unconfigured.
-- Network access is capability-scoped, user-authorized, direct from the local client, and not dependent on a CanCan backend.
+- MVP network access is capability-scoped, user-authorized, direct from the local client, and not dependent on a CanCan backend.
 - MVP has no analytics/behavioral telemetry; any future analytics or crash reporting is explicit opt-in and default off.
 - Motion follows design tokens, communicates setup state, and has a reduced-motion fallback.
 - User cannot accidentally create arbitrary unsupported providers.
 - User can create a vault and at least one supported money source.
+- User may defer saving the recovery file, with an accurate persistent `Not configured` state and a later save action.
 - MVP does not ask for base currency.
 - AI setup is prominent and its current state is visible; whether setup may be skipped follows the unresolved first-run optionality decision.
 - Gmail setup uses local-first Desktop OAuth + PKCE loopback flow.
