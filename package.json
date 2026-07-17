@@ -7,7 +7,7 @@
     "dev": "pnpm --filter @cancan/desktop dev",
     "desktop:dev": "pnpm --filter @cancan/desktop desktop:dev",
     "typecheck": "pnpm --recursive --if-present typecheck",
-    "test:unit": "vitest run",
+    "test:unit": "vitest run --exclude 'spikes/**'",
     "test:synthetic-core": "vitest run packages/core packages/parsers packages/db",
     "check:rust": "pnpm --filter @cancan/desktop check:rust",
     "test:rust": "pnpm --filter @cancan/desktop test:rust",

@@ -11,6 +11,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Completed the design-only Source/Documents exploration without landing a redesigned implementation. Archived the functional baseline, rejected directions, selected `Precision Vaultpunk — Obsidian Spine + Light Ledger` north star, and approved palette under `resources/design/vault-archive-2026-07/`.
 - Accepted version-1 visual tokens, Geologica plus limited Martian Mono roles, precision motion timing, and explicit rejection of Material Design 1/2 and generic 2024-2026 vibe-coded AI styling.
 - Added the production Rust security/data-integrity suite to the macOS application workflow as authoritative CI work; it remains separate from the default local `pnpm verify` gate.
+- Addressed PR review by marking `vault-manual-import` in progress, authenticating and hashing referenced Vault envelopes during startup reconciliation, and keeping disposable spike tests out of the production unit gate while preserving their isolated workflow.
 
 ### Next
 

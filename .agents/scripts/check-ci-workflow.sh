@@ -266,6 +266,10 @@ unless scripts.fetch("test:rust").include?("pnpm --filter @cancan/desktop test:r
   abort "Root test:rust must delegate to the desktop Rust test suite"
 end
 
+unless scripts.fetch("test:unit").include?("--exclude") && scripts.fetch("test:unit").include?("spikes/**")
+  abort "Root test:unit must exclude isolated spike tests"
+end
+
 %w[typecheck test:unit check:rust build:desktop].each do |name|
   abort "Root verify does not run #{name}" unless scripts.fetch("verify").include?("pnpm #{name}")
 end

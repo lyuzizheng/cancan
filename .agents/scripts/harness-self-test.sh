@@ -7,7 +7,7 @@ cd "$ROOT"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/cancan-harness.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
-cp -R docs .agents .codex .github scripts "$TEST_ROOT/"
+cp -R docs resources .agents .codex .github scripts "$TEST_ROOT/"
 cp AGENTS.md README.md .gitignore .node-version rust-toolchain.toml \
   package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json "$TEST_ROOT/"
 mkdir -p "$TEST_ROOT/apps/desktop"
@@ -388,6 +388,12 @@ cp "$application_workflow" "$application_workflow.bak"
 grep -v '^        run: pnpm verify$' "$application_workflow.bak" > "$application_workflow"
 expect_failure "application CI missing verify gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$application_workflow.bak" "$application_workflow"
+
+root_package="$TEST_ROOT/package.json"
+cp "$root_package" "$root_package.bak"
+sed "s/ --exclude 'spikes\/[*][*]'//" "$root_package.bak" > "$root_package"
+expect_failure "application unit gate includes isolated spikes" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$root_package.bak" "$root_package"
 
 runtime_workflow="$TEST_ROOT/.github/workflows/document-normalizer-runtime.yml"
 cp "$runtime_workflow" "$runtime_workflow.bak"

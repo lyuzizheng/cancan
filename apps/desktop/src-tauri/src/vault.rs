@@ -130,8 +130,25 @@ impl FileVault {
         open_file_envelope(&file_key, &envelope)
     }
 
-    pub(crate) fn exists(&self, encrypted_locator: &str) -> io::Result<bool> {
-        Ok(self.resolve_locator(encrypted_locator)?.is_file())
+    pub(crate) fn verifies(
+        &self,
+        master_key: &[u8; KEY_LEN],
+        encrypted_locator: &str,
+        expected_sha256: &str,
+    ) -> io::Result<bool> {
+        let path = self.resolve_locator(encrypted_locator)?;
+        let envelope = match fs::read(path) {
+            Ok(envelope) => envelope,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let file_key = derive_file_key(master_key)?;
+        let plaintext = match open_file_envelope(&file_key, &envelope) {
+            Ok(plaintext) => plaintext,
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        Ok(hex_digest(&plaintext) == expected_sha256)
     }
 
     pub(crate) fn remove(&self, encrypted_locator: &str) -> io::Result<()> {

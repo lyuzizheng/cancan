@@ -173,7 +173,11 @@ impl ManualImportStore {
                 continue;
             };
             referenced.insert(locator.to_owned());
-            if document.file_state == "available" && !self.files.exists(locator)? {
+            if document.file_state == "available"
+                && !self
+                    .files
+                    .verifies(&self.master_key, locator, &document.file_sha256)?
+            {
                 mark_missing(&mut self.connection, &document, &document.file_sha256)?;
             }
         }
@@ -613,6 +617,37 @@ mod tests {
     }
 
     #[test]
+    fn marks_a_tampered_registered_file_missing_on_reopen() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let source_path = root.path().join("statement.pdf");
+        fs::write(&source_path, b"%PDF tampered statement").expect("write fixture");
+        let mut store = open_store(root.path());
+        store
+            .register_import(&import(
+                &source_path,
+                "document-tampered",
+                "audit-import",
+                "dbs:checking:2026-10",
+            ))
+            .expect("import source");
+        let locator = store.list_documents("source-dbs").expect("list")[0]
+            .encrypted_locator
+            .clone()
+            .expect("available locator");
+        let encrypted_path = root.path().join(locator);
+        let mut envelope = fs::read(&encrypted_path).expect("read encrypted fixture");
+        *envelope.last_mut().expect("non-empty envelope") ^= 1;
+        fs::write(encrypted_path, envelope).expect("tamper encrypted fixture");
+        drop(store);
+
+        let reopened = open_store(root.path());
+        assert_eq!(
+            reopened.list_documents("source-dbs").expect("list")[0].file_state,
+            "missing"
+        );
+    }
+
+    #[test]
     fn restores_a_valid_envelope_found_at_the_wrong_document_locator() {
         let root = tempfile::tempdir().expect("temporary Vault");
         let first_path = root.path().join("first.pdf");
@@ -662,6 +697,15 @@ mod tests {
             first_envelope,
         )
         .expect("misplace valid envelope");
+        drop(store);
+
+        let mut store = open_store(root.path());
+        let documents = store.list_documents("source-dbs").expect("list");
+        let second_document = documents
+            .iter()
+            .find(|document| document.document_id == "document-second")
+            .expect("second document view");
+        assert_eq!(second_document.file_state, "missing");
 
         let restored = store
             .register_import(&import(
