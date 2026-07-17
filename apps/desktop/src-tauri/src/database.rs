@@ -74,14 +74,14 @@ pub struct ManualImportStore {
 }
 
 impl ManualImportStore {
-    pub fn open(root: &Path, master_key: [u8; KEY_LEN]) -> StoreResult<Self> {
+    pub fn open(root: &Path, master_key: Zeroizing<[u8; KEY_LEN]>) -> StoreResult<Self> {
         fs::create_dir_all(root)?;
         let mut connection = open_encrypted_database(&root.join("finance.sqlite"), &master_key)?;
         apply_migrations(&mut connection)?;
         let mut store = Self {
             connection,
             files: FileVault::new(root),
-            master_key: Zeroizing::new(master_key),
+            master_key,
         };
         store.reconcile_files()?;
         Ok(store)
@@ -189,8 +189,9 @@ impl ManualImportStore {
 fn open_encrypted_database(path: &Path, master_key: &[u8; KEY_LEN]) -> StoreResult<Connection> {
     let connection = Connection::open(path)?;
     let database_key = derive_database_key(master_key)?;
-    let raw_key = hex_encode(database_key.as_ref());
-    connection.execute_batch(&format!("PRAGMA key = \"x'{raw_key}'\";"))?;
+    let raw_key = hex_encode_secret(database_key.as_ref());
+    let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", raw_key.as_str()));
+    connection.execute_batch(pragma.as_str())?;
     let cipher_version: String =
         connection.query_row("PRAGMA cipher_version", [], |row| row.get(0))?;
     if cipher_version.trim().is_empty() {
@@ -408,6 +409,15 @@ fn hex_encode(bytes: &[u8]) -> String {
     hex
 }
 
+fn hex_encode_secret(bytes: &[u8]) -> Zeroizing<String> {
+    let mut hex = Zeroizing::new(String::with_capacity(bytes.len() * 2));
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut *hex, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    hex
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,7 +425,8 @@ mod tests {
     const KEY: [u8; KEY_LEN] = [0x91; KEY_LEN];
 
     fn open_store(root: &Path) -> ManualImportStore {
-        let store = ManualImportStore::open(root, KEY).expect("open encrypted Vault");
+        let store =
+            ManualImportStore::open(root, Zeroizing::new(KEY)).expect("open encrypted Vault");
         store
             .connection
             .execute(
@@ -736,7 +747,7 @@ mod tests {
         let reopened = open_store(root.path());
         assert!(!encrypted_path.exists());
         drop(reopened);
-        assert!(ManualImportStore::open(root.path(), [0x92; KEY_LEN]).is_err());
+        assert!(ManualImportStore::open(root.path(), Zeroizing::new([0x92; KEY_LEN])).is_err());
         let database_bytes =
             fs::read(root.path().join("finance.sqlite")).expect("read encrypted database");
         assert!(

@@ -6,6 +6,8 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Added the first production Vault runtime boundary: Tauri now manages a Rust-only locked/unlocked session and exposes narrow status/create/unlock/lock commands. Password KDF work runs off the command thread, command responses contain only status or stable error codes, and dropping the session drops the SQLCipher store and its zeroizing master-key owner.
+- Promoted the accepted `CCENV001` password-wrapper contract from the security evidence into production code, including both fixed Argon2id profiles with zeroized work memory, the exact 750 ms primary-profile selection rule, compatibility fixture hashes, authenticated header parsing, wrong-password rejection, zeroized SQLCipher key strings, and inactive-candidate creation/handled-failure rollback before the Vault directory becomes active. Abrupt pre-activation crash leftovers remain inert and deliberately uncollected until a cross-process-safe ownership/locking protocol exists.
 - Kept MVP AI setup direct and user-owned: the user supplies a supported provider endpoint/model and API key. Recorded an optional paid CanCan-hosted AI relay as a post-MVP possibility behind the same provider-adapter/capability boundary, without adding speculative runtime interfaces, accounts, payments, or entitlement storage now.
 - Confirmed that saving the recovery file may be deferred during setup as long as the product keeps the missing-recovery state and recovery action visible.
 - Completed the design-only Source/Documents exploration without landing a redesigned implementation. Archived the functional baseline, rejected directions, selected `Precision Vaultpunk — Obsidian Spine + Light Ledger` north star, and approved palette under `resources/design/vault-archive-2026-07/`.
@@ -15,7 +17,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Submit the encrypted-storage and design-contract checkpoint without the redesigned UI. After merge, connect Source/Documents to production Tauri commands only through the accepted Vault unlock and secret boundary, then implement the selected design with responsive and motion inspection.
+- Submit the Vault-session command checkpoint without UI. After merge, add host-owned file selection plus import/list commands through this session, then connect deterministic normalization and Source/Documents with responsive and motion inspection.
 
 ## 2026-07-16
 
