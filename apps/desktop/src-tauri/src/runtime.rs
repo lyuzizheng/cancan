@@ -1,5 +1,5 @@
 use crate::{
-    database::ManualImportStore,
+    database::{DATABASE_FILE_NAME, ManualImportStore},
     vault::{create_password_wrapper, open_password_wrapper, password_wrapper_profile},
 };
 use rand::{RngCore, rngs::OsRng};
@@ -89,6 +89,9 @@ impl VaultRuntime {
         if !self.inner.root.exists() {
             return Ok(VaultStatus::NotCreated);
         }
+        if !self.inner.root.join(DATABASE_FILE_NAME).is_file() {
+            return Err(RuntimeError::new("invalid_vault"));
+        }
         let wrapper = fs::read(self.inner.root.join(KEY_FILE_NAME))
             .map_err(|_| RuntimeError::new("invalid_vault"))?;
         password_wrapper_profile(&wrapper).map_err(|_| RuntimeError::new("invalid_vault"))?;
@@ -147,7 +150,7 @@ impl VaultRuntime {
             };
         }
 
-        match ManualImportStore::open(&self.inner.root, master_key) {
+        match ManualImportStore::open_existing(&self.inner.root, master_key) {
             Ok(store) => Ok(store),
             Err(_) => match self.rollback_activation(candidate, parent) {
                 Ok(()) => Err(RuntimeError::new("vault_create_failed")),
@@ -183,7 +186,7 @@ impl VaultRuntime {
         password_wrapper_profile(&wrapper).map_err(|_| RuntimeError::new("invalid_vault"))?;
         let master_key = open_password_wrapper(&wrapper, password)
             .map_err(|_| RuntimeError::new("invalid_credentials"))?;
-        let opened = ManualImportStore::open(&self.inner.root, master_key)
+        let opened = ManualImportStore::open_existing(&self.inner.root, master_key)
             .map_err(|_| RuntimeError::new("invalid_vault"))?;
         *store = Some(opened);
         Ok(VaultStatus::Unlocked)
@@ -412,6 +415,38 @@ mod tests {
         assert_eq!(
             runtime.lock().expect_err("invalid lock").code(),
             "invalid_vault"
+        );
+    }
+
+    #[test]
+    fn rejects_unlock_when_the_existing_vault_database_is_missing() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let root = parent.path().join("vault");
+        let runtime = VaultRuntime::new(root.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime.lock().expect("lock Vault");
+        let database_path = root.join(DATABASE_FILE_NAME);
+        fs::remove_file(&database_path).expect("remove Vault database");
+
+        assert_eq!(
+            runtime
+                .status()
+                .expect_err("reject incomplete status")
+                .code(),
+            "invalid_vault"
+        );
+        assert_eq!(
+            runtime
+                .unlock(b"synthetic-vault-password")
+                .expect_err("reject incomplete Vault")
+                .code(),
+            "invalid_vault"
+        );
+        assert!(
+            !database_path.exists(),
+            "unlock must not recreate the database"
         );
     }
 

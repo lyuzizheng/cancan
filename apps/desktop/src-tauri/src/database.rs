@@ -1,12 +1,13 @@
 use crate::vault::{FileVault, StoredFile};
 use hkdf::Hkdf;
 use rand::{RngCore, rngs::OsRng};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use sha2::Sha256;
 use std::{collections::HashSet, error::Error, fs, io, path::Path};
 use zeroize::Zeroizing;
 
 const KEY_LEN: usize = 32;
+pub(crate) const DATABASE_FILE_NAME: &str = "finance.sqlite";
 const DATABASE_KEY_CONTEXT: &[u8] = b"cancan:database:v1";
 const MIGRATIONS: &[(i64, &str)] = &[
     (
@@ -76,7 +77,24 @@ pub struct ManualImportStore {
 impl ManualImportStore {
     pub fn open(root: &Path, master_key: Zeroizing<[u8; KEY_LEN]>) -> StoreResult<Self> {
         fs::create_dir_all(root)?;
-        let mut connection = open_encrypted_database(&root.join("finance.sqlite"), &master_key)?;
+        Self::open_with_flags(
+            root,
+            master_key,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+        )
+    }
+
+    pub fn open_existing(root: &Path, master_key: Zeroizing<[u8; KEY_LEN]>) -> StoreResult<Self> {
+        Self::open_with_flags(root, master_key, OpenFlags::SQLITE_OPEN_READ_WRITE)
+    }
+
+    fn open_with_flags(
+        root: &Path,
+        master_key: Zeroizing<[u8; KEY_LEN]>,
+        flags: OpenFlags,
+    ) -> StoreResult<Self> {
+        let mut connection =
+            open_encrypted_database(&root.join(DATABASE_FILE_NAME), &master_key, flags)?;
         apply_migrations(&mut connection)?;
         let mut store = Self {
             connection,
@@ -186,8 +204,12 @@ impl ManualImportStore {
     }
 }
 
-fn open_encrypted_database(path: &Path, master_key: &[u8; KEY_LEN]) -> StoreResult<Connection> {
-    let connection = Connection::open(path)?;
+fn open_encrypted_database(
+    path: &Path,
+    master_key: &[u8; KEY_LEN],
+    flags: OpenFlags,
+) -> StoreResult<Connection> {
+    let connection = Connection::open_with_flags(path, flags)?;
     let database_key = derive_database_key(master_key)?;
     let raw_key = hex_encode_secret(database_key.as_ref());
     let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", raw_key.as_str()));
