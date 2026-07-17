@@ -1,20 +1,24 @@
 use crate::{
-    database::{DATABASE_FILE_NAME, ManualImportStore},
+    database::{
+        DATABASE_FILE_NAME, ManualImportStore, SourceDocumentImport, SourceDocumentImportOutcome,
+    },
     vault::{create_password_wrapper, open_password_wrapper, password_wrapper_profile},
 };
 use rand::{RngCore, rngs::OsRng};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
 };
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_dialog::DialogExt;
 use zeroize::Zeroizing;
 
 const KEY_LEN: usize = 32;
 const KEY_FILE_NAME: &str = "vault-key.ccenv";
+const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -27,6 +31,23 @@ pub(crate) enum VaultStatus {
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct VaultCommandError {
     code: &'static str,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImportSourceDocumentRequest {
+    money_source_id: String,
+}
+
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SourceDocumentSummary {
+    byte_size: u64,
+    document_id: String,
+    file_state: String,
+    mime_type: String,
+    original_filename: String,
+    received_at: String,
 }
 
 impl VaultCommandError {
@@ -198,6 +219,87 @@ impl VaultRuntime {
         self.locked_status()
     }
 
+    pub(crate) fn import_selected_document(
+        &self,
+        request: &ImportSourceDocumentRequest,
+        source_path: &Path,
+    ) -> Result<SourceDocumentImportOutcome, RuntimeError> {
+        validate_import_request(request)?;
+        let mut store = self.store()?;
+        let store = store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        let (original_filename, mime_type) = source_document_metadata(source_path)?;
+        let document_id = random_identifier("document");
+        let audit_id = random_identifier("audit");
+        let input = SourceDocumentImport {
+            audit_actor: "user",
+            audit_id: &audit_id,
+            audit_policy_version: IMPORT_POLICY_VERSION,
+            audit_reason: "manual_import",
+            document_id: &document_id,
+            mime_type,
+            money_source_id: &request.money_source_id,
+            original_filename: &original_filename,
+            semantic_document_key: None,
+            source_path,
+        };
+        store
+            .register_import(&input)
+            .map_err(|_| RuntimeError::new("import_failed"))
+    }
+
+    fn require_unlocked(&self) -> Result<(), RuntimeError> {
+        if self.store()?.is_none() {
+            return Err(RuntimeError::new("vault_locked"));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn list_source_documents(
+        &self,
+        money_source_id: &str,
+    ) -> Result<Vec<SourceDocumentSummary>, RuntimeError> {
+        if money_source_id.is_empty() {
+            return Err(RuntimeError::new("invalid_source_request"));
+        }
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .list_documents(money_source_id)
+            .map(|documents| {
+                documents
+                    .into_iter()
+                    .map(|document| SourceDocumentSummary {
+                        byte_size: document.byte_size,
+                        document_id: document.document_id,
+                        file_state: document.file_state,
+                        mime_type: document.mime_type,
+                        original_filename: document.original_filename,
+                        received_at: document.received_at,
+                    })
+                    .collect()
+            })
+            .map_err(|_| RuntimeError::new("list_documents_failed"))
+    }
+
+    #[cfg(test)]
+    fn seed_money_source(
+        &self,
+        id: &str,
+        provider_key: &str,
+        display_name: &str,
+        source_type: &str,
+    ) -> Result<(), RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .seed_money_source(id, provider_key, display_name, source_type)
+            .map_err(|_| RuntimeError::new("seed_failed"))
+    }
+
     fn store(&self) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
         self.inner
             .store
@@ -254,6 +356,91 @@ pub(crate) async fn lock_vault(
         .map_err(Into::into)
 }
 
+#[tauri::command]
+pub(crate) async fn import_source_document(
+    request: ImportSourceDocumentRequest,
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Option<SourceDocumentImportOutcome>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        validate_import_request(&request)?;
+        runtime.require_unlocked()?;
+        let selected = app
+            .dialog()
+            .file()
+            .set_title("Import a statement")
+            .add_filter("Financial documents", &["pdf", "csv"])
+            .blocking_pick_file();
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let path = selected
+            .into_path()
+            .map_err(|_| RuntimeError::new("file_selection_failed"))?;
+        runtime.import_selected_document(&request, &path).map(Some)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn list_source_documents(
+    money_source_id: String,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<SourceDocumentSummary>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.list_source_documents(&money_source_id))
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+fn validate_import_request(request: &ImportSourceDocumentRequest) -> Result<(), RuntimeError> {
+    if request.money_source_id.is_empty() {
+        return Err(RuntimeError::new("invalid_import_request"));
+    }
+    Ok(())
+}
+
+fn source_document_metadata(source_path: &Path) -> Result<(String, &'static str), RuntimeError> {
+    let mime_type = match source_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("pdf") => "application/pdf",
+        Some("csv") => "text/csv",
+        _ => return Err(RuntimeError::new("unsupported_document")),
+    };
+    let metadata = fs::metadata(source_path).map_err(|_| RuntimeError::new("import_failed"))?;
+    if !metadata.is_file() {
+        return Err(RuntimeError::new("unsupported_document"));
+    }
+    let original_filename = source_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| RuntimeError::new("unsupported_document"))?
+        .to_owned();
+    Ok((original_filename, mime_type))
+}
+
+fn random_identifier(prefix: &str) -> String {
+    let mut random = [0_u8; 16];
+    OsRng.fill_bytes(&mut random);
+    let mut identifier = String::with_capacity(prefix.len() + 1 + random.len() * 2);
+    identifier.push_str(prefix);
+    identifier.push('-');
+    for byte in random {
+        use std::fmt::Write as _;
+        write!(&mut identifier, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    identifier
+}
+
 fn candidate_name() -> String {
     let mut random = [0_u8; 8];
     OsRng.fill_bytes(&mut random);
@@ -278,6 +465,7 @@ fn sync_directory(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::SourceDocumentImportStatus;
     use std::{thread, time::Duration};
 
     #[test]
@@ -470,6 +658,108 @@ mod tests {
                 .unlock(b"synthetic-vault-password")
                 .expect("unlock restarted Vault"),
             VaultStatus::Unlocked
+        );
+    }
+
+    #[test]
+    fn imports_and_lists_a_selected_document_only_while_unlocked() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("DBS-July-2026.pdf");
+        fs::write(&source_path, b"%PDF synthetic statement").expect("write statement fixture");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source("source-dbs", "dbs", "DBS", "bank")
+            .expect("seed source");
+        let request = ImportSourceDocumentRequest {
+            money_source_id: "source-dbs".to_owned(),
+        };
+
+        let imported = runtime
+            .import_selected_document(&request, &source_path)
+            .expect("import statement");
+        assert_eq!(imported.status, SourceDocumentImportStatus::Imported);
+
+        let duplicate = runtime
+            .import_selected_document(&request, &source_path)
+            .expect("deduplicate statement");
+        assert_eq!(duplicate.document_id, imported.document_id);
+        assert_eq!(duplicate.status, SourceDocumentImportStatus::AlreadyPresent);
+
+        let documents = runtime
+            .list_source_documents("source-dbs")
+            .expect("list documents");
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents[0].document_id, imported.document_id);
+        assert_eq!(documents[0].original_filename, "DBS-July-2026.pdf");
+        assert_eq!(documents[0].mime_type, "application/pdf");
+        assert_eq!(documents[0].byte_size, 24);
+        assert_eq!(documents[0].file_state, "available");
+        {
+            let store = runtime.inner.store.lock().expect("runtime store");
+            let persisted = store
+                .as_ref()
+                .expect("unlocked store")
+                .list_documents("source-dbs")
+                .expect("inspect imported document");
+            assert_eq!(persisted[0].semantic_document_key, None);
+        }
+
+        runtime.lock().expect("lock Vault");
+        assert_eq!(
+            runtime
+                .list_source_documents("source-dbs")
+                .expect_err("reject list while locked")
+                .code(),
+            "vault_locked"
+        );
+        assert_eq!(
+            runtime
+                .import_selected_document(&request, &source_path)
+                .expect_err("reject import while locked")
+                .code(),
+            "vault_locked"
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_or_incomplete_document_imports() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source("source-dbs", "dbs", "DBS", "bank")
+            .expect("seed source");
+        let unsupported = parent.path().join("statement.exe");
+        fs::write(&unsupported, b"not a financial document").expect("write unsupported fixture");
+
+        assert_eq!(
+            runtime
+                .import_selected_document(
+                    &ImportSourceDocumentRequest {
+                        money_source_id: "source-dbs".to_owned(),
+                    },
+                    &unsupported,
+                )
+                .expect_err("reject unsupported document")
+                .code(),
+            "unsupported_document"
+        );
+        assert_eq!(
+            runtime
+                .import_selected_document(
+                    &ImportSourceDocumentRequest {
+                        money_source_id: String::new(),
+                    },
+                    &parent.path().join("missing.pdf"),
+                )
+                .expect_err("reject incomplete request")
+                .code(),
+            "invalid_import_request"
         );
     }
 }
