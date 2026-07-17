@@ -1,3 +1,4 @@
+use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit, Payload},
@@ -10,18 +11,50 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Component, Path, PathBuf},
+    time::{Duration, Instant},
 };
 use zeroize::Zeroizing;
 
 const MAGIC: &[u8; 8] = b"CCENV001";
 const VERSION: u8 = 1;
 const PURPOSE_FILE: u8 = 1;
+const PURPOSE_PASSWORD_WRAPPER: u8 = 2;
 const ALGORITHM_XCHACHA20_POLY1305: u8 = 1;
 const KDF_NONE: u8 = 0;
+const KDF_RFC9106_LOW_MEMORY_V1: u8 = 1;
+const KDF_OWASP_MINIMUM_V1: u8 = 2;
 const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 24;
-const HEADER_LEN: usize = 24 + NONCE_LEN;
+const HEADER_FIXED_LEN: usize = 24;
 const FILE_KEY_CONTEXT: &[u8] = b"cancan:file:v1";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub(crate) enum KdfProfile {
+    Rfc9106LowMemoryV1 = KDF_RFC9106_LOW_MEMORY_V1,
+    OwaspMinimumV1 = KDF_OWASP_MINIMUM_V1,
+}
+
+impl KdfProfile {
+    fn params(self) -> io::Result<Params> {
+        let (memory, iterations, lanes) = match self {
+            Self::Rfc9106LowMemoryV1 => (65_536, 3, 4),
+            Self::OwaspMinimumV1 => (19_456, 2, 1),
+        };
+        Params::new(memory, iterations, lanes, Some(KEY_LEN))
+            .map_err(|error| io::Error::other(format!("invalid Argon2 profile: {error}")))
+    }
+}
+
+#[derive(Debug)]
+struct ParsedEnvelope<'a> {
+    purpose: u8,
+    profile: u8,
+    salt: &'a [u8],
+    nonce: &'a [u8],
+    ciphertext: &'a [u8],
+    authenticated_header: &'a [u8],
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct StoredFile {
@@ -31,7 +64,6 @@ pub(crate) struct StoredFile {
     pub(crate) file_sha256: String,
 }
 
-#[derive(Debug)]
 pub(crate) struct PreparedSource {
     byte_size: u64,
     file_sha256: String,
@@ -236,31 +268,169 @@ fn derive_file_key(master_key: &[u8; KEY_LEN]) -> io::Result<Zeroizing<[u8; KEY_
 fn seal_file_envelope(key: &[u8; KEY_LEN], plaintext: &[u8]) -> io::Result<Vec<u8>> {
     let mut nonce = [0_u8; NONCE_LEN];
     OsRng.fill_bytes(&mut nonce);
-    seal_file_envelope_with_nonce(key, &nonce, plaintext)
+    seal_envelope_with_nonce(PURPOSE_FILE, KDF_NONE, &[], key, &nonce, plaintext)
 }
 
+#[cfg(test)]
 fn seal_file_envelope_with_nonce(
     key: &[u8; KEY_LEN],
     nonce: &[u8; NONCE_LEN],
     plaintext: &[u8],
 ) -> io::Result<Vec<u8>> {
+    seal_envelope_with_nonce(PURPOSE_FILE, KDF_NONE, &[], key, nonce, plaintext)
+}
+
+pub(crate) fn create_password_wrapper(
+    password: &[u8],
+    master_key: &[u8; KEY_LEN],
+) -> io::Result<Vec<u8>> {
+    let mut salt = [0_u8; 16];
+    OsRng.fill_bytes(&mut salt);
+    let started = Instant::now();
+    let primary_key = derive_password_key(password, &salt, KdfProfile::Rfc9106LowMemoryV1)?;
+    let (profile, wrapping_key) =
+        if select_kdf_profile(started.elapsed()) == KdfProfile::Rfc9106LowMemoryV1 {
+            (KdfProfile::Rfc9106LowMemoryV1, primary_key)
+        } else {
+            (
+                KdfProfile::OwaspMinimumV1,
+                derive_password_key(password, &salt, KdfProfile::OwaspMinimumV1)?,
+            )
+        };
+    let mut nonce = [0_u8; NONCE_LEN];
+    OsRng.fill_bytes(&mut nonce);
+    seal_envelope_with_nonce(
+        PURPOSE_PASSWORD_WRAPPER,
+        profile as u8,
+        &salt,
+        &wrapping_key,
+        &nonce,
+        master_key,
+    )
+}
+
+fn select_kdf_profile(primary_elapsed: Duration) -> KdfProfile {
+    if primary_elapsed <= Duration::from_millis(750) {
+        KdfProfile::Rfc9106LowMemoryV1
+    } else {
+        KdfProfile::OwaspMinimumV1
+    }
+}
+
+pub(crate) fn password_wrapper_profile(envelope: &[u8]) -> io::Result<KdfProfile> {
+    let parsed = parse_envelope(envelope)?;
+    if parsed.purpose != PURPOSE_PASSWORD_WRAPPER {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid password wrapper purpose",
+        ));
+    }
+    if parsed.ciphertext.len() != KEY_LEN + 16 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid password wrapper payload length",
+        ));
+    }
+    match parsed.profile {
+        KDF_RFC9106_LOW_MEMORY_V1 => Ok(KdfProfile::Rfc9106LowMemoryV1),
+        KDF_OWASP_MINIMUM_V1 => Ok(KdfProfile::OwaspMinimumV1),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid password wrapper profile",
+        )),
+    }
+}
+
+pub(crate) fn open_password_wrapper(
+    envelope: &[u8],
+    password: &[u8],
+) -> io::Result<Zeroizing<[u8; KEY_LEN]>> {
+    let parsed = parse_envelope(envelope)?;
+    let profile = password_wrapper_profile(envelope)?;
+    let key = derive_password_key(password, parsed.salt, profile)?;
+    let plaintext = open_envelope(envelope, PURPOSE_PASSWORD_WRAPPER, &key)?;
+    let master_key: [u8; KEY_LEN] = plaintext.as_slice().try_into().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "password wrapper contains an invalid master key",
+        )
+    })?;
+    Ok(Zeroizing::new(master_key))
+}
+
+fn derive_password_key(
+    password: &[u8],
+    salt: &[u8],
+    profile: KdfProfile,
+) -> io::Result<Zeroizing<[u8; KEY_LEN]>> {
+    if salt.len() != 16 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "password wrapper salt must be 16 bytes",
+        ));
+    }
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, profile.params()?);
+    let mut key = Zeroizing::new([0_u8; KEY_LEN]);
+    argon2
+        .hash_password_into(password, salt, key.as_mut())
+        .map_err(|error| io::Error::other(format!("Argon2 derivation failed: {error}")))?;
+    Ok(key)
+}
+
+#[cfg(test)]
+fn seal_password_wrapper_with_nonce(
+    password: &[u8],
+    master_key: &[u8; KEY_LEN],
+    profile: KdfProfile,
+    salt: &[u8; 16],
+    nonce: &[u8; NONCE_LEN],
+) -> io::Result<Vec<u8>> {
+    let key = derive_password_key(password, salt, profile)?;
+    seal_envelope_with_nonce(
+        PURPOSE_PASSWORD_WRAPPER,
+        profile as u8,
+        salt,
+        &key,
+        nonce,
+        master_key,
+    )
+}
+
+fn seal_envelope_with_nonce(
+    purpose: u8,
+    profile: u8,
+    salt: &[u8],
+    key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_LEN],
+    plaintext: &[u8],
+) -> io::Result<Vec<u8>> {
+    let valid_salt = (profile == KDF_NONE && salt.is_empty())
+        || (matches!(profile, KDF_RFC9106_LOW_MEMORY_V1 | KDF_OWASP_MINIMUM_V1)
+            && salt.len() == 16);
+    if !valid_salt {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid envelope KDF salt",
+        ));
+    }
     let ciphertext_len = plaintext
         .len()
         .checked_add(16)
         .ok_or_else(|| io::Error::other("ciphertext length overflow"))?;
-    let mut header = Vec::with_capacity(HEADER_LEN + ciphertext_len);
+    let mut header = Vec::with_capacity(HEADER_FIXED_LEN + salt.len() + NONCE_LEN + ciphertext_len);
     header.extend_from_slice(MAGIC);
     header.push(VERSION);
-    header.push(PURPOSE_FILE);
+    header.push(purpose);
     header.push(ALGORITHM_XCHACHA20_POLY1305);
-    header.push(KDF_NONE);
-    header.extend_from_slice(&0_u16.to_be_bytes());
+    header.push(profile);
+    header.extend_from_slice(&(salt.len() as u16).to_be_bytes());
     header.extend_from_slice(&(NONCE_LEN as u16).to_be_bytes());
     header.extend_from_slice(&(ciphertext_len as u64).to_be_bytes());
+    header.extend_from_slice(salt);
     header.extend_from_slice(nonce);
 
     let cipher = XChaCha20Poly1305::new_from_slice(key)
-        .map_err(|_| io::Error::other("invalid file encryption key"))?;
+        .map_err(|_| io::Error::other("invalid envelope encryption key"))?;
     let ciphertext = cipher
         .encrypt(
             XNonce::from_slice(nonce),
@@ -269,54 +439,103 @@ fn seal_file_envelope_with_nonce(
                 aad: &header,
             },
         )
-        .map_err(|_| io::Error::other("file encryption failed"))?;
+        .map_err(|_| io::Error::other("envelope encryption failed"))?;
     header.extend_from_slice(&ciphertext);
     Ok(header)
 }
 
 fn open_file_envelope(key: &[u8; KEY_LEN], envelope: &[u8]) -> io::Result<Zeroizing<Vec<u8>>> {
-    if envelope.len() < HEADER_LEN + 16
-        || &envelope[..8] != MAGIC
-        || envelope[8] != VERSION
-        || envelope[9] != PURPOSE_FILE
-        || envelope[10] != ALGORITHM_XCHACHA20_POLY1305
-        || envelope[11] != KDF_NONE
-        || u16::from_be_bytes([envelope[12], envelope[13]]) != 0
-        || usize::from(u16::from_be_bytes([envelope[14], envelope[15]])) != NONCE_LEN
-    {
+    let parsed = parse_envelope(envelope)?;
+    if parsed.purpose != PURPOSE_FILE || parsed.profile != KDF_NONE {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "invalid file envelope header",
         ));
     }
+    open_envelope(envelope, PURPOSE_FILE, key)
+}
+
+fn parse_envelope(envelope: &[u8]) -> io::Result<ParsedEnvelope<'_>> {
+    if envelope.len() < HEADER_FIXED_LEN
+        || &envelope[..8] != MAGIC
+        || envelope[8] != VERSION
+        || !matches!(envelope[9], 1..=4)
+        || envelope[10] != ALGORITHM_XCHACHA20_POLY1305
+        || !matches!(
+            envelope[11],
+            KDF_NONE | KDF_RFC9106_LOW_MEMORY_V1 | KDF_OWASP_MINIMUM_V1
+        )
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid envelope header",
+        ));
+    }
+    let salt_len = usize::from(u16::from_be_bytes([envelope[12], envelope[13]]));
+    let nonce_len = usize::from(u16::from_be_bytes([envelope[14], envelope[15]]));
     let ciphertext_len = usize::try_from(u64::from_be_bytes(
         envelope[16..24]
             .try_into()
             .expect("fixed envelope header length"),
     ))
     .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "ciphertext length overflow"))?;
-    let expected_len = HEADER_LEN
+    if nonce_len != NONCE_LEN
+        || (envelope[11] == KDF_NONE && salt_len != 0)
+        || (envelope[11] != KDF_NONE && salt_len != 16)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid envelope lengths",
+        ));
+    }
+    let header_len = HEADER_FIXED_LEN
+        .checked_add(salt_len)
+        .and_then(|length| length.checked_add(nonce_len))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "header length overflow"))?;
+    let expected_len = header_len
         .checked_add(ciphertext_len)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "envelope length overflow"))?;
     if envelope.len() != expected_len || ciphertext_len < 16 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "invalid file envelope size",
+            "invalid envelope size",
         ));
     }
+    Ok(ParsedEnvelope {
+        purpose: envelope[9],
+        profile: envelope[11],
+        salt: &envelope[HEADER_FIXED_LEN..HEADER_FIXED_LEN + salt_len],
+        nonce: &envelope[HEADER_FIXED_LEN + salt_len..header_len],
+        ciphertext: &envelope[header_len..],
+        authenticated_header: &envelope[..header_len],
+    })
+}
 
-    let nonce = &envelope[24..HEADER_LEN];
+fn open_envelope(
+    envelope: &[u8],
+    expected_purpose: u8,
+    key: &[u8; KEY_LEN],
+) -> io::Result<Zeroizing<Vec<u8>>> {
+    let parsed = parse_envelope(envelope)?;
+    if parsed.purpose != expected_purpose {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "wrong envelope purpose",
+        ));
+    }
     let cipher = XChaCha20Poly1305::new_from_slice(key)
-        .map_err(|_| io::Error::other("invalid file decryption key"))?;
+        .map_err(|_| io::Error::other("invalid envelope decryption key"))?;
     let plaintext = cipher
         .decrypt(
-            XNonce::from_slice(nonce),
+            XNonce::from_slice(parsed.nonce),
             Payload {
-                msg: &envelope[HEADER_LEN..],
-                aad: &envelope[..HEADER_LEN],
+                msg: parsed.ciphertext,
+                aad: parsed.authenticated_header,
             },
         )
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "file authentication failed"))?;
+        .map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidData, "envelope authentication failed")
+        })?;
     Ok(Zeroizing::new(plaintext))
 }
 
@@ -385,6 +604,72 @@ mod tests {
     }
 
     #[test]
+    fn matches_the_accepted_password_wrapper_fixtures() {
+        let master_key = [0x55; KEY_LEN];
+        let password = b"synthetic-vault-password";
+        let fixtures = [
+            (
+                KdfProfile::Rfc9106LowMemoryV1,
+                0x61,
+                0x71,
+                "d77cc533bf44270c08eeaaa64b05238b990d3156def3fd9cdd65a2dcccfd70e7",
+            ),
+            (
+                KdfProfile::OwaspMinimumV1,
+                0x62,
+                0x72,
+                "4fb57b26f766c5b0882ea54ff87075f722f55c2faf608407974a0f7f3f480f2d",
+            ),
+        ];
+        for (profile, salt, nonce, expected_sha256) in fixtures {
+            let wrapper = seal_password_wrapper_with_nonce(
+                password,
+                &master_key,
+                profile,
+                &[salt; 16],
+                &[nonce; NONCE_LEN],
+            )
+            .expect("seal password wrapper fixture");
+            assert_eq!(hex_digest(&wrapper), expected_sha256);
+            assert_eq!(
+                open_password_wrapper(&wrapper, password)
+                    .expect("open password wrapper")
+                    .as_slice(),
+                master_key
+            );
+            assert!(open_password_wrapper(&wrapper, b"wrong-password").is_err());
+        }
+    }
+
+    #[test]
+    fn selects_the_kdf_profile_at_the_exact_unlock_budget_boundary() {
+        assert_eq!(
+            select_kdf_profile(Duration::from_millis(750)),
+            KdfProfile::Rfc9106LowMemoryV1
+        );
+        assert_eq!(
+            select_kdf_profile(Duration::from_millis(750) + Duration::from_nanos(1)),
+            KdfProfile::OwaspMinimumV1
+        );
+    }
+
+    #[test]
+    fn rejects_a_password_wrapper_with_a_non_master_key_payload_length() {
+        let mut wrapper = seal_password_wrapper_with_nonce(
+            b"synthetic-vault-password",
+            &[0x55; KEY_LEN],
+            KdfProfile::OwaspMinimumV1,
+            &[0x62; 16],
+            &[0x72; NONCE_LEN],
+        )
+        .expect("seal password wrapper fixture");
+        wrapper[16..24].copy_from_slice(&((KEY_LEN + 17) as u64).to_be_bytes());
+        wrapper.push(0);
+
+        assert!(password_wrapper_profile(&wrapper).is_err());
+    }
+
+    #[test]
     fn uses_fresh_nonces_and_rejects_tampering() {
         let root = tempfile::tempdir().expect("temporary Vault");
         let source = root.path().join("statement.pdf");
@@ -426,7 +711,7 @@ mod tests {
 
     #[test]
     fn rejects_an_envelope_with_an_overflowing_ciphertext_length() {
-        let mut envelope = vec![0_u8; HEADER_LEN + 16];
+        let mut envelope = vec![0_u8; HEADER_FIXED_LEN + NONCE_LEN + 16];
         envelope[..8].copy_from_slice(MAGIC);
         envelope[8..12].copy_from_slice(&[VERSION, PURPOSE_FILE, 1, KDF_NONE]);
         envelope[14..16].copy_from_slice(&(NONCE_LEN as u16).to_be_bytes());
