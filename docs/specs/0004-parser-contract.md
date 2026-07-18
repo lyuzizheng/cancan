@@ -2,7 +2,7 @@
 
 ## Goal
 
-Define how PDF, CSV, image, and other supported source evidence becomes staged structured records through source observation, a mandatory AI normalizer, evidence grounding, schema validation, and deterministic financial validation.
+Define how PDF, CSV, image, canonical email-message envelopes, and other supported source evidence becomes staged structured records through source observation, a mandatory AI normalizer, evidence grounding, schema validation, and deterministic financial validation.
 
 The AI normalizer may be a single structured-generation call or a small capability-limited document agent. It produces proposals only and never owns ledger mutation.
 
@@ -17,7 +17,7 @@ Single-pass structured normalization in the bundled Node sidecar is selected for
 Native extraction and OCR are alternative or complementary sources of observations. They are not fixed serial stages, and neither may emit canonical financial records.
 
 ```text
-source_document
+source_document file or canonical message envelope
 -> input inspection and native extraction
 -> provider/document classification
 -> deterministic provider fingerprint verification
@@ -106,7 +106,7 @@ Extraction tools emit immutable, job-scoped observations rather than records.
 ```ts
 export interface SourceObservation {
   id: string;
-  kind: 'native_text' | 'ocr_text' | 'table_cell' | 'document_region';
+  kind: 'native_text' | 'ocr_text' | 'table_cell' | 'document_region' | 'message_field';
   page?: number;
   row?: number;
   column?: number;
@@ -128,6 +128,8 @@ export interface ExtractionBundle {
 ```
 
 Coordinates are normalized to one documented origin and unit. CSV evidence uses stable row/column coordinates. PDF evidence uses page plus native-text span, OCR block, or normalized page region.
+
+Canonical email-message evidence uses bounded `message_field` observations from the authenticated connector envelope. It has no invented page, row, or column coordinates.
 
 These observations are job-scoped validation inputs. They are not persisted as a field-claim graph or dedicated page/row/column schema. Durable record-level source context is the bounded `raw` object defined below. This spec does not authorize permanent raw full-document text retention.
 
@@ -181,6 +183,7 @@ export interface CanonicalExternalRecordInput {
   proposalRecordId: string;
   providerRecordId?: string;
   recordType: 'transaction' | 'balance' | 'position' | 'trade' | 'valuation' | 'fee' | 'interest';
+  postingStatus?: 'provisional' | 'posted';
   eventType?: string;
   proposalAccountId?: string;
   instrumentSymbol?: string;
@@ -241,6 +244,8 @@ export interface StructuredParseProposal {
 
 UI plus/minus signs are derived from the view's meaning. They are not permanent parser facts.
 
+`postingStatus` records whether the evidence proves a posted fact. Provider transaction-notification emails default to `provisional`; a provider package may emit `posted` only when its supported message format proves that status. This field does not grant commit eligibility by itself.
+
 ## Date, locale, and inference rules
 
 Statement dates remain date-only unless the source contains enough information for a real timestamp.
@@ -287,7 +292,7 @@ Grounding happens during parsing; the database does not persist an evidence-clai
 
 ## Identity and reparse behavior
 
-Exact document deduplication uses SHA-256 over the imported source bytes. Do not use MD5.
+Exact evidence deduplication uses SHA-256 over imported file bytes or deterministic canonical message-envelope bytes. Do not use MD5.
 
 The trusted host may encrypt and register a selected file before provider/document classification. At that point `semantic_document_key` remains null: the renderer and user never supply it. Exact-hash duplicate and restore outcomes are available immediately. The trusted classification/normalization path sets semantic identity after grounding the provider statement ID or accepted fallback inputs; only then can a byte-different file receive a probable-existing-statement outcome.
 
@@ -297,13 +302,15 @@ Cross-channel import behavior:
 
 ```text
 same SHA-256 -> reuse the existing source document and do not create duplicate records
-same SHA-256 after current file deletion/loss -> reuse the source-document tombstone and restore the encrypted current file
+same SHA-256 after current artifact deletion/loss through explicit Add/Restore -> reuse the source-document tombstone and offer/perform restore
+same SHA-256 from automatic folder/Gmail discovery after deletion -> preserve the tombstone and skip automatic restore
 same semantic document identity with different bytes -> retain the additional file evidence under the same statement identity
 same stable external-record keys -> reuse/version records rather than duplicate them
 semantic conflict or changed financial content -> retain both files and create review work
+transaction email plus later statement row -> retain both evidence records and reconcile them to one canonical event when the match is proven
 ```
 
-Each exact byte sequence has one `source_documents` row, which also owns its encrypted-file state and tombstone. Byte-different files under one semantic statement identity remain separate source-document rows.
+Each exact artifact byte sequence has one `source_documents` row, which also owns its encrypted-artifact state and tombstone. Byte-different files under one semantic statement identity remain separate source-document rows.
 
 The import flow returns per-file outcomes as they become grounded: file capture distinguishes newly imported, already-present, restored, and failed files; trusted classification may add the probable-existing-statement outcome for byte-different evidence.
 
@@ -428,7 +435,9 @@ Any future agentic candidate must be tested against the selected single-pass str
 - Dates remain date-only unless a justified timezone exists; the OS locale and generic assumption JSON are not used as silent inference mechanisms.
 - Debit/Credit source labels, signed source-account balance deltas, and UI plus/minus presentation remain separate concepts.
 - Exact PDF/file deduplication uses SHA-256, with semantic document identity handled separately.
-- Exact-hash re-import may restore a deleted current file without duplicating its source-document row; byte-different evidence remains separate under semantic identity.
+- Canonical email-message evidence uses the same proposal and grounding contract without inventing file coordinates or writing directly to the ledger.
+- Transaction notifications default to provisional and can later reconcile with posted statement evidence without creating duplicate ledger impact.
+- Explicit exact-hash Add/Restore may restore a deleted current artifact without duplicating its source-document row; automatic folder/Gmail discovery respects deletion suppression.
 - Re-import, reparse, and source-file deletion preserve record identity without rewriting committed ledger events; deleted evidence cannot drive future automatic commit.
 - Complete normalization profiles qualify independently and reset to shadow mode after behavior-changing updates.
 - Single-pass structured normalization is the initial runtime; ToolLoopAgent or Pi Agent Core requires new qualification evidence showing a material accuracy or recovery advantage.

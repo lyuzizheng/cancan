@@ -2,7 +2,7 @@
 
 ## Goal
 
-Automatically collect financial statement evidence from Gmail while preserving local-first behavior.
+Collect supported statement attachments and transaction-notification evidence from a user-authorized Gmail mailbox while preserving local-first behavior.
 
 ## Implementation blocker
 
@@ -11,6 +11,8 @@ Public OAuth verification and Gmail-data transfer to cloud AI remain open in the
 ## MVP decision
 
 Use official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect.
+
+Gmail is one optional evidence channel, not the product's primary ingestion architecture. Manual add, drag/drop, Open With, and a user-selected inbox folder must remain useful without Gmail.
 
 Do not use AI computer-use/browser automation as the primary Gmail architecture. Computer-use may remain a future fallback/experiment for websites or bank portals that do not expose usable APIs, but Gmail MVP should use the official API.
 
@@ -118,12 +120,13 @@ Use guided rules plus expert query editing.
 Top section: guided builder.
 
 ```text
-Provider: DBS | UOB | Wise | supported source
-Document type: bank statement | credit card statement | export | supported type
+Mode: statement attachment | transaction notification | CanCan Inbox attachment
+Provider: DBS | UOB | Wise | supported source | detect automatically
+Document type: bank statement | credit card statement | export | transaction notification
 Required keywords
 Excluded keywords
 Sender/from hint
-Has attachment toggle
+Has attachment toggle where applicable
 Filename hints
 Start date
 Overlap days
@@ -141,23 +144,28 @@ manual_query_override
 active_query
 ```
 
+The generic CanCan Inbox attachment rule is narrow by default. Before enabling it, the user chooses either a dedicated recipient/plus-alias address or an existing Gmail label; the generated query requires that boundary plus a supported attachment type and excludes Spam/Trash. Do not silently default to every self-sent or every PDF/CSV attachment. Broader expert queries require an explicit warning and `Test rule` preview before activation.
+
 ## Provider policy
 
 Gmail rules should use fixed supported provider hints. Users should not create arbitrary provider integrations in MVP.
 
 Manual source/support requests should be tracked as future feature requests, not custom live integrations.
 
-Each Gmail rule belongs to a user-configured Money Source and defines how that source searches for evidence. CanCan may provide a useful default rule for a supported provider, and the user may edit or override its query.
+Each provider-specific Gmail rule normally points to a user-configured Money Source. A generic `CanCan Inbox attachment` rule may leave the source unset so trusted classification can route supported evidence to one of the user's configured Money Sources. CanCan may provide useful defaults, and the user may edit or override the query.
 
-A Gmail rule may have a provider hint, but downloaded documents still go through classifier/parser verification. Do not trust the rule or source assignment alone.
+A Gmail rule may have provider and source hints, but downloaded documents and message evidence still go through classifier/parser verification. Do not trust the rule or source assignment alone.
+
+Transaction-notification rules additionally define exact supported sender/domain and authentication fingerprints. Before body normalization, the connector rejects Spam/Trash and deterministically verifies Gmail-provided authentication results against the provider package's aligned domain policy. Missing, failed, or mismatched authentication remains untrusted `Needs attention` evidence and cannot auto-link or auto-commit. A matching display-name or `From` header alone is never sufficient.
 
 ## Data model
 
 ```text
 gmail_search_rules
 - id
-- money_source_id
+- money_source_id nullable only for generic inbox attachment rules
 - name
+- evidence_mode = attachment | transaction_notification
 - provider_hint
 - document_type_hint
 - required_keywords_json
@@ -201,11 +209,13 @@ statement_secret_refs
 
 `statement_secret_refs.money_source_id` is unique, so it stores at most one reference and status per Money Source. Actual statement passwords live in macOS Keychain/OS secret storage, never SQLite.
 
+`transaction_notification` rules are provider-specific and require a configured Money Source because their body selectors and interpretation are provider-owned.
+
 ## Storage policy
 
 Use minimum storage.
 
-Default:
+Attachment default:
 
 ```text
 store message id
@@ -213,12 +223,27 @@ store thread id if useful
 store sender/from
 store subject
 store date/internalDate
+store the bounded label and sender-authentication validation summary needed to explain trust
 store attachment metadata
 store downloaded attachment bytes in file vault
 store file hash and source document metadata
 ```
 
 Do not store full email body by default unless needed for evidence/parser behavior or explicitly enabled.
+
+### Send to yourself
+
+A user may share a bank PDF/CSV from a phone to their own Gmail address. A generic CanCan Inbox rule can find that attachment, capture it, and let trusted classification select the configured Money Source and account. CanCan does not provide a hosted upload email address in MVP: that would add server custody, retention, abuse handling, and a second security boundary.
+
+### Transaction notifications without attachments
+
+A supported provider's transaction email may contain one useful record and no file. This is allowed only through an explicit provider-owned `transaction_notification` rule and separate body-capture consent.
+
+The connector creates one deterministic canonical message-evidence envelope containing the authenticated mailbox/message ID, internal date, sender, subject, the provider-selected body fields or bounded body text, and attachment metadata. The encrypted envelope becomes a normal source-document artifact and the provider parser normalizes it into at most the supported records. The app does not manufacture a fake PDF or insert a transaction directly from email fields.
+
+Transaction-notification evidence is provisional unless the provider package proves a posted status. It can appear as `Pending from email`, suggest a relationship, and later link to a posted statement record, but it cannot satisfy monthly statement coverage or bypass snapshot reconciliation and commit policy.
+
+Provider classification and sender authentication are separate gates: a message that looks like DBS content but fails the DBS sender/domain policy does not run the trusted DBS notification parser.
 
 ## Protected PDF statements
 
@@ -278,6 +303,8 @@ configurable interval while app is running
 
 Auto-scan should be configurable and can be disabled. Manual scan must always be available.
 
+Overlapping rules and overlap-window retries use authenticated-mailbox plus Gmail-message ID for connector idempotency. The mapping remains attached to a deleted source-document tombstone, so an unchanged Gmail message is not silently restored on the next scan or after an envelope-format update. Only an explicit user restore action can re-enable it. Attachment SHA-256 and canonical-envelope SHA-256 remain artifact identity; financial record identity remains owned by the parser contract.
+
 ## Test rule UX
 
 Before enabling a rule, provide `Test rule`:
@@ -325,6 +352,14 @@ PDF attachment import
 password-protected PDF attachment import
 CSV attachment import
 message body not stored by default
+transaction notification body requires explicit rule and consent
+generic inbox rule requires a dedicated recipient/alias or label and excludes unrelated attachments
+Spam/Trash and spoofed/misaligned provider sender fixtures never become trusted notification records
+transaction notification creates canonical encrypted message evidence, not a direct ledger write
+the same Gmail message reached by overlapping rules is idempotent
+deleted Gmail evidence remains suppressed across later scans until explicit restore
+send-to-self attachment routes through trusted source/account classification
+email notification later matched to the posted statement row without duplicate ledger impact
 ```
 
 ## Acceptance criteria
@@ -334,10 +369,15 @@ message body not stored by default
 - Refresh token is stored in local secret storage.
 - Only read-only Gmail scope is requested.
 - User can create guided rules and edit expert query.
-- Every rule belongs to a configured Money Source; supported providers may supply editable default rules.
+- Provider-specific rules belong to a configured Money Source; only the generic CanCan Inbox attachment rule may defer assignment to trusted classification.
+- Generic Inbox discovery starts from a dedicated recipient/alias or user-selected label; broad mailbox attachment collection is never the silent default.
 - User can test a rule before enabling it.
 - App supports startup/wake/manual/configurable polling sync.
 - Re-running sync does not duplicate already imported attachments.
+- Recurring sync never restores user-deleted evidence automatically.
+- Supported no-attachment transaction emails require explicit body consent, become encrypted canonical evidence, and remain provisional until posted evidence and policy gates resolve them.
+- Transaction-notification parsing requires provider-owned sender/domain authentication checks and excludes Spam/Trash; display names and content resemblance alone are untrusted.
+- CanCan provides no hosted inbound email address in MVP; send-to-self ingestion uses the user's authorized Gmail mailbox.
 - Password-protected PDFs can be detected, unlocked locally, and optionally tied to a saved secret reference.
 - Errors are visible and actionable.
 - Development/test credentials and test users are isolated from the production OAuth project.

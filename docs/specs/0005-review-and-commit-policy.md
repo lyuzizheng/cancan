@@ -37,7 +37,7 @@ A record can be considered for auto-commit only if all are true:
 
 ```text
 user auto-commit toggle is enabled
-document arrived through a configured Money Source channel or explicit import into that source
+evidence arrived through a user-authorized channel or explicit import, and trusted classification resolved a configured Money Source
 AI classifier selected the configured supported provider and document type
 provider package deterministic fingerprints and schema checks passed
 the complete provider/document normalization profile is currently qualified
@@ -128,6 +128,24 @@ The default review surface presents one recommended relationship and one primary
 
 Cross-account transfers are a core relationship, not a future matching extension. The two bank-side records may both link to one canonical transfer event so either record detail can show the other side without duplicating income or spending.
 
+## Transaction email and statement reconciliation
+
+A transaction-notification email and a later statement row are two evidence observations, not two financial events. Preserve both source documents and both external records; never delete one merely because they appear related.
+
+Match in this order:
+
+```text
+1. exact grounded provider transaction/reference ID within the same provider and resolved account
+2. same resolved account, currency, amount, direction, provider-defined date window, and one unique merchant/reference candidate
+3. otherwise Review; never guess between multiple candidates
+```
+
+A qualified posted statement row plus its source-backed snapshot window is the normal posting authority. The email remains earlier evidence and may be shown as `Pending from email` until the relationship is proven. Amount changes caused by tips, FX, reversed holds, or other provider behavior do not auto-link unless that provider package has an explicit qualified rule and fixtures.
+
+When the relationship is accepted before commit, existing many-to-many `match_edges` link both external records to one canonical ledger event. If the statement event is already committed when the email arrives, the Gmail slice uses the role-aware schema extension owned by `0002-database-schema.md`: in one transaction, append one confirmed `corroborating_evidence` edge without allocation value, resolve the new external record/review item, and append its audit entry. It creates no new ledger event and cannot change any ledger leg, financial allocation, or prior edge. The current synthetic-core trigger does not yet permit this late insert and must not be bypassed.
+
+With that migration in place, import order is irrelevant: email first and statement first converge to one financial result. The Activity UI folds the evidence into one item with `Email` and `Statement` provenance rather than adding the amount twice.
+
 ## Commit, reversal, and audit policy
 
 Uncommitted staged proposals may be edited or removed. `Remove` on a staged record appends a review/domain decision and marks the rebuildable current-state projection as removed; it does not erase the parse run, raw source row, validation history, or audit entry.
@@ -181,6 +199,9 @@ may affect current displayed asset value
 - Exact duplicate handling is auditable.
 - Partial and one-to-many matches remain simple in normal UI and block auto-commit.
 - Two bank-side records can link to one canonical transfer event and be discovered from either side.
+- A transaction email and posted statement row remain separate evidence but can link to one canonical event through deterministic provider ID or one unique qualified fallback match.
+- Late email evidence attaches to a committed event only through an append-only audited corroboration edge; it never changes committed allocations or ledger legs.
+- Transaction notifications never satisfy statement snapshot closure or create duplicate income, spending, or balance impact.
 - Repayments do not double-count spending.
 - Committed events are corrected through reversal/replacement, never mutation or deletion.
 - Removing a staged record is an append-only decision over a mutable projection, while deleting source evidence never implicitly corrects the ledger.

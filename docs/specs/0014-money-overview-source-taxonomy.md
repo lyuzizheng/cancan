@@ -86,7 +86,8 @@ A Money Source is a user-created provider root and the home for its ingestion co
 ```text
 provider-specific Gmail search rules
 manual PDF/CSV import
-watched/import folders when later supported
+a user-selected local or synced CanCan Inbox folder
+supported transaction-notification email rules
 a product-defined official provider API connector when one is implemented
 ```
 
@@ -95,6 +96,24 @@ CanCan may ship useful default search rules or official connector setup for supp
 Documents discovered through a source channel still pass provider/document classification. If a document matches the configured provider and exposes multiple child accounts, parsing and staging continue and the detected accounts become candidates under that Money Source. Discovery must not stop merely because the child accounts were not entered manually first.
 
 First-seen accounts continue through parsing and staging without interruption. Before the first commit, show one compact confirmation such as `We found 3 accounts`. Confirmation changes those candidates to confirmed accounts; later qualified records may use them without repeating the setup.
+
+## Evidence assignment
+
+Capture must not force the user to choose a Money Source or account before CanCan has inspected the evidence. Manual import, drag/drop, Open With, a watched folder, and a generic Gmail Inbox rule may enter with no source assignment or with a non-authoritative source hint.
+
+Resolve in this order:
+
+```text
+1. trusted provider/document classification identifies a supported provider
+2. exactly one configured Money Source for that provider -> assign it
+3. multiple configured Money Sources or conflicting hints -> ask one compact source question
+4. no configured source -> offer to create the detected supported source
+5. resolve child accounts through the account identity algorithm below
+```
+
+The source hint narrows candidates but cannot override a provider fingerprint mismatch. Unassigned or ambiguous evidence appears in Command Center `Needs attention`; it does not require a standalone Evidence Library.
+
+If a protected file cannot reveal enough provider identity to select the correct saved statement password, ask for the Money Source before unlocking. This is a security-required exception to automatic routing, not a reason to require source selection for every import.
 
 ## Account identity data contract
 
@@ -229,6 +248,7 @@ If it identifies multiple child containers, create or update distinct account ca
 - FX-converted estimated totals require the explicit optional fixed-rate setting and remain visually distinct from source-backed facts.
 - Source model remains two-level from the user's perspective.
 - Money Sources are user-configured roots for provider-specific discovery/import channels.
+- Capture channels may defer source/account selection; trusted classification routes to one configured Money Source and the existing account resolver handles child accounts.
 - A supported provider can ship default Gmail rules or an official API connector without allowing arbitrary providers.
 - Matching documents continue through parsing when they reveal multiple child-account candidates.
 - First-seen accounts require one compact confirmation before their first commit, not before parsing.

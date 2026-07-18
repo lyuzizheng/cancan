@@ -358,6 +358,25 @@ empty/loading/error state check
 reduced-motion behavior check when motion is involved
 ```
 
+The local-inbox and Gmail slices add deterministic fixtures for:
+
+```text
+picker, drag/drop, Open With, and watched-folder paths reaching the same artifact identity
+folder rescan after restart, exact duplicate, cloud placeholder/provider-error deferral, and no source-file mutation
+changing size/mtime/file identity across settle/read checks never reaching Vault before one stable final capture
+restart/rescan after user deletion remaining suppressed until explicit restore
+unassigned evidence routing to exactly one configured source/account or one compact review action
+canonical no-attachment email evidence and overlapping-rule message idempotency
+generic Inbox alias/label boundary excluding unrelated mailbox attachments
+Spam/Trash, display-name spoof, sender-domain mismatch, and failed/missing authentication remaining untrusted
+email-first and statement-first convergence to one canonical ledger event
+late corroborating evidence against an already committed event, with unchanged legs/allocations and one atomic audit entry
+ambiguous/different-amount notification matches remaining in Review
+statement coverage gaps, provider grace period, locked/failed statement state, and notification email exclusion
+```
+
+These are mocked local/Gmail fixtures. CI must not require a live mailbox, sync provider, iCloud account, phone, bank app, or real statement.
+
 ## Snapshot testing policy
 
 Use snapshots carefully.
@@ -411,5 +430,6 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - DB reset cannot target a real vault by default.
 - UI changes require visual inspection once UI exists.
 - Every implementation slice declares deterministic test evidence and shares its generated context with testing/review.
+- Local inbox, email-notification, cross-channel reconciliation, and statement-coverage behavior has deterministic fixtures without live cloud accounts.
 - Later application CI gates are added only with real scripts and implementations.
 - The foundation application CI invokes real typecheck, unit-test, Rust-check, web-build, and Tauri debug-build commands.

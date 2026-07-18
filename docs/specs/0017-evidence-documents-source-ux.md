@@ -18,6 +18,10 @@ Evidence should feel like part of each money source, not a separate corporate do
 - Technical extraction artifacts are hidden from normal UI.
 - Document status should stay simple; detailed state belongs to jobs, review items, and parse runs.
 - Search starts with local metadata/record search; full-text search can use SQLite FTS when needed.
+- CanCan is inbox-first rather than Gmail-first: every acquisition channel converges on the same encrypted evidence, classification, parsing, and review path.
+- Users may add evidence without choosing a source/account first; trusted classification and account resolution perform routing, with one compact question only when ambiguous.
+- A user-selected folder is the first automatic phone-to-Mac path. CanCan does not silently scan all Downloads or move/delete source files.
+- A future iOS Share Extension is a thin intake companion, not a mobile ledger or a prerequisite for MVP.
 
 ## IA placement
 
@@ -35,6 +39,77 @@ Source Detail: DBS
 ```
 
 `Documents` can later be globally searchable, but it should not be a dominant top-level product module in MVP.
+
+Global `Add` actions, drag/drop, and Open With may accept evidence from anywhere in the app. Evidence that is still unassigned appears as one `Needs attention` card in Command Center until classification or a compact source choice resolves it; this is not a second document library.
+
+## Acquisition channels
+
+All channels create the same `source_documents` evidence artifact and then run the same trusted classifier, account resolver, parser, and reconciliation policy.
+
+MVP order:
+
+```text
+1. Add files, drag/drop, and Open With CanCan
+2. optional user-selected CanCan Inbox folder
+3. optional user-authorized Gmail rules, including send-to-self attachments
+4. AirDrop or any cloud-drive app, followed by Add/Open With or the selected folder
+```
+
+Do not build separate Dropbox, OneDrive, iCloud Drive, or AirDrop connectors. The user may select a folder inside any filesystem provider visible to macOS, so CanCan only owns local folder observation and Vault capture.
+
+### User-selected CanCan Inbox folder
+
+The user chooses one folder and may change or disable it later. A folder such as `iCloud Drive/CanCan Inbox` gives a simple phone flow today:
+
+```text
+bank app Share
+-> Save to Files
+-> CanCan Inbox
+-> Mac sync provider makes the file readable
+-> CanCan captures it into the encrypted Vault
+```
+
+Rules:
+
+```text
+scan on enable, app startup/unlock, manual refresh, and filesystem-change hints while the app runs
+accept only supported regular PDF/CSV/image files that can be opened read-only
+ignore directories, symlinks, hidden/temp/partial-suffix files, and unsupported types
+observe the same file identity, size, and modification time across two scans separated by the owning slice's tested settle interval
+after reading/hash, re-stat the file; if identity, size, or modification time changed, discard the bytes and retry later
+validate the supported container/header before Vault registration
+defer cloud placeholders, provider/offline errors, changing files, and unreadable files; retry on a later scan
+use SHA-256 import idempotency, so rescans and duplicate channels are safe
+skip hashes whose Vault artifact was user-deleted; only an explicit Restore/Add confirmation may restore them
+copy into the encrypted Vault before processing
+never modify, move, rename, or delete the user's source file in MVP
+show that the selected folder remains outside the CanCan Vault and follows that folder provider's privacy/security
+```
+
+Filesystem notifications are a wake-up hint, not the source of truth; deterministic rescans provide recovery after sleep, app exit, or sync delay. Do not watch the whole Downloads folder by default.
+
+The exact settle interval and macOS cloud-placeholder behavior are implementation evidence, not a user setting. Before production folder automation, the owning feasibility gate must prove this protocol against an ordinary local folder and at least the supported iCloud Drive path, including a changing file that never reaches Vault early. Other filesystem providers remain best-effort until they pass the same evidence.
+
+### Email send-to-self
+
+A phone user may Share to Mail and send a PDF/CSV to their own authorized Gmail account. The generic Gmail Inbox rule captures the attachment and trusted classification routes it. CanCan does not operate an inbound email service in MVP.
+
+### Future phone Share Extension
+
+A real `Share to CanCan` action requires an iOS containing app because an App Store Share Extension ships inside an app target. The future product should be a thin native Swift intake companion plus Share Extension, not a second finance UI.
+
+The extension contract is deliberately small:
+
+```text
+accept supported PDF/CSV/image items from the system Share sheet
+validate type and size, compute SHA-256, and persist one immutable handoff manifest
+return a truthful Saved / Needs app to finish status quickly
+never parse, call AI, mutate the ledger, or receive the desktop Vault master key
+```
+
+The extension and containing app may use an App Group for short-lived local handoff. Cross-device transport, encryption before cloud transit, background completion, retry, deletion, and pairing/recovery must be proven in a disposable local Xcode feasibility slice before choosing between a user-visible iCloud folder and an encrypted paired handoff. Do not embed this work in the generated Tauri desktop project or promise background sync before that evidence exists. Production signing, TestFlight, and App Store release belong to a later separately authorized release slice.
+
+Hosted upload email, local-network upload pages, bank-app automation, and provider-specific cloud-drive APIs remain deferred because they add custody, availability, or integration surface without improving the first simple path.
 
 ## Personal-app UX guardrail
 
@@ -144,6 +219,8 @@ Records section
 
 Do not require a PDF preview panel in MVP.
 
+For canonical email-message evidence, show sender, subject, message date, provider, and the normalized record summary instead of inventing a filename or PDF preview. Display only the bounded body evidence retained under the user's transaction-notification consent.
+
 ## Source file access
 
 Provide `View document` where the current encrypted Vault file exists.
@@ -194,6 +271,8 @@ Review records
 Delete source file
 ```
 
+For canonical email-message evidence, label the equivalent action `Delete email evidence`; it follows the same tombstone and ledger-preservation rules without pretending that the user imported a file.
+
 Use short human labels. Avoid exposing pipeline names such as `source_document_ingest` in the product UI.
 
 ## Delete source file behavior
@@ -214,7 +293,7 @@ After confirmation, CanCan appends the deletion decision/audit event, removes th
 
 Uncommitted linked records become ineligible for automatic commit and remain visibly associated with the deleted source; the user may separately remove those staged records. Committed ledger events and legs remain immutable. Correcting them requires the explicit reversal/replacement flow.
 
-An exact-hash re-import reuses the tombstone and restores its current encrypted file. A byte-different file with the same semantic statement identity remains separate evidence under that statement identity.
+An explicit exact-hash Add/Restore reuses the tombstone and restores its current encrypted artifact after user confirmation. Automatic Inbox-folder and Gmail scans treat the tombstone as a suppression record and do not restore it merely because the external file/message remains present. A byte-different file with the same semantic statement identity remains separate evidence under that statement identity.
 
 CanCan guarantees application-level removal of the current Vault file, not forensic erasure from SSD wear-leveling, filesystem snapshots, or old backup media. A storage failure reports `Missing` rather than claiming that the user deleted the file.
 
@@ -270,6 +349,24 @@ Any committed ledger event must be able to navigate back to its source document.
 
 Keep this visually simple. Use expandable sections rather than a graph-heavy audit UI.
 
+When a transaction notification and statement row resolve to the same canonical event, Activity shows one amount with compact `Email` and `Statement` provenance. Both evidence items remain independently viewable; neither is discarded as a duplicate file.
+
+## Statement coverage and missing-period prompts
+
+Missing-statement detection is deterministic and provider-aware, not an AI guess. Derive it from accepted statement document type/period data plus the provider package's declared cadence and grace period.
+
+Coverage is evaluated per resolved Money Source, child account/container, and statement document type. One multi-account statement may satisfy the period for each child account it actually identifies; unrelated transaction emails or other document types do not.
+
+```text
+accepted periods on both sides of a gap -> confirmed missing period
+declared monthly cadence + established history + grace elapsed -> likely missing period
+locked, unreadable, or parse-failed file for the period -> Needs attention, not missing
+transaction-notification email -> does not satisfy statement coverage
+on-demand export source such as Wise -> no monthly prompt unless its provider configuration declares one
+```
+
+The first UI is one calm Command Center card such as `DBS June statement may be missing`, with `Add file`, `Not expected`, and `Remind later`. Source detail may show the same coverage timeline. Derive expected periods from existing evidence rather than pre-creating expected-month rows. When these actions ship, persist only the explicit exception/snooze decision in the smallest owning-slice storage; do not build a general reminder engine.
+
 ## Empty states
 
 Documents subview empty states should be source-specific.
@@ -277,7 +374,7 @@ Documents subview empty states should be source-specific.
 Examples:
 
 ```text
-No DBS statements yet. Connect Gmail or import a statement.
+No DBS statements yet. Add a file, choose an Inbox folder, or connect Gmail.
 No Wise exports yet. Import a CSV/PDF export to start.
 This source has documents, but none match the current filter.
 ```
@@ -294,7 +391,9 @@ Source file restored
 Needs attention
 ```
 
-Exact duplicates do not create duplicate records. Re-importing an exact file whose current Vault copy was deleted restores that source document. A semantically matching file with different bytes remains available as separate additional evidence for the same statement identity.
+The same summary covers message evidence using a human label such as `DBS transaction email`; it does not expose a synthetic filename or pipeline type.
+
+Exact duplicates do not create duplicate records. Explicitly adding an exact file whose current Vault copy was deleted can restore that source document after confirmation; automatic scans skip it. A semantically matching file with different bytes remains available as separate additional evidence for the same statement identity.
 
 ## Acceptance criteria
 
@@ -311,3 +410,10 @@ Exact duplicates do not create duplicate records. Re-importing an exact file who
 - MVP search works through indexed structured fields.
 - Future full-text search uses local SQLite FTS5, not a remote search service.
 - Import completion identifies which files were new, already present, restored from a tombstone, or probable prior statements.
+- Add, drag/drop, Open With, watched-folder, and Gmail evidence converge on one capture/classification/parser flow.
+- The selected Inbox folder is rescanned deterministically, never modified by CanCan, and clearly remains outside the encrypted Vault.
+- Automatic rescans respect deleted-evidence tombstones; only explicit user intent restores them.
+- Unassigned evidence is handled through Command Center attention rather than a new top-level library.
+- Transaction email and statement evidence may fold into one Activity item while both source records remain intact.
+- Missing-period prompts use provider cadence and accepted statement periods; transaction emails and failed/locked files cannot falsely satisfy or erase coverage.
+- A future iOS Share Extension remains a thin native intake target gated by transport, encryption, lifecycle, and release evidence.

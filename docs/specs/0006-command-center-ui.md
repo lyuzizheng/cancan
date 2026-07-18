@@ -145,7 +145,7 @@ Recommended priority:
 1. Top overview: native totals, timestamps, vault/backup health
 2. Main stream: money source activity and recent flows
 3. Source snapshots: tailored status per source type
-4. AI insight: monthly/weekly summary or missing statement prompt
+4. Insight: monthly/weekly summary or deterministic missing-statement prompt
 5. Compact review status: needs review, failed jobs, suggested links
 6. Lower section: detailed Needs Review / New Evidence / Failed Jobs
 ```
@@ -168,6 +168,8 @@ Insurance: policy value, premium history, valuation date
 ## Evidence navigation
 
 Evidence documents live under each Money Source detail view. Do not add a dominant standalone Library navigation item in MVP. The canonical document UX is `0017-evidence-documents-source-ux.md`.
+
+The global `Add` action accepts files without asking for source/account first. Unassigned imports, folder-capture problems, and missing-period prompts appear as compact `Needs attention` cards; they do not create a separate Inbox navigation module.
 
 ## AI Assistant direction
 
@@ -221,6 +223,6 @@ A Figma prototype can be generated after visual tokens are accepted. The Figma o
 - UI avoids overcomplicated freshness scores or noisy tags.
 - Default review and relationship UI uses a low-complexity personal-finance mental model with detail available on demand.
 - User-facing presentation models remain separate from internal ledger and audit structures.
-- Empty states guide the user to create sources, configure Gmail, or import files.
+- Empty states guide the user to add files, choose an Inbox folder, or optionally configure Gmail after creating sources.
 - Evidence documents are reached through Source detail rather than a standalone Library sidebar item.
 - AI Assistant is represented as a future-ready surface/tool entry, but cannot bypass safety boundaries.

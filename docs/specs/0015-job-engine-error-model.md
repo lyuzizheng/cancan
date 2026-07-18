@@ -72,6 +72,8 @@ source_document creation
 
 It should checkpoint cursor/history/processed message ids in `step_state_json` or sync-state tables so it can resume without duplicate imports.
 
+Attachment and provider-approved transaction-message evidence both enter the existing source-document ingest/parse chain. Do not add one job type per email shape. Gmail overlap retries use mailbox/message identity, while artifact SHA-256 and financial record identity remain separate idempotency layers.
+
 ### `source_document_ingest`
 
 Prepares a source document and initial source observations for parsing.
@@ -92,6 +94,8 @@ job-scoped extraction bundle creation
 If the PDF is locked and no saved password works, the job becomes `blocked` with `blocked_reason = password_required`.
 
 The saved password scope is the related Money Source. A failed saved password never loops blindly: the user chooses a session-only password or replaces that Money Source's saved Keychain secret.
+
+A user-selected Inbox folder does not require a durable job merely to notice directory contents. Startup/unlock/manual scans and filesystem-change hints discover readable candidates; each candidate then enters the existing durable ingest job. A cloud placeholder, partial write, or unreadable file is deferred and retried by a later scan without modifying the source folder. A hash already represented by a user-deleted tombstone is a successful suppressed outcome, not a restore job; only explicit user intent starts restoration.
 
 ### `delete_source_file`
 
@@ -118,7 +122,7 @@ blob absent without a committed decision -> project Missing, not Deleted
 
 The job never reverses a committed ledger event.
 
-Before this path is considered implemented, integration tests must bind repeated attempts to one durable deletion intent, prove that no second decision is appended, and freeze the user-visible cancellation boundary. A later exact-hash re-import restores the file as a new lifecycle transition; deleting that restored revision is a new intent.
+Before this path is considered implemented, integration tests must bind repeated attempts to one durable deletion intent, prove that no second decision is appended, and freeze the user-visible cancellation boundary. A later explicit exact-hash Add/Restore may restore the artifact as a new lifecycle transition; automatic discovery remains suppressed. Deleting that restored revision is a new intent.
 
 ### `parse_document`
 
@@ -153,6 +157,7 @@ transfer/card payment/top-up/FX candidate detection
 confidence scoring
 review item creation
 safe auto-dedupe when policy allows
+transaction-notification to posted-statement candidate detection
 ```
 
 Ambiguous links should not auto-commit.
