@@ -230,6 +230,7 @@ Open app
 -> find unfinished jobs
 -> mark expired running jobs as queued
 -> build resume plan
+-> rescan the enabled CanCan Inbox folder after unlock
 -> optionally run enabled Gmail scans if auto-scan is on
 -> land on Command Center with status modules
 ```
@@ -251,4 +252,4 @@ Open app
 - The first useful import does not require Gmail or a source/account preselection; optional Inbox-folder setup explains that the source folder remains outside the encrypted Vault.
 - Transaction-notification email body capture is separately disclosed and enabled from attachment collection.
 - Protected PDF statements can prompt for a password and optionally save it securely.
-- Startup handles locked vault, migration checks, optional Gmail scan, configured secrets, and unfinished jobs.
+- Startup handles locked vault, migration checks, enabled Inbox-folder rescan, optional Gmail scan, configured secrets, and unfinished jobs.
