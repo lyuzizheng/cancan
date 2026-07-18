@@ -289,6 +289,8 @@ Grounding happens during parsing; the database does not persist an evidence-clai
 
 Exact document deduplication uses SHA-256 over the imported source bytes. Do not use MD5.
 
+The trusted host may encrypt and register a selected file before provider/document classification. At that point `semantic_document_key` remains null: the renderer and user never supply it. Exact-hash duplicate and restore outcomes are available immediately. The trusted classification/normalization path sets semantic identity after grounding the provider statement ID or accepted fallback inputs; only then can a byte-different file receive a probable-existing-statement outcome.
+
 A semantic document fingerprint detects probable duplicates whose PDF metadata or encoding changed. Prefer a provider statement ID; otherwise combine Money Source/account identity, statement period, and a normalized record-set fingerprint. A semantic match with different source bytes is review evidence, not permission to discard either file automatically.
 
 Cross-channel import behavior:
@@ -303,7 +305,7 @@ semantic conflict or changed financial content -> retain both files and create r
 
 Each exact byte sequence has one `source_documents` row, which also owns its encrypted-file state and tombstone. Byte-different files under one semantic statement identity remain separate source-document rows.
 
-Every completed import returns per-file outcomes so the UI can distinguish newly imported files, files already in CanCan, restored source files, probable existing statements, and failures.
+The import flow returns per-file outcomes as they become grounded: file capture distinguishes newly imported, already-present, restored, and failed files; trusted classification may add the probable-existing-statement outcome for byte-different evidence.
 
 Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity and a provider-owned canonical identity projection of the validated raw record. That projection contains only stable source values: it excludes optional locators, OCR/model confidence, observation IDs, extraction/runtime metadata, and mutable normalized descriptions. If the source contains literally identical projected rows, an occurrence ordinal within that identical-row group distinguishes them.
 

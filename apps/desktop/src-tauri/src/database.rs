@@ -2,6 +2,7 @@ use crate::vault::{FileVault, StoredFile};
 use hkdf::Hkdf;
 use rand::{RngCore, rngs::OsRng};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use serde::Serialize;
 use sha2::Sha256;
 use std::{collections::HashSet, error::Error, fs, io, path::Path};
 use zeroize::Zeroizing;
@@ -9,20 +10,36 @@ use zeroize::Zeroizing;
 const KEY_LEN: usize = 32;
 pub(crate) const DATABASE_FILE_NAME: &str = "finance.sqlite";
 const DATABASE_KEY_CONTEXT: &[u8] = b"cancan:database:v1";
-const MIGRATIONS: &[(i64, &str)] = &[
-    (
-        1,
-        include_str!("../../../../packages/db/migrations/0001_synthetic_core.sql"),
-    ),
-    (
-        2,
-        include_str!("../../../../packages/db/migrations/0002_vault_manual_import.sql"),
-    ),
+struct Migration {
+    version: i64,
+    sql: &'static str,
+    foreign_keys_off: bool,
+}
+
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("../../../../packages/db/migrations/0001_synthetic_core.sql"),
+        foreign_keys_off: false,
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("../../../../packages/db/migrations/0002_vault_manual_import.sql"),
+        foreign_keys_off: false,
+    },
+    Migration {
+        version: 3,
+        sql: include_str!(
+            "../../../../packages/db/migrations/0003_source_document_pending_identity.sql"
+        ),
+        foreign_keys_off: true,
+    },
 ];
 
 type StoreResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceDocumentImportStatus {
     Imported,
     AlreadyPresent,
@@ -30,7 +47,8 @@ pub enum SourceDocumentImportStatus {
     ProbableExistingStatement,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SourceDocumentImportOutcome {
     pub document_id: String,
     pub status: SourceDocumentImportStatus,
@@ -46,18 +64,21 @@ pub struct SourceDocumentImport<'a> {
     pub mime_type: &'a str,
     pub money_source_id: &'a str,
     pub original_filename: &'a str,
-    pub semantic_document_key: &'a str,
+    pub semantic_document_key: Option<&'a str>,
     pub source_path: &'a Path,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SourceDocumentView {
+    pub byte_size: u64,
     pub document_id: String,
     pub encrypted_locator: Option<String>,
     pub file_sha256: String,
     pub file_state: String,
+    pub mime_type: String,
     pub original_filename: String,
-    pub semantic_document_key: String,
+    pub received_at: String,
+    pub semantic_document_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -150,22 +171,48 @@ impl ManualImportStore {
     pub fn list_documents(&self, money_source_id: &str) -> StoreResult<Vec<SourceDocumentView>> {
         let mut statement = self.connection.prepare(
             "SELECT id, file_sha256, semantic_document_key, original_filename, \
-                    encrypted_locator, file_state \
+                    mime_type, byte_size, encrypted_locator, file_state, received_at \
              FROM source_documents \
              WHERE money_source_id = ?1 \
              ORDER BY received_at DESC, id",
         )?;
         let rows = statement.query_map([money_source_id], |row| {
+            let byte_size: i64 = row.get(5)?;
             Ok(SourceDocumentView {
+                byte_size: u64::try_from(byte_size).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        5,
+                        rusqlite::types::Type::Integer,
+                        Box::new(error),
+                    )
+                })?,
                 document_id: row.get(0)?,
                 file_sha256: row.get(1)?,
                 semantic_document_key: row.get(2)?,
                 original_filename: row.get(3)?,
-                encrypted_locator: row.get(4)?,
-                file_state: row.get(5)?,
+                mime_type: row.get(4)?,
+                encrypted_locator: row.get(6)?,
+                file_state: row.get(7)?,
+                received_at: row.get(8)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn seed_money_source(
+        &self,
+        id: &str,
+        provider_key: &str,
+        display_name: &str,
+        source_type: &str,
+    ) -> StoreResult<()> {
+        self.connection.execute(
+            "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
+             VALUES (?1, ?2, ?3, ?4)",
+            params![id, provider_key, display_name, source_type],
+        )?;
+        Ok(())
     }
 
     fn reconcile_files(&mut self) -> StoreResult<()> {
@@ -232,18 +279,22 @@ fn derive_database_key(master_key: &[u8; KEY_LEN]) -> StoreResult<Zeroizing<[u8;
     Ok(key)
 }
 
-fn apply_migrations(connection: &mut Connection) -> rusqlite::Result<()> {
+fn apply_migrations(connection: &mut Connection) -> StoreResult<()> {
+    apply_migration_set(connection, MIGRATIONS)
+}
+
+fn apply_migration_set(connection: &mut Connection, migrations: &[Migration]) -> StoreResult<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations ( \
            version INTEGER PRIMARY KEY, \
            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP \
          );",
     )?;
-    for (version, sql) in MIGRATIONS {
+    for migration in migrations {
         let applied = connection
             .query_row(
                 "SELECT 1 FROM schema_migrations WHERE version = ?1",
-                [version],
+                [migration.version],
                 |_| Ok(()),
             )
             .optional()?
@@ -251,13 +302,33 @@ fn apply_migrations(connection: &mut Connection) -> rusqlite::Result<()> {
         if applied {
             continue;
         }
-        let transaction = connection.transaction()?;
-        transaction.execute_batch(sql)?;
-        transaction.execute(
-            "INSERT INTO schema_migrations(version) VALUES (?1)",
-            [version],
-        )?;
-        transaction.commit()?;
+        if migration.foreign_keys_off {
+            connection.execute_batch("PRAGMA foreign_keys = OFF;")?;
+        }
+        let result: StoreResult<()> = (|| {
+            let transaction = connection.transaction()?;
+            transaction.execute_batch(migration.sql)?;
+            let violation = transaction
+                .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                .optional()?;
+            if violation.is_some() {
+                return Err(io::Error::other(format!(
+                    "migration {} violates foreign keys",
+                    migration.version
+                ))
+                .into());
+            }
+            transaction.execute(
+                "INSERT INTO schema_migrations(version) VALUES (?1)",
+                [migration.version],
+            )?;
+            transaction.commit()?;
+            Ok(())
+        })();
+        if migration.foreign_keys_off {
+            connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+        }
+        result?;
     }
     Ok(())
 }
@@ -305,15 +376,19 @@ fn persist_import(
         };
         (existing.document_id, status)
     } else {
-        let semantic_match = transaction
-            .query_row(
-                "SELECT 1 FROM source_documents \
-                 WHERE money_source_id = ?1 AND semantic_document_key = ?2 LIMIT 1",
-                params![input.money_source_id, input.semantic_document_key],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some();
+        let semantic_match = if let Some(semantic_document_key) = input.semantic_document_key {
+            transaction
+                .query_row(
+                    "SELECT 1 FROM source_documents \
+                     WHERE money_source_id = ?1 AND semantic_document_key = ?2 LIMIT 1",
+                    params![input.money_source_id, semantic_document_key],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some()
+        } else {
+            false
+        };
         let byte_size = i64::try_from(stored.byte_size)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         transaction.execute(
@@ -409,7 +484,6 @@ fn validate_import(input: &SourceDocumentImport<'_>) -> StoreResult<()> {
         ("mime_type", input.mime_type),
         ("money_source_id", input.money_source_id),
         ("original_filename", input.original_filename),
-        ("semantic_document_key", input.semantic_document_key),
     ] {
         if value.is_empty() {
             return Err(io::Error::new(
@@ -476,9 +550,141 @@ mod tests {
             mime_type: "application/pdf",
             money_source_id: "source-dbs",
             original_filename: "DBS-July-2026.pdf",
-            semantic_document_key,
+            semantic_document_key: Some(semantic_document_key),
             source_path,
         }
+    }
+
+    #[test]
+    fn migrates_existing_document_relationships_to_pending_semantic_identity() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let database_path = root.path().join(DATABASE_FILE_NAME);
+        let mut connection = open_encrypted_database(
+            &database_path,
+            &KEY,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+        )
+        .expect("open encrypted database");
+        apply_migration_set(&mut connection, &MIGRATIONS[..2]).expect("apply old schema");
+        connection
+            .execute(
+                "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
+                 VALUES ('source-dbs', 'dbs', 'DBS', 'bank')",
+                [],
+            )
+            .expect("seed source");
+        connection
+            .execute(
+                "INSERT INTO source_documents( \
+                   id, money_source_id, file_sha256, semantic_document_key, \
+                   original_filename, mime_type, byte_size, encrypted_locator, file_state \
+                 ) VALUES ( \
+                   'document-existing', 'source-dbs', ?1, 'dbs:checking:2026-06', \
+                   'DBS-June-2026.pdf', 'application/pdf', 2048, \
+                   'files/document-existing.ccenv', 'available' \
+                 )",
+                ["e".repeat(64)],
+            )
+            .expect("seed document");
+        connection
+            .execute(
+                "INSERT INTO parse_runs( \
+                   id, source_document_id, normalization_profile_id, profile_json, status \
+                 ) VALUES ( \
+                   'parse-existing', 'document-existing', 'profile-v1', '{}', 'succeeded' \
+                 )",
+                [],
+            )
+            .expect("seed parse relationship");
+
+        apply_migration_set(&mut connection, &MIGRATIONS[2..]).expect("apply pending identity");
+
+        let not_null: i64 = connection
+            .query_row(
+                "SELECT \"notnull\" FROM pragma_table_info('source_documents') \
+                 WHERE name = 'semantic_document_key'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read semantic column");
+        assert_eq!(not_null, 0);
+        let semantic_document_key: String = connection
+            .query_row(
+                "SELECT semantic_document_key FROM source_documents \
+                 WHERE id = 'document-existing'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("preserve identity");
+        assert_eq!(semantic_document_key, "dbs:checking:2026-06");
+        let source_document_id: String = connection
+            .query_row(
+                "SELECT source_document_id FROM parse_runs WHERE id = 'parse-existing'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("preserve parse relationship");
+        assert_eq!(source_document_id, "document-existing");
+        assert!(
+            connection
+                .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                .optional()
+                .expect("check foreign keys")
+                .is_none()
+        );
+        assert_eq!(
+            connection
+                .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
+                .expect("foreign keys enabled"),
+            1
+        );
+        connection
+            .execute(
+                "INSERT INTO source_documents( \
+                   id, money_source_id, file_sha256, \
+                   original_filename, mime_type, byte_size, encrypted_locator, file_state \
+                 ) VALUES ( \
+                   'document-pending', 'source-dbs', ?1, \
+                   'Pending.pdf', 'application/pdf', 1024, \
+                   'files/document-pending.ccenv', 'available' \
+                 )",
+                ["p".repeat(64)],
+            )
+            .expect("insert pending identity");
+        let pending_identity: Option<String> = connection
+            .query_row(
+                "SELECT semantic_document_key FROM source_documents \
+                 WHERE id = 'document-pending'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read pending identity");
+        assert_eq!(pending_identity, None);
+
+        let invalid = [Migration {
+            version: 99,
+            sql: "INSERT INTO parse_runs( \
+                    id, source_document_id, normalization_profile_id, profile_json, status \
+                  ) VALUES ( \
+                    'parse-invalid', 'missing-document', 'profile-v1', '{}', 'failed' \
+                  )",
+            foreign_keys_off: true,
+        }];
+        assert!(apply_migration_set(&mut connection, &invalid).is_err());
+        assert_eq!(
+            connection
+                .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
+                .expect("foreign keys restored after failure"),
+            1
+        );
+        let invalid_rows: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM parse_runs WHERE id = 'parse-invalid'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("invalid migration rolled back");
+        assert_eq!(invalid_rows, 0);
     }
 
     #[test]

@@ -2,6 +2,18 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-18
+
+### Completed
+
+- Added the stacked host-owned manual-import boundary: Tauri opens the native PDF/CSV picker off the command thread, imports only while the Vault is unlocked, and returns import outcomes or safe per-source document metadata without returning host paths, encrypted locators, hashes, or file bytes.
+- Made semantic document identity nullable during initial file capture. The renderer command no longer accepts it; exact-hash deduplication remains immediate, while the trusted classifier/normalizer will set semantic identity and detect byte-different probable statements later.
+- Added a relationship-preserving SQLite rebuild migration with explicit foreign-key-off handling, in-transaction foreign-key validation, rollback coverage, and restoration of enforcement after success or failure.
+
+### Next
+
+- Review and land the stacked host-owned import/list command checkpoint, then connect deterministic normalization and the Money Source/Documents UI with responsive, empty/loading/error-state, and motion inspection.
+
 ## 2026-07-17
 
 ### Completed

@@ -99,6 +99,8 @@ deletion timestamp and append-only audit reference when deleted
 semantic document key used to group byte-different evidence for one statement identity
 ```
 
+`semantic_document_key` is nullable while a newly captured file is still unclassified. Initial import knows the exact file hash but must not accept semantic identity from the renderer or user. The trusted classification/normalization path sets the key after it has grounded a provider statement ID or the accepted fallback identity inputs. Exact-hash deduplication remains available before classification; probable-statement grouping begins only after semantic identity exists.
+
 `deleted` means the user intentionally deleted the current encrypted Vault file. `missing` means the file should exist but storage cannot find or verify it. In both states, the `source_documents` row remains so external records, parse runs, review history, ledger navigation, and audit history do not break. A nullable locator or equivalent state projection must not erase the exact hash or evidence relationships.
 
 Different byte sequences with the same semantic statement identity remain separate `source_documents` rows grouped by the semantic document key. An exact-hash re-import reuses the existing row and, when that row is deleted or missing, may restore its current encrypted file instead of creating a duplicate row.
@@ -171,6 +173,7 @@ Acceptance requires integration tests to run from a clean database without manua
 - Schema changes use hand-written, versioned migrations.
 - Core query dimensions are columns rather than hidden in JSON.
 - Exact source-file identity uses SHA-256 and remains separate from semantic document identity.
+- A newly captured file may keep semantic document identity null until trusted classification; renderer or user input cannot set it.
 - `source_documents` is the MVP encrypted-file registry and tombstone; no separate `vault_files` table is required.
 - Deleting or losing a current Vault file preserves its source-document row and every record, parse, review, ledger, and audit relationship.
 - Byte-different evidence for one statement identity uses separate source-document rows grouped by semantic identity; exact-hash re-import is idempotent and may restore a deleted current file.
