@@ -1,6 +1,8 @@
 use crate::{
     database::{
         DATABASE_FILE_NAME, ManualImportStore, SourceDocumentImport, SourceDocumentImportOutcome,
+        SourceDocumentNormalizationInput, SourceDocumentRoutingOutcome, TrustedAccountCandidate,
+        TrustedDocumentClassification,
     },
     vault::{create_password_wrapper, open_password_wrapper, password_wrapper_profile},
 };
@@ -11,14 +13,22 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
+    time::Duration,
 };
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_shell::{
+    ShellExt,
+    process::{CommandChild, CommandEvent},
+};
+use tokio::time::{Instant, timeout_at};
 use zeroize::Zeroizing;
 
 const KEY_LEN: usize = 32;
 const KEY_FILE_NAME: &str = "vault-key.ccenv";
 const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
+const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
+const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -33,12 +43,6 @@ pub(crate) struct VaultCommandError {
     code: &'static str,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ImportSourceDocumentRequest {
-    money_source_id: String,
-}
-
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SourceDocumentSummary {
@@ -48,6 +52,65 @@ pub(crate) struct SourceDocumentSummary {
     mime_type: String,
     original_filename: String,
     received_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NormalizerAccount {
+    account_type: String,
+    currency: Option<String>,
+    masked_identifier: Option<String>,
+    provider_account_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NormalizerDocument {
+    document_type: String,
+    provider_key: String,
+    statement_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
+enum NormalizerResult {
+    Classified { proposal: NormalizerProposal },
+    NeedsAttention { reason: String },
+}
+
+#[derive(Debug, Deserialize)]
+struct NormalizerProposal {
+    accounts: Vec<NormalizerAccount>,
+    document: NormalizerDocument,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NormalizerCommand<'a> {
+    content: &'a str,
+    document_id: &'a str,
+    mime_type: &'a str,
+    request_id: &'a str,
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum NormalizerMessage {
+    Ready {
+        #[serde(rename = "protocolVersion")]
+        protocol_version: u8,
+        runtime: String,
+        #[serde(rename = "environmentCleared")]
+        environment_cleared: bool,
+    },
+    Result {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        result: NormalizerResult,
+    },
+    Error,
 }
 
 impl VaultCommandError {
@@ -221,10 +284,8 @@ impl VaultRuntime {
 
     pub(crate) fn import_selected_document(
         &self,
-        request: &ImportSourceDocumentRequest,
         source_path: &Path,
     ) -> Result<SourceDocumentImportOutcome, RuntimeError> {
-        validate_import_request(request)?;
         let mut store = self.store()?;
         let store = store
             .as_mut()
@@ -239,9 +300,7 @@ impl VaultRuntime {
             audit_reason: "manual_import",
             document_id: &document_id,
             mime_type,
-            money_source_id: &request.money_source_id,
             original_filename: &original_filename,
-            semantic_document_key: None,
             source_path,
         };
         store
@@ -282,6 +341,111 @@ impl VaultRuntime {
                     .collect()
             })
             .map_err(|_| RuntimeError::new("list_documents_failed"))
+    }
+
+    pub(crate) fn list_unassigned_source_documents(
+        &self,
+    ) -> Result<Vec<SourceDocumentSummary>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .list_unassigned_documents()
+            .map(|documents| {
+                documents
+                    .into_iter()
+                    .map(|document| SourceDocumentSummary {
+                        byte_size: document.byte_size,
+                        document_id: document.document_id,
+                        file_state: document.file_state,
+                        mime_type: document.mime_type,
+                        original_filename: document.original_filename,
+                        received_at: document.received_at,
+                    })
+                    .collect()
+            })
+            .map_err(|_| RuntimeError::new("list_documents_failed"))
+    }
+
+    fn normalization_input(
+        &self,
+        document_id: &str,
+    ) -> Result<SourceDocumentNormalizationInput, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .normalization_input(document_id)
+            .map_err(|_| RuntimeError::new("document_unavailable"))
+    }
+
+    fn apply_normalizer_result(
+        &self,
+        document_id: &str,
+        input_text: &str,
+        result: NormalizerResult,
+    ) -> Result<SourceDocumentRoutingOutcome, RuntimeError> {
+        let proposal = match result {
+            NormalizerResult::Classified { proposal } => proposal,
+            NormalizerResult::NeedsAttention { reason } => {
+                let reason = if reason == "unsupported_document" {
+                    "unsupported_document"
+                } else {
+                    "classification_uncertain"
+                };
+                return Ok(SourceDocumentRoutingOutcome::needs_attention(
+                    document_id,
+                    reason,
+                ));
+            }
+        };
+        let Some(statement_id) = proposal.document.statement_id.as_deref() else {
+            return Ok(SourceDocumentRoutingOutcome::needs_attention(
+                document_id,
+                "classification_uncertain",
+            ));
+        };
+        if !valid_synthetic_fingerprint(input_text, &proposal) {
+            return Ok(SourceDocumentRoutingOutcome::needs_attention(
+                document_id,
+                "provider_fingerprint_mismatch",
+            ));
+        }
+        let semantic_document_key = format!(
+            "{}:{}",
+            proposal.document.provider_key.as_str(),
+            statement_id
+        );
+        let account_ids = (0..proposal.accounts.len())
+            .map(|_| random_identifier("account"))
+            .collect::<Vec<_>>();
+        let accounts = proposal
+            .accounts
+            .iter()
+            .zip(&account_ids)
+            .map(|(account, account_id)| TrustedAccountCandidate {
+                account_id,
+                account_type: &account.account_type,
+                currency: account.currency.as_deref(),
+                display_name: "Detected account",
+                masked_identifier: account.masked_identifier.as_deref(),
+                provider_account_id: account.provider_account_id.as_deref(),
+            })
+            .collect::<Vec<_>>();
+        let audit_id = random_identifier("audit");
+        let classification = TrustedDocumentClassification {
+            accounts: &accounts,
+            audit_id: &audit_id,
+            document_id,
+            provider_key: &proposal.document.provider_key,
+            semantic_document_key: &semantic_document_key,
+        };
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .apply_trusted_classification(&classification)
+            .map_err(|_| RuntimeError::new("classification_failed"))
     }
 
     #[cfg(test)]
@@ -358,13 +522,11 @@ pub(crate) async fn lock_vault(
 
 #[tauri::command]
 pub(crate) async fn import_source_document(
-    request: ImportSourceDocumentRequest,
     app: AppHandle,
     runtime: State<'_, VaultRuntime>,
 ) -> Result<Option<SourceDocumentImportOutcome>, VaultCommandError> {
     let runtime = runtime.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        validate_import_request(&request)?;
         runtime.require_unlocked()?;
         let selected = app
             .dialog()
@@ -378,7 +540,47 @@ pub(crate) async fn import_source_document(
         let path = selected
             .into_path()
             .map_err(|_| RuntimeError::new("file_selection_failed"))?;
-        runtime.import_selected_document(&request, &path).map(Some)
+        runtime.import_selected_document(&path).map(Some)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn list_unassigned_source_documents(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<SourceDocumentSummary>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.list_unassigned_source_documents())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn normalize_source_document(
+    document_id: String,
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<SourceDocumentRoutingOutcome, VaultCommandError> {
+    if document_id.is_empty() {
+        return Err(VaultCommandError::new("invalid_document_request"));
+    }
+    let runtime = runtime.inner().clone();
+    let input = {
+        let runtime = runtime.clone();
+        let document_id = document_id.clone();
+        tauri::async_runtime::spawn_blocking(move || runtime.normalization_input(&document_id))
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    let input_text = Zeroizing::new(String::from_utf8_lossy(&input.plaintext).into_owned());
+    let result = run_normalizer_sidecar(&app, &document_id, &input.mime_type, &input_text)
+        .await
+        .map_err(VaultCommandError::from)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.apply_normalizer_result(&document_id, &input_text, result)
     })
     .await
     .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
@@ -395,13 +597,6 @@ pub(crate) async fn list_source_documents(
         .await
         .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
         .map_err(Into::into)
-}
-
-fn validate_import_request(request: &ImportSourceDocumentRequest) -> Result<(), RuntimeError> {
-    if request.money_source_id.is_empty() {
-        return Err(RuntimeError::new("invalid_import_request"));
-    }
-    Ok(())
 }
 
 fn source_document_metadata(source_path: &Path) -> Result<(String, &'static str), RuntimeError> {
@@ -426,6 +621,131 @@ fn source_document_metadata(source_path: &Path) -> Result<(String, &'static str)
         .ok_or_else(|| RuntimeError::new("unsupported_document"))?
         .to_owned();
     Ok((original_filename, mime_type))
+}
+
+async fn run_normalizer_sidecar(
+    app: &AppHandle,
+    document_id: &str,
+    mime_type: &str,
+    content: &str,
+) -> Result<NormalizerResult, RuntimeError> {
+    let request_id = random_identifier("normalize");
+    let command = Zeroizing::new(
+        serde_json::to_vec(&NormalizerCommand {
+            content,
+            document_id,
+            mime_type,
+            request_id: &request_id,
+            kind: "normalize",
+        })
+        .map_err(|_| RuntimeError::new("normalizer_unavailable"))?,
+    );
+    let sidecar = app
+        .shell()
+        .sidecar("cancan-document-normalizer")
+        .map_err(|_| RuntimeError::new("normalizer_unavailable"))?
+        .env_clear();
+    let (mut events, mut child) = sidecar
+        .spawn()
+        .map_err(|_| RuntimeError::new("normalizer_unavailable"))?;
+    let deadline = Instant::now() + NORMALIZER_TIMEOUT;
+    let mut ready = false;
+    let result = loop {
+        let event = match timeout_at(deadline, events.recv()).await {
+            Ok(Some(event)) => event,
+            Ok(None) | Err(_) => return fail_normalizer(child),
+        };
+        match event {
+            CommandEvent::Stdout(bytes) => {
+                let message = match serde_json::from_slice::<NormalizerMessage>(&bytes) {
+                    Ok(message) => message,
+                    Err(_) => return fail_normalizer(child),
+                };
+                match message {
+                    NormalizerMessage::Ready {
+                        protocol_version,
+                        runtime,
+                        environment_cleared,
+                    } if !ready
+                        && valid_normalizer_ready(
+                            protocol_version,
+                            &runtime,
+                            environment_cleared,
+                        ) =>
+                    {
+                        let mut framed = Zeroizing::new(command.to_vec());
+                        framed.push(b'\n');
+                        if child.write(&framed).is_err() {
+                            return fail_normalizer(child);
+                        }
+                        ready = true;
+                    }
+                    NormalizerMessage::Result {
+                        request_id: response_id,
+                        result,
+                    } if ready && response_id == request_id => break result,
+                    NormalizerMessage::Ready { .. }
+                    | NormalizerMessage::Result { .. }
+                    | NormalizerMessage::Error => return fail_normalizer(child),
+                }
+            }
+            CommandEvent::Terminated(_) => {
+                return Err(RuntimeError::new("normalizer_failed"));
+            }
+            CommandEvent::Stderr(_) | CommandEvent::Error(_) => return fail_normalizer(child),
+            _ => return fail_normalizer(child),
+        }
+    };
+
+    if child.write(b"{\"type\":\"shutdown\"}\n").is_err() {
+        return fail_normalizer(child);
+    }
+    let shutdown_deadline = Instant::now() + NORMALIZER_SHUTDOWN_TIMEOUT;
+    let event = match timeout_at(shutdown_deadline, events.recv()).await {
+        Ok(Some(event)) => event,
+        Ok(None) | Err(_) => return fail_normalizer(child),
+    };
+    match event {
+        CommandEvent::Terminated(payload) if payload.code == Some(0) => Ok(result),
+        CommandEvent::Terminated(_) => Err(RuntimeError::new("normalizer_failed")),
+        CommandEvent::Stdout(_) | CommandEvent::Stderr(_) | CommandEvent::Error(_) => {
+            fail_normalizer(child)
+        }
+        _ => fail_normalizer(child),
+    }
+}
+
+fn fail_normalizer(child: CommandChild) -> Result<NormalizerResult, RuntimeError> {
+    let _ = child.kill();
+    Err(RuntimeError::new("normalizer_failed"))
+}
+
+fn valid_normalizer_ready(protocol_version: u8, runtime: &str, environment_cleared: bool) -> bool {
+    protocol_version == 1 && runtime == "single-pass-mock" && environment_cleared
+}
+
+fn valid_synthetic_fingerprint(content: &str, proposal: &NormalizerProposal) -> bool {
+    content.contains("CANCAN_SYNTHETIC_STATEMENT_V1")
+        && content.contains("provider=synthetic-bank")
+        && content.contains("statement_id=transfer-2026-07")
+        && proposal.document.provider_key == "synthetic-bank"
+        && proposal.document.document_type == "transfer_export"
+        && proposal.document.statement_id.as_deref() == Some("transfer-2026-07")
+        && !proposal.accounts.is_empty()
+        && proposal.accounts.iter().all(|account| {
+            matches!(
+                account.account_type.as_str(),
+                "deposit_account"
+                    | "credit_card"
+                    | "currency_balance"
+                    | "brokerage_account"
+                    | "cash_balance"
+                    | "position_group"
+                    | "insurance_policy"
+                    | "manual_asset"
+                    | "manual_liability"
+            )
+        })
 }
 
 fn random_identifier(prefix: &str) -> String {
@@ -467,6 +787,14 @@ mod tests {
     use super::*;
     use crate::database::SourceDocumentImportStatus;
     use std::{thread, time::Duration};
+
+    #[test]
+    fn accepts_only_the_expected_normalizer_handshake() {
+        assert!(valid_normalizer_ready(1, "single-pass-mock", true));
+        assert!(!valid_normalizer_ready(2, "single-pass-mock", true));
+        assert!(!valid_normalizer_ready(1, "live-runtime", true));
+        assert!(!valid_normalizer_ready(1, "single-pass-mock", false));
+    }
 
     #[test]
     fn creates_locks_and_unlocks_a_vault_without_exposing_the_master_key() {
@@ -662,7 +990,7 @@ mod tests {
     }
 
     #[test]
-    fn imports_and_lists_a_selected_document_only_while_unlocked() {
+    fn imports_and_lists_an_unassigned_document_only_while_unlocked() {
         let parent = tempfile::tempdir().expect("temporary app data");
         let source_path = parent.path().join("DBS-July-2026.pdf");
         fs::write(&source_path, b"%PDF synthetic statement").expect("write statement fixture");
@@ -670,27 +998,20 @@ mod tests {
         runtime
             .create(b"synthetic-vault-password")
             .expect("create Vault");
-        runtime
-            .seed_money_source("source-dbs", "dbs", "DBS", "bank")
-            .expect("seed source");
-        let request = ImportSourceDocumentRequest {
-            money_source_id: "source-dbs".to_owned(),
-        };
-
         let imported = runtime
-            .import_selected_document(&request, &source_path)
+            .import_selected_document(&source_path)
             .expect("import statement");
         assert_eq!(imported.status, SourceDocumentImportStatus::Imported);
 
         let duplicate = runtime
-            .import_selected_document(&request, &source_path)
+            .import_selected_document(&source_path)
             .expect("deduplicate statement");
         assert_eq!(duplicate.document_id, imported.document_id);
         assert_eq!(duplicate.status, SourceDocumentImportStatus::AlreadyPresent);
 
         let documents = runtime
-            .list_source_documents("source-dbs")
-            .expect("list documents");
+            .list_unassigned_source_documents()
+            .expect("list unassigned documents");
         assert_eq!(documents.len(), 1);
         assert_eq!(documents[0].document_id, imported.document_id);
         assert_eq!(documents[0].original_filename, "DBS-July-2026.pdf");
@@ -702,22 +1023,23 @@ mod tests {
             let persisted = store
                 .as_ref()
                 .expect("unlocked store")
-                .list_documents("source-dbs")
+                .list_unassigned_documents()
                 .expect("inspect imported document");
+            assert_eq!(persisted[0].money_source_id, None);
             assert_eq!(persisted[0].semantic_document_key, None);
         }
 
         runtime.lock().expect("lock Vault");
         assert_eq!(
             runtime
-                .list_source_documents("source-dbs")
+                .list_unassigned_source_documents()
                 .expect_err("reject list while locked")
                 .code(),
             "vault_locked"
         );
         assert_eq!(
             runtime
-                .import_selected_document(&request, &source_path)
+                .import_selected_document(&source_path)
                 .expect_err("reject import while locked")
                 .code(),
             "vault_locked"
@@ -725,41 +1047,80 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_or_incomplete_document_imports() {
+    fn rejects_unsupported_document_imports() {
         let parent = tempfile::tempdir().expect("temporary app data");
         let runtime = VaultRuntime::new(parent.path().join("vault"));
         runtime
             .create(b"synthetic-vault-password")
             .expect("create Vault");
-        runtime
-            .seed_money_source("source-dbs", "dbs", "DBS", "bank")
-            .expect("seed source");
         let unsupported = parent.path().join("statement.exe");
         fs::write(&unsupported, b"not a financial document").expect("write unsupported fixture");
 
         assert_eq!(
             runtime
-                .import_selected_document(
-                    &ImportSourceDocumentRequest {
-                        money_source_id: "source-dbs".to_owned(),
-                    },
-                    &unsupported,
-                )
+                .import_selected_document(&unsupported)
                 .expect_err("reject unsupported document")
                 .code(),
             "unsupported_document"
         );
+    }
+
+    #[test]
+    fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("synthetic.csv");
+        let fixture = [
+            "CANCAN_SYNTHETIC_STATEMENT_V1",
+            "provider=synthetic-bank",
+            "statement_id=transfer-2026-07",
+        ]
+        .join("\n");
+        fs::write(&source_path, &fixture).expect("write statement fixture");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source(
+                "source-synthetic",
+                "synthetic-bank",
+                "Synthetic Bank",
+                "bank",
+            )
+            .expect("seed source");
+        let imported = runtime
+            .import_selected_document(&source_path)
+            .expect("capture statement");
+        let result = NormalizerResult::Classified {
+            proposal: NormalizerProposal {
+                document: NormalizerDocument {
+                    document_type: "transfer_export".to_owned(),
+                    provider_key: "synthetic-bank".to_owned(),
+                    statement_id: Some("transfer-2026-07".to_owned()),
+                },
+                accounts: vec![NormalizerAccount {
+                    account_type: "deposit_account".to_owned(),
+                    currency: Some("SGD".to_owned()),
+                    masked_identifier: Some("••001".to_owned()),
+                    provider_account_id: Some("checking-001".to_owned()),
+                }],
+            },
+        };
+        let routed = runtime
+            .apply_normalizer_result(&imported.document_id, &fixture, result)
+            .expect("apply trusted routing");
+
         assert_eq!(
+            routed.status,
+            crate::database::SourceDocumentRoutingStatus::Routed
+        );
+        assert_eq!(routed.money_source_id.as_deref(), Some("source-synthetic"));
+        assert_eq!(routed.account_ids.len(), 1);
+        assert!(
             runtime
-                .import_selected_document(
-                    &ImportSourceDocumentRequest {
-                        money_source_id: String::new(),
-                    },
-                    &parent.path().join("missing.pdf"),
-                )
-                .expect_err("reject incomplete request")
-                .code(),
-            "invalid_import_request"
+                .list_unassigned_source_documents()
+                .expect("list pending")
+                .is_empty()
         );
     }
 }

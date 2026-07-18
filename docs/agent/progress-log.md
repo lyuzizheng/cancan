@@ -2,6 +2,20 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-19
+
+### Completed
+
+- Removed Money Source input from the manual PDF/CSV import command. New evidence enters the encrypted Vault with null source and semantic identity while exact SHA-256 duplicate and restore behavior remains available immediately.
+- Added the relationship-preserving migration that makes `source_documents.money_source_id` nullable, retaining its foreign key, source-list index, lifecycle triggers, parse relationships, and foreign-key validation/rollback behavior.
+- Added the production single-pass mock sidecar package and a document-ID-only Tauri normalization command. The host clears inherited sidecar environment, keeps source plaintext inside the trusted process boundary, validates the synthetic provider fingerprint, and derives semantic identity without accepting renderer-supplied provider/source/account values.
+- Added transactional routing for exactly one configured Money Source and stable provider account IDs. Zero/multiple source matches, unsupported evidence, fingerprint mismatch, missing stable account identity, and archived account matches return typed `Needs attention` outcomes without guessing.
+- Added safe unassigned-document listing, renderer-facing TypeScript command contracts, deterministic mock-normalizer tests, migration tests, Rust repository/runtime tests, and a debug Tauri build with the generated Node single-executable sidecar.
+
+### Next
+
+- Continue `vault-manual-import` with the Money Source/Documents UI over the new commands, then complete the remaining viewer, lock, statement-password, deletion, and recovery checkpoints. Keep folder automation, Gmail, mobile intake, and live AI out of this checkpoint.
+
 ## 2026-07-18
 
 ### Completed

@@ -150,7 +150,6 @@ impl FileVault {
         })
     }
 
-    #[cfg(test)]
     pub(crate) fn open_in_memory(
         &self,
         master_key: &[u8; KEY_LEN],

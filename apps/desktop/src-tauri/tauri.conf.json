@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "pnpm build:web",
+    "beforeBuildCommand": "pnpm build:sidecar && pnpm build:web",
     "frontendDist": "../dist"
   },
   "app": {
@@ -27,6 +27,7 @@
   },
   "bundle": {
     "active": false,
+    "externalBin": ["binaries/cancan-document-normalizer"],
     "icon": ["icons/64x64.png"]
   }
 }

@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "desktop:dev": "tauri dev",
+    "desktop:dev": "pnpm build:sidecar && tauri dev",
     "typecheck": "tsc --project tsconfig.json",
-    "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings",
-    "test:rust": "cd src-tauri && cargo test --locked",
+    "check:rust": "pnpm build:sidecar && cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings",
+    "test:rust": "pnpm build:sidecar && cd src-tauri && cargo test --locked",
     "build:web": "vite build",
+    "build:sidecar": "pnpm --filter @cancan/ai build:sidecar",
     "build:desktop": "tauri build --debug --no-bundle -- --locked"
   },
   "dependencies": {

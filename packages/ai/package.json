@@ -1,0 +1,19 @@
+{
+  "name": "@cancan/ai",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build:sidecar": "node scripts/build-sidecar.mjs",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@cancan/parsers": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "esbuild": "0.28.1",
+    "postject": "1.0.0-alpha.6",
+    "typescript": "7.0.2"
+  }
+}

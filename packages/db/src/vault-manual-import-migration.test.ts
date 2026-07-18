@@ -15,7 +15,7 @@ function migration(name: string): string {
   return readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8");
 }
 
-function openDatabase(maxVersion = 3): DatabaseSync {
+function openDatabase(maxVersion = 4): DatabaseSync {
   process.env.CANCAN_TEST = "1";
   const directory = mkdtempSync(join(tmpdir(), "cancan-test-vault-manual-import-"));
   testDirectories.push(directory);
@@ -27,12 +27,13 @@ function openDatabase(maxVersion = 3): DatabaseSync {
     { version: 1, name: "0001_synthetic_core.sql" },
     { version: 2, name: "0002_vault_manual_import.sql" },
     { version: 3, name: "0003_source_document_pending_identity.sql" },
+    { version: 4, name: "0004_source_document_pending_source.sql" },
   ]
     .filter(({ version }) => version <= maxVersion)
     .map(({ version, name }) => ({
       version,
       sql: migration(name),
-      foreignKeysOff: version === 3,
+      foreignKeysOff: version === 3 || version === 4,
     }));
   applyMigrations(database, migrations);
   applyMigrations(database, migrations);
@@ -149,6 +150,76 @@ describe("vault manual import migration", () => {
         .prepare("SELECT semantic_document_key FROM source_documents WHERE id = ?")
         .get("document-pending"),
     ).toEqual({ semantic_document_key: null });
+  });
+
+  it("preserves existing relationships while allowing source assignment to remain pending", () => {
+    const database = openDatabase(3);
+    database
+      .prepare(`
+        INSERT INTO source_documents(
+          id, money_source_id, file_sha256, semantic_document_key,
+          original_filename, mime_type, byte_size, encrypted_locator, file_state
+        ) VALUES (
+          'document-existing', 'source-dbs', ?, 'dbs:checking:2026-06',
+          'DBS-June-2026.pdf', 'application/pdf', 2048,
+          'files/document-existing.ccenv', 'available'
+        )
+      `)
+      .run("e".repeat(64));
+    database
+      .prepare(`
+        INSERT INTO parse_runs(
+          id, source_document_id, normalization_profile_id, profile_json, status
+        ) VALUES (
+          'parse-existing', 'document-existing', 'profile-v1', '{}', 'succeeded'
+        )
+      `)
+      .run();
+
+    applyMigrations(database, [
+      {
+        version: 4,
+        sql: migration("0004_source_document_pending_source.sql"),
+        foreignKeysOff: true,
+      },
+    ]);
+
+    const sourceColumn = database
+      .prepare("PRAGMA table_info(source_documents)")
+      .all()
+      .find((column) => column.name === "money_source_id");
+    expect(sourceColumn?.notnull).toBe(0);
+    expect(
+      database
+        .prepare("SELECT money_source_id FROM source_documents WHERE id = ?")
+        .get("document-existing"),
+    ).toEqual({ money_source_id: "source-dbs" });
+    expect(
+      database.prepare("SELECT source_document_id FROM parse_runs WHERE id = ?").get(
+        "parse-existing",
+      ),
+    ).toEqual({ source_document_id: "document-existing" });
+    expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
+
+    database
+      .prepare(`
+        INSERT INTO source_documents(
+          id, file_sha256, original_filename, mime_type, byte_size,
+          encrypted_locator, file_state
+        ) VALUES (
+          'document-unassigned', ?, 'Pending.csv', 'text/csv', 1024,
+          'files/document-unassigned.ccenv', 'available'
+        )
+      `)
+      .run("u".repeat(64));
+    expect(
+      database
+        .prepare(
+          "SELECT money_source_id, semantic_document_key FROM source_documents WHERE id = ?",
+        )
+        .get("document-unassigned"),
+    ).toEqual({ money_source_id: null, semantic_document_key: null });
   });
 
   it("enforces source-file lifecycle and exact byte identity", () => {
