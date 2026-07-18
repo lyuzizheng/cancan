@@ -7,7 +7,7 @@
     "node": ">=24.18.0"
   },
   "scripts": {
-    "spike:check": "cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings",
+    "spike:check": "pnpm build:sidecar && cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings",
     "typecheck": "tsc --project tsconfig.json",
     "test": "vitest run",
     "build:sidecar": "node scripts/build-sidecar.mjs",
