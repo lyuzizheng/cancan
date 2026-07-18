@@ -1,7 +1,7 @@
 use crate::vault::{FileVault, StoredFile};
 use hkdf::Hkdf;
 use rand::{RngCore, rngs::OsRng};
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 use serde::Serialize;
 use sha2::Sha256;
 use std::{collections::HashSet, error::Error, fs, io, path::Path};
@@ -34,6 +34,13 @@ const MIGRATIONS: &[Migration] = &[
         ),
         foreign_keys_off: true,
     },
+    Migration {
+        version: 4,
+        sql: include_str!(
+            "../../../../packages/db/migrations/0004_source_document_pending_source.sql"
+        ),
+        foreign_keys_off: true,
+    },
 ];
 
 type StoreResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
@@ -44,7 +51,6 @@ pub enum SourceDocumentImportStatus {
     Imported,
     AlreadyPresent,
     Restored,
-    ProbableExistingStatement,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -62,9 +68,7 @@ pub struct SourceDocumentImport<'a> {
     pub audit_reason: &'a str,
     pub document_id: &'a str,
     pub mime_type: &'a str,
-    pub money_source_id: &'a str,
     pub original_filename: &'a str,
-    pub semantic_document_key: Option<&'a str>,
     pub source_path: &'a Path,
 }
 
@@ -76,9 +80,63 @@ pub struct SourceDocumentView {
     pub file_sha256: String,
     pub file_state: String,
     pub mime_type: String,
+    pub money_source_id: Option<String>,
     pub original_filename: String,
     pub received_at: String,
     pub semantic_document_key: Option<String>,
+}
+
+pub struct SourceDocumentNormalizationInput {
+    pub mime_type: String,
+    pub plaintext: Zeroizing<Vec<u8>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceDocumentRoutingStatus {
+    Routed,
+    NeedsAttention,
+}
+
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceDocumentRoutingOutcome {
+    pub account_ids: Vec<String>,
+    pub document_id: String,
+    pub money_source_id: Option<String>,
+    pub reason: Option<&'static str>,
+    pub status: SourceDocumentRoutingStatus,
+}
+
+impl SourceDocumentRoutingOutcome {
+    pub(crate) fn needs_attention(document_id: &str, reason: &'static str) -> Self {
+        Self {
+            account_ids: Vec::new(),
+            document_id: document_id.to_owned(),
+            money_source_id: None,
+            reason: Some(reason),
+            status: SourceDocumentRoutingStatus::NeedsAttention,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct TrustedAccountCandidate<'a> {
+    pub account_id: &'a str,
+    pub account_type: &'a str,
+    pub currency: Option<&'a str>,
+    pub display_name: &'a str,
+    pub masked_identifier: Option<&'a str>,
+    pub provider_account_id: Option<&'a str>,
+}
+
+#[derive(Debug)]
+pub struct TrustedDocumentClassification<'a> {
+    pub accounts: &'a [TrustedAccountCandidate<'a>],
+    pub audit_id: &'a str,
+    pub document_id: &'a str,
+    pub provider_key: &'a str,
+    pub semantic_document_key: &'a str,
 }
 
 #[derive(Debug)]
@@ -170,33 +228,218 @@ impl ManualImportStore {
 
     pub fn list_documents(&self, money_source_id: &str) -> StoreResult<Vec<SourceDocumentView>> {
         let mut statement = self.connection.prepare(
-            "SELECT id, file_sha256, semantic_document_key, original_filename, \
+            "SELECT id, money_source_id, file_sha256, semantic_document_key, original_filename, \
                     mime_type, byte_size, encrypted_locator, file_state, received_at \
              FROM source_documents \
              WHERE money_source_id = ?1 \
              ORDER BY received_at DESC, id",
         )?;
         let rows = statement.query_map([money_source_id], |row| {
-            let byte_size: i64 = row.get(5)?;
+            let byte_size: i64 = row.get(6)?;
             Ok(SourceDocumentView {
                 byte_size: u64::try_from(byte_size).map_err(|error| {
                     rusqlite::Error::FromSqlConversionFailure(
-                        5,
+                        6,
                         rusqlite::types::Type::Integer,
                         Box::new(error),
                     )
                 })?,
                 document_id: row.get(0)?,
-                file_sha256: row.get(1)?,
-                semantic_document_key: row.get(2)?,
-                original_filename: row.get(3)?,
-                mime_type: row.get(4)?,
-                encrypted_locator: row.get(6)?,
-                file_state: row.get(7)?,
-                received_at: row.get(8)?,
+                money_source_id: row.get(1)?,
+                file_sha256: row.get(2)?,
+                semantic_document_key: row.get(3)?,
+                original_filename: row.get(4)?,
+                mime_type: row.get(5)?,
+                encrypted_locator: row.get(7)?,
+                file_state: row.get(8)?,
+                received_at: row.get(9)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn list_unassigned_documents(&self) -> StoreResult<Vec<SourceDocumentView>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, money_source_id, file_sha256, semantic_document_key, original_filename, \
+                    mime_type, byte_size, encrypted_locator, file_state, received_at \
+             FROM source_documents \
+             WHERE money_source_id IS NULL \
+             ORDER BY received_at DESC, id",
+        )?;
+        let rows = statement.query_map([], source_document_from_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn normalization_input(
+        &self,
+        document_id: &str,
+    ) -> StoreResult<SourceDocumentNormalizationInput> {
+        let document = self
+            .connection
+            .query_row(
+                "SELECT mime_type, encrypted_locator, file_state \
+                 FROM source_documents WHERE id = ?1",
+                [document_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((mime_type, encrypted_locator, file_state)) = document else {
+            return Err(
+                io::Error::new(io::ErrorKind::NotFound, "source document not found").into(),
+            );
+        };
+        if file_state != "available" {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "source document file is unavailable",
+            )
+            .into());
+        }
+        let encrypted_locator = encrypted_locator.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "available source document has no encrypted locator",
+            )
+        })?;
+        let plaintext = self
+            .files
+            .open_in_memory(&self.master_key, &encrypted_locator)?;
+        Ok(SourceDocumentNormalizationInput {
+            mime_type,
+            plaintext,
+        })
+    }
+
+    pub fn apply_trusted_classification(
+        &mut self,
+        input: &TrustedDocumentClassification<'_>,
+    ) -> StoreResult<SourceDocumentRoutingOutcome> {
+        validate_classification(input)?;
+        let transaction = self.connection.transaction()?;
+        let existing_identity = transaction
+            .query_row(
+                "SELECT money_source_id, semantic_document_key \
+                 FROM source_documents WHERE id = ?1",
+                [input.document_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((assigned_source_id, semantic_document_key)) = existing_identity else {
+            return Err(
+                io::Error::new(io::ErrorKind::NotFound, "source document not found").into(),
+            );
+        };
+
+        let mut source_statement = transaction
+            .prepare("SELECT id FROM money_sources WHERE provider_key = ?1 ORDER BY id LIMIT 2")?;
+        let source_ids = source_statement
+            .query_map([input.provider_key], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(source_statement);
+        if source_ids.len() != 1 {
+            return Ok(needs_attention(
+                input.document_id,
+                if source_ids.is_empty() {
+                    "money_source_not_found"
+                } else {
+                    "money_source_ambiguous"
+                },
+            ));
+        }
+        let money_source_id = &source_ids[0];
+        if assigned_source_id
+            .as_deref()
+            .is_some_and(|id| id != money_source_id)
+            || semantic_document_key
+                .as_deref()
+                .is_some_and(|key| key != input.semantic_document_key)
+        {
+            return Ok(needs_attention(
+                input.document_id,
+                "classification_conflict",
+            ));
+        }
+
+        let mut account_ids = Vec::with_capacity(input.accounts.len());
+        for account in input.accounts {
+            let Some(provider_account_id) = account.provider_account_id else {
+                return Ok(needs_attention(input.document_id, "account_mapping_needed"));
+            };
+            let existing = transaction
+                .query_row(
+                    "SELECT id, status FROM accounts \
+                     WHERE money_source_id = ?1 AND provider_key = ?2 \
+                       AND provider_account_id = ?3 AND status <> 'merged'",
+                    params![money_source_id, input.provider_key, provider_account_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                )
+                .optional()?;
+            match existing {
+                Some((_, status)) if status == "archived" => {
+                    return Ok(needs_attention(
+                        input.document_id,
+                        "account_restore_required",
+                    ));
+                }
+                Some((account_id, _)) => account_ids.push(account_id),
+                None => {
+                    transaction.execute(
+                        "INSERT INTO accounts( \
+                           id, money_source_id, provider_key, provider_account_id, account_type, \
+                           display_name, masked_identifier, currency, status \
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'candidate')",
+                        params![
+                            account.account_id,
+                            money_source_id,
+                            input.provider_key,
+                            provider_account_id,
+                            account.account_type,
+                            account.display_name,
+                            account.masked_identifier,
+                            account.currency,
+                        ],
+                    )?;
+                    account_ids.push(account.account_id.to_owned());
+                }
+            }
+        }
+
+        transaction.execute(
+            "UPDATE source_documents \
+             SET money_source_id = ?1, semantic_document_key = ?2 \
+             WHERE id = ?3",
+            params![
+                money_source_id,
+                input.semantic_document_key,
+                input.document_id
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO audit_log( \
+               id, entity_type, entity_id, action, actor, reason, policy_version \
+             ) VALUES (?1, 'source_document', ?2, 'trusted_classification_applied', \
+                       'system', 'provider_and_account_verified', 'classification-v1')",
+            params![input.audit_id, input.document_id],
+        )?;
+        transaction.commit()?;
+        Ok(SourceDocumentRoutingOutcome {
+            account_ids,
+            document_id: input.document_id.to_owned(),
+            money_source_id: Some(money_source_id.to_owned()),
+            reason: None,
+            status: SourceDocumentRoutingStatus::Routed,
+        })
     }
 
     #[cfg(test)]
@@ -249,6 +492,32 @@ impl ManualImportStore {
         self.files.remove_unreferenced(&referenced)?;
         Ok(())
     }
+}
+
+fn source_document_from_row(row: &Row<'_>) -> rusqlite::Result<SourceDocumentView> {
+    let byte_size: i64 = row.get(6)?;
+    Ok(SourceDocumentView {
+        byte_size: u64::try_from(byte_size).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                6,
+                rusqlite::types::Type::Integer,
+                Box::new(error),
+            )
+        })?,
+        document_id: row.get(0)?,
+        money_source_id: row.get(1)?,
+        file_sha256: row.get(2)?,
+        semantic_document_key: row.get(3)?,
+        original_filename: row.get(4)?,
+        mime_type: row.get(5)?,
+        encrypted_locator: row.get(7)?,
+        file_state: row.get(8)?,
+        received_at: row.get(9)?,
+    })
+}
+
+fn needs_attention(document_id: &str, reason: &'static str) -> SourceDocumentRoutingOutcome {
+    SourceDocumentRoutingOutcome::needs_attention(document_id, reason)
 }
 
 fn open_encrypted_database(
@@ -376,43 +645,26 @@ fn persist_import(
         };
         (existing.document_id, status)
     } else {
-        let semantic_match = if let Some(semantic_document_key) = input.semantic_document_key {
-            transaction
-                .query_row(
-                    "SELECT 1 FROM source_documents \
-                     WHERE money_source_id = ?1 AND semantic_document_key = ?2 LIMIT 1",
-                    params![input.money_source_id, semantic_document_key],
-                    |_| Ok(()),
-                )
-                .optional()?
-                .is_some()
-        } else {
-            false
-        };
         let byte_size = i64::try_from(stored.byte_size)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         transaction.execute(
             "INSERT INTO source_documents( \
-               id, money_source_id, file_sha256, semantic_document_key, \
-               original_filename, mime_type, byte_size, encrypted_locator, file_state \
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'available')",
+               id, file_sha256, original_filename, mime_type, byte_size, \
+               encrypted_locator, file_state \
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'available')",
             params![
                 input.document_id,
-                input.money_source_id,
                 stored.file_sha256,
-                input.semantic_document_key,
                 input.original_filename,
                 input.mime_type,
                 byte_size,
                 stored.encrypted_locator,
             ],
         )?;
-        let status = if semantic_match {
-            SourceDocumentImportStatus::ProbableExistingStatement
-        } else {
-            SourceDocumentImportStatus::Imported
-        };
-        (input.document_id.to_owned(), status)
+        (
+            input.document_id.to_owned(),
+            SourceDocumentImportStatus::Imported,
+        )
     };
     transaction.execute(
         "INSERT INTO audit_log( \
@@ -462,9 +714,6 @@ fn import_audit_action(status: SourceDocumentImportStatus) -> &'static str {
         SourceDocumentImportStatus::Imported => "manual_import_imported",
         SourceDocumentImportStatus::AlreadyPresent => "manual_import_already_present",
         SourceDocumentImportStatus::Restored => "manual_import_restored",
-        SourceDocumentImportStatus::ProbableExistingStatement => {
-            "manual_import_probable_existing_statement"
-        }
     }
 }
 
@@ -482,7 +731,6 @@ fn validate_import(input: &SourceDocumentImport<'_>) -> StoreResult<()> {
         ("audit_reason", input.audit_reason),
         ("document_id", input.document_id),
         ("mime_type", input.mime_type),
-        ("money_source_id", input.money_source_id),
         ("original_filename", input.original_filename),
     ] {
         if value.is_empty() {
@@ -491,6 +739,46 @@ fn validate_import(input: &SourceDocumentImport<'_>) -> StoreResult<()> {
                 format!("{name} must not be empty"),
             )
             .into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_classification(input: &TrustedDocumentClassification<'_>) -> StoreResult<()> {
+    for (name, value) in [
+        ("audit_id", input.audit_id),
+        ("document_id", input.document_id),
+        ("provider_key", input.provider_key),
+        ("semantic_document_key", input.semantic_document_key),
+    ] {
+        if value.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{name} must not be empty"),
+            )
+            .into());
+        }
+    }
+    if input.accounts.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "classification must contain at least one account",
+        )
+        .into());
+    }
+    for account in input.accounts {
+        for (name, value) in [
+            ("account_id", account.account_id),
+            ("account_type", account.account_type),
+            ("display_name", account.display_name),
+        ] {
+            if value.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("{name} must not be empty"),
+                )
+                .into());
+            }
         }
     }
     Ok(())
@@ -539,7 +827,6 @@ mod tests {
         source_path: &'a Path,
         document_id: &'a str,
         audit_id: &'a str,
-        semantic_document_key: &'a str,
     ) -> SourceDocumentImport<'a> {
         SourceDocumentImport {
             audit_actor: "user",
@@ -548,9 +835,7 @@ mod tests {
             audit_reason: "manual_import",
             document_id,
             mime_type: "application/pdf",
-            money_source_id: "source-dbs",
             original_filename: "DBS-July-2026.pdf",
-            semantic_document_key: Some(semantic_document_key),
             source_path,
         }
     }
@@ -660,6 +945,36 @@ mod tests {
             )
             .expect("read pending identity");
         assert_eq!(pending_identity, None);
+        let source_not_null: i64 = connection
+            .query_row(
+                "SELECT \"notnull\" FROM pragma_table_info('source_documents') \
+                 WHERE name = 'money_source_id'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read source column");
+        assert_eq!(source_not_null, 0);
+        connection
+            .execute(
+                "INSERT INTO source_documents( \
+                   id, file_sha256, original_filename, mime_type, byte_size, \
+                   encrypted_locator, file_state \
+                 ) VALUES ( \
+                   'document-unassigned', ?1, 'Pending.csv', 'text/csv', 1024, \
+                   'files/document-unassigned.ccenv', 'available' \
+                 )",
+                ["u".repeat(64)],
+            )
+            .expect("insert unassigned source");
+        let pending_source: Option<String> = connection
+            .query_row(
+                "SELECT money_source_id FROM source_documents \
+                 WHERE id = 'document-unassigned'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read pending source");
+        assert_eq!(pending_source, None);
 
         let invalid = [Migration {
             version: 99,
@@ -688,6 +1003,139 @@ mod tests {
     }
 
     #[test]
+    fn routes_trusted_classification_to_one_source_and_reuses_the_account() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let source_path = root.path().join("statement.csv");
+        fs::write(&source_path, b"synthetic statement").expect("write fixture");
+        let mut store = open_store(root.path());
+        store
+            .register_import(&SourceDocumentImport {
+                audit_actor: "user",
+                audit_id: "audit-import",
+                audit_policy_version: "manual-import-v1",
+                audit_reason: "manual_import",
+                document_id: "document-unassigned",
+                mime_type: "text/csv",
+                original_filename: "statement.csv",
+                source_path: &source_path,
+            })
+            .expect("capture unassigned source");
+        let accounts = [TrustedAccountCandidate {
+            account_id: "account-candidate",
+            account_type: "deposit_account",
+            currency: Some("SGD"),
+            display_name: "Synthetic checking",
+            masked_identifier: Some("••001"),
+            provider_account_id: Some("checking-001"),
+        }];
+        let routed = store
+            .apply_trusted_classification(&TrustedDocumentClassification {
+                accounts: &accounts,
+                audit_id: "audit-classify",
+                document_id: "document-unassigned",
+                provider_key: "dbs",
+                semantic_document_key: "dbs:checking:2026-07",
+            })
+            .expect("route classification");
+        assert_eq!(routed.status, SourceDocumentRoutingStatus::Routed);
+        assert_eq!(routed.money_source_id.as_deref(), Some("source-dbs"));
+        assert_eq!(routed.account_ids, vec!["account-candidate"]);
+        assert!(
+            store
+                .list_unassigned_documents()
+                .expect("list pending")
+                .is_empty()
+        );
+        let documents = store.list_documents("source-dbs").expect("list routed");
+        assert_eq!(documents.len(), 1);
+        assert_eq!(
+            documents[0].semantic_document_key.as_deref(),
+            Some("dbs:checking:2026-07")
+        );
+
+        let repeated_accounts = [TrustedAccountCandidate {
+            account_id: "account-ignored",
+            account_type: "deposit_account",
+            currency: Some("SGD"),
+            display_name: "Synthetic checking",
+            masked_identifier: Some("••001"),
+            provider_account_id: Some("checking-001"),
+        }];
+        let repeated = store
+            .apply_trusted_classification(&TrustedDocumentClassification {
+                accounts: &repeated_accounts,
+                audit_id: "audit-classify-repeat",
+                document_id: "document-unassigned",
+                provider_key: "dbs",
+                semantic_document_key: "dbs:checking:2026-07",
+            })
+            .expect("repeat classification");
+        assert_eq!(repeated.account_ids, vec!["account-candidate"]);
+    }
+
+    #[test]
+    fn leaves_ambiguous_source_or_account_classification_unassigned() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let source_path = root.path().join("statement.pdf");
+        fs::write(&source_path, b"%PDF synthetic statement").expect("write fixture");
+        let mut store = open_store(root.path());
+        store
+            .connection
+            .execute(
+                "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
+                 VALUES ('source-dbs-second', 'dbs', 'DBS second', 'bank')",
+                [],
+            )
+            .expect("seed ambiguous source");
+        store
+            .register_import(&SourceDocumentImport {
+                audit_actor: "user",
+                audit_id: "audit-import",
+                audit_policy_version: "manual-import-v1",
+                audit_reason: "manual_import",
+                document_id: "document-unassigned",
+                mime_type: "application/pdf",
+                original_filename: "statement.pdf",
+                source_path: &source_path,
+            })
+            .expect("capture unassigned source");
+        let accounts = [TrustedAccountCandidate {
+            account_id: "account-candidate",
+            account_type: "deposit_account",
+            currency: Some("SGD"),
+            display_name: "Synthetic checking",
+            masked_identifier: None,
+            provider_account_id: Some("checking-001"),
+        }];
+        let ambiguous = store
+            .apply_trusted_classification(&TrustedDocumentClassification {
+                accounts: &accounts,
+                audit_id: "audit-classify",
+                document_id: "document-unassigned",
+                provider_key: "dbs",
+                semantic_document_key: "dbs:checking:2026-07",
+            })
+            .expect("classify ambiguous source");
+        assert_eq!(
+            ambiguous.status,
+            SourceDocumentRoutingStatus::NeedsAttention
+        );
+        assert_eq!(ambiguous.reason, Some("money_source_ambiguous"));
+        assert_eq!(
+            store
+                .list_unassigned_documents()
+                .expect("list pending")
+                .len(),
+            1
+        );
+        let account_count: i64 = store
+            .connection
+            .query_row("SELECT count(*) FROM accounts", [], |row| row.get(0))
+            .expect("count accounts");
+        assert_eq!(account_count, 0);
+    }
+
+    #[test]
     fn imports_deduplicates_groups_and_restores_source_documents() {
         let root = tempfile::tempdir().expect("temporary Vault");
         let first_path = root.path().join("first.pdf");
@@ -695,39 +1143,21 @@ mod tests {
         let mut store = open_store(root.path());
 
         let first = store
-            .register_import(&import(
-                &first_path,
-                "document-first",
-                "audit-first",
-                "dbs:checking:2026-07",
-            ))
+            .register_import(&import(&first_path, "document-first", "audit-first"))
             .expect("first import");
         assert_eq!(first.status, SourceDocumentImportStatus::Imported);
         let duplicate = store
-            .register_import(&import(
-                &first_path,
-                "document-ignored",
-                "audit-duplicate",
-                "dbs:checking:2026-07",
-            ))
+            .register_import(&import(&first_path, "document-ignored", "audit-duplicate"))
             .expect("duplicate import");
         assert_eq!(duplicate.status, SourceDocumentImportStatus::AlreadyPresent);
 
         let second_path = root.path().join("second.pdf");
         fs::write(&second_path, b"%PDF synthetic rescanned statement")
             .expect("write second fixture");
-        let semantic_match = store
-            .register_import(&import(
-                &second_path,
-                "document-second",
-                "audit-second",
-                "dbs:checking:2026-07",
-            ))
-            .expect("semantic match import");
-        assert_eq!(
-            semantic_match.status,
-            SourceDocumentImportStatus::ProbableExistingStatement
-        );
+        let second = store
+            .register_import(&import(&second_path, "document-second", "audit-second"))
+            .expect("second import");
+        assert_eq!(second.status, SourceDocumentImportStatus::Imported);
 
         let first_sha256 = FileVault::prepare(&first_path)
             .expect("prepare first source")
@@ -768,12 +1198,11 @@ mod tests {
                 &first_path,
                 "document-ignored-restored",
                 "audit-restored",
-                "dbs:checking:2026-07",
             ))
             .expect("restore exact source");
         assert_eq!(restored.document_id, first_document.document_id);
         assert_eq!(restored.status, SourceDocumentImportStatus::Restored);
-        assert_eq!(store.list_documents("source-dbs").expect("list").len(), 2);
+        assert_eq!(store.list_unassigned_documents().expect("list").len(), 2);
     }
 
     #[test]
@@ -794,12 +1223,7 @@ mod tests {
 
         assert!(
             store
-                .register_import(&import(
-                    &source_path,
-                    "document-rollback",
-                    "audit-conflict",
-                    "dbs:checking:2026-08",
-                ))
+                .register_import(&import(&source_path, "document-rollback", "audit-conflict",))
                 .is_err()
         );
         let rows: i64 = store
@@ -822,14 +1246,9 @@ mod tests {
         fs::write(&source_path, b"%PDF missing statement").expect("write fixture");
         let mut store = open_store(root.path());
         store
-            .register_import(&import(
-                &source_path,
-                "document-missing",
-                "audit-import",
-                "dbs:checking:2026-09",
-            ))
+            .register_import(&import(&source_path, "document-missing", "audit-import"))
             .expect("import source");
-        let locator = store.list_documents("source-dbs").expect("list")[0]
+        let locator = store.list_unassigned_documents().expect("list")[0]
             .encrypted_locator
             .clone()
             .expect("available locator");
@@ -841,16 +1260,11 @@ mod tests {
 
         let mut reopened = open_store(root.path());
         assert_eq!(
-            reopened.list_documents("source-dbs").expect("list")[0].file_state,
+            reopened.list_unassigned_documents().expect("list")[0].file_state,
             "missing"
         );
         let restored = reopened
-            .register_import(&import(
-                &source_path,
-                "document-ignored",
-                "audit-restore",
-                "dbs:checking:2026-09",
-            ))
+            .register_import(&import(&source_path, "document-ignored", "audit-restore"))
             .expect("restore missing source");
         assert_eq!(restored.status, SourceDocumentImportStatus::Restored);
     }
@@ -862,14 +1276,9 @@ mod tests {
         fs::write(&source_path, b"%PDF tampered statement").expect("write fixture");
         let mut store = open_store(root.path());
         store
-            .register_import(&import(
-                &source_path,
-                "document-tampered",
-                "audit-import",
-                "dbs:checking:2026-10",
-            ))
+            .register_import(&import(&source_path, "document-tampered", "audit-import"))
             .expect("import source");
-        let locator = store.list_documents("source-dbs").expect("list")[0]
+        let locator = store.list_unassigned_documents().expect("list")[0]
             .encrypted_locator
             .clone()
             .expect("available locator");
@@ -881,7 +1290,7 @@ mod tests {
 
         let reopened = open_store(root.path());
         assert_eq!(
-            reopened.list_documents("source-dbs").expect("list")[0].file_state,
+            reopened.list_unassigned_documents().expect("list")[0].file_state,
             "missing"
         );
     }
@@ -895,20 +1304,10 @@ mod tests {
         fs::write(&second_path, b"%PDF second statement").expect("write second fixture");
         let mut store = open_store(root.path());
         store
-            .register_import(&import(
-                &first_path,
-                "document-first",
-                "audit-first",
-                "dbs:checking:2026-10",
-            ))
+            .register_import(&import(&first_path, "document-first", "audit-first"))
             .expect("import first source");
         store
-            .register_import(&import(
-                &second_path,
-                "document-second",
-                "audit-second",
-                "dbs:checking:2026-11",
-            ))
+            .register_import(&import(&second_path, "document-second", "audit-second"))
             .expect("import second source");
 
         let first_sha256 = FileVault::prepare(&first_path)
@@ -939,7 +1338,7 @@ mod tests {
         drop(store);
 
         let mut store = open_store(root.path());
-        let documents = store.list_documents("source-dbs").expect("list");
+        let documents = store.list_unassigned_documents().expect("list");
         let second_document = documents
             .iter()
             .find(|document| document.document_id == "document-second")
@@ -947,12 +1346,7 @@ mod tests {
         assert_eq!(second_document.file_state, "missing");
 
         let restored = store
-            .register_import(&import(
-                &second_path,
-                "document-ignored",
-                "audit-restored",
-                "dbs:checking:2026-11",
-            ))
+            .register_import(&import(&second_path, "document-ignored", "audit-restored"))
             .expect("restore second source");
         assert_eq!(restored.document_id, "document-second");
         assert_eq!(restored.status, SourceDocumentImportStatus::Restored);

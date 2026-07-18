@@ -22,3 +22,4 @@ test-results/
 spikes/**/.tmp/
 spikes/**/src-tauri/gen/
 apps/**/src-tauri/gen/
+apps/desktop/src-tauri/binaries/
