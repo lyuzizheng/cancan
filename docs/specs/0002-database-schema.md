@@ -2,7 +2,7 @@
 
 ## Goal
 
-Design SQLite/SQLCipher schema for a local-first finance vault that supports evidence, parsing, review, ledger, assets, positions, snapshots, and reconciliation.
+Design SQLite/SQLCipher schema for a local-first finance vault that supports file and message evidence, parsing, review, ledger, assets, positions, snapshots, and reconciliation.
 
 ## Validated storage boundary
 
@@ -56,10 +56,13 @@ each accepted proposal version has a unique commit idempotency key
 
 ```text
 many-to-many external-record/event links
+an explicit match-edge role separating financial allocation from corroborating evidence
 explicit allocation amount and unit for partial links
 review status and unmatched remainder
 append-only audit entries written atomically with financial mutations
 ```
+
+Committed financial allocations remain immutable. A later evidence item may be attached to a committed event only through an append-only `corroborating_evidence` edge inserted with its audit entry in the same transaction. That edge has no allocation amount, never changes ledger legs or financial read models, and cannot be updated or deleted. The current synthetic-core trigger rejects every late edge; the Gmail slice must replace it with the narrower role-aware rule before promising statement-first late-email convergence.
 
 `match_edges` is part of the synthetic core, not a deferred extension. A transfer can be represented as two source records linked through one canonical transfer event:
 
@@ -88,27 +91,37 @@ Do not add a separate identifier table, keyed digests, strength levels, or key-v
 
 `0004-parser-contract.md` owns document/record identity and reparse behavior. The schema keeps its SHA-256 file identity, semantic document identity, stable external-record key, and record version as separate fields.
 
-In MVP, `source_documents` is both the imported physical-evidence row and the encrypted-file registry/tombstone. Do not add a separate `vault_files` table. One row represents one exact imported byte sequence and stores the queryable file identity and lifecycle needed by the product:
+In MVP, `source_documents` is the captured-evidence row and encrypted-artifact registry/tombstone. The name is retained to avoid a speculative rename: an artifact may be an imported file or a canonical message-evidence envelope created by a connector. Do not add a separate `vault_files`, inbox, or evidence-graph table.
+
+One row represents one exact imported byte sequence or canonical envelope and stores the queryable identity and lifecycle needed by the product:
 
 ```text
 file_sha256
-original filename, MIME type, and byte size
+evidence_kind: file | email_message
+original filename when present, MIME type, and byte size
 encrypted Vault locator while the current file exists
 file state: available, deleted, or missing
 deletion timestamp and append-only audit reference when deleted
 semantic document key used to group byte-different evidence for one statement identity
+money_source_id nullable while trusted classification is pending
+document type and statement-period bounds when classification provides them
 ```
 
-`semantic_document_key` is nullable while a newly captured file is still unclassified. Initial import knows the exact file hash but must not accept semantic identity from the renderer or user. The trusted classification/normalization path sets the key after it has grounded a provider statement ID or the accepted fallback identity inputs. Exact-hash deduplication remains available before classification; probable-statement grouping begins only after semantic identity exists.
+`semantic_document_key` and `money_source_id` are nullable while newly captured evidence is still unclassified. Initial capture knows the exact artifact hash but must not accept semantic identity from the renderer or user. A picker, folder, Gmail rule, or future Share Extension may supply a source hint; it is not authority. The trusted classification and account-resolution path assigns the configured Money Source after provider verification and sets semantic identity after grounding the provider statement ID or accepted fallback inputs. Exact-hash deduplication remains available before classification; probable-statement grouping begins only after semantic identity exists.
+
+An email without an attachment is not inserted directly as a ledger record. The Gmail connector first creates a bounded, deterministic UTF-8 message envelope containing only the provider fields approved by its rule, stores that encrypted envelope as `email_message` evidence, and sends it through the same parser contract. Its hash is computed over the canonical envelope bytes. The Gmail slice may add one minimal connector-idempotency mapping keyed by authenticated mailbox plus Gmail message ID; do not overload financial record identity or create a generic connector graph.
+
+`document_type` and statement-period bounds are columns once the Source/Documents and coverage queries are implemented. They are not hidden in JSON because the product filters documents and derives missing-period prompts from them. Do not create expected-month rows or a reminder table until a persisted user decision or performance evidence requires one.
 
 `deleted` means the user intentionally deleted the current encrypted Vault file. `missing` means the file should exist but storage cannot find or verify it. In both states, the `source_documents` row remains so external records, parse runs, review history, ledger navigation, and audit history do not break. A nullable locator or equivalent state projection must not erase the exact hash or evidence relationships.
 
-Different byte sequences with the same semantic statement identity remain separate `source_documents` rows grouped by the semantic document key. An exact-hash re-import reuses the existing row and, when that row is deleted or missing, may restore its current encrypted file instead of creating a duplicate row.
+Different byte sequences with the same semantic statement identity remain separate `source_documents` rows grouped by the semantic document key. An explicit user import of an exact hash reuses the existing row and may offer to restore a deleted or missing current artifact instead of creating a duplicate row. Automatic folder/Gmail discovery treats a deleted tombstone as suppression and must not restore it; Gmail's mailbox/message mapping continues to point at that tombstone across envelope-version changes.
 
 Each external record stores the bounded original source row/object used for normalization and a validation summary:
 
 ```text
 parse_runs store the complete normalization-profile and runtime/tool/model versions
+external_records.posting_status stores provisional or posted when the source proves that distinction
 external_records.raw_json stores one bounded source record, not full-document extraction
 external_records.validation_json stores grounding and deterministic-validation outcomes
 page, row, column, region, or provider location data may remain optional values inside raw_json
@@ -173,13 +186,18 @@ Acceptance requires integration tests to run from a clean database without manua
 - Schema changes use hand-written, versioned migrations.
 - Core query dimensions are columns rather than hidden in JSON.
 - Exact source-file identity uses SHA-256 and remains separate from semantic document identity.
+- `source_documents` covers imported files and canonical encrypted email-message envelopes without adding a second inbox/evidence table.
+- Newly captured evidence may remain unassigned until trusted provider classification resolves one configured Money Source; channel and user source hints are not semantic authority.
+- Queryable document type and statement-period bounds support Source/Documents filtering and deterministic coverage prompts without expected-month rows.
 - A newly captured file may keep semantic document identity null until trusted classification; renderer or user input cannot set it.
 - `source_documents` is the MVP encrypted-file registry and tombstone; no separate `vault_files` table is required.
 - Deleting or losing a current Vault file preserves its source-document row and every record, parse, review, ledger, and audit relationship.
-- Byte-different evidence for one statement identity uses separate source-document rows grouped by semantic identity; exact-hash re-import is idempotent and may restore a deleted current file.
+- Byte-different evidence for one statement identity uses separate source-document rows grouped by semantic identity; an explicit exact-hash re-import may restore a deleted current artifact, while automatic discovery respects the tombstone and skips it.
 - Every external record retains one bounded validated raw source record plus a validation summary, without a separate field-evidence graph or permanent raw full-document text.
+- Provisional transaction notifications remain queryable and cannot be mistaken for posted statement facts.
 - Account identity supports a stable provider account ID when available, first-seen candidates, archive, and merge redirects without using display names or masked suffixes as automatic identity.
 - The schema supports immutable committed events, reversals, commit idempotency, many-to-many allocations, and atomic audit records.
+- A late corroborating-evidence edge may be appended to a committed event only through the audited role-aware rule; committed financial allocations, legs, and prior edges remain immutable.
 - Two source records can link through one canonical transfer event and are navigable in both directions.
 - Indexes trace to an implemented query, uniqueness rule, or idempotency rule.
 - Implemented hot query paths have focused benchmark/query-plan coverage with representative synthetic data.

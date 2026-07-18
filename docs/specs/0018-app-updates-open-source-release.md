@@ -40,6 +40,31 @@ The minimum supported macOS version is still a release compatibility decision. D
 
 Windows is a Phase 2 port. Phase 2 must separately define supported Windows versions and architectures, installer/update format, code signing, OS secret storage, filesystem semantics, and equivalent Vault/security tests. Do not add Windows-specific production branches, dependencies, CI, or release claims during Phase 1 unless a focused Phase 2 slice is explicitly started.
 
+## Future iOS intake companion
+
+The accepted mobile direction is a thin native Swift containing app plus Share Extension whose only product responsibility is evidence intake. It is not part of Phase 1, does not contain the ledger or desktop Vault, and must not delay the desktop evidence/reconciliation loop.
+
+Before committing the production transport architecture, run a disposable local Xcode feasibility slice covering:
+
+```text
+Share-sheet PDF/CSV/image acceptance and extension lifecycle limits
+App Group handoff between the extension and containing app
+candidate cross-device transport and retry while the desktop is offline
+encryption before transport without giving the phone the desktop Vault master key
+duplicate/replay behavior, deletion, pairing/recovery, and truthful completion UX
+native target ownership outside generated Tauri desktop artifacts
+```
+
+That spike chooses or rejects the transport boundary; it does not create public app identity, production signing, TestFlight, or App Store Connect state. A later explicitly authorized mobile release slice must separately prove Apple Developer ownership, production signing/provisioning, required privacy disclosures, TestFlight distribution, App Store review assets, supported iOS versions/devices, and release/revocation operations before the companion ships.
+
+Until that slice is accepted, the supported phone workflow is Save to Files/AirDrop/email into the desktop ingestion channels. Do not create a mobile account service, hosted upload backend, or multi-device ledger sync by implication.
+
+Primary references:
+
+- [Apple App Extension Programming Guide](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/index.html)
+- [Apple Share extension guide](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/Share.html)
+- [Apple App Groups entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.application-groups)
+
 ## Public website and project surfaces
 
 The static site should deploy through Cloudflare Pages Git integration:
@@ -271,3 +296,4 @@ BYO-AI provider keys belong only in the user's local OS secret store. They are n
 - A fresh supported development machine can install and verify the pinned toolchain with one repository command; setup version drift and non-idempotent profile edits fail deterministic tests.
 - Phase 1 release evidence covers both macOS `arm64` and `x86_64`; evidence from one architecture never qualifies the other.
 - Windows remains Phase 2 and creates no Phase 1 implementation or release requirement.
+- The future iOS Share Extension remains a separate thin intake companion: a disposable technical spike selects its transport boundary, and a later authorized release slice owns production signing, TestFlight, and App Store evidence.

@@ -6,13 +6,18 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Reframed acquisition from Gmail-first to inbox-first. Add/Open With, a user-selected local or cloud-synced folder, Gmail send-to-self attachments, and later channels now converge on one encrypted capture, classifier, account resolver, parser, and reconciliation path.
+- Accepted capture without source/account preselection. `source_documents.money_source_id` may remain null until trusted provider classification resolves one configured Money Source; the current host command's required source is now explicit remaining work in `vault-manual-import`.
+- Accepted bounded canonical Gmail message envelopes for supported no-attachment transaction notifications. They require separate body consent, remain provisional by default, and reconcile with posted statement rows through existing many-to-many match edges instead of creating a second financial event.
+- Defined deterministic statement-coverage prompts from provider cadence and accepted periods. Transaction emails do not satisfy coverage; locked or failed statement evidence becomes `Needs attention`, not missing.
+- Added an evidence-only `local-inbox-readiness` slice plus `local-inbox-automation` after the core review UI and before Gmail, so the filesystem protocol is executable and watched-folder routing/coverage are proven without OAuth. Kept the future native iOS Share Extension as a thin intake companion behind its own transport/encryption/lifecycle/release feasibility slice.
 - Added the stacked host-owned manual-import boundary: Tauri opens the native PDF/CSV picker off the command thread, imports only while the Vault is unlocked, and returns import outcomes or safe per-source document metadata without returning host paths, encrypted locators, hashes, or file bytes.
 - Made semantic document identity nullable during initial file capture. The renderer command no longer accepts it; exact-hash deduplication remains immediate, while the trusted classifier/normalizer will set semantic identity and detect byte-different probable statements later.
 - Added a relationship-preserving SQLite rebuild migration with explicit foreign-key-off handling, in-transaction foreign-key validation, rollback coverage, and restoration of enforcement after success or failure.
 
 ### Next
 
-- Review and land the stacked host-owned import/list command checkpoint, then connect deterministic normalization and the Money Source/Documents UI with responsive, empty/loading/error-state, and motion inspection.
+- Continue `vault-manual-import`: remove required pre-import source selection, connect deterministic classification/normalization and the Money Source/Documents UI, then complete its responsive, empty/loading/error-state, and motion inspection. Do not start watched-folder or Gmail work inside this slice.
 
 ## 2026-07-17
 
@@ -239,7 +244,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 - Created initial CanCan docs for product vision, architecture, domain model, AI parser, reconciliation, plugins, security, UI IA, technology decisions, roadmap, open questions, and ADRs.
 - Clarified that CanCan is not a budgeting app. It is a local-first financial evidence vault and reconciliation console.
-- Updated MVP definition: Gmail-first automation is required; manual import is only a test harness/fallback.
+- Recorded the initial Gmail-first MVP hypothesis; the 2026-07-18 inbox-first decision supersedes it after mobile-only bank delivery exposed the need for first-class local and folder intake.
 - Moved AI-assisted parsing earlier in the roadmap. AI normalization, duplicate recognition, and link explanation are core capabilities.
 - Confirmed first provider scope should include DBS/UOB bank and credit-card statements plus Wise PDF/CSV/export.
 - Confirmed user-created Money Sources and sub-accounts are the source of truth for accounts.

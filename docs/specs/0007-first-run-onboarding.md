@@ -34,7 +34,7 @@ Draft positioning copy:
 
 ```text
 CanCan is your personal local money can.
-Bring your own AI, connect trusted money sources, and turn statements, emails, and exports into a private financial vault you control.
+Bring your own AI, add statements, emails, and exports from the channels you choose, and turn them into a private financial vault you control.
 ```
 
 Copy should be refined during UI design, but the core ideas must remain:
@@ -76,9 +76,9 @@ Welcome / product promise
 -> Choose vault password / local key setup
 -> Save the recovery file now, or continue with recovery visibly not configured
 -> AI provider setup
--> Create first money source from supported providers
--> Configure Gmail using Desktop OAuth + PKCE loopback, or import manually
--> Detect or create source sub-account(s) as evidence arrives
+-> Add a first file or choose a supported Money Source
+-> Detect and confirm/create the Money Source plus sub-account(s) as evidence arrives
+-> Optionally choose a CanCan Inbox folder or connect Gmail using Desktop OAuth + PKCE loopback
 -> Optional statement password setup when a supported provider needs it
 -> Review enabled capabilities and privacy-sensitive switches
 -> Land in Command Center
@@ -111,6 +111,7 @@ Local vault and lock
 AI provider / cloud processing
 Gmail connection
 Automatic Gmail scan
+CanCan Inbox folder
 Automatically add qualified records
 Optional FX-rate source
 Update checks
@@ -170,6 +171,8 @@ Gmail MVP uses official Gmail API with Desktop OAuth Authorization Code Flow + P
 
 Computer-use/browser automation is not the primary Gmail architecture. It may be reconsidered later for non-Gmail bank portals or as an experimental fallback.
 
+Gmail setup is not the first or required ingestion step. Onboarding should lead with `Add a file`, then offer a user-selected Inbox folder and Gmail as optional convenience channels. Transaction-notification body capture is a separate opt-in from statement-attachment collection because it reads and retains different email content.
+
 ## Protected statement passwords
 
 Some bank or card PDF statements require a password before text extraction or OCR.
@@ -227,6 +230,7 @@ Open app
 -> find unfinished jobs
 -> mark expired running jobs as queued
 -> build resume plan
+-> rescan the enabled CanCan Inbox folder after unlock
 -> optionally run enabled Gmail scans if auto-scan is on
 -> land on Command Center with status modules
 ```
@@ -240,10 +244,12 @@ Open app
 - MVP has no analytics/behavioral telemetry; any future analytics or crash reporting is explicit opt-in and default off.
 - Motion follows design tokens, communicates setup state, and has a reduced-motion fallback.
 - User cannot accidentally create arbitrary unsupported providers.
-- User can create a vault and at least one supported money source.
+- User can create a vault and reach first evidence capture without source/account preselection; a supported Money Source is confirmed or created before first commit.
 - User may defer saving the recovery file, with an accurate persistent `Not configured` state and a later save action.
 - MVP does not ask for base currency.
 - AI setup is prominent and its current state is visible; whether setup may be skipped follows the unresolved first-run optionality decision.
 - Gmail setup uses local-first Desktop OAuth + PKCE loopback flow.
+- The first useful import does not require Gmail or a source/account preselection; optional Inbox-folder setup explains that the source folder remains outside the encrypted Vault.
+- Transaction-notification email body capture is separately disclosed and enabled from attachment collection.
 - Protected PDF statements can prompt for a password and optionally save it securely.
-- Startup handles locked vault, migration checks, optional Gmail scan, configured secrets, and unfinished jobs.
+- Startup handles locked vault, migration checks, enabled Inbox-folder rescan, optional Gmail scan, configured secrets, and unfinished jobs.
