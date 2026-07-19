@@ -448,6 +448,11 @@ describe("synthetic core flow", () => {
   it("stages qualified records for review when automatic commit is disabled", async () => {
     const database = openMigratedTestDatabase();
     const parsed = await parseSyntheticTransfer();
+    const prepared = prepareSyntheticTransfer(parsed, true);
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      throw new Error("synthetic transfer was not ready");
+    }
     expect(prepareSyntheticTransfer(parsed, false)).toEqual({
       status: "review",
       reasons: ["auto_commit_disabled"],
@@ -490,5 +495,17 @@ describe("synthetic core flow", () => {
       },
     ]);
     expect(repository.findRecordRelationships("record-checking-out")).toEqual([]);
+    expect(() =>
+      repository.commitPreparedEvent({
+        id: "event-review-ineligible",
+        event: prepared.event,
+        audit: {
+          id: "audit-review-ineligible",
+          actor: "auto_policy",
+          reason: "unexpected_review_commit",
+          policyVersion: "synthetic-policy-v1",
+        },
+      }),
+    ).toThrow("source record is not eligible for automatic commit");
   });
 });

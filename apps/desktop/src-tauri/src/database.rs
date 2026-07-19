@@ -724,6 +724,24 @@ fn persist_source_deletion(
     if changed != 1 {
         return Err(rusqlite::Error::QueryReturnedNoRows);
     }
+    transaction.execute(
+        "INSERT INTO review_items(id, external_record_id, reason_code, status) \
+         SELECT ?1 || ':' || external_records.id, external_records.id, \
+                'source_file_deleted', 'open' \
+         FROM external_records \
+         WHERE source_document_id = ?2 AND status IN ('staged', 'review') \
+           AND NOT EXISTS ( \
+             SELECT 1 FROM review_items \
+             WHERE external_record_id = external_records.id \
+               AND reason_code = 'source_file_deleted' AND status = 'open' \
+           )",
+        params![audit_id, document.document_id],
+    )?;
+    transaction.execute(
+        "UPDATE external_records SET status = 'review' \
+         WHERE source_document_id = ?1 AND status = 'staged'",
+        [&document.document_id],
+    )?;
     transaction.commit()
 }
 
@@ -1300,6 +1318,22 @@ mod tests {
                 [&first_document.document_id],
             )
             .expect("seed retained parse relationship");
+        store
+            .connection
+            .execute(
+                "INSERT INTO external_records( \
+                   id, parse_run_id, source_document_id, stable_record_key, version, \
+                   status, record_type, raw_json, validation_json \
+                 ) VALUES \
+                   ('record-staged', 'parse-first', ?1, 'record-staged', 1, \
+                    'staged', 'transaction', '{}', '{}'), \
+                   ('record-review', 'parse-first', ?1, 'record-review', 1, \
+                    'review', 'transaction', '{}', '{}'), \
+                   ('record-committed', 'parse-first', ?1, 'record-committed', 1, \
+                    'committed', 'transaction', '{}', '{}')",
+                [&first_document.document_id],
+            )
+            .expect("seed linked records");
 
         store
             .delete_source_document(&first_document.document_id, "audit-delete")
@@ -1319,6 +1353,37 @@ mod tests {
             )
             .expect("count retained parse relationships");
         assert_eq!(retained_parses, 1);
+        let record_states = store
+            .connection
+            .prepare(
+                "SELECT id, status FROM external_records \
+                 WHERE source_document_id = ?1 ORDER BY id",
+            )
+            .expect("prepare linked record query")
+            .query_map([&first_document.document_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .expect("query linked records")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("read linked records");
+        assert_eq!(
+            record_states,
+            vec![
+                ("record-committed".to_owned(), "committed".to_owned()),
+                ("record-review".to_owned(), "review".to_owned()),
+                ("record-staged".to_owned(), "review".to_owned()),
+            ]
+        );
+        let deletion_review_items: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM review_items \
+                 WHERE reason_code = 'source_file_deleted' AND status = 'open'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count source deletion review items");
+        assert_eq!(deletion_review_items, 2);
 
         assert!(
             store
