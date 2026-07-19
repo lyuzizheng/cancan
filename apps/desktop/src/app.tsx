@@ -231,7 +231,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onSubmitPassword={submitPassword}
       onView={(document, trigger) => {
         viewerReturnFocus.current = trigger;
-        loadViewerPage(document.documentId, document.originalFilename, 1)
+        loadViewerPage(document.documentId, document.originalFilename, 1);
       }}
       onViewerPage={(pageNumber) => {
         if (viewer) {
@@ -400,6 +400,9 @@ function DocumentViewer({
       const last = focusable.at(-1);
       if (!first || !last) {
         event.preventDefault();
+      } else if (!dialog.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
       } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();

@@ -297,6 +297,18 @@ describe("App manual import orchestration", () => {
 
     const close = button("Close");
     const next = button("Next");
+    viewTrigger.focus();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+      await settle();
+    });
+    expect(document.activeElement).toBe(close);
+    viewTrigger.focus();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true }));
+      await settle();
+    });
+    expect(document.activeElement).toBe(next);
     close.focus();
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true }));

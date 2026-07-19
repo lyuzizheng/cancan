@@ -90,7 +90,7 @@ export function commandErrorMessage(error: unknown): string {
     case "invalid_document_request":
       return "That PDF page isn’t available.";
     case "viewer_unsupported":
-      return "Preview is only available for PDF evidence.";
+      return "Preview isn’t available for this evidence.";
     case "document_render_failed":
       return "CanCan couldn’t render that PDF page.";
     default:

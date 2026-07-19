@@ -388,6 +388,8 @@ impl VaultRuntime {
         if document_id.is_empty() || page_number == 0 {
             return Err(RuntimeError::new("invalid_document_request"));
         }
+        // Keep the session mutex through rendering so Vault lock cannot report success
+        // while this decrypted page buffer is still alive.
         let store = self.store()?;
         let input = store
             .as_ref()
