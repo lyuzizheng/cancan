@@ -11,10 +11,12 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added the production single-pass mock sidecar package and a document-ID-only Tauri normalization command. The host clears inherited sidecar environment, keeps source plaintext inside the trusted process boundary, validates the synthetic provider fingerprint, and derives semantic identity without accepting renderer-supplied provider/source/account values.
 - Added transactional routing for exactly one configured Money Source and stable provider account IDs. Zero/multiple source matches, unsupported evidence, fingerprint mismatch, missing stable account identity, and archived account matches return typed `Needs attention` outcomes without guessing.
 - Added safe unassigned-document listing, renderer-facing TypeScript command contracts, deterministic mock-normalizer tests, migration tests, Rust repository/runtime tests, and a debug Tauri build with the generated Node single-executable sidecar.
+- Wired the narrow manual-evidence UI checkpoint to the existing Tauri commands: Vault create/unlock/lock status, host-picked PDF/CSV Add file without source/account preselection, safe import outcomes, unassigned evidence, and document-ID-only routing. The responsive `Precision Vaultpunk — Obsidian Spine + Light Ledger` implementation has explicit loading, locked, unlocked, cancellation, success, `Needs attention`, error, and reduced-motion states.
+- Kept routing confirmation intentionally generic. The current safe outcome exposes a `moneySourceId` but no source display/list or source-management API, so the renderer does not invent a named Money Source or source-detail Documents view.
 
 ### Next
 
-- Continue `vault-manual-import` with the Money Source/Documents UI over the new commands, then complete the remaining viewer, lock, statement-password, deletion, and recovery checkpoints. Keep folder automation, Gmail, mobile intake, and live AI out of this checkpoint.
+- Continue `vault-manual-import` with the remaining viewer, lock, statement-password, deletion, and recovery checkpoints. A named source display/Documents view waits for safe source display/list and source-management APIs. Keep folder automation, Gmail, mobile intake, and live AI out of this checkpoint.
 
 ## 2026-07-18
 

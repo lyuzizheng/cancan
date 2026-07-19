@@ -1,8 +1,8 @@
-export type ImportSourceDocumentArgs = Record<string, never>;
+export type VaultStatus = "not_created" | "locked" | "unlocked";
 
-export interface NormalizeSourceDocumentArgs {
-  documentId: string;
-}
+export type VaultPasswordArgs = { password: string };
+
+export type NormalizeSourceDocumentArgs = { documentId: string };
 
 export interface SourceDocumentImportOutcome {
   documentId: string;

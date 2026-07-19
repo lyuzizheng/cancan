@@ -16,6 +16,7 @@
     "verify": "pnpm typecheck && pnpm test:unit && pnpm check:rust && pnpm build:desktop"
   },
   "devDependencies": {
+    "happy-dom": "20.10.6",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
   }

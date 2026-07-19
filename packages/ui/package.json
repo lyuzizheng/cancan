@@ -11,6 +11,8 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
+    "@fontsource-variable/geologica": "5.2.8",
+    "@fontsource-variable/martian-mono": "5.2.7",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
