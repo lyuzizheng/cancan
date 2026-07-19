@@ -55,6 +55,7 @@ export interface VaultManualImportViewProps {
 }
 
 const defaultVaultApi = createVaultApi();
+const VAULT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
 
 export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [vaultStatus, setVaultStatus] = useState<VaultScreenStatus>("loading");
@@ -74,6 +75,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [viewingPage, setViewingPage] = useState(false);
   const viewerRequestId = useRef(0);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
+  const vaultSessionId = useRef(0);
 
   const clearViewer = useCallback((restoreFocus = true) => {
     viewerRequestId.current += 1;
@@ -84,6 +86,15 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   }, []);
 
+  const showLockedVault = useCallback(() => {
+    vaultSessionId.current += 1;
+    clearViewer(false);
+    setVaultStatus("locked");
+    setError(null);
+    setNotice(null);
+    setUnassignedDocuments([]);
+  }, [clearViewer]);
+
   useEffect(() => {
     if (viewer === null && viewerReturnFocus.current) {
       viewerReturnFocus.current.focus();
@@ -92,15 +103,61 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   }, [viewer]);
 
   const loadUnassignedDocuments = useCallback(async () => {
+    const sessionId = vaultSessionId.current;
     setLoadingDocuments(true);
     try {
-      setUnassignedDocuments(await api.listUnassignedSourceDocuments());
+      const documents = await api.listUnassignedSourceDocuments();
+      if (vaultSessionId.current === sessionId) {
+        setUnassignedDocuments(documents);
+      }
     } catch (nextError) {
       setError(commandErrorMessage(nextError));
     } finally {
       setLoadingDocuments(false);
     }
   }, [api]);
+
+  useEffect(() => {
+    if (vaultStatus !== "unlocked") {
+      return;
+    }
+
+    let timeout = window.setTimeout(
+      lockAfterInactivity,
+      VAULT_INACTIVITY_TIMEOUT_MS,
+    );
+    const resetTimeout = () => {
+      window.clearTimeout(timeout);
+      timeout = window.setTimeout(lockAfterInactivity, VAULT_INACTIVITY_TIMEOUT_MS);
+    };
+    const activityEvents = [
+      "keydown",
+      "pointerdown",
+      "pointermove",
+      "touchstart",
+      "wheel",
+    ];
+    for (const event of activityEvents) {
+      window.addEventListener(event, resetTimeout);
+    }
+
+    return () => {
+      window.clearTimeout(timeout);
+      for (const event of activityEvents) {
+        window.removeEventListener(event, resetTimeout);
+      }
+    };
+
+    function lockAfterInactivity() {
+      void api
+        .lockVault()
+        .then(showLockedVault)
+        .catch((nextError: unknown) => {
+          setError(commandErrorMessage(nextError));
+          resetTimeout();
+        });
+    }
+  }, [api, showLockedVault, vaultStatus]);
 
   const refreshVaultStatus = useCallback(async () => {
     setBusy(true);
@@ -219,10 +276,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onImport={importDocument}
       onLock={() =>
         void run(async () => {
-          clearViewer(false);
-          setVaultStatus(await api.lockVault());
-          setNotice(null);
-          setUnassignedDocuments([]);
+          await api.lockVault();
+          showLockedVault();
         })
       }
       onNormalize={normalizeDocument}
