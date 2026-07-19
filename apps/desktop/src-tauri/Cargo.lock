@@ -276,8 +276,10 @@ name = "cancan-desktop"
 version = "0.0.0"
 dependencies = [
  "argon2",
+ "base64 0.22.1",
  "chacha20poly1305",
  "hkdf",
+ "png 0.18.1",
  "rand",
  "rusqlite",
  "serde",

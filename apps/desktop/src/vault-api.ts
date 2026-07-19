@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   NormalizeSourceDocumentArgs,
+  RenderedDocumentPage,
+  RenderSourceDocumentPageArgs,
   SourceDocumentImportOutcome,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
@@ -25,6 +27,10 @@ export interface VaultApi {
   normalizeSourceDocument(
     documentId: string,
   ): Promise<SourceDocumentRoutingOutcome>;
+  renderSourceDocumentPage(
+    documentId: string,
+    pageNumber: number,
+  ): Promise<RenderedDocumentPage>;
   unlockVault(password: string): Promise<VaultStatus>;
   vaultStatus(): Promise<VaultStatus>;
 }
@@ -55,6 +61,13 @@ export function createVaultApi(call: TauriInvoke = tauriInvoke): VaultApi {
         args,
       );
     },
+    renderSourceDocumentPage: (documentId, pageNumber) => {
+      const args: RenderSourceDocumentPageArgs = { documentId, pageNumber };
+      return call<RenderedDocumentPage, RenderSourceDocumentPageArgs>(
+        "render_source_document_page",
+        args,
+      );
+    },
   };
 }
 
@@ -73,7 +86,13 @@ export function commandErrorMessage(error: unknown): string {
     case "normalizer_failed":
       return "CanCan could not finish the secure document check. Try again.";
     case "document_unavailable":
-      return "This file is no longer available for routing.";
+      return "This file is no longer available.";
+    case "invalid_document_request":
+      return "That document request isn’t valid.";
+    case "viewer_unsupported":
+      return "Preview isn’t available for this evidence.";
+    case "document_render_failed":
+      return "CanCan couldn’t render that PDF page.";
     default:
       return "Couldn’t complete that request. Try again.";
   }

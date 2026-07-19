@@ -28,15 +28,20 @@ const baseProps: VaultManualImportViewProps = {
   loadingDocuments: false,
   normalizingDocumentId: null,
   notice: null,
+  onCloseViewer: () => undefined,
   onImport: () => undefined,
   onLock: () => undefined,
   onNormalize: () => undefined,
   onPasswordChange: () => undefined,
   onRefresh: () => undefined,
   onSubmitPassword: () => undefined,
+  onView: () => undefined,
+  onViewerPage: () => undefined,
   password: "",
   unassignedDocuments: [],
   vaultStatus: "unlocked",
+  viewer: null,
+  viewingPage: false,
 };
 
 function render(props: Partial<VaultManualImportViewProps> = {}) {
@@ -58,7 +63,28 @@ describe("VaultManualImportView", () => {
 
     expect(markup).toContain("Add file");
     expect(markup).toContain("June statement.pdf");
+    expect(markup).toContain("View document");
     expect(markup).toContain("Check routing");
+  });
+
+  it("renders only page pixels and bounded viewer navigation", () => {
+    const markup = render({
+      viewer: {
+        documentId: document.documentId,
+        documentTitle: document.originalFilename,
+        page: {
+          pageCount: 2,
+          pageNumber: 1,
+          pngBase64: "cmVuZGVyZWQtcGFnZQ==",
+        },
+      },
+    });
+
+    expect(markup).toContain("data:image/png;base64,cmVuZGVyZWQtcGFnZQ==");
+    expect(markup).toContain("Page 1 of 2");
+    expect(markup).toContain("inert=\"\"");
+    expect(markup).toContain("aria-hidden=\"true\"");
+    expect(markup).not.toContain("%PDF");
   });
 
   it("renders the active normalization state and friendly errors", () => {

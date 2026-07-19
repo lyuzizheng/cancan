@@ -4,6 +4,11 @@ export type VaultPasswordArgs = { password: string };
 
 export type NormalizeSourceDocumentArgs = { documentId: string };
 
+export type RenderSourceDocumentPageArgs = {
+  documentId: string;
+  pageNumber: number;
+};
+
 export interface SourceDocumentImportOutcome {
   documentId: string;
   status: "imported" | "already_present" | "restored";
@@ -24,4 +29,10 @@ export interface SourceDocumentRoutingOutcome {
   moneySourceId: string | null;
   reason: string | null;
   status: "routed" | "needs_attention";
+}
+
+export interface RenderedDocumentPage {
+  pageCount: number;
+  pageNumber: number;
+  pngBase64: string;
 }

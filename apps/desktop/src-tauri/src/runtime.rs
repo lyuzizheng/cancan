@@ -1,10 +1,11 @@
 use crate::{
     database::{
-        DATABASE_FILE_NAME, ManualImportStore, SourceDocumentImport, SourceDocumentImportOutcome,
-        SourceDocumentNormalizationInput, SourceDocumentRoutingOutcome, TrustedAccountCandidate,
+        DATABASE_FILE_NAME, ManualImportStore, SourceDocumentFileInput, SourceDocumentImport,
+        SourceDocumentImportOutcome, SourceDocumentRoutingOutcome, TrustedAccountCandidate,
         TrustedDocumentClassification,
     },
     vault::{create_password_wrapper, open_password_wrapper, password_wrapper_profile},
+    viewer::{RenderedDocumentPage, render_pdf_page},
 };
 use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
@@ -370,13 +371,35 @@ impl VaultRuntime {
     fn normalization_input(
         &self,
         document_id: &str,
-    ) -> Result<SourceDocumentNormalizationInput, RuntimeError> {
+    ) -> Result<SourceDocumentFileInput, RuntimeError> {
         let store = self.store()?;
         store
             .as_ref()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .normalization_input(document_id)
+            .source_document_input(document_id)
             .map_err(|_| RuntimeError::new("document_unavailable"))
+    }
+
+    fn render_source_document_page(
+        &self,
+        document_id: &str,
+        page_number: u32,
+    ) -> Result<RenderedDocumentPage, RuntimeError> {
+        if document_id.is_empty() || page_number == 0 {
+            return Err(RuntimeError::new("invalid_document_request"));
+        }
+        // Keep the session mutex through rendering so Vault lock cannot report success
+        // while this decrypted page buffer is still alive.
+        let store = self.store()?;
+        let input = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .source_document_input(document_id)
+            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+        if input.mime_type != "application/pdf" {
+            return Err(RuntimeError::new("viewer_unsupported"));
+        }
+        render_pdf_page(&input.plaintext, page_number).map_err(document_render_error)
     }
 
     fn apply_normalizer_result(
@@ -469,6 +492,14 @@ impl VaultRuntime {
             .store
             .lock()
             .map_err(|_| RuntimeError::new("runtime_unavailable"))
+    }
+}
+
+fn document_render_error(error: io::Error) -> RuntimeError {
+    match error.kind() {
+        io::ErrorKind::InvalidInput => RuntimeError::new("invalid_document_request"),
+        io::ErrorKind::Unsupported => RuntimeError::new("viewer_unsupported"),
+        _ => RuntimeError::new("document_render_failed"),
     }
 }
 
@@ -597,6 +628,24 @@ pub(crate) async fn list_source_documents(
         .await
         .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
         .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn render_source_document_page(
+    document_id: String,
+    page_number: u32,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<RenderedDocumentPage, VaultCommandError> {
+    if document_id.is_empty() || page_number == 0 {
+        return Err(VaultCommandError::new("invalid_document_request"));
+    }
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.render_source_document_page(&document_id, page_number)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
 }
 
 fn source_document_metadata(source_path: &Path) -> Result<(String, &'static str), RuntimeError> {
@@ -794,6 +843,22 @@ mod tests {
         assert!(!valid_normalizer_ready(2, "single-pass-mock", true));
         assert!(!valid_normalizer_ready(1, "live-runtime", true));
         assert!(!valid_normalizer_ready(1, "single-pass-mock", false));
+    }
+
+    #[test]
+    fn maps_platform_and_document_render_failures_separately() {
+        assert_eq!(
+            document_render_error(io::Error::from(io::ErrorKind::Unsupported)).code(),
+            "viewer_unsupported"
+        );
+        assert_eq!(
+            document_render_error(io::Error::from(io::ErrorKind::InvalidInput)).code(),
+            "invalid_document_request"
+        );
+        assert_eq!(
+            document_render_error(io::Error::from(io::ErrorKind::InvalidData)).code(),
+            "document_render_failed"
+        );
     }
 
     #[test]
@@ -1066,6 +1131,87 @@ mod tests {
     }
 
     #[test]
+    fn renders_an_imported_pdf_in_memory_only_while_the_vault_is_unlocked() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("statement.pdf");
+        fs::write(&source_path, synthetic_pdf()).expect("write PDF fixture");
+        let vault_root = parent.path().join("vault");
+        let runtime = VaultRuntime::new(vault_root.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        let imported = runtime
+            .import_selected_document(&source_path)
+            .expect("import PDF");
+        let before = vault_entries(&vault_root);
+
+        let rendered = runtime
+            .render_source_document_page(&imported.document_id, 1)
+            .expect("render PDF");
+
+        assert_eq!(rendered.page_count, 1);
+        assert_eq!(rendered.page_number, 1);
+        assert!(!rendered.png_base64.is_empty());
+        assert_eq!(vault_entries(&vault_root), before);
+        runtime.lock().expect("lock Vault");
+        assert_eq!(
+            runtime
+                .render_source_document_page(&imported.document_id, 1)
+                .expect_err("reject rendering while locked")
+                .code(),
+            "vault_locked"
+        );
+    }
+
+    #[test]
+    fn rejects_non_pdf_and_invalid_page_view_requests() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let csv_path = parent.path().join("statement.csv");
+        fs::write(&csv_path, b"date,amount\n2026-07-19,42").expect("write CSV fixture");
+        let pdf_path = parent.path().join("statement.pdf");
+        fs::write(&pdf_path, synthetic_pdf()).expect("write PDF fixture");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        let csv = runtime
+            .import_selected_document(&csv_path)
+            .expect("import CSV");
+        let pdf = runtime
+            .import_selected_document(&pdf_path)
+            .expect("import PDF");
+
+        assert_eq!(
+            runtime
+                .render_source_document_page(&csv.document_id, 1)
+                .expect_err("reject CSV viewer")
+                .code(),
+            "viewer_unsupported"
+        );
+        assert_eq!(
+            runtime
+                .render_source_document_page(&pdf.document_id, 0)
+                .expect_err("reject page zero")
+                .code(),
+            "invalid_document_request"
+        );
+        assert_eq!(
+            runtime
+                .render_source_document_page(&pdf.document_id, 2)
+                .expect_err("reject out-of-range page")
+                .code(),
+            "invalid_document_request"
+        );
+        assert_eq!(
+            runtime
+                .render_source_document_page("missing-document", 1)
+                .expect_err("reject missing document")
+                .code(),
+            "document_unavailable"
+        );
+    }
+
+    #[test]
     fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
         let parent = tempfile::tempdir().expect("temporary app data");
         let source_path = parent.path().join("synthetic.csv");
@@ -1122,5 +1268,61 @@ mod tests {
                 .expect("list pending")
                 .is_empty()
         );
+    }
+
+    fn synthetic_pdf() -> Vec<u8> {
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 64 96] /Resources << >> /Contents 4 0 R >>",
+            "<< /Length 23 >>\nstream\n0 0 0 rg 0 0 64 96 re f\nendstream",
+        ];
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::with_capacity(objects.len());
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            write!(&mut pdf, "{} 0 obj\n{}\nendobj\n", index + 1, object)
+                .expect("write PDF object");
+        }
+        let xref = pdf.len();
+        write!(
+            &mut pdf,
+            "xref\n0 {}\n0000000000 65535 f \n",
+            objects.len() + 1
+        )
+        .expect("write xref");
+        for offset in offsets {
+            writeln!(&mut pdf, "{offset:010} 00000 n ").expect("write xref entry");
+        }
+        write!(
+            &mut pdf,
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        )
+        .expect("write trailer");
+        pdf
+    }
+
+    fn vault_entries(root: &Path) -> Vec<PathBuf> {
+        fn visit(root: &Path, path: &Path, entries: &mut Vec<PathBuf>) {
+            for entry in fs::read_dir(path).expect("read Vault directory") {
+                let entry = entry.expect("read Vault entry");
+                let entry_path = entry.path();
+                entries.push(
+                    entry_path
+                        .strip_prefix(root)
+                        .expect("Vault-relative path")
+                        .to_owned(),
+                );
+                if entry.file_type().expect("Vault entry type").is_dir() {
+                    visit(root, &entry_path, entries);
+                }
+            }
+        }
+
+        let mut entries = Vec::new();
+        visit(root, root, &mut entries);
+        entries.sort();
+        entries
     }
 }

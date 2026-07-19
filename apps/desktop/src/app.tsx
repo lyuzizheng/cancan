@@ -1,7 +1,8 @@
 import { AppShell } from "@cancan/ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  RenderedDocumentPage,
   SourceDocumentImportOutcome,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
@@ -21,6 +22,12 @@ export interface Notice {
   title: string;
 }
 
+export interface DocumentViewerState {
+  documentId: string;
+  documentTitle: string;
+  page: RenderedDocumentPage;
+}
+
 export interface VaultManualImportViewProps {
   busy: boolean;
   error: string | null;
@@ -28,15 +35,23 @@ export interface VaultManualImportViewProps {
   loadingDocuments: boolean;
   normalizingDocumentId: string | null;
   notice: Notice | null;
+  onCloseViewer: () => void;
   onImport: () => void;
   onLock: () => void;
   onNormalize: (documentId: string) => void;
   onPasswordChange: (password: string) => void;
   onRefresh: () => void;
   onSubmitPassword: () => void;
+  onView: (
+    document: SourceDocumentSummary,
+    trigger: HTMLButtonElement,
+  ) => void;
+  onViewerPage: (pageNumber: number) => void;
   password: string;
   unassignedDocuments: SourceDocumentSummary[];
   vaultStatus: VaultScreenStatus;
+  viewer: DocumentViewerState | null;
+  viewingPage: boolean;
 }
 
 const defaultVaultApi = createVaultApi();
@@ -55,6 +70,26 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   );
   const [notice, setNotice] = useState<Notice | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<DocumentViewerState | null>(null);
+  const [viewingPage, setViewingPage] = useState(false);
+  const viewerRequestId = useRef(0);
+  const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
+
+  const clearViewer = useCallback((restoreFocus = true) => {
+    viewerRequestId.current += 1;
+    setViewer(null);
+    setViewingPage(false);
+    if (!restoreFocus) {
+      viewerReturnFocus.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (viewer === null && viewerReturnFocus.current) {
+      viewerReturnFocus.current.focus();
+      viewerReturnFocus.current = null;
+    }
+  }, [viewer]);
 
   const loadUnassignedDocuments = useCallback(async () => {
     setLoadingDocuments(true);
@@ -78,13 +113,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         await loadUnassignedDocuments();
       } else {
         setUnassignedDocuments([]);
+        clearViewer(false);
       }
     } catch (nextError) {
       setError(commandErrorMessage(nextError));
     } finally {
       setBusy(false);
     }
-  }, [loadUnassignedDocuments]);
+  }, [clearViewer, loadUnassignedDocuments]);
 
   useEffect(() => {
     void refreshVaultStatus();
@@ -141,6 +177,36 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }).finally(() => setNormalizingDocumentId(null));
   };
 
+  const loadViewerPage = (
+    documentId: string,
+    documentTitle: string,
+    pageNumber: number,
+  ) => {
+    const requestId = viewerRequestId.current + 1;
+    viewerRequestId.current = requestId;
+    setViewingPage(true);
+    void run(async () => {
+      try {
+        const page = await api.renderSourceDocumentPage(documentId, pageNumber);
+        if (viewerRequestId.current === requestId) {
+          setViewer({ documentId, documentTitle, page });
+        }
+      } catch (nextError) {
+        if (viewerRequestId.current !== requestId) {
+          return;
+        }
+        if (viewer !== null) {
+          clearViewer();
+        }
+        throw nextError;
+      }
+    }).finally(() => {
+      if (viewerRequestId.current === requestId) {
+        setViewingPage(false);
+      }
+    });
+  };
+
   return (
     <VaultManualImportView
       busy={busy}
@@ -149,9 +215,11 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       loadingDocuments={loadingDocuments}
       normalizingDocumentId={normalizingDocumentId}
       notice={notice}
+      onCloseViewer={clearViewer}
       onImport={importDocument}
       onLock={() =>
         void run(async () => {
+          clearViewer(false);
           setVaultStatus(await api.lockVault());
           setNotice(null);
           setUnassignedDocuments([]);
@@ -161,9 +229,20 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onPasswordChange={setPassword}
       onRefresh={() => void refreshVaultStatus()}
       onSubmitPassword={submitPassword}
+      onView={(document, trigger) => {
+        viewerReturnFocus.current = trigger;
+        loadViewerPage(document.documentId, document.originalFilename, 1);
+      }}
+      onViewerPage={(pageNumber) => {
+        if (viewer) {
+          loadViewerPage(viewer.documentId, viewer.documentTitle, pageNumber);
+        }
+      }}
       password={password}
       unassignedDocuments={unassignedDocuments}
       vaultStatus={vaultStatus}
+      viewer={viewer}
+      viewingPage={viewingPage}
     />
   );
 }
@@ -173,7 +252,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
 
   return (
     <AppShell>
-      <aside className="vault-spine" aria-label="CanCan Vault">
+      <aside aria-hidden={props.viewer ? true : undefined} className="vault-spine" inert={props.viewer !== null} aria-label="CanCan Vault">
         <div className="vault-brand">
           <span className="vault-mark" aria-hidden="true">C</span>
           <span>CanCan</span>
@@ -189,7 +268,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
         <p className="vault-spine-footnote">Manual import</p>
       </aside>
 
-      <section className="ledger" aria-busy={props.vaultStatus === "loading"}>
+      <section aria-hidden={props.viewer ? true : undefined} className="ledger" inert={props.viewer !== null} aria-busy={props.vaultStatus === "loading"}>
         <header className="ledger-header">
           <div>
             <p className="ledger-eyebrow">Sources / Evidence</p>
@@ -263,9 +342,16 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                           <p>{document.originalFilename}</p>
                           <span>{fileStateLabel(document.fileState)}</span>
                         </div>
-                        <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
-                          {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
-                        </button>
+                        <div className="evidence-actions">
+                          {document.mimeType === "application/pdf" ? (
+                            <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
+                              {!routingAvailable ? "View unavailable" : "View document"}
+                            </button>
+                          ) : null}
+                          <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
+                            {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
+                          </button>
+                        </div>
                       </li>
                     );
                   })}
@@ -275,7 +361,84 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
           </section>
         ) : null}
       </section>
+      {unlocked && props.viewer ? (
+        <DocumentViewer
+          onClose={props.onCloseViewer}
+          onPage={props.onViewerPage}
+          viewer={props.viewer}
+          viewingPage={props.viewingPage}
+        />
+      ) : null}
     </AppShell>
+  );
+}
+
+function DocumentViewer({
+  onClose,
+  onPage,
+  viewer,
+  viewingPage,
+}: {
+  onClose: () => void;
+  onPage: (pageNumber: number) => void;
+  viewer: DocumentViewerState;
+  viewingPage: boolean;
+}) {
+  const dialog = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const containKeyboardFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const focusable = [...(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+      } else if (!dialog.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", containKeyboardFocus);
+    return () => window.removeEventListener("keydown", containKeyboardFocus);
+  }, [onClose]);
+
+  return (
+    <div className="viewer-backdrop">
+      <section aria-labelledby="document-viewer-title" aria-modal="true" className="document-viewer" ref={dialog} role="dialog">
+        <header className="document-viewer-header">
+          <div>
+            <p className="ledger-eyebrow">Encrypted evidence</p>
+            <h2 id="document-viewer-title">{viewer.documentTitle}</h2>
+          </div>
+          <button autoFocus className="button button-quiet" onClick={onClose} type="button">Close</button>
+        </header>
+        <div className="document-page" aria-busy={viewingPage}>
+          <img
+            alt={`Page ${viewer.page.pageNumber} of ${viewer.page.pageCount}`}
+            src={`data:image/png;base64,${viewer.page.pngBase64}`}
+          />
+          {viewingPage ? <p className="viewer-loading" role="status">Rendering page…</p> : null}
+        </div>
+        <footer className="document-viewer-footer">
+          <button className="button button-quiet" disabled={viewingPage || viewer.page.pageNumber === 1} onClick={() => onPage(viewer.page.pageNumber - 1)} type="button">Previous</button>
+          <p>Page {viewer.page.pageNumber} of {viewer.page.pageCount}</p>
+          <button className="button button-quiet" disabled={viewingPage || viewer.page.pageNumber === viewer.page.pageCount} onClick={() => onPage(viewer.page.pageNumber + 1)} type="button">Next</button>
+        </footer>
+      </section>
+    </div>
   );
 }
 

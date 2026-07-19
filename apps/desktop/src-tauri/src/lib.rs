@@ -3,11 +3,12 @@ mod database;
 mod runtime;
 #[allow(dead_code)]
 mod vault;
+mod viewer;
 
 use runtime::{
     VaultRuntime, create_vault, import_source_document, list_source_documents,
-    list_unassigned_source_documents, lock_vault, normalize_source_document, unlock_vault,
-    vault_status,
+    list_unassigned_source_documents, lock_vault, normalize_source_document,
+    render_source_document_page, unlock_vault, vault_status,
 };
 use tauri::Manager;
 
@@ -28,7 +29,8 @@ pub fn run() {
             import_source_document,
             list_source_documents,
             list_unassigned_source_documents,
-            normalize_source_document
+            normalize_source_document,
+            render_source_document_page
         ])
         .run(tauri::generate_context!())
         .expect("CanCan desktop runtime failed");
