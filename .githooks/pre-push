@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+while read -r _local_ref _local_oid remote_ref _remote_oid; do
+  if [[ "$remote_ref" == "refs/heads/main" ]]; then
+    cat >&2 <<'EOF'
+Direct pushes to main are disabled in CanCan.
+Push a feature branch and merge it through a pull request.
+EOF
+    exit 1
+  fi
+done
