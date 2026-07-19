@@ -2,6 +2,16 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-20
+
+### Completed
+
+- Hardened manual and inactivity Vault locking so the renderer invalidates its Vault session, removes document names and rendered page pixels, and shows a non-interactive gate before waiting for the privileged lock command. A failed command now reconciles the actual Vault status and restores the unlocked view only when confirmed; renderer-side reconciliation stops after component teardown.
+
+### Next
+
+- Continue `vault-manual-import` with the accepted tombstone-first `Delete source file` checkpoint, including explicit confirmation, crash convergence, and exact-hash restore behavior. Keep automatic Inbox/Gmail deletion suppression in their later owning slices.
+
 ## 2026-07-19
 
 ### Completed

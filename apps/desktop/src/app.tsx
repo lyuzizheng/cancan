@@ -77,6 +77,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
   const vaultSessionId = useRef(0);
 
+  useEffect(() => () => {
+    vaultSessionId.current += 1;
+  }, []);
+
   const clearViewer = useCallback((restoreFocus = true) => {
     viewerRequestId.current += 1;
     setViewer(null);
@@ -86,13 +90,16 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   }, []);
 
-  const showVaultGate = useCallback((nextStatus: VaultStatus) => {
-    vaultSessionId.current += 1;
+  const showVaultGate = useCallback((nextStatus: VaultScreenStatus) => {
+    const nextSessionId = vaultSessionId.current + 1;
+    vaultSessionId.current = nextSessionId;
     clearViewer(false);
     setVaultStatus(nextStatus);
     setError(null);
     setNotice(null);
     setUnassignedDocuments([]);
+    setLoadingDocuments(false);
+    return nextSessionId;
   }, [clearViewer]);
 
   useEffect(() => {
@@ -121,12 +128,44 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   }, [api]);
 
+  const requestVaultLock = useCallback(async () => {
+    const sessionId = showVaultGate("loading");
+    try {
+      const nextStatus = await api.lockVault();
+      if (vaultSessionId.current === sessionId) {
+        setVaultStatus(nextStatus);
+        return nextStatus === "unlocked";
+      }
+    } catch (nextError) {
+      if (vaultSessionId.current !== sessionId) {
+        return false;
+      }
+      try {
+        const nextStatus = await api.vaultStatus();
+        if (vaultSessionId.current !== sessionId) {
+          return false;
+        }
+        setVaultStatus(nextStatus);
+        if (nextStatus === "unlocked") {
+          setError(commandErrorMessage(nextError));
+          await loadUnassignedDocuments();
+          return vaultSessionId.current === sessionId;
+        }
+      } catch {
+        if (vaultSessionId.current === sessionId) {
+          setError(commandErrorMessage(nextError));
+        }
+      }
+    }
+    return false;
+  }, [api, loadUnassignedDocuments, showVaultGate]);
+
   useEffect(() => {
     if (vaultStatus !== "unlocked") {
       return;
     }
 
-    const sessionId = vaultSessionId.current;
+    let active = true;
     let timeout = window.setTimeout(
       lockAfterInactivity,
       VAULT_INACTIVITY_TIMEOUT_MS,
@@ -148,6 +187,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
 
     return () => {
+      active = false;
       window.clearTimeout(timeout);
       for (const event of activityEvents) {
         window.removeEventListener(event, resetTimeout);
@@ -155,21 +195,13 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     };
 
     function lockAfterInactivity() {
-      void api
-        .lockVault()
-        .then((nextStatus) => {
-          if (vaultSessionId.current === sessionId) {
-            showVaultGate(nextStatus);
-          }
-        })
-        .catch((nextError: unknown) => {
-          if (vaultSessionId.current === sessionId) {
-            setError(commandErrorMessage(nextError));
-            resetTimeout();
-          }
-        });
+      void requestVaultLock().then((vaultRemainsUnlocked) => {
+        if (active && vaultRemainsUnlocked) {
+          resetTimeout();
+        }
+      });
     }
-  }, [api, showVaultGate, vaultStatus]);
+  }, [requestVaultLock, vaultStatus]);
 
   const refreshVaultStatus = useCallback(async () => {
     setBusy(true);
@@ -286,11 +318,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       notice={notice}
       onCloseViewer={clearViewer}
       onImport={importDocument}
-      onLock={() =>
-        void run(async () => {
-          showVaultGate(await api.lockVault());
-        })
-      }
+      onLock={() => void requestVaultLock()}
       onNormalize={normalizeDocument}
       onPasswordChange={setPassword}
       onRefresh={() => void refreshVaultStatus()}
