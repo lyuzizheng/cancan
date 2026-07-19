@@ -215,7 +215,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       loadingDocuments={loadingDocuments}
       normalizingDocumentId={normalizingDocumentId}
       notice={notice}
-      onCloseViewer={() => clearViewer()}
+      onCloseViewer={clearViewer}
       onImport={importDocument}
       onLock={() =>
         void run(async () => {

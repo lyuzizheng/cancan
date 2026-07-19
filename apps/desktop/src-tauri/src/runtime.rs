@@ -636,6 +636,9 @@ pub(crate) async fn render_source_document_page(
     page_number: u32,
     runtime: State<'_, VaultRuntime>,
 ) -> Result<RenderedDocumentPage, VaultCommandError> {
+    if document_id.is_empty() || page_number == 0 {
+        return Err(VaultCommandError::new("invalid_document_request"));
+    }
     let runtime = runtime.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         runtime.render_source_document_page(&document_id, page_number)

@@ -12,7 +12,12 @@ describe("Vault API", () => {
       ),
     ) as { app: { security: { csp: string } } };
 
-    expect(config.app.security.csp).toContain("img-src 'self' data:");
+    const imageSources = config.app.security.csp
+      .split(";")
+      .map((directive) => directive.trim())
+      .find((directive) => directive.startsWith("img-src "));
+
+    expect(imageSources).toBe("img-src 'self' data:");
   });
 
   it("uses only the established command names and safe request fields", async () => {
