@@ -391,6 +391,58 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).not.toContain("Unlock your Vault");
   });
 
+  it("ignores an inactivity lock result after a manual lock changes the session", async () => {
+    vi.useFakeTimers();
+    const inactivityLock = deferred<VaultStatus>();
+    const lockVault = vi
+      .fn<() => Promise<VaultStatus>>()
+      .mockReturnValueOnce(inactivityLock.promise)
+      .mockResolvedValueOnce("not_created");
+    const api = createApi({ lockVault });
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    await click("Lock Vault");
+    expect(container.textContent).toContain("Create your Vault");
+
+    await act(async () => {
+      inactivityLock.resolve("locked");
+      await settle();
+    });
+    expect(container.textContent).toContain("Create your Vault");
+    expect(container.textContent).not.toContain("Unlock your Vault");
+  });
+
+  it("ignores an inactivity lock failure after a manual lock changes the session", async () => {
+    vi.useFakeTimers();
+    const inactivityLock = deferred<VaultStatus>();
+    const lockVault = vi
+      .fn<() => Promise<VaultStatus>>()
+      .mockReturnValueOnce(inactivityLock.promise)
+      .mockResolvedValueOnce("locked");
+    const api = createApi({ lockVault });
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    await click("Lock Vault");
+
+    await act(async () => {
+      inactivityLock.reject({ code: "runtime_unavailable" });
+      await settle();
+    });
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain(
+      "Couldn’t complete that request. Try again.",
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("does not restore document names when an earlier list finishes after inactivity lock", async () => {
     vi.useFakeTimers();
     const documents = deferred<SourceDocumentSummary[]>();

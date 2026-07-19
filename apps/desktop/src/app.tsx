@@ -126,6 +126,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       return;
     }
 
+    const sessionId = vaultSessionId.current;
     let timeout = window.setTimeout(
       lockAfterInactivity,
       VAULT_INACTIVITY_TIMEOUT_MS,
@@ -155,10 +156,16 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     function lockAfterInactivity() {
       void api
         .lockVault()
-        .then(showVaultGate)
+        .then((nextStatus) => {
+          if (vaultSessionId.current === sessionId) {
+            showVaultGate(nextStatus);
+          }
+        })
         .catch((nextError: unknown) => {
-          setError(commandErrorMessage(nextError));
-          resetTimeout();
+          if (vaultSessionId.current === sessionId) {
+            setError(commandErrorMessage(nextError));
+            resetTimeout();
+          }
         });
     }
   }, [api, showVaultGate, vaultStatus]);
