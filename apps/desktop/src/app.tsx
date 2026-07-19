@@ -186,9 +186,19 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     viewerRequestId.current = requestId;
     setViewingPage(true);
     void run(async () => {
-      const page = await api.renderSourceDocumentPage(documentId, pageNumber);
-      if (viewerRequestId.current === requestId) {
-        setViewer({ documentId, documentTitle, page });
+      try {
+        const page = await api.renderSourceDocumentPage(documentId, pageNumber);
+        if (viewerRequestId.current === requestId) {
+          setViewer({ documentId, documentTitle, page });
+        }
+      } catch (nextError) {
+        if (viewerRequestId.current !== requestId) {
+          return;
+        }
+        if (viewer !== null) {
+          clearViewer();
+        }
+        throw nextError;
       }
     }).finally(() => {
       if (viewerRequestId.current === requestId) {
@@ -374,7 +384,7 @@ function DocumentViewer({
   viewer: DocumentViewerState;
   viewingPage: boolean;
 }) {
-  const dialog = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const containKeyboardFocus = (event: KeyboardEvent) => {

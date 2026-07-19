@@ -54,6 +54,12 @@ describe("Vault API", () => {
     expect(commandErrorMessage('{"code":"document_unavailable"}')).toBe(
       "This file is no longer available.",
     );
+    expect(commandErrorMessage('{"code":"invalid_document_request"}')).toBe(
+      "That PDF page isn’t available.",
+    );
+    expect(commandErrorMessage('{"code":"viewer_unsupported"}')).toBe(
+      "Preview is only available for PDF evidence.",
+    );
     expect(commandErrorMessage('{"code":"document_render_failed"}')).toBe(
       "CanCan couldn’t render that PDF page.",
     );

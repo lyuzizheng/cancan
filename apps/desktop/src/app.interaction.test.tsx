@@ -85,11 +85,13 @@ function createApi(overrides: Partial<VaultApi> = {}) {
 
 function deferred<Value>() {
   let resolve: (value: Value) => void;
-  const promise = new Promise<Value>((nextResolve) => {
+  let reject: (reason?: unknown) => void;
+  const promise = new Promise<Value>((nextResolve, nextReject) => {
     resolve = nextResolve;
+    reject = nextReject;
   });
 
-  return { promise, resolve: resolve! };
+  return { promise, reject: reject!, resolve: resolve! };
 }
 
 async function settle() {
@@ -354,6 +356,63 @@ describe("App manual import orchestration", () => {
 
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("ignores a page render failure after the viewer closes", async () => {
+    const nextPage = deferred<RenderedDocumentPage>();
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      renderSourceDocumentPage: vi.fn(
+        async (_documentId: string, pageNumber: number) =>
+          pageNumber === 1
+            ? {
+                pageCount: 2,
+                pageNumber: 1,
+                pngBase64: "Zmlyc3QtcGFnZQ==",
+              }
+            : nextPage.promise,
+      ),
+    });
+
+    await mount(api);
+    await click("View document");
+    await click("Next");
+    await click("Close");
+    await act(async () => {
+      nextPage.reject({ code: "document_render_failed" });
+      await settle();
+    });
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).not.toContain("CanCan couldn’t render that PDF page.");
+  });
+
+  it("closes the viewer and shows a safe error when page navigation fails", async () => {
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      renderSourceDocumentPage: vi.fn(
+        async (_documentId: string, pageNumber: number) => {
+          if (pageNumber === 2) {
+            throw { code: "document_render_failed", privateDetail: "Core Graphics detail" };
+          }
+          return {
+            pageCount: 2,
+            pageNumber: 1,
+            pngBase64: "Zmlyc3QtcGFnZQ==",
+          };
+        },
+      ),
+    });
+
+    await mount(api);
+    await click("View document");
+    await click("Next");
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("CanCan couldn’t render that PDF page.");
+    expect(container.textContent).not.toContain("Core Graphics detail");
   });
 
   it("shows safe command errors without exposing backend details", async () => {

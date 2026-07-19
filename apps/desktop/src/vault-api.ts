@@ -87,8 +87,10 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan could not finish the secure document check. Try again.";
     case "document_unavailable":
       return "This file is no longer available.";
+    case "invalid_document_request":
+      return "That PDF page isn’t available.";
     case "viewer_unsupported":
-      return "Preview is currently available for PDF evidence.";
+      return "Preview is only available for PDF evidence.";
     case "document_render_failed":
       return "CanCan couldn’t render that PDF page.";
     default:

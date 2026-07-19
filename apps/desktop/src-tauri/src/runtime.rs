@@ -397,8 +397,7 @@ impl VaultRuntime {
         if input.mime_type != "application/pdf" {
             return Err(RuntimeError::new("viewer_unsupported"));
         }
-        render_pdf_page(&input.plaintext, page_number)
-            .map_err(|_| RuntimeError::new("document_render_failed"))
+        render_pdf_page(&input.plaintext, page_number).map_err(document_render_error)
     }
 
     fn apply_normalizer_result(
@@ -491,6 +490,14 @@ impl VaultRuntime {
             .store
             .lock()
             .map_err(|_| RuntimeError::new("runtime_unavailable"))
+    }
+}
+
+fn document_render_error(error: io::Error) -> RuntimeError {
+    match error.kind() {
+        io::ErrorKind::InvalidInput => RuntimeError::new("invalid_document_request"),
+        io::ErrorKind::Unsupported => RuntimeError::new("viewer_unsupported"),
+        _ => RuntimeError::new("document_render_failed"),
     }
 }
 
@@ -834,6 +841,22 @@ mod tests {
     }
 
     #[test]
+    fn maps_platform_and_document_render_failures_separately() {
+        assert_eq!(
+            document_render_error(io::Error::from(io::ErrorKind::Unsupported)).code(),
+            "viewer_unsupported"
+        );
+        assert_eq!(
+            document_render_error(io::Error::from(io::ErrorKind::InvalidInput)).code(),
+            "invalid_document_request"
+        );
+        assert_eq!(
+            document_render_error(io::Error::from(io::ErrorKind::InvalidData)).code(),
+            "document_render_failed"
+        );
+    }
+
+    #[test]
     fn creates_locks_and_unlocks_a_vault_without_exposing_the_master_key() {
         let parent = tempfile::tempdir().expect("temporary app data");
         let runtime = VaultRuntime::new(parent.path().join("vault"));
@@ -1172,7 +1195,7 @@ mod tests {
                 .render_source_document_page(&pdf.document_id, 2)
                 .expect_err("reject out-of-range page")
                 .code(),
-            "document_render_failed"
+            "invalid_document_request"
         );
         assert_eq!(
             runtime
