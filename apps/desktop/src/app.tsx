@@ -86,10 +86,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   }, []);
 
-  const showLockedVault = useCallback(() => {
+  const showVaultGate = useCallback((nextStatus: VaultStatus) => {
     vaultSessionId.current += 1;
     clearViewer(false);
-    setVaultStatus("locked");
+    setVaultStatus(nextStatus);
     setError(null);
     setNotice(null);
     setUnassignedDocuments([]);
@@ -111,9 +111,13 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setUnassignedDocuments(documents);
       }
     } catch (nextError) {
-      setError(commandErrorMessage(nextError));
+      if (vaultSessionId.current === sessionId) {
+        setError(commandErrorMessage(nextError));
+      }
     } finally {
-      setLoadingDocuments(false);
+      if (vaultSessionId.current === sessionId) {
+        setLoadingDocuments(false);
+      }
     }
   }, [api]);
 
@@ -151,13 +155,13 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     function lockAfterInactivity() {
       void api
         .lockVault()
-        .then(showLockedVault)
+        .then(showVaultGate)
         .catch((nextError: unknown) => {
           setError(commandErrorMessage(nextError));
           resetTimeout();
         });
     }
-  }, [api, showLockedVault, vaultStatus]);
+  }, [api, showVaultGate, vaultStatus]);
 
   const refreshVaultStatus = useCallback(async () => {
     setBusy(true);
@@ -276,8 +280,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onImport={importDocument}
       onLock={() =>
         void run(async () => {
-          await api.lockVault();
-          showLockedVault();
+          showVaultGate(await api.lockVault());
         })
       }
       onNormalize={normalizeDocument}
