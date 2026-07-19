@@ -4,10 +4,14 @@ import { describe, expect, it } from "vitest";
 import { AppShell } from "./app-shell";
 
 describe("AppShell", () => {
-  it("renders the local-first development shell", () => {
-    const markup = renderToStaticMarkup(<AppShell />);
+  it("renders application content inside the shared shell", () => {
+    const markup = renderToStaticMarkup(
+      <AppShell>
+        <p>Vault content</p>
+      </AppShell>,
+    );
 
-    expect(markup).toContain("CanCan");
-    expect(markup).toContain("Local-first foundation");
+    expect(markup).toContain('class="vault-app"');
+    expect(markup).toContain("Vault content");
   });
 });
