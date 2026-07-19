@@ -142,8 +142,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       "touchstart",
       "wheel",
     ];
+    const activityListenerOptions = { passive: true };
     for (const event of activityEvents) {
-      window.addEventListener(event, resetTimeout);
+      window.addEventListener(event, resetTimeout, activityListenerOptions);
     }
 
     return () => {
