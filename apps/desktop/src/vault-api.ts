@@ -88,7 +88,7 @@ export function commandErrorMessage(error: unknown): string {
     case "document_unavailable":
       return "This file is no longer available.";
     case "invalid_document_request":
-      return "That PDF page isn’t available.";
+      return "That document request isn’t valid.";
     case "viewer_unsupported":
       return "Preview isn’t available for this evidence.";
     case "document_render_failed":

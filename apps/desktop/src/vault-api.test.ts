@@ -55,7 +55,7 @@ describe("Vault API", () => {
       "This file is no longer available.",
     );
     expect(commandErrorMessage('{"code":"invalid_document_request"}')).toBe(
-      "That PDF page isn’t available.",
+      "That document request isn’t valid.",
     );
     expect(commandErrorMessage('{"code":"viewer_unsupported"}')).toBe(
       "Preview isn’t available for this evidence.",
