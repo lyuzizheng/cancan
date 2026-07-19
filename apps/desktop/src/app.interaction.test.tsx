@@ -143,6 +143,9 @@ describe("App manual import orchestration", () => {
     });
 
     await mount(api);
+    expect(
+      container.querySelector<HTMLInputElement>("#vault-password")?.autocomplete,
+    ).toBe("off");
     expect(button("Unlock Vault").disabled).toBe(false);
 
     await enterPassword("vault-password");

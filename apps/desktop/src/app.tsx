@@ -304,7 +304,7 @@ function VaultGate({
         <form className="vault-password-form" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
           <label htmlFor="vault-password">Vault password</label>
           <div className="vault-password-controls">
-            <input autoComplete={title === "Create your Vault" ? "new-password" : "current-password"} disabled={busy} id="vault-password" onChange={(event) => onPasswordChange(event.target.value)} type="password" value={password} />
+            <input autoComplete="off" disabled={busy} id="vault-password" onChange={(event) => onPasswordChange(event.target.value)} type="password" value={password} />
             <button className="button button-primary" disabled={busy} type="submit">{busy ? "Working…" : title === "Create your Vault" ? "Create Vault" : "Unlock Vault"}</button>
           </div>
         </form>
