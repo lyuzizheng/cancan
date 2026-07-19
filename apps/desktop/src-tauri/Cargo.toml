@@ -14,8 +14,10 @@ tauri-build = { version = "=2.6.3", features = [] }
 
 [dependencies]
 argon2 = { version = "=0.5.3", features = ["std", "zeroize"] }
+base64 = "=0.22.1"
 chacha20poly1305 = { version = "=0.10.1", features = ["std"] }
 hkdf = "=0.12.4"
+png = "=0.18.1"
 rand = "=0.8.5"
 rusqlite = { version = "=0.40.1", default-features = false, features = ["bundled-sqlcipher-vendored-openssl"] }
 serde = { version = "=1.0.228", features = ["derive"] }

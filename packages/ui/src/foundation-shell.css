@@ -427,6 +427,102 @@ input:focus-visible {
   font-size: 0.8rem;
 }
 
+.evidence-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.viewer-backdrop {
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  inset: 0;
+  place-items: center;
+  padding: 28px;
+  background: rgb(12 18 17 / 76%);
+  backdrop-filter: blur(6px);
+}
+
+.document-viewer {
+  display: grid;
+  width: min(960px, 100%);
+  max-height: calc(100vh - 56px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--vault-seam);
+  border-top: 3px solid var(--signal-emerald);
+  border-radius: 4px;
+  background: var(--ledger-mineral);
+  box-shadow: 0 30px 80px rgb(0 0 0 / 32%);
+}
+
+.document-viewer-header,
+.document-viewer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 20px;
+  background: var(--ledger-porcelain);
+}
+
+.document-viewer-header {
+  border-bottom: 1px solid var(--ledger-rule);
+}
+
+.document-viewer-header h2 {
+  overflow: hidden;
+  max-width: 70vw;
+  margin: 3px 0 0;
+  font-size: 1.15rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-viewer-footer {
+  border-top: 1px solid var(--ledger-rule);
+}
+
+.document-viewer-footer p {
+  margin: 0;
+  color: var(--ledger-text-muted);
+  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.74rem;
+}
+
+.document-page {
+  position: relative;
+  overflow: auto;
+  padding: 24px;
+  background:
+    linear-gradient(90deg, rgb(26 44 40 / 5%) 1px, transparent 1px),
+    linear-gradient(rgb(26 44 40 / 5%) 1px, transparent 1px),
+    var(--ledger-rule);
+  background-size: 24px 24px;
+}
+
+.document-page img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  background: white;
+  box-shadow: 0 12px 34px rgb(0 0 0 / 18%);
+}
+
+.viewer-loading {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  margin: 0;
+  padding: 10px 14px;
+  color: var(--vault-text);
+  background: var(--vault-obsidian);
+  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+  transform: translate(-50%, -50%);
+}
+
 @keyframes feedback-in {
   from {
     opacity: 0;
@@ -506,8 +602,34 @@ input:focus-visible {
   }
 
   .evidence-row .button {
-    grid-column: 1 / -1;
     width: 100%;
+  }
+
+  .evidence-actions {
+    grid-column: 1 / -1;
+    flex-direction: column;
+  }
+
+  .viewer-backdrop {
+    padding: 0;
+  }
+
+  .document-viewer {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-top: 3px solid var(--signal-emerald);
+    border-radius: 0;
+  }
+
+  .document-page {
+    padding: 14px;
+  }
+
+  .document-viewer-header,
+  .document-viewer-footer {
+    padding: 14px;
   }
 }
 

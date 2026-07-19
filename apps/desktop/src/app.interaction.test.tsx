@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   SourceDocumentImportOutcome,
+  RenderedDocumentPage,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   VaultStatus,
@@ -66,6 +67,13 @@ function createApi(overrides: Partial<VaultApi> = {}) {
         moneySourceId: null,
         reason: "classification_uncertain",
         status: "needs_attention",
+      }),
+    ),
+    renderSourceDocumentPage: vi.fn(
+      async (_documentId: string, pageNumber: number): Promise<RenderedDocumentPage> => ({
+        pageCount: 2,
+        pageNumber,
+        pngBase64: "cmVuZGVyZWQtcGFnZQ==",
       }),
     ),
     unlockVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
@@ -267,6 +275,85 @@ describe("App manual import orchestration", () => {
     await click("Lock Vault");
     expect(api.lockVault).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("opens rendered PDF pages, navigates them, and clears pixels on close or Vault lock", async () => {
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+    });
+
+    await mount(api);
+    const viewTrigger = button("View document");
+    await click("View document");
+
+    expect(api.renderSourceDocumentPage).toHaveBeenLastCalledWith("document-1", 1);
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,cmVuZGVyZWQtcGFnZQ==",
+    );
+    expect(container.textContent).toContain("Page 1 of 2");
+
+    const close = button("Close");
+    const next = button("Next");
+    close.focus();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true }));
+      await settle();
+    });
+    expect(document.activeElement).toBe(next);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+      await settle();
+    });
+    expect(document.activeElement).toBe(close);
+
+    await click("Next");
+    expect(api.renderSourceDocumentPage).toHaveBeenLastCalledWith("document-1", 2);
+    expect(container.textContent).toContain("Page 2 of 2");
+
+    await click("Close");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    expect(document.activeElement).toBe(viewTrigger);
+
+    await click("View document");
+    await click("Lock Vault");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("does not restore page pixels when a render finishes after the viewer closes", async () => {
+    const nextPage = deferred<RenderedDocumentPage>();
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      renderSourceDocumentPage: vi.fn(
+        async (_documentId: string, pageNumber: number) =>
+          pageNumber === 1
+            ? {
+                pageCount: 2,
+                pageNumber: 1,
+                pngBase64: "Zmlyc3QtcGFnZQ==",
+              }
+            : nextPage.promise,
+      ),
+    });
+
+    await mount(api);
+    await click("View document");
+    await click("Next");
+    await click("Close");
+    await act(async () => {
+      nextPage.resolve({
+        pageCount: 2,
+        pageNumber: 2,
+        pngBase64: "c2Vjb25kLXBhZ2U=",
+      });
+      await settle();
+    });
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
   });
 
   it("shows safe command errors without exposing backend details", async () => {

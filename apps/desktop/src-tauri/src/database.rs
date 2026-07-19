@@ -86,7 +86,7 @@ pub struct SourceDocumentView {
     pub semantic_document_key: Option<String>,
 }
 
-pub struct SourceDocumentNormalizationInput {
+pub struct SourceDocumentFileInput {
     pub mime_type: String,
     pub plaintext: Zeroizing<Vec<u8>>,
 }
@@ -270,10 +270,7 @@ impl ManualImportStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    pub fn normalization_input(
-        &self,
-        document_id: &str,
-    ) -> StoreResult<SourceDocumentNormalizationInput> {
+    pub fn source_document_input(&self, document_id: &str) -> StoreResult<SourceDocumentFileInput> {
         let document = self
             .connection
             .query_row(
@@ -310,7 +307,7 @@ impl ManualImportStore {
         let plaintext = self
             .files
             .open_in_memory(&self.master_key, &encrypted_locator)?;
-        Ok(SourceDocumentNormalizationInput {
+        Ok(SourceDocumentFileInput {
             mime_type,
             plaintext,
         })
