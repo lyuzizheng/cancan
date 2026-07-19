@@ -32,6 +32,7 @@ describe("Vault API", () => {
     await api.createVault("password");
     await api.unlockVault("password");
     await api.lockVault();
+    await api.deleteSourceDocument("document-1");
     await api.importSourceDocument();
     await api.listUnassignedSourceDocuments();
     await api.normalizeSourceDocument("document-1");
@@ -42,6 +43,7 @@ describe("Vault API", () => {
       ["create_vault", { password: "password" }],
       ["unlock_vault", { password: "password" }],
       ["lock_vault", undefined],
+      ["delete_source_document", { documentId: "document-1" }],
       ["import_source_document", undefined],
       ["list_unassigned_source_documents", undefined],
       ["normalize_source_document", { documentId: "document-1" }],
@@ -67,6 +69,9 @@ describe("Vault API", () => {
     );
     expect(commandErrorMessage('{"code":"document_render_failed"}')).toBe(
       "CanCan couldn’t render that PDF page.",
+    );
+    expect(commandErrorMessage('{"code":"delete_source_failed"}')).toBe(
+      "CanCan couldn’t finish removing this Vault file. Refresh its status before trying again.",
     );
     expect(commandErrorMessage("private backend detail")).toBe(
       "Couldn’t complete that request. Try again.",

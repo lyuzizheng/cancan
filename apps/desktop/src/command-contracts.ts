@@ -4,6 +4,8 @@ export type VaultPasswordArgs = { password: string };
 
 export type NormalizeSourceDocumentArgs = { documentId: string };
 
+export type DeleteSourceDocumentArgs = { documentId: string };
+
 export type RenderSourceDocumentPageArgs = {
   documentId: string;
   pageNumber: number;

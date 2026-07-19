@@ -55,6 +55,7 @@ function sourceDocument(
 function createApi(overrides: Partial<VaultApi> = {}) {
   const api = {
     createVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
+    deleteSourceDocument: vi.fn(async (): Promise<boolean> => true),
     importSourceDocument: vi.fn(
       async (): Promise<SourceDocumentImportOutcome | null> => null,
     ),
@@ -337,6 +338,69 @@ describe("App manual import orchestration", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("deletes an available source file and keeps its tombstone visible", async () => {
+    const deletedDocument = sourceDocument({ fileState: "deleted" });
+    const listUnassignedSourceDocuments = vi
+      .fn<() => Promise<SourceDocumentSummary[]>>()
+      .mockResolvedValueOnce([availableDocument])
+      .mockResolvedValueOnce([deletedDocument]);
+    const api = createApi({ listUnassignedSourceDocuments });
+
+    await mount(api);
+    await click("Delete source file");
+
+    expect(api.deleteSourceDocument).toHaveBeenCalledWith(
+      availableDocument.documentId,
+    );
+    expect(container.textContent).toContain("Source file deleted");
+    expect(container.textContent).toContain(availableDocument.originalFilename);
+    expect(container.textContent).toContain("File deleted");
+    expect(container.textContent).not.toContain("Delete source file");
+    expect(container.textContent).toContain("View unavailable");
+    expect(container.textContent).toContain("Routing unavailable");
+  });
+
+  it("keeps an available source file when deletion confirmation is cancelled", async () => {
+    const listUnassignedSourceDocuments = vi.fn(async () => [availableDocument]);
+    const api = createApi({
+      deleteSourceDocument: vi.fn(async () => false),
+      listUnassignedSourceDocuments,
+    });
+
+    await mount(api);
+    await click("Delete source file");
+
+    expect(api.deleteSourceDocument).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain(availableDocument.originalFilename);
+    expect(container.textContent).toContain("Delete source file");
+    expect(container.textContent).not.toContain("Source file deleted");
+    expect(listUnassignedSourceDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the deleted tombstone when storage removal fails after the decision commits", async () => {
+    const deletedDocument = sourceDocument({ fileState: "deleted" });
+    const listUnassignedSourceDocuments = vi
+      .fn<() => Promise<SourceDocumentSummary[]>>()
+      .mockResolvedValueOnce([availableDocument])
+      .mockResolvedValueOnce([deletedDocument]);
+    const api = createApi({
+      deleteSourceDocument: vi.fn(async () => {
+        throw { code: "delete_source_failed" };
+      }),
+      listUnassignedSourceDocuments,
+    });
+
+    await mount(api);
+    await click("Delete source file");
+
+    expect(container.textContent).toContain("File deleted");
+    expect(container.textContent).toContain(
+      "CanCan couldn’t finish removing this Vault file.",
+    );
+    expect(container.textContent).not.toContain("Delete source file");
+    expect(listUnassignedSourceDocuments).toHaveBeenCalledTimes(2);
   });
 
   it("locks after 15 minutes of inactivity and resets the deadline on activity", async () => {

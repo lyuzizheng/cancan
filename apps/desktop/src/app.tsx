@@ -30,12 +30,14 @@ export interface DocumentViewerState {
 
 export interface VaultManualImportViewProps {
   busy: boolean;
+  deletingDocumentId: string | null;
   error: string | null;
   importing: boolean;
   loadingDocuments: boolean;
   normalizingDocumentId: string | null;
   notice: Notice | null;
   onCloseViewer: () => void;
+  onDelete: (documentId: string) => void;
   onImport: () => void;
   onLock: () => void;
   onNormalize: (documentId: string) => void;
@@ -60,6 +62,7 @@ const VAULT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
 export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [vaultStatus, setVaultStatus] = useState<VaultScreenStatus>("loading");
   const [busy, setBusy] = useState(true);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [unassignedDocuments, setUnassignedDocuments] = useState<
     SourceDocumentSummary[]
@@ -287,6 +290,23 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }).finally(() => setNormalizingDocumentId(null));
   };
 
+  const deleteDocument = (documentId: string) => {
+    setDeletingDocumentId(documentId);
+    void run(async () => {
+      try {
+        if (await api.deleteSourceDocument(documentId)) {
+          setNotice({
+            body: "The encrypted file was removed. Its document history and links remain in CanCan.",
+            tone: "success",
+            title: "Source file deleted",
+          });
+        }
+      } finally {
+        await loadUnassignedDocuments();
+      }
+    }).finally(() => setDeletingDocumentId(null));
+  };
+
   const loadViewerPage = (
     documentId: string,
     documentTitle: string,
@@ -320,12 +340,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   return (
     <VaultManualImportView
       busy={busy}
+      deletingDocumentId={deletingDocumentId}
       error={error}
       importing={importing}
       loadingDocuments={loadingDocuments}
       normalizingDocumentId={normalizingDocumentId}
       notice={notice}
       onCloseViewer={clearViewer}
+      onDelete={deleteDocument}
       onImport={importDocument}
       onLock={() => void requestVaultLock()}
       onNormalize={normalizeDocument}
@@ -437,6 +459,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                 <ul className="evidence-list">
                   {props.unassignedDocuments.map((document) => {
                     const routingAvailable = document.fileState === "available";
+                    const deleting = props.deletingDocumentId === document.documentId;
                     const normalizing = props.normalizingDocumentId === document.documentId;
                     return (
                       <li className="evidence-row" key={document.documentId}>
@@ -454,6 +477,11 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                           <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
                             {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
                           </button>
+                          {routingAvailable ? (
+                            <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
+                              {deleting ? "Deleting…" : "Delete source file"}
+                            </button>
+                          ) : null}
                         </div>
                       </li>
                     );

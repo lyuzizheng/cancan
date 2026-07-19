@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  DeleteSourceDocumentArgs,
   NormalizeSourceDocumentArgs,
   RenderedDocumentPage,
   RenderSourceDocumentPageArgs,
@@ -21,6 +22,7 @@ export type TauriInvoke = <
 
 export interface VaultApi {
   createVault(password: string): Promise<VaultStatus>;
+  deleteSourceDocument(documentId: string): Promise<boolean>;
   importSourceDocument(): Promise<SourceDocumentImportOutcome | null>;
   listUnassignedSourceDocuments(): Promise<SourceDocumentSummary[]>;
   lockVault(): Promise<VaultStatus>;
@@ -50,6 +52,13 @@ export function createVaultApi(call: TauriInvoke = tauriInvoke): VaultApi {
       return call<VaultStatus, VaultPasswordArgs>("unlock_vault", args);
     },
     lockVault: () => call<VaultStatus>("lock_vault"),
+    deleteSourceDocument: (documentId) => {
+      const args: DeleteSourceDocumentArgs = { documentId };
+      return call<boolean, DeleteSourceDocumentArgs>(
+        "delete_source_document",
+        args,
+      );
+    },
     importSourceDocument: () =>
       call<SourceDocumentImportOutcome | null>("import_source_document"),
     listUnassignedSourceDocuments: () =>
@@ -93,6 +102,8 @@ export function commandErrorMessage(error: unknown): string {
       return "Preview isn’t available for this evidence.";
     case "document_render_failed":
       return "CanCan couldn’t render that PDF page.";
+    case "delete_source_failed":
+      return "CanCan couldn’t finish removing this Vault file. Refresh its status before trying again.";
     default:
       return "Couldn’t complete that request. Try again.";
   }
