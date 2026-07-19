@@ -33,6 +33,8 @@ afterEach(async () => {
   await act(async () => {
     root.unmount();
   });
+  vi.clearAllTimers();
+  vi.useRealTimers();
   container.remove();
 });
 
@@ -335,6 +337,183 @@ describe("App manual import orchestration", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("locks after 15 minutes of inactivity and resets the deadline on activity", async () => {
+    vi.useFakeTimers();
+    const api = createApi();
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+    });
+    expect(api.lockVault).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new PointerEvent("pointermove"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+    });
+    expect(api.lockVault).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+      await settle();
+    });
+    expect(api.lockVault).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("shows the backend Vault status after a manual lock", async () => {
+    const api = createApi({
+      lockVault: vi.fn(async (): Promise<VaultStatus> => "not_created"),
+    });
+
+    await mount(api);
+    await click("Lock Vault");
+
+    expect(container.textContent).toContain("Create your Vault");
+    expect(container.textContent).not.toContain("Unlock your Vault");
+  });
+
+  it("shows the backend Vault status after an inactivity lock", async () => {
+    vi.useFakeTimers();
+    const api = createApi({
+      lockVault: vi.fn(async (): Promise<VaultStatus> => "not_created"),
+    });
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Create your Vault");
+    expect(container.textContent).not.toContain("Unlock your Vault");
+  });
+
+  it("ignores an inactivity lock result after a manual lock changes the session", async () => {
+    vi.useFakeTimers();
+    const inactivityLock = deferred<VaultStatus>();
+    const lockVault = vi
+      .fn<() => Promise<VaultStatus>>()
+      .mockReturnValueOnce(inactivityLock.promise)
+      .mockResolvedValueOnce("not_created");
+    const api = createApi({ lockVault });
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    await click("Lock Vault");
+    expect(container.textContent).toContain("Create your Vault");
+
+    await act(async () => {
+      inactivityLock.resolve("locked");
+      await settle();
+    });
+    expect(container.textContent).toContain("Create your Vault");
+    expect(container.textContent).not.toContain("Unlock your Vault");
+  });
+
+  it("ignores an inactivity lock failure after a manual lock changes the session", async () => {
+    vi.useFakeTimers();
+    const inactivityLock = deferred<VaultStatus>();
+    const lockVault = vi
+      .fn<() => Promise<VaultStatus>>()
+      .mockReturnValueOnce(inactivityLock.promise)
+      .mockResolvedValueOnce("locked");
+    const api = createApi({ lockVault });
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    await click("Lock Vault");
+
+    await act(async () => {
+      inactivityLock.reject({ code: "runtime_unavailable" });
+      await settle();
+    });
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain(
+      "Couldn’t complete that request. Try again.",
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not restore document names when an earlier list finishes after inactivity lock", async () => {
+    vi.useFakeTimers();
+    const documents = deferred<SourceDocumentSummary[]>();
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(() => documents.promise),
+    });
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    expect(container.textContent).toContain("Unlock your Vault");
+
+    await act(async () => {
+      documents.resolve([availableDocument]);
+      await settle();
+    });
+    expect(container.textContent).not.toContain(availableDocument.originalFilename);
+  });
+
+  it("does not show an earlier list failure after inactivity lock", async () => {
+    vi.useFakeTimers();
+    const documents = deferred<SourceDocumentSummary[]>();
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(() => documents.promise),
+    });
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    expect(container.textContent).toContain("Unlock your Vault");
+
+    await act(async () => {
+      documents.reject({ code: "runtime_unavailable" });
+      await settle();
+    });
+    expect(container.textContent).not.toContain(
+      "Couldn’t complete that request. Try again.",
+    );
+  });
+
+  it("shows a failed inactivity lock and retries after the next deadline", async () => {
+    vi.useFakeTimers();
+    const lockVault = vi
+      .fn<() => Promise<VaultStatus>>()
+      .mockRejectedValueOnce({ code: "runtime_unavailable" })
+      .mockResolvedValue("locked");
+    const api = createApi({ lockVault });
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    expect(lockVault).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain(
+      "Couldn’t complete that request. Try again.",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    expect(lockVault).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain(
+      "Couldn’t complete that request. Try again.",
+    );
   });
 
   it("does not restore page pixels when a render finishes after the viewer closes", async () => {

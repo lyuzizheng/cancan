@@ -8,6 +8,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 - Added the production in-memory PDF viewer checkpoint. A document-ID/page-number Tauri command decrypts only while the Vault is unlocked, renders a bounded page through Core Graphics, returns PNG-encoded pixels plus page position, and rejects missing, unavailable, non-PDF, invalid, and out-of-range requests without exposing original bytes, paths, hashes, or encrypted locators.
 - Added responsive desktop/narrow viewer UI with bounded previous/next navigation, Escape/Close behavior, page-pixel removal on close or Vault lock, and stale-render suppression so an in-flight page cannot reopen a closed viewer. Focused Rust and renderer tests cover the command boundary and no-temporary-file invariant; desktop and 390 px visual checks passed.
+- Added the fixed MVP fifteen-minute inactivity lock with keyboard, pointer, touch, and wheel activity resets. Successful automatic locking clears document names and rendered pixels through the existing Vault lock path.
 - Removed Money Source input from the manual PDF/CSV import command. New evidence enters the encrypted Vault with null source and semantic identity while exact SHA-256 duplicate and restore behavior remains available immediately.
 - Added the relationship-preserving migration that makes `source_documents.money_source_id` nullable, retaining its foreign key, source-list index, lifecycle triggers, parse relationships, and foreign-key validation/rollback behavior.
 - Added the production single-pass mock sidecar package and a document-ID-only Tauri normalization command. The host clears inherited sidecar environment, keeps source plaintext inside the trusted process boundary, validates the synthetic provider fingerprint, and derives semantic identity without accepting renderer-supplied provider/source/account values.
@@ -18,7 +19,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Continue `vault-manual-import` with the remaining Keychain, system/inactivity lock, statement-password, deletion, recovery-file, `Save a copy`, and non-PDF viewing checkpoints. A named source display/Documents view waits for safe source display/list and source-management APIs. Keep folder automation, Gmail, mobile intake, and live AI out of this checkpoint.
+- Continue `vault-manual-import` with the remaining Keychain, system sleep/lock, statement-password, deletion, recovery-file, `Save a copy`, and non-PDF viewing checkpoints. A named source display/Documents view waits for safe source display/list and source-management APIs. Keep folder automation, Gmail, mobile intake, and live AI out of this checkpoint.
 
 ## 2026-07-18
 
