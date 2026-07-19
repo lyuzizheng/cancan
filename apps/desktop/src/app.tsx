@@ -75,6 +75,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [viewingPage, setViewingPage] = useState(false);
   const viewerRequestId = useRef(0);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
+  const documentLoadsAllowed = useRef(false);
   const vaultSessionId = useRef(0);
 
   useEffect(() => () => {
@@ -93,6 +94,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const showVaultGate = useCallback((nextStatus: VaultScreenStatus) => {
     const nextSessionId = vaultSessionId.current + 1;
     vaultSessionId.current = nextSessionId;
+    documentLoadsAllowed.current = false;
     clearViewer(false);
     setVaultStatus(nextStatus);
     setError(null);
@@ -110,6 +112,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   }, [viewer]);
 
   const loadUnassignedDocuments = useCallback(async () => {
+    if (!documentLoadsAllowed.current) {
+      return;
+    }
     const sessionId = vaultSessionId.current;
     setLoadingDocuments(true);
     try {
@@ -133,6 +138,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     try {
       const nextStatus = await api.lockVault();
       if (vaultSessionId.current === sessionId) {
+        documentLoadsAllowed.current = nextStatus === "unlocked";
         setVaultStatus(nextStatus);
         return nextStatus === "unlocked";
       }
@@ -145,6 +151,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         if (vaultSessionId.current !== sessionId) {
           return false;
         }
+        documentLoadsAllowed.current = nextStatus === "unlocked";
         setVaultStatus(nextStatus);
         if (nextStatus === "unlocked") {
           setError(commandErrorMessage(nextError));
@@ -209,6 +216,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setError(null);
     try {
       const nextStatus = await api.vaultStatus();
+      documentLoadsAllowed.current = nextStatus === "unlocked";
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
         await loadUnassignedDocuments();
@@ -251,6 +259,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           ? await api.createVault(password)
           : await api.unlockVault(password);
       setPassword("");
+      documentLoadsAllowed.current = nextStatus === "unlocked";
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
         await loadUnassignedDocuments();

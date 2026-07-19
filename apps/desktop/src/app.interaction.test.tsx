@@ -420,6 +420,39 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain("Unlock your Vault");
   });
 
+  it("blocks a document reload started by an import while an inactivity lock is pending", async () => {
+    vi.useFakeTimers();
+    const importDocument = deferred<SourceDocumentImportOutcome | null>();
+    const inactivityLock = deferred<VaultStatus>();
+    const listUnassignedSourceDocuments = vi.fn(async () => [availableDocument]);
+    const api = createApi({
+      importSourceDocument: vi.fn(() => importDocument.promise),
+      listUnassignedSourceDocuments,
+      lockVault: vi.fn(() => inactivityLock.promise),
+    });
+
+    await mount(api);
+    await click("Add file");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    expect(container.textContent).toContain("Checking your Vault");
+
+    await act(async () => {
+      importDocument.resolve({ documentId: "document-1", status: "imported" });
+      await settle();
+    });
+
+    expect(listUnassignedSourceDocuments).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain(availableDocument.originalFilename);
+
+    await act(async () => {
+      inactivityLock.resolve("locked");
+      await settle();
+    });
+  });
+
   it("shows the locked gate when status reconciliation confirms a failed lock command took effect", async () => {
     vi.useFakeTimers();
     const vaultStatus = vi
