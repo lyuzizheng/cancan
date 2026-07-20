@@ -36,11 +36,15 @@ const baseProps: VaultManualImportViewProps = {
   onNormalize: () => undefined,
   onPasswordChange: () => undefined,
   onRefresh: () => undefined,
+  onRememberedChange: () => undefined,
   onSubmitPassword: () => undefined,
+  onUnlockWithKeychain: () => undefined,
   onView: () => undefined,
   onViewerPage: () => undefined,
   password: "",
+  rememberedOnThisMac: false,
   unassignedDocuments: [],
+  updatingRemembered: false,
   vaultStatus: "unlocked",
   viewer: null,
   viewingPage: false,
@@ -58,12 +62,25 @@ describe("VaultManualImportView", () => {
     const locked = render({ vaultStatus: "locked" });
     expect(locked).toContain("Unlock your Vault");
     expect(locked).not.toContain("Add file");
+
+    const remembered = render({
+      rememberedOnThisMac: true,
+      vaultStatus: "locked",
+    });
+    expect(remembered).toContain("Unlock with this Mac");
+
+    const unavailable = render({
+      rememberedOnThisMac: null,
+      vaultStatus: "locked",
+    });
+    expect(unavailable).toContain("Keychain unlock is unavailable");
   });
 
   it("renders an unlocked import path and an unassigned document", () => {
     const markup = render({ unassignedDocuments: [document] });
 
     expect(markup).toContain("Add file");
+    expect(markup).toContain("Remember on this Mac");
     expect(markup).toContain("June statement.pdf");
     expect(markup).toContain("View document");
     expect(markup).toContain("Check routing");

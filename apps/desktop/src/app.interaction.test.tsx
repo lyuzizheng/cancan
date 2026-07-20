@@ -9,6 +9,7 @@ import type {
   RenderedDocumentPage,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
+  VaultAccessStatus,
   VaultStatus,
 } from "./command-contracts";
 import { App } from "./app";
@@ -56,6 +57,7 @@ function createApi(overrides: Partial<VaultApi> = {}) {
   const api = {
     createVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     deleteSourceDocument: vi.fn(async (): Promise<boolean> => true),
+    forgetVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
     importSourceDocument: vi.fn(
       async (): Promise<SourceDocumentImportOutcome | null> => null,
     ),
@@ -79,7 +81,15 @@ function createApi(overrides: Partial<VaultApi> = {}) {
         pngBase64: "cmVuZGVyZWQtcGFnZQ==",
       }),
     ),
+    rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
     unlockVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
+    unlockVaultWithKeychain: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
+    vaultAccessStatus: vi.fn(
+      async (): Promise<VaultAccessStatus> => ({
+        rememberedOnThisMac: false,
+        status: "unlocked",
+      }),
+    ),
     vaultStatus: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
   };
 
@@ -152,7 +162,10 @@ describe("App manual import orchestration", () => {
     const api = createApi({
       listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
       unlockVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
-      vaultStatus: vi.fn(async (): Promise<VaultStatus> => "locked"),
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        rememberedOnThisMac: false,
+        status: "locked",
+      })),
     });
 
     await mount(api);
@@ -172,7 +185,10 @@ describe("App manual import orchestration", () => {
 
   it("creates a Vault when setup is needed", async () => {
     const api = createApi({
-      vaultStatus: vi.fn(async (): Promise<VaultStatus> => "not_created"),
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        rememberedOnThisMac: false,
+        status: "not_created",
+      })),
     });
 
     await mount(api);
@@ -182,6 +198,112 @@ describe("App manual import orchestration", () => {
     expect(api.createVault).toHaveBeenCalledWith("new-vault-password");
     expect(api.unlockVault).not.toHaveBeenCalled();
     expect(button("Add file")).toBeDefined();
+  });
+
+  it("unlocks through Keychain only after an explicit user action", async () => {
+    const api = createApi({
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        rememberedOnThisMac: true,
+        status: "locked",
+      })),
+    });
+
+    await mount(api);
+    expect(container.textContent).toContain("Unlock with this Mac");
+    expect(api.unlockVaultWithKeychain).not.toHaveBeenCalled();
+
+    await click("Unlock with this Mac");
+
+    expect(api.unlockVaultWithKeychain).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("Add file");
+  });
+
+  it("keeps password unlock available when Keychain presence is unknown", async () => {
+    const api = createApi({
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        rememberedOnThisMac: null,
+        status: "locked",
+      })),
+    });
+
+    await mount(api);
+
+    expect(container.textContent).toContain("Keychain unlock is unavailable");
+    expect(container.textContent).toContain("Vault password");
+    expect(container.textContent).not.toContain("Unlock with this Mac");
+    expect(api.unlockVaultWithKeychain).not.toHaveBeenCalled();
+  });
+
+  it("enables and removes remembered unlock without sending the key to the renderer", async () => {
+    const api = createApi();
+
+    await mount(api);
+    const checkbox = container.querySelector<HTMLInputElement>(
+      '.remember-vault-control input[type="checkbox"]',
+    );
+    expect(checkbox?.checked).toBe(false);
+
+    await act(async () => {
+      checkbox!.click();
+      await settle();
+    });
+    expect(api.rememberVaultOnThisMac).toHaveBeenCalledWith();
+    expect(checkbox?.checked).toBe(true);
+    expect(container.textContent).toContain("Remembered unlock enabled");
+
+    await act(async () => {
+      checkbox!.click();
+      await settle();
+    });
+    expect(api.forgetVaultOnThisMac).toHaveBeenCalledWith();
+    expect(checkbox?.checked).toBe(false);
+    expect(container.textContent).toContain("Remembered unlock removed");
+  });
+
+  it("keeps the Vault open and the opt-in off when Keychain storage fails", async () => {
+    const api = createApi({
+      rememberVaultOnThisMac: vi.fn(async () => {
+        throw { code: "remember_failed", privateDetail: "Keychain platform detail" };
+      }),
+    });
+
+    await mount(api);
+    const checkbox = container.querySelector<HTMLInputElement>(
+      '.remember-vault-control input[type="checkbox"]',
+    );
+    await act(async () => {
+      checkbox!.click();
+      await settle();
+    });
+
+    expect(checkbox?.checked).toBe(false);
+    expect(container.textContent).toContain(
+      "CanCan couldn’t save remembered unlock in this Mac’s Keychain.",
+    );
+    expect(container.textContent).not.toContain("Keychain platform detail");
+    expect(container.textContent).toContain("Add file");
+  });
+
+  it("removes a stale remembered-unlock action after Keychain unlock fails", async () => {
+    const vaultAccessStatus = vi
+      .fn<() => Promise<VaultAccessStatus>>()
+      .mockResolvedValueOnce({ rememberedOnThisMac: true, status: "locked" })
+      .mockResolvedValueOnce({ rememberedOnThisMac: false, status: "locked" });
+    const api = createApi({
+      unlockVaultWithKeychain: vi.fn(async (): Promise<VaultStatus> => {
+        throw { code: "remembered_unlock_unavailable" };
+      }),
+      vaultAccessStatus,
+    });
+
+    await mount(api);
+    await click("Unlock with this Mac");
+
+    expect(container.textContent).not.toContain("Unlock with this Mac");
+    expect(container.textContent).toContain(
+      "Remembered unlock is no longer available.",
+    );
+    expect(container.textContent).toContain("Vault password");
   });
 
   it("reports cancellation and every safe import result while only the picker shows its busy label", async () => {
@@ -521,7 +643,6 @@ describe("App manual import orchestration", () => {
     vi.useFakeTimers();
     const vaultStatus = vi
       .fn<() => Promise<VaultStatus>>()
-      .mockResolvedValueOnce("unlocked")
       .mockResolvedValueOnce("locked");
     const api = createApi({
       lockVault: vi.fn(async () => {
@@ -540,7 +661,7 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).not.toContain(
       "Couldn’t complete that request. Try again.",
     );
-    expect(vaultStatus).toHaveBeenCalledTimes(2);
+    expect(vaultStatus).toHaveBeenCalledTimes(1);
   });
 
   it("does not reconcile a pending inactivity lock after unmount", async () => {
@@ -566,7 +687,7 @@ describe("App manual import orchestration", () => {
       await settle();
     });
 
-    expect(vaultStatus).toHaveBeenCalledTimes(1);
+    expect(vaultStatus).not.toHaveBeenCalled();
   });
 
   it("does not restore document names when an earlier list finishes after inactivity lock", async () => {
@@ -737,7 +858,10 @@ describe("App manual import orchestration", () => {
       unlockVault: vi.fn(async (): Promise<VaultStatus> => {
         throw { code: "invalid_credentials" };
       }),
-      vaultStatus: vi.fn(async (): Promise<VaultStatus> => "locked"),
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        rememberedOnThisMac: false,
+        status: "locked",
+      })),
     });
 
     await mount(api);

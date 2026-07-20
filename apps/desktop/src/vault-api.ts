@@ -8,6 +8,7 @@ import type {
   SourceDocumentImportOutcome,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
+  VaultAccessStatus,
   VaultPasswordArgs,
   VaultStatus,
 } from "./command-contracts";
@@ -23,17 +24,21 @@ export type TauriInvoke = <
 export interface VaultApi {
   createVault(password: string): Promise<VaultStatus>;
   deleteSourceDocument(documentId: string): Promise<boolean>;
+  forgetVaultOnThisMac(): Promise<void>;
   importSourceDocument(): Promise<SourceDocumentImportOutcome | null>;
   listUnassignedSourceDocuments(): Promise<SourceDocumentSummary[]>;
   lockVault(): Promise<VaultStatus>;
   normalizeSourceDocument(
     documentId: string,
   ): Promise<SourceDocumentRoutingOutcome>;
+  rememberVaultOnThisMac(): Promise<void>;
   renderSourceDocumentPage(
     documentId: string,
     pageNumber: number,
   ): Promise<RenderedDocumentPage>;
   unlockVault(password: string): Promise<VaultStatus>;
+  unlockVaultWithKeychain(): Promise<VaultStatus>;
+  vaultAccessStatus(): Promise<VaultAccessStatus>;
   vaultStatus(): Promise<VaultStatus>;
 }
 
@@ -42,6 +47,7 @@ const tauriInvoke: TauriInvoke = (command, args) =>
 
 export function createVaultApi(call: TauriInvoke = tauriInvoke): VaultApi {
   return {
+    vaultAccessStatus: () => call<VaultAccessStatus>("vault_access_status"),
     vaultStatus: () => call<VaultStatus>("vault_status"),
     createVault: (password) => {
       const args: VaultPasswordArgs = { password };
@@ -51,6 +57,10 @@ export function createVaultApi(call: TauriInvoke = tauriInvoke): VaultApi {
       const args: VaultPasswordArgs = { password };
       return call<VaultStatus, VaultPasswordArgs>("unlock_vault", args);
     },
+    unlockVaultWithKeychain: () =>
+      call<VaultStatus>("unlock_vault_with_keychain"),
+    rememberVaultOnThisMac: () => call<void>("remember_vault_on_this_mac"),
+    forgetVaultOnThisMac: () => call<void>("forget_vault_on_this_mac"),
     lockVault: () => call<VaultStatus>("lock_vault"),
     deleteSourceDocument: (documentId) => {
       const args: DeleteSourceDocumentArgs = { documentId };
@@ -86,6 +96,14 @@ export function commandErrorMessage(error: unknown): string {
       return "That password did not unlock this Vault.";
     case "password_required":
       return "Enter a password to continue.";
+    case "remembered_unlock_unavailable":
+      return "Remembered unlock is no longer available. Use your Vault password instead.";
+    case "remembered_unlock_failed":
+      return "CanCan couldn’t access remembered unlock in this Mac’s Keychain.";
+    case "remember_failed":
+      return "CanCan couldn’t save remembered unlock in this Mac’s Keychain.";
+    case "forget_failed":
+      return "CanCan couldn’t remove remembered unlock from this Mac’s Keychain.";
     case "vault_locked":
       return "Unlock your Vault to continue.";
     case "vault_not_created":

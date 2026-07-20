@@ -200,6 +200,31 @@ button:disabled {
   gap: 10px;
 }
 
+.remember-vault-control {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 12px;
+  gap: 8px;
+  color: var(--ledger-ink);
+  border: 1px solid var(--ledger-rule);
+  border-radius: 7px;
+  background: var(--ledger-porcelain);
+  font-size: 0.85rem;
+  font-weight: 610;
+}
+
+.remember-vault-control input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--signal-emerald);
+}
+
+.remember-vault-control:has(input:disabled) {
+  color: var(--ledger-text-muted);
+}
+
 .button {
   min-height: 42px;
   padding: 0 15px;
@@ -278,6 +303,15 @@ input:focus-visible {
   display: grid;
   gap: 8px;
   margin-top: 30px;
+}
+
+.vault-keychain-unlock {
+  margin-top: 24px;
+}
+
+.vault-keychain-status {
+  margin-top: 18px;
+  color: var(--ledger-text-muted);
 }
 
 .vault-password-form label {
@@ -584,6 +618,10 @@ input:focus-visible {
 
   .ledger-actions,
   .ledger-actions .button {
+    width: 100%;
+  }
+
+  .remember-vault-control {
     width: 100%;
   }
 

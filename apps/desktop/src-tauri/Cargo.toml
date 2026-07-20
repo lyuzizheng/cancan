@@ -17,6 +17,7 @@ argon2 = { version = "=0.5.3", features = ["std", "zeroize"] }
 base64 = "=0.22.1"
 chacha20poly1305 = { version = "=0.10.1", features = ["std"] }
 hkdf = "=0.12.4"
+keyring-core = "=1.0.0"
 png = "=0.18.1"
 rand = "=0.8.5"
 rusqlite = { version = "=0.40.1", default-features = false, features = ["bundled-sqlcipher-vendored-openssl"] }
@@ -28,6 +29,10 @@ tauri-plugin-dialog = "=2.7.1"
 tauri-plugin-shell = "=2.3.5"
 tokio = { version = "=1.52.3", features = ["time"] }
 zeroize = "=1.9.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "=1.0.1", features = ["keychain"] }
+security-framework = "=3.7.0"
 
 [dev-dependencies]
 tempfile = "=3.27.0"

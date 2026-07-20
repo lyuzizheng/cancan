@@ -43,14 +43,18 @@ export interface VaultManualImportViewProps {
   onNormalize: (documentId: string) => void;
   onPasswordChange: (password: string) => void;
   onRefresh: () => void;
+  onRememberedChange: (remembered: boolean) => void;
   onSubmitPassword: () => void;
+  onUnlockWithKeychain: () => void;
   onView: (
     document: SourceDocumentSummary,
     trigger: HTMLButtonElement,
   ) => void;
   onViewerPage: (pageNumber: number) => void;
   password: string;
+  rememberedOnThisMac: boolean | null;
   unassignedDocuments: SourceDocumentSummary[];
+  updatingRemembered: boolean;
   vaultStatus: VaultScreenStatus;
   viewer: DocumentViewerState | null;
   viewingPage: boolean;
@@ -64,6 +68,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [busy, setBusy] = useState(true);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [password, setPassword] = useState("");
+  const [rememberedOnThisMac, setRememberedOnThisMac] = useState<boolean | null>(
+    false,
+  );
   const [unassignedDocuments, setUnassignedDocuments] = useState<
     SourceDocumentSummary[]
   >([]);
@@ -76,6 +83,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [error, setError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<DocumentViewerState | null>(null);
   const [viewingPage, setViewingPage] = useState(false);
+  const [updatingRemembered, setUpdatingRemembered] = useState(false);
   const viewerRequestId = useRef(0);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
   const documentLoadsAllowed = useRef(false);
@@ -218,8 +226,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setVaultStatus("loading");
     setError(null);
     try {
-      const nextStatus = await api.vaultStatus();
+      const access = await api.vaultAccessStatus();
+      const nextStatus = access.status;
       documentLoadsAllowed.current = nextStatus === "unlocked";
+      setRememberedOnThisMac(access.rememberedOnThisMac);
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
         await loadUnassignedDocuments();
@@ -268,6 +278,52 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         await loadUnassignedDocuments();
       }
     });
+  };
+
+  const unlockWithKeychain = () => {
+    void run(async () => {
+      try {
+        const nextStatus = await api.unlockVaultWithKeychain();
+        documentLoadsAllowed.current = nextStatus === "unlocked";
+        setVaultStatus(nextStatus);
+        if (nextStatus === "unlocked") {
+          await loadUnassignedDocuments();
+        }
+      } catch (nextError) {
+        try {
+          const access = await api.vaultAccessStatus();
+          setRememberedOnThisMac(access.rememberedOnThisMac);
+        } catch {
+          // Keep the original Keychain error as the user-facing outcome.
+        }
+        throw nextError;
+      }
+    });
+  };
+
+  const updateRemembered = (remembered: boolean) => {
+    setUpdatingRemembered(true);
+    void run(async () => {
+      if (remembered) {
+        await api.rememberVaultOnThisMac();
+      } else {
+        await api.forgetVaultOnThisMac();
+      }
+      setRememberedOnThisMac(remembered);
+      setNotice(
+        remembered
+          ? {
+              body: "This Mac can unlock your Vault through Keychain without running the password check.",
+              tone: "success",
+              title: "Remembered unlock enabled",
+            }
+          : {
+              body: "Your current Vault stays open. Your password will be required after you lock or restart CanCan.",
+              tone: "success",
+              title: "Remembered unlock removed",
+            },
+      );
+    }).finally(() => setUpdatingRemembered(false));
   };
 
   const importDocument = () => {
@@ -353,7 +409,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onNormalize={normalizeDocument}
       onPasswordChange={setPassword}
       onRefresh={() => void refreshVaultStatus()}
+      onRememberedChange={updateRemembered}
       onSubmitPassword={submitPassword}
+      onUnlockWithKeychain={unlockWithKeychain}
       onView={(document, trigger) => {
         viewerReturnFocus.current = trigger;
         loadViewerPage(document.documentId, document.originalFilename, 1);
@@ -364,7 +422,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         }
       }}
       password={password}
+      rememberedOnThisMac={rememberedOnThisMac}
       unassignedDocuments={unassignedDocuments}
+      updatingRemembered={updatingRemembered}
       vaultStatus={vaultStatus}
       viewer={viewer}
       viewingPage={viewingPage}
@@ -401,6 +461,15 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
           </div>
           {unlocked ? (
             <div className="ledger-actions">
+              <label className="remember-vault-control">
+                <input
+                  checked={props.rememberedOnThisMac === true}
+                  disabled={props.busy || props.normalizingDocumentId !== null || props.rememberedOnThisMac === null}
+                  onChange={(event) => props.onRememberedChange(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>{props.updatingRemembered ? "Updating Keychain…" : props.rememberedOnThisMac === null ? "Keychain unavailable" : "Remember on this Mac"}</span>
+              </label>
               <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onLock} type="button">
                 Lock Vault
               </button>
@@ -424,9 +493,11 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
             busy={props.busy}
             body={props.vaultStatus === "not_created" ? "Create a local Vault before adding your first statement or export." : "Unlock your local Vault to add a file or check its routing."}
             password={props.password}
+            rememberedOnThisMac={props.rememberedOnThisMac}
             title={props.vaultStatus === "not_created" ? "Create your Vault" : "Unlock your Vault"}
             onPasswordChange={props.onPasswordChange}
             onSubmit={props.onSubmitPassword}
+            onUnlockWithKeychain={props.vaultStatus === "locked" ? props.onUnlockWithKeychain : undefined}
           />
         ) : null}
 
@@ -578,14 +649,18 @@ function VaultGate({
   busy,
   onPasswordChange,
   onSubmit,
+  onUnlockWithKeychain,
   password,
+  rememberedOnThisMac = false,
   title,
 }: {
   body: string;
   busy: boolean;
   onPasswordChange?: (password: string) => void;
   onSubmit?: () => void;
+  onUnlockWithKeychain?: () => void;
   password?: string;
+  rememberedOnThisMac?: boolean | null;
   title: string;
 }) {
   const acceptsPassword = onPasswordChange !== undefined && onSubmit !== undefined;
@@ -594,6 +669,13 @@ function VaultGate({
       <p className="ledger-eyebrow">Vault access</p>
       <h2 id="vault-gate-title">{title}</h2>
       <p>{body}</p>
+      {rememberedOnThisMac === null ? (
+        <p className="vault-keychain-status">Keychain unlock is unavailable. Use your Vault password.</p>
+      ) : rememberedOnThisMac && onUnlockWithKeychain ? (
+        <button className="button button-quiet vault-keychain-unlock" disabled={busy} onClick={onUnlockWithKeychain} type="button">
+          Unlock with this Mac
+        </button>
+      ) : null}
       {acceptsPassword ? (
         <form className="vault-password-form" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
           <label htmlFor="vault-password">Vault password</label>
