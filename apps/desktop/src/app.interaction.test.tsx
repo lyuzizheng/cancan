@@ -391,56 +391,118 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).not.toContain("Unlock your Vault");
   });
 
-  it("ignores an inactivity lock result after a manual lock changes the session", async () => {
+  it("clears document names and rendered pixels while an inactivity lock is pending", async () => {
     vi.useFakeTimers();
     const inactivityLock = deferred<VaultStatus>();
-    const lockVault = vi
-      .fn<() => Promise<VaultStatus>>()
-      .mockReturnValueOnce(inactivityLock.promise)
-      .mockResolvedValueOnce("not_created");
-    const api = createApi({ lockVault });
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      lockVault: vi.fn(() => inactivityLock.promise),
+    });
 
     await mount(api);
+    await click("View document");
+    expect(container.querySelector("img")).not.toBeNull();
+    expect(container.textContent).toContain(availableDocument.originalFilename);
+
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
       await settle();
     });
-    await click("Lock Vault");
-    expect(container.textContent).toContain("Create your Vault");
+
+    expect(container.textContent).toContain("Checking your Vault");
+    expect(container.textContent).not.toContain(availableDocument.originalFilename);
+    expect(container.querySelector("img")).toBeNull();
 
     await act(async () => {
       inactivityLock.resolve("locked");
       await settle();
     });
-    expect(container.textContent).toContain("Create your Vault");
-    expect(container.textContent).not.toContain("Unlock your Vault");
+    expect(container.textContent).toContain("Unlock your Vault");
   });
 
-  it("ignores an inactivity lock failure after a manual lock changes the session", async () => {
+  it("blocks a document reload started by an import while an inactivity lock is pending", async () => {
     vi.useFakeTimers();
+    const importDocument = deferred<SourceDocumentImportOutcome | null>();
     const inactivityLock = deferred<VaultStatus>();
-    const lockVault = vi
+    const listUnassignedSourceDocuments = vi.fn(async () => [availableDocument]);
+    const api = createApi({
+      importSourceDocument: vi.fn(() => importDocument.promise),
+      listUnassignedSourceDocuments,
+      lockVault: vi.fn(() => inactivityLock.promise),
+    });
+
+    await mount(api);
+    await click("Add file");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+    });
+    expect(container.textContent).toContain("Checking your Vault");
+
+    await act(async () => {
+      importDocument.resolve({ documentId: "document-1", status: "imported" });
+      await settle();
+    });
+
+    expect(listUnassignedSourceDocuments).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain(availableDocument.originalFilename);
+
+    await act(async () => {
+      inactivityLock.resolve("locked");
+      await settle();
+    });
+  });
+
+  it("shows the locked gate when status reconciliation confirms a failed lock command took effect", async () => {
+    vi.useFakeTimers();
+    const vaultStatus = vi
       .fn<() => Promise<VaultStatus>>()
-      .mockReturnValueOnce(inactivityLock.promise)
+      .mockResolvedValueOnce("unlocked")
       .mockResolvedValueOnce("locked");
-    const api = createApi({ lockVault });
+    const api = createApi({
+      lockVault: vi.fn(async () => {
+        throw { code: "runtime_unavailable" };
+      }),
+      vaultStatus,
+    });
 
     await mount(api);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
       await settle();
     });
-    await click("Lock Vault");
+
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain(
+      "Couldn’t complete that request. Try again.",
+    );
+    expect(vaultStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reconcile a pending inactivity lock after unmount", async () => {
+    vi.useFakeTimers();
+    const inactivityLock = deferred<VaultStatus>();
+    const vaultStatus = vi.fn(async (): Promise<VaultStatus> => "unlocked");
+    const api = createApi({
+      lockVault: vi.fn(() => inactivityLock.promise),
+      vaultStatus,
+    });
+
+    await mount(api);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+      await settle();
+      root.unmount();
+      await settle();
+    });
+    root = createRoot(container);
 
     await act(async () => {
       inactivityLock.reject({ code: "runtime_unavailable" });
       await settle();
     });
-    expect(container.textContent).toContain("Unlock your Vault");
-    expect(container.textContent).not.toContain(
-      "Couldn’t complete that request. Try again.",
-    );
-    expect(vi.getTimerCount()).toBe(0);
+
+    expect(vaultStatus).toHaveBeenCalledTimes(1);
   });
 
   it("does not restore document names when an earlier list finishes after inactivity lock", async () => {
