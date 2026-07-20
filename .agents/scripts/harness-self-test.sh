@@ -12,6 +12,8 @@ cp AGENTS.md README.md .gitignore .node-version rust-toolchain.toml \
   package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json "$TEST_ROOT/"
 mkdir -p "$TEST_ROOT/apps/desktop"
 cp apps/desktop/package.json "$TEST_ROOT/apps/desktop/"
+mkdir -p "$TEST_ROOT/apps/desktop/src-tauri"
+cp apps/desktop/src-tauri/tauri.conf.json "$TEST_ROOT/apps/desktop/src-tauri/"
 mkdir -p "$TEST_ROOT/spikes/desktop-feasibility/scripts"
 cp spikes/desktop-feasibility/package.json spikes/desktop-feasibility/EVIDENCE.md \
   "$TEST_ROOT/spikes/desktop-feasibility/"
@@ -42,6 +44,10 @@ expect_failure() {
     exit 1
   fi
   echo "Detected injected fault: $label"
+}
+
+packet_omits_untracked_probe() {
+  ! rg -q '^[+]?implementation packet untracked probe$' "$1"
 }
 
 run_check .agents/scripts/check-spec-index.sh
@@ -314,6 +320,13 @@ expect_failure "implementation review loses shared context" env CANCAN_ROOT="$TE
 mv "$implementation_review.bak" "$implementation_review"
 
 cp "$implementation_review" "$implementation_review.bak"
+grep -v '^[.]agents/scripts/context-for-slice[.]sh "[$]slice_id" >/dev/null$' "$implementation_review.bak" > "$implementation_review"
+expect_failure "implementation review keeps only the context instruction" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_review.bak" "$implementation_review"
+
+expect_failure "implementation review accepts an unknown slice" env CANCAN_ROOT="$TEST_ROOT" "$implementation_review" unknown-slice HEAD
+
+cp "$implementation_review" "$implementation_review.bak"
 sed 's#context-for-slice[.]sh "[$]slice_id" >/dev/null#context-for-slice.sh "$slice_id"#' "$implementation_review.bak" > "$implementation_review"
 expect_failure "implementation review embeds shared context" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$implementation_review.bak" "$implementation_review"
@@ -391,6 +404,7 @@ if ! rg -q 'implementation-packet-probe[.]txt' "$review_packet" ||
    ! rg -q '^# CanCan Implementation Review Handoff$' "$review_packet" ||
    ! rg -q '^- Base commit: [0-9a-f]{40}$' "$review_packet" ||
    ! rg -q '^- Head commit: [0-9a-f]{40}$' "$review_packet" ||
+   ! rg -q '^- Working tree fingerprint: [0-9a-f]{40}$' "$review_packet" ||
    ! rg -q '^# Required External Handoff$' "$review_packet" ||
    ! rg -q '^## Diff stat$' "$review_packet" ||
    ! rg -q '^## Rename and deletion summary$' "$review_packet" ||
@@ -398,14 +412,28 @@ if ! rg -q 'implementation-packet-probe[.]txt' "$review_packet" ||
   echo "Implementation review packet omitted required context or evidence sections."
   exit 1
 fi
-if rg -q '^implementation packet untracked probe$' "$review_packet"; then
+if ! packet_omits_untracked_probe "$review_packet"; then
   echo "Implementation review packet copied untracked file content instead of indexing it."
   exit 1
 fi
-rm "$review_packet" "$TEST_ROOT/implementation-packet-probe.txt"
+
+original_fingerprint="$(sed -n 's/^- Working tree fingerprint: //p' "$review_packet")"
+printf 'implementation packet changed untracked probe\n' > "$TEST_ROOT/implementation-packet-probe.txt"
+changed_review_packet="$TEST_ROOT/../cancan-implementation-review-packet-changed.txt"
+CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/implementation-review-packet.sh" desktop-feasibility HEAD > "$changed_review_packet"
+changed_fingerprint="$(sed -n 's/^- Working tree fingerprint: //p' "$changed_review_packet")"
+if [ "$original_fingerprint" = "$changed_fingerprint" ]; then
+  echo "Implementation review packet fingerprint ignored untracked content changes."
+  exit 1
+fi
+echo "Detected injected fault: implementation review checkout fingerprint drift"
+
+printf '+implementation packet untracked probe\n' >> "$review_packet"
+expect_failure "implementation review copies diff-prefixed untracked content" packet_omits_untracked_probe "$review_packet"
+rm "$review_packet" "$changed_review_packet" "$TEST_ROOT/implementation-packet-probe.txt"
 
 cp "$implementation_review" "$implementation_review.bak"
-sed 's/^echo "- Tracked changes: git diff --no-ext-diff [$]base_sha -- [.]"$/git diff --no-ext-diff "$base_sha" -- ./' "$implementation_review.bak" > "$implementation_review"
+sed 's/^echo "- Committed changes: git diff --no-ext-diff [$]base_sha [$]head_sha -- [.]"$/git diff --no-ext-diff "$base_sha" "$head_sha" -- ./' "$implementation_review.bak" > "$implementation_review"
 expect_failure "implementation review copies the full cumulative diff" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$implementation_review.bak" "$implementation_review"
 
@@ -468,6 +496,21 @@ expect_failure "native application CI missing native gate" env CANCAN_ROOT="$TES
 mv "$native_workflow.bak" "$native_workflow"
 
 cp "$native_workflow" "$native_workflow.bak"
+grep -v '^        uses: actions/cache@v4$' "$native_workflow.bak" > "$native_workflow"
+expect_failure "native application CI loses Cargo cache" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
+
+cp "$native_workflow" "$native_workflow.bak"
+sed 's#apps/desktop/src-tauri/target#apps/desktop/src-tauri/binaries#' "$native_workflow.bak" > "$native_workflow"
+expect_failure "native application CI caches sidecar binaries" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
+
+cp "$native_workflow" "$native_workflow.bak"
+ruby -0pi -e 'sub("      - name: Install workspace dependencies\n", "      - name: Cache sidecar binaries\n        uses: actions/cache@v4\n        with:\n          path: apps/desktop/src-tauri/binaries\n          key: forbidden-sidecar-cache\n      - name: Install workspace dependencies\n")' "$native_workflow"
+expect_failure "native application CI gains a second cache" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
+
+cp "$native_workflow" "$native_workflow.bak"
 sed 's#      - apps/desktop/src-tauri/[*][*]#      - apps/**#' "$native_workflow.bak" > "$native_workflow"
 expect_failure "native application CI gains renderer-wide trigger" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$native_workflow.bak" "$native_workflow"
@@ -505,5 +548,21 @@ cp "$desktop_package" "$desktop_package.bak"
 sed 's/ --locked//g' "$desktop_package.bak" > "$desktop_package"
 expect_failure "desktop CI permits unlocked Cargo resolution" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$desktop_package.bak" "$desktop_package"
+
+cp "$desktop_package" "$desktop_package.bak"
+sed 's/pnpm build:sidecar && pnpm test:rust:prepared/pnpm test:rust:prepared/' "$desktop_package.bak" > "$desktop_package"
+expect_failure "standalone Rust test loses sidecar preparation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$desktop_package.bak" "$desktop_package"
+
+cp "$desktop_package" "$desktop_package.bak"
+sed 's/pnpm build:sidecar && pnpm test:rust:prepared/pnpm build:sidecar && pnpm build:sidecar && pnpm test:rust:prepared/' "$desktop_package.bak" > "$desktop_package"
+expect_failure "native gate rebuilds the sidecar" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$desktop_package.bak" "$desktop_package"
+
+tauri_config="$TEST_ROOT/apps/desktop/src-tauri/tauri.conf.json"
+cp "$tauri_config" "$tauri_config.bak"
+sed 's/pnpm build:web/pnpm build:sidecar \&\& pnpm build:web/' "$tauri_config.bak" > "$tauri_config"
+expect_failure "Tauri build hook rebuilds the sidecar" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$tauri_config.bak" "$tauri_config"
 
 echo "Harness self-test passed."

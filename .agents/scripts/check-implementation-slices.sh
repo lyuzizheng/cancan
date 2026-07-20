@@ -24,8 +24,8 @@ for path in .agents/scripts/implementation-slices.rb .agents/scripts/context-for
   fi
 done
 
-if ! rg -q 'context-for-slice[.]sh' "$ROOT/.agents/scripts/implementation-review-packet.sh"; then
-  echo "Implementation review packet must use the shared slice context."
+if ! rg -q '^[.]agents/scripts/context-for-slice[.]sh "[$]slice_id" >/dev/null$' "$ROOT/.agents/scripts/implementation-review-packet.sh"; then
+  echo "Implementation review packet must validate the selected slice with the shared context generator."
   exit 1
 fi
 
@@ -122,6 +122,7 @@ packet_anchors=(
   'Slice ID: [$]slice_id'
   'Base commit: [$]base_sha'
   'Head commit: [$]head_sha'
+  'Working tree fingerprint: [$]worktree_fingerprint'
   'Canonical source index: run [. ]*agents/scripts/context-for-slice[.]sh [$]slice_id from this head'
   '^echo "# Required External Handoff"$'
   'Exact user request'
@@ -137,7 +138,11 @@ packet_anchors=(
   '^echo "## Rename and deletion summary"$'
   'git diff --summary --find-renames "[$]base_sha" -- [.]'
   '^echo "## Repository inspection"$'
-  'Inspect the complete cumulative diff directly from this shared working tree'
+  'HEAD check: test.*git rev-parse --verify HEAD'
+  'Require the refreshed Head commit and Working tree fingerprint to match this packet'
+  'Inspect the complete cumulative diff directly from the verified shared working tree'
+  'git diff --no-ext-diff [$]base_sha [$]head_sha -- [.]'
+  'git diff --no-ext-diff [$]head_sha -- [.]'
 )
 for anchor in "${packet_anchors[@]}"; do
   if ! rg -q "$anchor" "$review_packet"; then
@@ -151,7 +156,7 @@ if rg -q '^[.]agents/scripts/context-for-slice[.]sh "[$]slice_id"$' "$review_pac
   exit 1
 fi
 
-if rg -q '^git diff --no-ext-diff "[$]base_sha" -- [.]$' "$review_packet"; then
+if rg -q '^[[:space:]]*git diff --no-ext-diff ' "$review_packet"; then
   echo "Implementation review packet must not copy the full cumulative diff into the handoff."
   exit 1
 fi

@@ -87,7 +87,7 @@ required entry files exist
 every shell script parses with bash -n
 the docs-harness workflow parses as YAML and retains required triggers, paths, permissions, and commands
 the Linux fast-application workflow parses as YAML and retains broad application source paths, read-only permissions, pinned Node/package-manager inputs, preflight, frozen pnpm resolution, superseded-run cancellation, and the real fast root verification command
-the macOS native-application workflow parses as YAML and retains only native/sidecar/parser/migration/toolchain source paths, read-only permissions, draft-PR suppression, manual execution, superseded-run cancellation, preflight, frozen pnpm/Cargo resolution, and the real native root verification command
+the macOS native-application workflow parses as YAML and retains only native/sidecar/parser/migration/toolchain source paths, read-only permissions, draft-PR suppression, manual execution, superseded-run cancellation, preflight, frozen pnpm/Cargo resolution, bounded Cargo caching, and the real single-sidecar native root verification command
 spec numbers are unique
 every spec has required headings
 every spec appears exactly once in docs/specs/README.md
@@ -99,7 +99,7 @@ ready, in-progress, and completed slices use only Accepted required ADRs
 slice spec/ADR paths and active blocker names resolve
 every active P0/P1 alignment area is referenced by at least one non-completed slice
 every slice declares packages/surfaces, test gates, and an outcome
-implementation review points to the same generated readiness and canonical source index as implementation/testing without embedding that index, full source files, or the cumulative diff in the review packet
+implementation review executes the same generated readiness validation as implementation/testing, rejects unknown slices, and points to the canonical source index without embedding that index, full source files, or the cumulative diff in the review packet
 the development/review loop retains preflight, root verification, a unique critical-cleanup gate, and cumulative-diff re-review after fixes
 skill frontmatter is valid and skill names match directories
 project agent files retain their required model, reasoning, explicit subagent permission defaults, and implementer omission of a repo-local sandbox default
@@ -142,7 +142,7 @@ The judge contract and required output shape live in `.agents/docs-semantic-revi
 
 The context generator always identifies root instructions, the source contract, current state, active alignment register, and only the selected slice's canonical specs/ADRs. It emits exact paths and heading line numbers rather than copying or summarizing canonical content; before acting, every role opens every indexed source in full from the exact working tree and head and records that evidence. It must label each slice `STOP`, `EVIDENCE ONLY`, `READY`, or `COMPLETE`. `EVIDENCE ONLY` permits the named disposable spike/test work needed to resolve blockers, never production implementation or downstream work.
 
-The implementation review packet identifies the slice plus exact base/head commits, tracked/untracked inventory, compact diff stat, rename/deletion evidence, and commands for inspecting the complete cumulative diff directly from the shared repository. It points to the separately generated source index instead of embedding that index, file content, or the full diff. It also names the required external handoff: the user's exact task, author assumptions and scope, success criteria, selected execution tier and justification, every canonical source inspected at the exact head commit, exact verification commands/results, UI evidence when relevant, and previous findings/resolutions for re-review. The packet cannot infer those inputs.
+The implementation review packet validates the selected slice, then identifies it plus exact base/head commits, a content-sensitive working-tree fingerprint, tracked/untracked inventory, compact diff stat, rename/deletion evidence, and commands for inspecting the complete cumulative diff directly from the shared repository. Before review, regenerate the packet and require its head and fingerprint to match; then inspect the exact base-to-head diff, post-head working-tree diff, and every indexed untracked file. The packet points to the separately generated source index instead of embedding that index, file content, or the full diff. It also names the required external handoff: the user's exact task, author assumptions and scope, success criteria, selected execution tier and justification, every canonical source inspected at the exact head commit, exact verification commands/results, UI evidence when relevant, and previous findings/resolutions for re-review. The packet cannot infer those inputs.
 
 ## Subagent execution boundary
 
@@ -178,7 +178,7 @@ pnpm verify:native
 pnpm verify
 ```
 
-`.github/workflows/application.yml` runs preflight and `pnpm verify:fast` on Linux for every application pull-request revision and push to `main`. `.github/workflows/application-native.yml` runs `pnpm verify:native` on macOS only when native desktop, sidecar/parser, migration, dependency, or pinned-toolchain inputs change; draft pull requests skip the job, ready pull requests run it, and maintainers may invoke it manually. Both workflows cancel superseded runs. The Rust suite remains authoritative native CI work rather than part of the default local `pnpm verify` gate. Later slices add safe test-DB reset, migration, fixture/parser, integration, and richer UI gates only when their implementations exist. The harness calls existing package scripts rather than wrapping them in redundant orchestration.
+`.github/workflows/application.yml` runs preflight and `pnpm verify:fast` on Linux for every application pull-request revision and push to `main`. `.github/workflows/application-native.yml` runs `pnpm verify:native` on macOS only when native desktop, sidecar/parser, migration, dependency, or pinned-toolchain inputs change; draft pull requests skip the job, ready pull requests run it, and maintainers may invoke it manually. Both workflows cancel superseded runs. The native gate restores Cargo registry/git/desktop-target cache data keyed by OS, the pinned toolchain, and the production Cargo lockfile. Its package-level orchestrator builds the sidecar once before Rust tests, clippy, and the Tauri build; standalone commands still prepare their own sidecar. The Rust suite remains authoritative native CI work rather than part of the default local `pnpm verify` gate. Later slices add safe test-DB reset, migration, fixture/parser, integration, and richer UI gates only when their implementations exist.
 
 ## Acceptance criteria
 
@@ -188,7 +188,7 @@ pnpm verify
 - Broken links, stale harness references, invalid skill metadata, and shell syntax errors fail preflight.
 - Custom agent model, reasoning, permission-default ownership, and nesting drift fails preflight.
 - Broken slice dependencies, missing spec/ADR/blocker references, missing test gates, and context-parity drift fail preflight.
-- Slice/review handoffs index the exact canonical sources and stable change without copying full source files, untracked content, or the cumulative diff; every role still opens every indexed source in full and records the inspected head and paths.
+- Slice/review handoffs validate the selected slice and index the exact canonical sources and content-fingerprinted stable change without copying full source files, untracked content, or the cumulative diff; every role verifies the packet head/fingerprint, opens every indexed source in full, and records the inspected head and paths.
 - Harness self-tests prove that representative faults are detected.
 - GitHub pull requests and pushes to `main` that change docs, harness, or project agent configuration files run the deterministic gate.
 - Docs, harness, and project agent configuration changes require an independent semantic verdict.
@@ -196,4 +196,4 @@ pnpm verify
 - Work uses the smallest consequence-based execution tier, never multiple source-writing agents, and only the independent roles justified by material evidence. High-risk work retains complete final applicable evidence and independent review of the cumulative diff.
 - No workflow claims app commands that do not exist.
 - The real developer-setup test runs through preflight/CI and the harness self-test proves that version-pin drift is rejected.
-- The fast/native application workflows, trigger boundaries, root verification composition, and setup's production-plus-spike gate sequence are machine-checked; fault injection proves that removing safety coverage, widening native triggers to renderer-only changes, running native CI for drafts, or dropping superseded-run cancellation is rejected.
+- The fast/native application workflows, trigger boundaries, root verification composition, bounded Cargo cache, single-sidecar native orchestration, standalone command safety, and setup's production-plus-spike gate sequence are machine-checked; fault injection proves that removing safety coverage, widening native triggers to renderer-only changes, running native CI for drafts, rebuilding the sidecar inside the native gate, caching sidecar artifacts, or dropping superseded-run cancellation is rejected.
