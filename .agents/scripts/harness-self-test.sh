@@ -46,6 +46,10 @@ expect_failure() {
   echo "Detected injected fault: $label"
 }
 
+packet_omits_untracked_probe() {
+  ! rg -q '^[+]?implementation packet untracked probe$' "$1"
+}
+
 run_check .agents/scripts/check-spec-index.sh
 run_check .agents/scripts/check-links.sh
 run_check .agents/scripts/check-docs-consistency.sh
@@ -316,6 +320,13 @@ expect_failure "implementation review loses shared context" env CANCAN_ROOT="$TE
 mv "$implementation_review.bak" "$implementation_review"
 
 cp "$implementation_review" "$implementation_review.bak"
+grep -v '^[.]agents/scripts/context-for-slice[.]sh "[$]slice_id" >/dev/null$' "$implementation_review.bak" > "$implementation_review"
+expect_failure "implementation review keeps only the context instruction" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_review.bak" "$implementation_review"
+
+expect_failure "implementation review accepts an unknown slice" env CANCAN_ROOT="$TEST_ROOT" "$implementation_review" unknown-slice HEAD
+
+cp "$implementation_review" "$implementation_review.bak"
 sed 's#context-for-slice[.]sh "[$]slice_id" >/dev/null#context-for-slice.sh "$slice_id"#' "$implementation_review.bak" > "$implementation_review"
 expect_failure "implementation review embeds shared context" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$implementation_review.bak" "$implementation_review"
@@ -393,6 +404,7 @@ if ! rg -q 'implementation-packet-probe[.]txt' "$review_packet" ||
    ! rg -q '^# CanCan Implementation Review Handoff$' "$review_packet" ||
    ! rg -q '^- Base commit: [0-9a-f]{40}$' "$review_packet" ||
    ! rg -q '^- Head commit: [0-9a-f]{40}$' "$review_packet" ||
+   ! rg -q '^- Working tree fingerprint: [0-9a-f]{40}$' "$review_packet" ||
    ! rg -q '^# Required External Handoff$' "$review_packet" ||
    ! rg -q '^## Diff stat$' "$review_packet" ||
    ! rg -q '^## Rename and deletion summary$' "$review_packet" ||
@@ -400,14 +412,28 @@ if ! rg -q 'implementation-packet-probe[.]txt' "$review_packet" ||
   echo "Implementation review packet omitted required context or evidence sections."
   exit 1
 fi
-if rg -q '^implementation packet untracked probe$' "$review_packet"; then
+if ! packet_omits_untracked_probe "$review_packet"; then
   echo "Implementation review packet copied untracked file content instead of indexing it."
   exit 1
 fi
-rm "$review_packet" "$TEST_ROOT/implementation-packet-probe.txt"
+
+original_fingerprint="$(sed -n 's/^- Working tree fingerprint: //p' "$review_packet")"
+printf 'implementation packet changed untracked probe\n' > "$TEST_ROOT/implementation-packet-probe.txt"
+changed_review_packet="$TEST_ROOT/../cancan-implementation-review-packet-changed.txt"
+CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/implementation-review-packet.sh" desktop-feasibility HEAD > "$changed_review_packet"
+changed_fingerprint="$(sed -n 's/^- Working tree fingerprint: //p' "$changed_review_packet")"
+if [ "$original_fingerprint" = "$changed_fingerprint" ]; then
+  echo "Implementation review packet fingerprint ignored untracked content changes."
+  exit 1
+fi
+echo "Detected injected fault: implementation review checkout fingerprint drift"
+
+printf '+implementation packet untracked probe\n' >> "$review_packet"
+expect_failure "implementation review copies diff-prefixed untracked content" packet_omits_untracked_probe "$review_packet"
+rm "$review_packet" "$changed_review_packet" "$TEST_ROOT/implementation-packet-probe.txt"
 
 cp "$implementation_review" "$implementation_review.bak"
-sed 's/^echo "- Tracked changes: git diff --no-ext-diff [$]base_sha -- [.]"$/git diff --no-ext-diff "$base_sha" -- ./' "$implementation_review.bak" > "$implementation_review"
+sed 's/^echo "- Committed changes: git diff --no-ext-diff [$]base_sha [$]head_sha -- [.]"$/git diff --no-ext-diff "$base_sha" "$head_sha" -- ./' "$implementation_review.bak" > "$implementation_review"
 expect_failure "implementation review copies the full cumulative diff" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$implementation_review.bak" "$implementation_review"
 

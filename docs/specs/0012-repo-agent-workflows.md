@@ -99,7 +99,7 @@ ready, in-progress, and completed slices use only Accepted required ADRs
 slice spec/ADR paths and active blocker names resolve
 every active P0/P1 alignment area is referenced by at least one non-completed slice
 every slice declares packages/surfaces, test gates, and an outcome
-implementation review points to the same generated readiness and canonical source index as implementation/testing without embedding that index, full source files, or the cumulative diff in the review packet
+implementation review executes the same generated readiness validation as implementation/testing, rejects unknown slices, and points to the canonical source index without embedding that index, full source files, or the cumulative diff in the review packet
 the development/review loop retains preflight, root verification, a unique critical-cleanup gate, and cumulative-diff re-review after fixes
 skill frontmatter is valid and skill names match directories
 project agent files retain their required model, reasoning, explicit subagent permission defaults, and implementer omission of a repo-local sandbox default
@@ -142,7 +142,7 @@ The judge contract and required output shape live in `.agents/docs-semantic-revi
 
 The context generator always identifies root instructions, the source contract, current state, active alignment register, and only the selected slice's canonical specs/ADRs. It emits exact paths and heading line numbers rather than copying or summarizing canonical content; before acting, every role opens every indexed source in full from the exact working tree and head and records that evidence. It must label each slice `STOP`, `EVIDENCE ONLY`, `READY`, or `COMPLETE`. `EVIDENCE ONLY` permits the named disposable spike/test work needed to resolve blockers, never production implementation or downstream work.
 
-The implementation review packet identifies the slice plus exact base/head commits, tracked/untracked inventory, compact diff stat, rename/deletion evidence, and commands for inspecting the complete cumulative diff directly from the shared repository. It points to the separately generated source index instead of embedding that index, file content, or the full diff. It also names the required external handoff: the user's exact task, author assumptions and scope, success criteria, selected execution tier and justification, every canonical source inspected at the exact head commit, exact verification commands/results, UI evidence when relevant, and previous findings/resolutions for re-review. The packet cannot infer those inputs.
+The implementation review packet validates the selected slice, then identifies it plus exact base/head commits, a content-sensitive working-tree fingerprint, tracked/untracked inventory, compact diff stat, rename/deletion evidence, and commands for inspecting the complete cumulative diff directly from the shared repository. Before review, regenerate the packet and require its head and fingerprint to match; then inspect the exact base-to-head diff, post-head working-tree diff, and every indexed untracked file. The packet points to the separately generated source index instead of embedding that index, file content, or the full diff. It also names the required external handoff: the user's exact task, author assumptions and scope, success criteria, selected execution tier and justification, every canonical source inspected at the exact head commit, exact verification commands/results, UI evidence when relevant, and previous findings/resolutions for re-review. The packet cannot infer those inputs.
 
 ## Subagent execution boundary
 
@@ -188,7 +188,7 @@ pnpm verify
 - Broken links, stale harness references, invalid skill metadata, and shell syntax errors fail preflight.
 - Custom agent model, reasoning, permission-default ownership, and nesting drift fails preflight.
 - Broken slice dependencies, missing spec/ADR/blocker references, missing test gates, and context-parity drift fail preflight.
-- Slice/review handoffs index the exact canonical sources and stable change without copying full source files, untracked content, or the cumulative diff; every role still opens every indexed source in full and records the inspected head and paths.
+- Slice/review handoffs validate the selected slice and index the exact canonical sources and content-fingerprinted stable change without copying full source files, untracked content, or the cumulative diff; every role verifies the packet head/fingerprint, opens every indexed source in full, and records the inspected head and paths.
 - Harness self-tests prove that representative faults are detected.
 - GitHub pull requests and pushes to `main` that change docs, harness, or project agent configuration files run the deterministic gate.
 - Docs, harness, and project agent configuration changes require an independent semantic verdict.

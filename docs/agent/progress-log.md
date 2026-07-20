@@ -11,6 +11,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added real `verify:fast` and `verify:native` root commands while preserving `pnpm verify` as the default local application gate. Updated deterministic CI validation and fault injection to protect safety coverage and runner boundaries instead of requiring every application change to use one fixed macOS job.
 - Replaced duplicated canonical-file and cumulative-diff copies in implementation handoffs with a shared readiness/source index and repository-inspection commands, while requiring every role to read every indexed canonical source in full from the exact head and record that evidence. Independent roles now receive compact task/evidence handoffs, retain the same source and diff coverage, and batch draft-PR review findings before the final local and CI gates.
 - Reused one prepared sidecar across each combined native/local gate while keeping standalone Rust and Tauri build commands self-contained. Added an OS/toolchain/lockfile-keyed Cargo cache for registry, git, and desktop target outputs only; sidecar binaries and app artifacts remain uncached.
+- Hardened compact implementation-review packets so they execute real slice validation, reject unknown slices, bind inspection to the exact head plus a content-sensitive working-tree fingerprint, and detect diff-prefixed untracked content in self-tests.
 
 ### Next
 

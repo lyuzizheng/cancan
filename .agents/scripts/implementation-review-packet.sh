@@ -16,11 +16,20 @@ head_sha="$(git rev-parse --verify "HEAD^{commit}")"
 
 .agents/scripts/context-for-slice.sh "$slice_id" >/dev/null
 
+worktree_fingerprint="$({
+  git diff --binary "$head_sha" -- .
+  while IFS= read -r -d '' path; do
+    printf '\0untracked\0%s\0' "$path"
+    git hash-object -- "$path"
+  done < <(git ls-files --others --exclude-standard -z)
+} | git hash-object --stdin)"
+
 echo "# CanCan Implementation Review Handoff"
 echo
 echo "- Slice ID: $slice_id"
 echo "- Base commit: $base_sha"
 echo "- Head commit: $head_sha"
+echo "- Working tree fingerprint: $worktree_fingerprint"
 echo "- Canonical source index: run .agents/scripts/context-for-slice.sh $slice_id from this head"
 
 echo
@@ -58,7 +67,12 @@ git diff --summary --find-renames "$base_sha" -- .
 
 echo
 echo "## Repository inspection"
-echo "Inspect the complete cumulative diff directly from this shared working tree."
-echo "- Tracked changes: git diff --no-ext-diff $base_sha -- ."
+echo "Before inspection, verify this shared checkout still matches the packet; regenerate the packet if either value differs."
+echo "- HEAD check: test \"\$(git rev-parse --verify HEAD^{commit})\" = \"$head_sha\""
+echo "- Packet refresh: .agents/scripts/implementation-review-packet.sh $slice_id $base_sha"
+echo "- Require the refreshed Head commit and Working tree fingerprint to match this packet."
+echo "Inspect the complete cumulative diff directly from the verified shared working tree."
+echo "- Committed changes: git diff --no-ext-diff $base_sha $head_sha -- ."
+echo "- Working-tree changes after head: git diff --no-ext-diff $head_sha -- ."
 echo "- Untracked files: open every path marked A above directly"
 echo "- Re-run repository searches required by .agents/workflows/review-code.md"
