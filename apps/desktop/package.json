@@ -7,11 +7,16 @@
     "dev": "vite --host 127.0.0.1",
     "desktop:dev": "pnpm build:sidecar && tauri dev",
     "typecheck": "tsc --project tsconfig.json",
-    "check:rust": "pnpm build:sidecar && cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings",
-    "test:rust": "pnpm build:sidecar && cd src-tauri && cargo test --locked",
+    "check:rust": "pnpm build:sidecar && pnpm check:rust:prepared",
+    "check:rust:prepared": "cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings",
+    "test:rust": "pnpm build:sidecar && pnpm test:rust:prepared",
+    "test:rust:prepared": "cd src-tauri && cargo test --locked",
     "build:web": "vite build",
     "build:sidecar": "pnpm --filter @cancan/ai build:sidecar",
-    "build:desktop": "tauri build --debug --no-bundle -- --locked"
+    "build:desktop": "pnpm build:sidecar && pnpm build:desktop:prepared",
+    "build:desktop:prepared": "tauri build --debug --no-bundle -- --locked",
+    "verify:native": "pnpm build:sidecar && pnpm test:rust:prepared && pnpm check:rust:prepared && pnpm build:desktop:prepared",
+    "verify": "pnpm build:sidecar && pnpm check:rust:prepared && pnpm build:desktop:prepared"
   },
   "dependencies": {
     "@cancan/ui": "workspace:*",

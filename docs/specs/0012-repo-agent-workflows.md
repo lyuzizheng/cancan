@@ -87,7 +87,7 @@ required entry files exist
 every shell script parses with bash -n
 the docs-harness workflow parses as YAML and retains required triggers, paths, permissions, and commands
 the Linux fast-application workflow parses as YAML and retains broad application source paths, read-only permissions, pinned Node/package-manager inputs, preflight, frozen pnpm resolution, superseded-run cancellation, and the real fast root verification command
-the macOS native-application workflow parses as YAML and retains only native/sidecar/parser/migration/toolchain source paths, read-only permissions, draft-PR suppression, manual execution, superseded-run cancellation, preflight, frozen pnpm/Cargo resolution, and the real native root verification command
+the macOS native-application workflow parses as YAML and retains only native/sidecar/parser/migration/toolchain source paths, read-only permissions, draft-PR suppression, manual execution, superseded-run cancellation, preflight, frozen pnpm/Cargo resolution, bounded Cargo caching, and the real single-sidecar native root verification command
 spec numbers are unique
 every spec has required headings
 every spec appears exactly once in docs/specs/README.md
@@ -178,7 +178,7 @@ pnpm verify:native
 pnpm verify
 ```
 
-`.github/workflows/application.yml` runs preflight and `pnpm verify:fast` on Linux for every application pull-request revision and push to `main`. `.github/workflows/application-native.yml` runs `pnpm verify:native` on macOS only when native desktop, sidecar/parser, migration, dependency, or pinned-toolchain inputs change; draft pull requests skip the job, ready pull requests run it, and maintainers may invoke it manually. Both workflows cancel superseded runs. The Rust suite remains authoritative native CI work rather than part of the default local `pnpm verify` gate. Later slices add safe test-DB reset, migration, fixture/parser, integration, and richer UI gates only when their implementations exist. The harness calls existing package scripts rather than wrapping them in redundant orchestration.
+`.github/workflows/application.yml` runs preflight and `pnpm verify:fast` on Linux for every application pull-request revision and push to `main`. `.github/workflows/application-native.yml` runs `pnpm verify:native` on macOS only when native desktop, sidecar/parser, migration, dependency, or pinned-toolchain inputs change; draft pull requests skip the job, ready pull requests run it, and maintainers may invoke it manually. Both workflows cancel superseded runs. The native gate restores Cargo registry/git/desktop-target cache data keyed by OS, the pinned toolchain, and the production Cargo lockfile. Its package-level orchestrator builds the sidecar once before Rust tests, clippy, and the Tauri build; standalone commands still prepare their own sidecar. The Rust suite remains authoritative native CI work rather than part of the default local `pnpm verify` gate. Later slices add safe test-DB reset, migration, fixture/parser, integration, and richer UI gates only when their implementations exist.
 
 ## Acceptance criteria
 
@@ -196,4 +196,4 @@ pnpm verify
 - Work uses the smallest consequence-based execution tier, never multiple source-writing agents, and only the independent roles justified by material evidence. High-risk work retains complete final applicable evidence and independent review of the cumulative diff.
 - No workflow claims app commands that do not exist.
 - The real developer-setup test runs through preflight/CI and the harness self-test proves that version-pin drift is rejected.
-- The fast/native application workflows, trigger boundaries, root verification composition, and setup's production-plus-spike gate sequence are machine-checked; fault injection proves that removing safety coverage, widening native triggers to renderer-only changes, running native CI for drafts, or dropping superseded-run cancellation is rejected.
+- The fast/native application workflows, trigger boundaries, root verification composition, bounded Cargo cache, single-sidecar native orchestration, standalone command safety, and setup's production-plus-spike gate sequence are machine-checked; fault injection proves that removing safety coverage, widening native triggers to renderer-only changes, running native CI for drafts, rebuilding the sidecar inside the native gate, caching sidecar artifacts, or dropping superseded-run cancellation is rejected.

@@ -206,13 +206,29 @@ end
 
 native_steps = Array(native_job["steps"])
 native_uses = native_steps.map { |step| step.is_a?(Hash) ? step["uses"] : nil }.compact
-%w[actions/checkout@v7 actions/setup-node@v6].each do |required|
+%w[actions/checkout@v7 actions/setup-node@v6 actions/cache@v4].each do |required|
   abort "Native application workflow is missing #{required}" unless native_uses.include?(required)
 end
 
 native_setup_node = native_steps.find { |step| step.is_a?(Hash) && step["uses"] == "actions/setup-node@v6" }
 unless native_setup_node.is_a?(Hash) && native_setup_node.fetch("with", {})["node-version-file"] == ".node-version"
   abort "Native application workflow must source Node from .node-version"
+end
+
+native_cache_steps = native_steps.select { |step| step.is_a?(Hash) && step["uses"] == "actions/cache@v4" }
+abort "Native application workflow must define exactly one Cargo cache" unless native_cache_steps.length == 1
+native_cache = native_cache_steps.first
+native_cache_config = native_cache.is_a?(Hash) ? native_cache.fetch("with", {}) : {}
+native_cache_paths = native_cache_config["path"].to_s.lines.map(&:strip).reject(&:empty?)
+required_native_cache_paths = %w[~/.cargo/registry ~/.cargo/git apps/desktop/src-tauri/target]
+unless native_cache_paths.sort == required_native_cache_paths.sort
+  abort "Native application workflow must cache only Cargo registry, git, and desktop target data"
+end
+native_cache_key = native_cache_config["key"].to_s
+unless native_cache_key.include?("runner.os") &&
+       native_cache_key.include?("rust-toolchain.toml") &&
+       native_cache_key.include?("apps/desktop/src-tauri/Cargo.lock")
+  abort "Native Cargo cache key must include OS, Rust toolchain, and Cargo.lock"
 end
 
 native_runs = native_steps.map { |step| step.is_a?(Hash) ? step["run"] : nil }.compact
@@ -372,27 +388,65 @@ unless scripts.fetch("test:unit").include?("--exclude") && scripts.fetch("test:u
   abort "Root test:unit must exclude isolated spike tests"
 end
 
-%w[typecheck test:unit check:rust build:desktop].each do |name|
+%w[typecheck test:unit].each do |name|
   abort "Root verify does not run #{name}" unless scripts.fetch("verify").include?("pnpm #{name}")
+end
+unless scripts.fetch("verify").include?("pnpm --filter @cancan/desktop verify")
+  abort "Root verify must delegate its native checks to the single-sidecar desktop gate"
 end
 
 %w[typecheck test:unit build:web].each do |name|
   abort "Root verify:fast does not run #{name}" unless scripts.fetch("verify:fast").include?("pnpm #{name}")
 end
 
-%w[test:rust check:rust build:desktop].each do |name|
-  abort "Root verify:native does not run #{name}" unless scripts.fetch("verify:native").include?("pnpm #{name}")
+unless scripts.fetch("verify:native") == "pnpm --filter @cancan/desktop verify:native"
+  abort "Root verify:native must delegate to the single-sidecar desktop native gate"
 end
 
 desktop_package = JSON.parse(File.read("apps/desktop/package.json"))
 desktop_scripts = desktop_package.fetch("scripts", {})
-%w[check:rust test:rust build:desktop].each do |name|
+%w[check:rust:prepared test:rust:prepared build:desktop:prepared].each do |name|
   command = desktop_scripts[name]
   abort "Desktop #{name} must use Cargo.lock" unless command.is_a?(String) && command.include?("--locked")
 end
 
-unless desktop_scripts.fetch("test:rust").include?("cargo test")
-  abort "Desktop test:rust must execute Rust tests"
+unless desktop_scripts.fetch("test:rust:prepared").include?("cargo test")
+  abort "Desktop prepared Rust test must execute Rust tests"
+end
+
+standalone_prepared = {
+  "test:rust" => "test:rust:prepared",
+  "check:rust" => "check:rust:prepared",
+  "build:desktop" => "build:desktop:prepared"
+}
+standalone_prepared.each do |name, prepared|
+  command = desktop_scripts.fetch(name)
+  unless command.include?("pnpm build:sidecar") && command.include?("pnpm #{prepared}")
+    abort "Desktop #{name} must remain self-contained and delegate to #{prepared}"
+  end
+end
+
+{
+  "verify:native" => %w[test:rust:prepared check:rust:prepared build:desktop:prepared],
+  "verify" => %w[check:rust:prepared build:desktop:prepared]
+}.each do |name, gates|
+  command = desktop_scripts.fetch(name)
+  abort "Desktop #{name} must build the sidecar exactly once" unless command.scan("pnpm build:sidecar").length == 1
+  gates.each do |gate|
+    abort "Desktop #{name} is missing #{gate}" unless command.include?("pnpm #{gate}")
+  end
+end
+
+%w[test:rust:prepared check:rust:prepared build:desktop:prepared].each do |name|
+  if desktop_scripts.fetch(name).include?("build:sidecar")
+    abort "Desktop #{name} must reuse the orchestrator's prepared sidecar"
+  end
+end
+
+tauri_config = JSON.parse(File.read("apps/desktop/src-tauri/tauri.conf.json"))
+before_build = tauri_config.fetch("build", {}).fetch("beforeBuildCommand", nil)
+unless before_build == "pnpm build:web"
+  abort "Tauri beforeBuildCommand must build only the web frontend; package scripts own sidecar preparation"
 end
 RUBY
 

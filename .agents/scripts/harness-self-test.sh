@@ -12,6 +12,8 @@ cp AGENTS.md README.md .gitignore .node-version rust-toolchain.toml \
   package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json "$TEST_ROOT/"
 mkdir -p "$TEST_ROOT/apps/desktop"
 cp apps/desktop/package.json "$TEST_ROOT/apps/desktop/"
+mkdir -p "$TEST_ROOT/apps/desktop/src-tauri"
+cp apps/desktop/src-tauri/tauri.conf.json "$TEST_ROOT/apps/desktop/src-tauri/"
 mkdir -p "$TEST_ROOT/spikes/desktop-feasibility/scripts"
 cp spikes/desktop-feasibility/package.json spikes/desktop-feasibility/EVIDENCE.md \
   "$TEST_ROOT/spikes/desktop-feasibility/"
@@ -468,6 +470,21 @@ expect_failure "native application CI missing native gate" env CANCAN_ROOT="$TES
 mv "$native_workflow.bak" "$native_workflow"
 
 cp "$native_workflow" "$native_workflow.bak"
+grep -v '^        uses: actions/cache@v4$' "$native_workflow.bak" > "$native_workflow"
+expect_failure "native application CI loses Cargo cache" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
+
+cp "$native_workflow" "$native_workflow.bak"
+sed 's#apps/desktop/src-tauri/target#apps/desktop/src-tauri/binaries#' "$native_workflow.bak" > "$native_workflow"
+expect_failure "native application CI caches sidecar binaries" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
+
+cp "$native_workflow" "$native_workflow.bak"
+ruby -0pi -e 'sub("      - name: Install workspace dependencies\n", "      - name: Cache sidecar binaries\n        uses: actions/cache@v4\n        with:\n          path: apps/desktop/src-tauri/binaries\n          key: forbidden-sidecar-cache\n      - name: Install workspace dependencies\n")' "$native_workflow"
+expect_failure "native application CI gains a second cache" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
+
+cp "$native_workflow" "$native_workflow.bak"
 sed 's#      - apps/desktop/src-tauri/[*][*]#      - apps/**#' "$native_workflow.bak" > "$native_workflow"
 expect_failure "native application CI gains renderer-wide trigger" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$native_workflow.bak" "$native_workflow"
@@ -505,5 +522,21 @@ cp "$desktop_package" "$desktop_package.bak"
 sed 's/ --locked//g' "$desktop_package.bak" > "$desktop_package"
 expect_failure "desktop CI permits unlocked Cargo resolution" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$desktop_package.bak" "$desktop_package"
+
+cp "$desktop_package" "$desktop_package.bak"
+sed 's/pnpm build:sidecar && pnpm test:rust:prepared/pnpm test:rust:prepared/' "$desktop_package.bak" > "$desktop_package"
+expect_failure "standalone Rust test loses sidecar preparation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$desktop_package.bak" "$desktop_package"
+
+cp "$desktop_package" "$desktop_package.bak"
+sed 's/pnpm build:sidecar && pnpm test:rust:prepared/pnpm build:sidecar && pnpm build:sidecar && pnpm test:rust:prepared/' "$desktop_package.bak" > "$desktop_package"
+expect_failure "native gate rebuilds the sidecar" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$desktop_package.bak" "$desktop_package"
+
+tauri_config="$TEST_ROOT/apps/desktop/src-tauri/tauri.conf.json"
+cp "$tauri_config" "$tauri_config.bak"
+sed 's/pnpm build:web/pnpm build:sidecar \&\& pnpm build:web/' "$tauri_config.bak" > "$tauri_config"
+expect_failure "Tauri build hook rebuilds the sidecar" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$tauri_config.bak" "$tauri_config"
 
 echo "Harness self-test passed."
