@@ -385,9 +385,30 @@ mv "$workflow.bak" "$workflow"
 
 application_workflow="$TEST_ROOT/.github/workflows/application.yml"
 cp "$application_workflow" "$application_workflow.bak"
-grep -v '^        run: pnpm verify$' "$application_workflow.bak" > "$application_workflow"
-expect_failure "application CI missing verify gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+grep -v '^        run: pnpm verify:fast$' "$application_workflow.bak" > "$application_workflow"
+expect_failure "fast application CI missing verify gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$application_workflow.bak" "$application_workflow"
+
+cp "$application_workflow" "$application_workflow.bak"
+grep -v '^  cancel-in-progress: true$' "$application_workflow.bak" > "$application_workflow"
+expect_failure "fast application CI loses superseded-run cancellation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$application_workflow.bak" "$application_workflow"
+
+native_workflow="$TEST_ROOT/.github/workflows/application-native.yml"
+cp "$native_workflow" "$native_workflow.bak"
+grep -v '^        run: pnpm verify:native$' "$native_workflow.bak" > "$native_workflow"
+expect_failure "native application CI missing native gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
+
+cp "$native_workflow" "$native_workflow.bak"
+sed 's#      - apps/desktop/src-tauri/[*][*]#      - apps/**#' "$native_workflow.bak" > "$native_workflow"
+expect_failure "native application CI gains renderer-wide trigger" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
+
+cp "$native_workflow" "$native_workflow.bak"
+sed "s/github.event.pull_request.draft == false/true/" "$native_workflow.bak" > "$native_workflow"
+expect_failure "native application CI runs for draft PRs" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
 
 root_package="$TEST_ROOT/package.json"
 cp "$root_package" "$root_package.bak"

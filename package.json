@@ -13,6 +13,8 @@
     "test:rust": "pnpm --filter @cancan/desktop test:rust",
     "build:web": "pnpm --filter @cancan/desktop build:web",
     "build:desktop": "pnpm --filter @cancan/desktop build:desktop",
+    "verify:fast": "pnpm typecheck && pnpm test:unit && pnpm build:web",
+    "verify:native": "pnpm test:rust && pnpm check:rust && pnpm build:desktop",
     "verify": "pnpm typecheck && pnpm test:unit && pnpm check:rust && pnpm build:desktop"
   },
   "devDependencies": {

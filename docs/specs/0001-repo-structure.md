@@ -158,10 +158,12 @@ pnpm check:rust
 pnpm test:rust
 pnpm build:web
 pnpm build:desktop
+pnpm verify:fast
+pnpm verify:native
 pnpm verify
 ```
 
-`pnpm verify` is the local application gate. The macOS application workflow installs from the pinned toolchain files, uses frozen pnpm and Cargo lockfiles, runs repository preflight, executes `pnpm test:rust` for privileged security/data-integrity assertions, and then runs the local application gate. Production packages remain forbidden from importing the disposable spike.
+`pnpm verify` remains the local application gate. Pull requests and `main` run the typecheck, production unit tests, and web build through `pnpm verify:fast` on Linux. A separate macOS workflow runs `pnpm verify:native` only for native desktop, sidecar/parser, migration, dependency, and pinned-toolchain inputs; it skips draft pull requests and can be invoked manually. The native gate uses frozen pnpm and Cargo lockfiles and retains privileged Rust security/data-integrity tests, clippy, and the Tauri desktop build without charging renderer-only changes for a macOS runner. Production packages remain forbidden from importing the disposable spike.
 
 ## Acceptance criteria
 

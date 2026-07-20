@@ -68,6 +68,9 @@ abort "Workflow must be a mapping: #{application_path}" unless application.is_a?
 
 application_events = application["on"] || application[true]
 abort "Application workflow must define pull_request and push events" unless application_events.is_a?(Hash)
+unless application_events.keys.map(&:to_s).sort == %w[pull_request push]
+  abort "Fast application workflow must define only pull_request and push events"
+end
 
 application_paths = [
   "apps/**",
@@ -79,7 +82,8 @@ application_paths = [
   ".node-version",
   "rust-toolchain.toml",
   "scripts/dev-toolchain.env",
-  application_path
+  application_path,
+  ".github/workflows/application-native.yml"
 ]
 %w[pull_request push].each do |event|
   config = application_events[event]
@@ -93,13 +97,22 @@ abort "Application push must include main branch" unless application_push_branch
 
 application_permissions = application["permissions"]
 unless application_permissions.is_a?(Hash) && application_permissions["contents"] == "read"
-  abort "Application workflow must use read-only contents permission"
+  abort "Fast application workflow must use read-only contents permission"
 end
 
 application_jobs = application["jobs"]
-application_job = application_jobs.is_a?(Hash) ? application_jobs["application-gate"] : nil
-abort "Application workflow is missing application-gate job" unless application_job.is_a?(Hash)
-abort "Application workflow must run on macos-14" unless application_job["runs-on"] == "macos-14"
+application_job = application_jobs.is_a?(Hash) ? application_jobs["fast-application-gate"] : nil
+abort "Fast application workflow is missing fast-application-gate job" unless application_job.is_a?(Hash)
+abort "Fast application workflow must run on ubuntu-24.04" unless application_job["runs-on"] == "ubuntu-24.04"
+
+application_concurrency = application["concurrency"]
+unless application_concurrency.is_a?(Hash) &&
+       application_concurrency["cancel-in-progress"] == true &&
+       application_concurrency["group"].to_s.include?("github.workflow") &&
+       application_concurrency["group"].to_s.include?("github.event.pull_request.number") &&
+       application_concurrency["group"].to_s.include?("github.ref")
+  abort "Fast application workflow must cancel superseded runs per PR or ref"
+end
 
 application_steps = Array(application_job["steps"])
 application_uses = application_steps.map { |step| step.is_a?(Hash) ? step["uses"] : nil }.compact
@@ -116,8 +129,7 @@ application_runs = application_steps.map { |step| step.is_a?(Hash) ? step["run"]
 required_application_runs = [
   "pnpm install --frozen-lockfile",
   ".agents/scripts/agent-preflight.sh",
-  "pnpm test:rust",
-  "pnpm verify"
+  "pnpm verify:fast"
 ]
 missing_application_runs = required_application_runs - application_runs
 unless missing_application_runs.empty?
@@ -128,11 +140,101 @@ combined_runs = application_runs.join("\n")
 [
   "source scripts/dev-toolchain.env",
   "corepack@$COREPACK_VERSION",
+  "pnpm@$PNPM_VERSION"
+].each do |required|
+  abort "Fast application workflow is missing toolchain step: #{required}" unless combined_runs.include?(required)
+end
+
+native_path = ".github/workflows/application-native.yml"
+native = YAML.load_file(native_path)
+abort "Workflow must be a mapping: #{native_path}" unless native.is_a?(Hash)
+
+native_events = native["on"] || native[true]
+abort "Native application workflow must define pull_request and workflow_dispatch" unless native_events.is_a?(Hash)
+unless native_events.keys.map(&:to_s).sort == %w[pull_request workflow_dispatch]
+  abort "Native application workflow must not run on every push"
+end
+
+native_pull_request = native_events["pull_request"]
+abort "Native application workflow is missing pull_request configuration" unless native_pull_request.is_a?(Hash)
+native_types = Array(native_pull_request["types"])
+required_native_types = %w[opened ready_for_review reopened synchronize]
+unless native_types.sort == required_native_types.sort
+  abort "Native application pull_request types must run when a stable PR is opened, updated, reopened, or marked ready"
+end
+
+native_paths = [
+  "apps/desktop/src-tauri/**",
+  "apps/desktop/package.json",
+  "packages/ai/**",
+  "packages/parsers/**",
+  "packages/db/migrations/**",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "tsconfig.base.json",
+  ".node-version",
+  "rust-toolchain.toml",
+  "scripts/dev-toolchain.env",
+  native_path
+]
+unless Array(native_pull_request["paths"]).sort == native_paths.sort
+  abort "Native application paths must exactly match native, sidecar, migration, and toolchain inputs"
+end
+
+native_permissions = native["permissions"]
+unless native_permissions.is_a?(Hash) && native_permissions["contents"] == "read"
+  abort "Native application workflow must use read-only contents permission"
+end
+
+native_concurrency = native["concurrency"]
+unless native_concurrency.is_a?(Hash) &&
+       native_concurrency["cancel-in-progress"] == true &&
+       native_concurrency["group"].to_s.include?("github.workflow") &&
+       native_concurrency["group"].to_s.include?("github.event.pull_request.number") &&
+       native_concurrency["group"].to_s.include?("github.ref")
+  abort "Native application workflow must cancel superseded runs per PR or ref"
+end
+
+native_jobs = native["jobs"]
+native_job = native_jobs.is_a?(Hash) ? native_jobs["native-application-gate"] : nil
+abort "Native application workflow is missing native-application-gate job" unless native_job.is_a?(Hash)
+abort "Native application workflow must run on macos-14" unless native_job["runs-on"] == "macos-14"
+unless native_job["if"].to_s.include?("workflow_dispatch") && native_job["if"].to_s.include?("draft == false")
+  abort "Native application workflow must skip draft PRs while allowing manual runs"
+end
+
+native_steps = Array(native_job["steps"])
+native_uses = native_steps.map { |step| step.is_a?(Hash) ? step["uses"] : nil }.compact
+%w[actions/checkout@v7 actions/setup-node@v6].each do |required|
+  abort "Native application workflow is missing #{required}" unless native_uses.include?(required)
+end
+
+native_setup_node = native_steps.find { |step| step.is_a?(Hash) && step["uses"] == "actions/setup-node@v6" }
+unless native_setup_node.is_a?(Hash) && native_setup_node.fetch("with", {})["node-version-file"] == ".node-version"
+  abort "Native application workflow must source Node from .node-version"
+end
+
+native_runs = native_steps.map { |step| step.is_a?(Hash) ? step["run"] : nil }.compact
+required_native_runs = [
+  "pnpm install --frozen-lockfile",
+  ".agents/scripts/agent-preflight.sh",
+  "pnpm verify:native"
+]
+missing_native_runs = required_native_runs - native_runs
+unless missing_native_runs.empty?
+  abort "Native application workflow is missing required run commands: #{missing_native_runs.join(', ')}"
+end
+
+native_combined_runs = native_runs.join("\n")
+[
+  "source scripts/dev-toolchain.env",
+  "corepack@$COREPACK_VERSION",
   "pnpm@$PNPM_VERSION",
   "rustup show active-toolchain",
   "cargo clippy --version"
 ].each do |required|
-  abort "Application workflow is missing toolchain step: #{required}" unless combined_runs.include?(required)
+  abort "Native application workflow is missing toolchain step: #{required}" unless native_combined_runs.include?(required)
 end
 
 runtime_path = ".github/workflows/document-normalizer-runtime.yml"
@@ -258,7 +360,7 @@ end
 
 package = JSON.parse(File.read("package.json"))
 scripts = package.fetch("scripts", {})
-required_scripts = %w[typecheck test:unit test:rust check:rust build:web build:desktop verify]
+required_scripts = %w[typecheck test:unit test:rust check:rust build:web build:desktop verify:fast verify:native verify]
 missing_scripts = required_scripts.reject { |name| scripts[name].is_a?(String) && !scripts[name].empty? }
 abort "Root package is missing scripts: #{missing_scripts.join(', ')}" unless missing_scripts.empty?
 
@@ -272,6 +374,14 @@ end
 
 %w[typecheck test:unit check:rust build:desktop].each do |name|
   abort "Root verify does not run #{name}" unless scripts.fetch("verify").include?("pnpm #{name}")
+end
+
+%w[typecheck test:unit build:web].each do |name|
+  abort "Root verify:fast does not run #{name}" unless scripts.fetch("verify:fast").include?("pnpm #{name}")
+end
+
+%w[test:rust check:rust build:desktop].each do |name|
+  abort "Root verify:native does not run #{name}" unless scripts.fetch("verify:native").include?("pnpm #{name}")
 end
 
 desktop_package = JSON.parse(File.read("apps/desktop/package.json"))
