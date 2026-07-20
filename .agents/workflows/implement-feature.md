@@ -6,7 +6,7 @@ Use this when the user asks to build, add, fix, or change behavior.
 
 1. Run `.agents/scripts/agent-preflight.sh`.
 2. Select one ID from `docs/agent/implementation-slices.md`.
-3. Generate `.agents/scripts/context-for-slice.sh <slice-id>`; use its spec/ADR set instead of reading every spec.
+3. Generate `.agents/scripts/context-for-slice.sh <slice-id>`. Open the full contents of every source listed by the generated index from the exact working tree and head before planning or coding; record that head and source list for review. Use this bounded spec/ADR set instead of reading unrelated specs.
 4. Obey the packet's readiness result:
    - `STOP`: do not code the slice;
    - `EVIDENCE ONLY`: run only the bounded disposable spike/test work named by the slice; do not add production code;
@@ -31,4 +31,4 @@ Use this when the user asks to build, add, fix, or change behavior.
 
 Freeze the cumulative diff before any required independent review. Route findings back to the production-code writer instead of allowing concurrent fixes; do not add tester/reviewer roles that the selected execution tier does not justify.
 
-Read current implementation state from the generated packet. Do not copy state or planned command names into this workflow.
+Read current implementation state directly from the indexed `docs/agent/current-state.md`; the compact packet does not contain or replace that source. Do not copy state or planned command names into this workflow.

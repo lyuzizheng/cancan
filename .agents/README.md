@@ -53,7 +53,7 @@ For app code, tests, or implementation review:
 .agents/scripts/implementation-review-packet.sh <slice-id> [base]
 ```
 
-Every role used for a task shares the same generated slice context. The slice checker validates dependencies, spec/ADR paths, active blockers, test gates, and outcomes.
+Every role used for a task shares the same generated slice readiness and canonical source index. Compact transport is not compact evidence: before implementation, testing, or review, each role opens the full contents of every indexed source from the exact working tree and head, then records that head and source list in its handoff. The index names exact files and headings without copying or summarizing their content; it never permits a role to skip canonical evidence. The implementation review packet likewise inventories the stable diff and evidence while the reviewer reads the complete cumulative diff from the shared repository. The slice checker validates dependencies, spec/ADR paths, active blockers, test gates, and outcomes.
 
 Use the risk-sized paths in `.agents/workflows/development-cycle.md`. Simple PR-comment fixes stay in the root thread with focused checks; standard changes add at most one independent role when useful; high-risk changes receive their applicable independent review and one final full relevant gate. Use the read-only explorer only when separate structural analysis helps, and never run multiple source-writing agents concurrently.
 

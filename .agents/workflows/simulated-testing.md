@@ -19,7 +19,7 @@ Fixture privacy and live-service boundaries are owned by `docs/specs/0016-testin
 ## Once App Code Exists
 
 1. Select the same implementation slice ID used by the feature.
-2. Generate `.agents/scripts/context-for-slice.sh <slice-id>` and obey its `STOP`, `EVIDENCE ONLY`, or `READY` boundary.
+2. Generate `.agents/scripts/context-for-slice.sh <slice-id>`, open the full contents of every source listed by the generated index from the exact working tree and head, record that head and source list, and obey its `STOP`, `EVIDENCE ONLY`, or `READY` boundary.
 3. Reset only the test database.
 4. Seed or import deterministic fixtures.
 5. Use mocked/stored AI outputs for parser tests.

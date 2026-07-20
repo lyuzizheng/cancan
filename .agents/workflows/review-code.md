@@ -5,10 +5,10 @@ Use this when the user asks for review, risk analysis, or PR feedback.
 ## Inputs and readiness
 
 1. Identify the implementation slice ID and review base.
-2. Generate `.agents/scripts/implementation-review-packet.sh <slice-id> <base>`.
-3. Require the external handoff named by the packet: exact request, assumptions and scope, success criteria, execution tier, focused commands and results, and UI evidence when relevant.
+2. Generate `.agents/scripts/context-for-slice.sh <slice-id>` and `.agents/scripts/implementation-review-packet.sh <slice-id> <base>` separately; the review packet identifies the exact slice and commits without embedding the source index.
+3. Require the external handoff named by the packet: exact request, assumptions and scope, success criteria, execution tier, canonical sources inspected at the exact head commit, focused commands and results, and UI evidence when relevant.
 4. Start after the cumulative diff is frozen and the tier's focused pre-review checks pass. Do not require an independent tester or the expensive final full gate unless the selected tier has a concrete reason for it.
-5. Use the packet's shared specs, ADRs, current state, blockers, full cumulative diff, and tracked/untracked file inventory.
+5. Use the separately generated canonical source index for current state and blockers, and the packet for the exact commits plus tracked/untracked inventory. Open the full contents of every source listed by the generated index from the exact working tree and head, then inspect the complete cumulative diff directly from the shared repository; neither compact artifact is a summary or substitute for those sources.
 
 ## Correctness and safety gate
 

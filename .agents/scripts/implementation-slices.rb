@@ -188,11 +188,18 @@ def dependency_closure(slice, slices, result = [])
   result
 end
 
-def print_source(path)
+def print_source_index(path)
+  lines = File.readlines(File.join(ROOT, path), chomp: true)
   puts
-  puts "## Source: #{path}"
-  puts
-  puts File.read(File.join(ROOT, path))
+  puts "## Required source: #{path}"
+  headings = lines.each_with_index.each_with_object([]) do |(line, index), result|
+    result << "- L#{index + 1}: #{line}" if line.match?(/\A\#{1,6}\s/)
+  end
+  if headings.empty?
+    puts "- No Markdown headings; inspect the file directly."
+  else
+    puts headings
+  end
 end
 
 slices = load_slices
@@ -238,8 +245,12 @@ when "context"
     "docs/agent/current-state.md",
     "docs/alignment-temp/alignment-progress.md"
   ]
+  puts
+  puts "# Canonical Source Index"
+  puts
+  puts "Open these exact repository files directly. This packet indexes authority and readiness; it does not summarize or replace source content."
   (global_sources + list(slice.fetch("Required specs")) + list(slice.fetch("Required ADRs"))).uniq.each do |path|
-    print_source(path)
+    print_source_index(path)
   end
 else
   fail!("Unknown command '#{ARGV[0]}'. Use check, list, or context.")
