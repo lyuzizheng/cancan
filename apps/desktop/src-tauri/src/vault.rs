@@ -184,10 +184,13 @@ impl FileVault {
 
     pub(crate) fn remove(&self, encrypted_locator: &str) -> io::Result<()> {
         let path = self.resolve_locator(encrypted_locator)?;
-        if path.exists() {
-            fs::remove_file(path)?;
-            let directory = self.root.join("files");
-            File::open(directory)?.sync_all()?;
+        match fs::remove_file(path) {
+            Ok(()) => {
+                let directory = self.root.join("files");
+                File::open(directory)?.sync_all()?;
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
         }
         Ok(())
     }

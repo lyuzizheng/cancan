@@ -23,12 +23,14 @@ const document: SourceDocumentSummary = {
 
 const baseProps: VaultManualImportViewProps = {
   busy: false,
+  deletingDocumentId: null,
   error: null,
   importing: false,
   loadingDocuments: false,
   normalizingDocumentId: null,
   notice: null,
   onCloseViewer: () => undefined,
+  onDelete: () => undefined,
   onImport: () => undefined,
   onLock: () => undefined,
   onNormalize: () => undefined,
@@ -65,6 +67,7 @@ describe("VaultManualImportView", () => {
     expect(markup).toContain("June statement.pdf");
     expect(markup).toContain("View document");
     expect(markup).toContain("Check routing");
+    expect(markup).toContain("Delete source file");
   });
 
   it("renders only page pixels and bounded viewer navigation", () => {

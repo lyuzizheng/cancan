@@ -264,6 +264,11 @@ export class SyntheticCoreRepository {
       if (input.event.legs.length !== input.event.sourceRecordIds.length) {
         throw new Error("every ledger leg requires exactly one source record");
       }
+      const eligibleRecord = this.database.prepare(`
+        SELECT 1
+        FROM external_records
+        WHERE id = ? AND status = 'staged'
+      `);
       const confirmedAllocation = this.database.prepare(`
         SELECT 1
         FROM match_edges
@@ -273,6 +278,9 @@ export class SyntheticCoreRepository {
       for (const sourceRecordId of input.event.sourceRecordIds) {
         if (confirmedAllocation.get(sourceRecordId)) {
           throw new Error("source record already has a confirmed allocation");
+        }
+        if (!eligibleRecord.get(sourceRecordId)) {
+          throw new Error("source record is not eligible for automatic commit");
         }
       }
 

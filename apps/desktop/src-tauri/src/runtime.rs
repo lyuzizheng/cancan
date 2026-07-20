@@ -1,8 +1,8 @@
 use crate::{
     database::{
         DATABASE_FILE_NAME, ManualImportStore, SourceDocumentFileInput, SourceDocumentImport,
-        SourceDocumentImportOutcome, SourceDocumentRoutingOutcome, TrustedAccountCandidate,
-        TrustedDocumentClassification,
+        SourceDocumentImportOutcome, SourceDocumentImportStatus, SourceDocumentRoutingOutcome,
+        TrustedAccountCandidate, TrustedDocumentClassification,
     },
     vault::{create_password_wrapper, open_password_wrapper, password_wrapper_profile},
     viewer::{RenderedDocumentPage, render_pdf_page},
@@ -17,7 +17,7 @@ use std::{
     time::Duration,
 };
 use tauri::{AppHandle, State};
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_shell::{
     ShellExt,
     process::{CommandChild, CommandEvent},
@@ -286,6 +286,7 @@ impl VaultRuntime {
     pub(crate) fn import_selected_document(
         &self,
         source_path: &Path,
+        restore_deleted_document_id: Option<&str>,
     ) -> Result<SourceDocumentImportOutcome, RuntimeError> {
         let mut store = self.store()?;
         let store = store
@@ -305,8 +306,31 @@ impl VaultRuntime {
             source_path,
         };
         store
-            .register_import(&input)
+            .register_import(&input, restore_deleted_document_id)
             .map_err(|_| RuntimeError::new("import_failed"))
+    }
+
+    pub(crate) fn delete_source_document(&self, document_id: &str) -> Result<(), RuntimeError> {
+        if document_id.is_empty() {
+            return Err(RuntimeError::new("invalid_document_request"));
+        }
+        let mut store = self.store()?;
+        let store = store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        let audit_id = random_identifier("audit");
+        store
+            .delete_source_document(document_id, &audit_id)
+            .map_err(|error| {
+                if error
+                    .downcast_ref::<io::Error>()
+                    .is_some_and(|error| error.kind() == io::ErrorKind::NotFound)
+                {
+                    RuntimeError::new("document_unavailable")
+                } else {
+                    RuntimeError::new("delete_source_failed")
+                }
+            })
     }
 
     fn require_unlocked(&self) -> Result<(), RuntimeError> {
@@ -557,7 +581,8 @@ pub(crate) async fn import_source_document(
     runtime: State<'_, VaultRuntime>,
 ) -> Result<Option<SourceDocumentImportOutcome>, VaultCommandError> {
     let runtime = runtime.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(
+        move || -> Result<Option<SourceDocumentImportOutcome>, RuntimeError> {
         runtime.require_unlocked()?;
         let selected = app
             .dialog()
@@ -571,7 +596,64 @@ pub(crate) async fn import_source_document(
         let path = selected
             .into_path()
             .map_err(|_| RuntimeError::new("file_selection_failed"))?;
-        runtime.import_selected_document(&path).map(Some)
+        let outcome = runtime.import_selected_document(&path, None)?;
+        if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired {
+            return Ok(Some(outcome));
+        }
+        let restore = app
+            .dialog()
+            .message(
+                "This exact file was previously deleted from CanCan's Vault. Restore it to the existing document entry?",
+            )
+            .title("Restore source file?")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Restore file".to_owned(),
+                "Cancel".to_owned(),
+            ))
+            .blocking_show();
+        if !restore {
+            return Ok(None);
+        }
+        runtime
+            .import_selected_document(&path, Some(&outcome.document_id))
+            .map(Some)
+        },
+    )
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn delete_source_document(
+    document_id: String,
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<bool, VaultCommandError> {
+    if document_id.is_empty() {
+        return Err(VaultCommandError::new("invalid_document_request"));
+    }
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<bool, RuntimeError> {
+        runtime.require_unlocked()?;
+        let confirmed = app
+            .dialog()
+            .message(
+                "Delete the encrypted source file stored in CanCan's Vault? The document entry, record history, audit trail, and ledger links will remain and show Source file deleted. New backups will not include this file; older backups or copies saved outside CanCan may still contain it.",
+            )
+            .title("Delete source file?")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Delete source file".to_owned(),
+                "Cancel".to_owned(),
+            ))
+            .blocking_show();
+        if !confirmed {
+            return Ok(false);
+        }
+        runtime.delete_source_document(&document_id)?;
+        Ok(true)
     })
     .await
     .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
@@ -1064,15 +1146,39 @@ mod tests {
             .create(b"synthetic-vault-password")
             .expect("create Vault");
         let imported = runtime
-            .import_selected_document(&source_path)
+            .import_selected_document(&source_path, None)
             .expect("import statement");
         assert_eq!(imported.status, SourceDocumentImportStatus::Imported);
 
         let duplicate = runtime
-            .import_selected_document(&source_path)
+            .import_selected_document(&source_path, None)
             .expect("deduplicate statement");
         assert_eq!(duplicate.document_id, imported.document_id);
         assert_eq!(duplicate.status, SourceDocumentImportStatus::AlreadyPresent);
+
+        runtime
+            .delete_source_document(&imported.document_id)
+            .expect("delete encrypted source");
+        assert!(
+            source_path.exists(),
+            "user-selected source must remain untouched"
+        );
+        let deleted = runtime
+            .list_unassigned_source_documents()
+            .expect("list deleted document");
+        assert_eq!(deleted[0].file_state, "deleted");
+        let confirmation = runtime
+            .import_selected_document(&source_path, None)
+            .expect("request restore confirmation");
+        assert_eq!(
+            confirmation.status,
+            SourceDocumentImportStatus::RestoreConfirmationRequired
+        );
+        let restored = runtime
+            .import_selected_document(&source_path, Some(&imported.document_id))
+            .expect("restore deleted source");
+        assert_eq!(restored.document_id, imported.document_id);
+        assert_eq!(restored.status, SourceDocumentImportStatus::Restored);
 
         let documents = runtime
             .list_unassigned_source_documents()
@@ -1104,7 +1210,7 @@ mod tests {
         );
         assert_eq!(
             runtime
-                .import_selected_document(&source_path)
+                .import_selected_document(&source_path, None)
                 .expect_err("reject import while locked")
                 .code(),
             "vault_locked"
@@ -1123,7 +1229,7 @@ mod tests {
 
         assert_eq!(
             runtime
-                .import_selected_document(&unsupported)
+                .import_selected_document(&unsupported, None)
                 .expect_err("reject unsupported document")
                 .code(),
             "unsupported_document"
@@ -1141,7 +1247,7 @@ mod tests {
             .create(b"synthetic-vault-password")
             .expect("create Vault");
         let imported = runtime
-            .import_selected_document(&source_path)
+            .import_selected_document(&source_path, None)
             .expect("import PDF");
         let before = vault_entries(&vault_root);
 
@@ -1175,10 +1281,10 @@ mod tests {
             .create(b"synthetic-vault-password")
             .expect("create Vault");
         let csv = runtime
-            .import_selected_document(&csv_path)
+            .import_selected_document(&csv_path, None)
             .expect("import CSV");
         let pdf = runtime
-            .import_selected_document(&pdf_path)
+            .import_selected_document(&pdf_path, None)
             .expect("import PDF");
 
         assert_eq!(
@@ -1235,7 +1341,7 @@ mod tests {
             )
             .expect("seed source");
         let imported = runtime
-            .import_selected_document(&source_path)
+            .import_selected_document(&source_path, None)
             .expect("capture statement");
         let result = NormalizerResult::Classified {
             proposal: NormalizerProposal {

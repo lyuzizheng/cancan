@@ -51,6 +51,7 @@ pub enum SourceDocumentImportStatus {
     Imported,
     AlreadyPresent,
     Restored,
+    RestoreConfirmationRequired,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -187,10 +188,30 @@ impl ManualImportStore {
     pub fn register_import(
         &mut self,
         input: &SourceDocumentImport<'_>,
+        restore_deleted_document_id: Option<&str>,
     ) -> StoreResult<SourceDocumentImportOutcome> {
         validate_import(input)?;
         let source = FileVault::prepare(input.source_path)?;
         let existing = find_exact_document(&self.connection, source.file_sha256())?;
+        match (existing.as_ref(), restore_deleted_document_id) {
+            (Some(existing), None) if existing.file_state == "deleted" => {
+                return Ok(SourceDocumentImportOutcome {
+                    document_id: existing.document_id.clone(),
+                    status: SourceDocumentImportStatus::RestoreConfirmationRequired,
+                });
+            }
+            (Some(existing), Some(expected_document_id))
+                if existing.file_state == "deleted"
+                    && existing.document_id == expected_document_id => {}
+            (_, Some(_)) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "selected source no longer matches the deleted document",
+                )
+                .into());
+            }
+            _ => {}
+        }
         let replace_existing = existing
             .as_ref()
             .is_some_and(|document| document.file_state != "available");
@@ -224,6 +245,45 @@ impl ManualImportStore {
                 Err(error.into())
             }
         }
+    }
+
+    pub fn delete_source_document(&mut self, document_id: &str, audit_id: &str) -> StoreResult<()> {
+        if document_id.is_empty() || audit_id.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "source deletion identifiers must not be empty",
+            )
+            .into());
+        }
+        let document = find_document_by_id(&self.connection, document_id)?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "source document not found"))?;
+        if document.file_state != "available" {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "source document file is unavailable",
+            )
+            .into());
+        }
+        let locator = document.encrypted_locator.as_deref().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "available source document has no encrypted locator",
+            )
+        })?;
+        if !self
+            .files
+            .verifies(&self.master_key, locator, &document.file_sha256)?
+        {
+            mark_missing(&mut self.connection, &document, &document.file_sha256)?;
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "source document file is unavailable",
+            )
+            .into());
+        }
+        persist_source_deletion(&mut self.connection, &document, audit_id)?;
+        self.files.remove(locator)?;
+        Ok(())
     }
 
     pub fn list_documents(&self, money_source_id: &str) -> StoreResult<Vec<SourceDocumentView>> {
@@ -620,6 +680,71 @@ fn find_exact_document(
         .optional()
 }
 
+fn find_document_by_id(
+    connection: &Connection,
+    document_id: &str,
+) -> rusqlite::Result<Option<ExistingDocument>> {
+    connection
+        .query_row(
+            "SELECT id, encrypted_locator, file_sha256, file_state \
+             FROM source_documents WHERE id = ?1",
+            [document_id],
+            |row| {
+                Ok(ExistingDocument {
+                    document_id: row.get(0)?,
+                    encrypted_locator: row.get(1)?,
+                    file_sha256: row.get(2)?,
+                    file_state: row.get(3)?,
+                })
+            },
+        )
+        .optional()
+}
+
+fn persist_source_deletion(
+    connection: &mut Connection,
+    document: &ExistingDocument,
+    audit_id: &str,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    transaction.execute(
+        "INSERT INTO audit_log( \
+           id, entity_type, entity_id, action, actor, reason, source_ref, policy_version \
+         ) VALUES (?1, 'source_document', ?2, 'source_file_deletion_decided', \
+                   'user', 'user_requested', ?3, 'source-file-deletion-v1')",
+        params![audit_id, document.document_id, document.file_sha256],
+    )?;
+    let changed = transaction.execute(
+        "UPDATE source_documents \
+         SET encrypted_locator = NULL, file_state = 'deleted', \
+             deleted_at = CURRENT_TIMESTAMP, deletion_audit_id = ?1 \
+         WHERE id = ?2 AND file_state = 'available'",
+        params![audit_id, document.document_id],
+    )?;
+    if changed != 1 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+    transaction.execute(
+        "INSERT INTO review_items(id, external_record_id, reason_code, status) \
+         SELECT ?1 || ':' || external_records.id, external_records.id, \
+                'source_file_deleted', 'open' \
+         FROM external_records \
+         WHERE source_document_id = ?2 AND status IN ('staged', 'review') \
+           AND NOT EXISTS ( \
+             SELECT 1 FROM review_items \
+             WHERE external_record_id = external_records.id \
+               AND reason_code = 'source_file_deleted' AND status = 'open' \
+           )",
+        params![audit_id, document.document_id],
+    )?;
+    transaction.execute(
+        "UPDATE external_records SET status = 'review' \
+         WHERE source_document_id = ?1 AND status = 'staged'",
+        [&document.document_id],
+    )?;
+    transaction.commit()
+}
+
 fn persist_import(
     connection: &mut Connection,
     input: &SourceDocumentImport<'_>,
@@ -711,6 +836,9 @@ fn import_audit_action(status: SourceDocumentImportStatus) -> &'static str {
         SourceDocumentImportStatus::Imported => "manual_import_imported",
         SourceDocumentImportStatus::AlreadyPresent => "manual_import_already_present",
         SourceDocumentImportStatus::Restored => "manual_import_restored",
+        SourceDocumentImportStatus::RestoreConfirmationRequired => {
+            "manual_import_restore_confirmation_required"
+        }
     }
 }
 
@@ -1006,16 +1134,19 @@ mod tests {
         fs::write(&source_path, b"synthetic statement").expect("write fixture");
         let mut store = open_store(root.path());
         store
-            .register_import(&SourceDocumentImport {
-                audit_actor: "user",
-                audit_id: "audit-import",
-                audit_policy_version: "manual-import-v1",
-                audit_reason: "manual_import",
-                document_id: "document-unassigned",
-                mime_type: "text/csv",
-                original_filename: "statement.csv",
-                source_path: &source_path,
-            })
+            .register_import(
+                &SourceDocumentImport {
+                    audit_actor: "user",
+                    audit_id: "audit-import",
+                    audit_policy_version: "manual-import-v1",
+                    audit_reason: "manual_import",
+                    document_id: "document-unassigned",
+                    mime_type: "text/csv",
+                    original_filename: "statement.csv",
+                    source_path: &source_path,
+                },
+                None,
+            )
             .expect("capture unassigned source");
         let accounts = [TrustedAccountCandidate {
             account_id: "account-candidate",
@@ -1085,16 +1216,19 @@ mod tests {
             )
             .expect("seed ambiguous source");
         store
-            .register_import(&SourceDocumentImport {
-                audit_actor: "user",
-                audit_id: "audit-import",
-                audit_policy_version: "manual-import-v1",
-                audit_reason: "manual_import",
-                document_id: "document-unassigned",
-                mime_type: "application/pdf",
-                original_filename: "statement.pdf",
-                source_path: &source_path,
-            })
+            .register_import(
+                &SourceDocumentImport {
+                    audit_actor: "user",
+                    audit_id: "audit-import",
+                    audit_policy_version: "manual-import-v1",
+                    audit_reason: "manual_import",
+                    document_id: "document-unassigned",
+                    mime_type: "application/pdf",
+                    original_filename: "statement.pdf",
+                    source_path: &source_path,
+                },
+                None,
+            )
             .expect("capture unassigned source");
         let accounts = [TrustedAccountCandidate {
             account_id: "account-candidate",
@@ -1140,11 +1274,14 @@ mod tests {
         let mut store = open_store(root.path());
 
         let first = store
-            .register_import(&import(&first_path, "document-first", "audit-first"))
+            .register_import(&import(&first_path, "document-first", "audit-first"), None)
             .expect("first import");
         assert_eq!(first.status, SourceDocumentImportStatus::Imported);
         let duplicate = store
-            .register_import(&import(&first_path, "document-ignored", "audit-duplicate"))
+            .register_import(
+                &import(&first_path, "document-ignored", "audit-duplicate"),
+                None,
+            )
             .expect("duplicate import");
         assert_eq!(duplicate.status, SourceDocumentImportStatus::AlreadyPresent);
 
@@ -1152,7 +1289,10 @@ mod tests {
         fs::write(&second_path, b"%PDF synthetic rescanned statement")
             .expect("write second fixture");
         let second = store
-            .register_import(&import(&second_path, "document-second", "audit-second"))
+            .register_import(
+                &import(&second_path, "document-second", "audit-second"),
+                None,
+            )
             .expect("second import");
         assert_eq!(second.status, SourceDocumentImportStatus::Imported);
 
@@ -1163,43 +1303,230 @@ mod tests {
         let first_document = find_exact_document(&store.connection, &first_sha256)
             .expect("find document")
             .expect("existing document");
+        let encrypted_path = root.path().join(
+            first_document
+                .encrypted_locator
+                .as_deref()
+                .expect("available locator"),
+        );
         store
             .connection
             .execute(
-                "INSERT INTO audit_log( \
-                   id, entity_type, entity_id, action, actor, reason, policy_version \
-                 ) VALUES ('audit-delete', 'source_document', ?1, \
-                           'source_file_deletion_decided', 'user', 'user_requested', \
-                           'manual-import-v1')",
+                "INSERT INTO parse_runs( \
+                   id, source_document_id, normalization_profile_id, profile_json, status \
+                 ) VALUES ('parse-first', ?1, 'profile-v1', '{}', 'succeeded')",
                 [&first_document.document_id],
             )
-            .expect("append deletion audit");
+            .expect("seed retained parse relationship");
         store
             .connection
             .execute(
-                "UPDATE source_documents SET file_state = 'deleted', \
-                   encrypted_locator = NULL, deleted_at = CURRENT_TIMESTAMP, \
-                   deletion_audit_id = 'audit-delete' WHERE id = ?1",
+                "INSERT INTO external_records( \
+                   id, parse_run_id, source_document_id, stable_record_key, version, \
+                   status, record_type, raw_json, validation_json \
+                 ) VALUES \
+                   ('record-staged', 'parse-first', ?1, 'record-staged', 1, \
+                    'staged', 'transaction', '{}', '{}'), \
+                   ('record-review', 'parse-first', ?1, 'record-review', 1, \
+                    'review', 'transaction', '{}', '{}'), \
+                   ('record-committed', 'parse-first', ?1, 'record-committed', 1, \
+                    'committed', 'transaction', '{}', '{}')",
                 [&first_document.document_id],
             )
-            .expect("create tombstone fixture");
-        if let Some(locator) = first_document.encrypted_locator {
+            .expect("seed linked records");
+
+        store
+            .delete_source_document(&first_document.document_id, "audit-delete")
+            .expect("delete encrypted source");
+        assert!(!encrypted_path.exists());
+        let deleted = find_document_by_id(&store.connection, &first_document.document_id)
+            .expect("find deleted document")
+            .expect("deleted document remains");
+        assert_eq!(deleted.file_state, "deleted");
+        assert!(deleted.encrypted_locator.is_none());
+        let retained_parses: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM parse_runs WHERE source_document_id = ?1",
+                [&first_document.document_id],
+                |row| row.get(0),
+            )
+            .expect("count retained parse relationships");
+        assert_eq!(retained_parses, 1);
+        let record_states = store
+            .connection
+            .prepare(
+                "SELECT id, status FROM external_records \
+                 WHERE source_document_id = ?1 ORDER BY id",
+            )
+            .expect("prepare linked record query")
+            .query_map([&first_document.document_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .expect("query linked records")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("read linked records");
+        assert_eq!(
+            record_states,
+            vec![
+                ("record-committed".to_owned(), "committed".to_owned()),
+                ("record-review".to_owned(), "review".to_owned()),
+                ("record-staged".to_owned(), "review".to_owned()),
+            ]
+        );
+        let deletion_review_items: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM review_items \
+                 WHERE reason_code = 'source_file_deleted' AND status = 'open'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count source deletion review items");
+        assert_eq!(deletion_review_items, 2);
+
+        assert!(
             store
-                .files
-                .remove(&locator)
-                .expect("remove encrypted fixture");
-        }
+                .delete_source_document(&first_document.document_id, "audit-delete-retry")
+                .is_err()
+        );
+        let deletion_audits: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM audit_log \
+                 WHERE entity_id = ?1 AND action = 'source_file_deletion_decided'",
+                [&first_document.document_id],
+                |row| row.get(0),
+            )
+            .expect("count deletion decisions after retry");
+        assert_eq!(deletion_audits, 1);
+
+        let confirmation = store
+            .register_import(
+                &import(&first_path, "document-ignored-restored", "audit-restored"),
+                None,
+            )
+            .expect("request restore confirmation");
+        assert_eq!(confirmation.document_id, first_document.document_id);
+        assert_eq!(
+            confirmation.status,
+            SourceDocumentImportStatus::RestoreConfirmationRequired
+        );
+        assert!(!encrypted_path.exists());
+
+        fs::write(&first_path, b"%PDF changed after restore confirmation")
+            .expect("change selected source");
+        assert!(
+            store
+                .register_import(
+                    &import(&first_path, "document-changed", "audit-changed"),
+                    Some(&first_document.document_id),
+                )
+                .is_err()
+        );
+        assert_eq!(store.list_unassigned_documents().expect("list").len(), 2);
+        fs::write(&first_path, b"%PDF synthetic first statement")
+            .expect("restore selected source fixture");
 
         let restored = store
-            .register_import(&import(
-                &first_path,
-                "document-ignored-restored",
-                "audit-restored",
-            ))
+            .register_import(
+                &import(&first_path, "document-ignored-restored", "audit-restored"),
+                Some(&first_document.document_id),
+            )
             .expect("restore exact source");
         assert_eq!(restored.document_id, first_document.document_id);
         assert_eq!(restored.status, SourceDocumentImportStatus::Restored);
         assert_eq!(store.list_unassigned_documents().expect("list").len(), 2);
+    }
+
+    #[test]
+    fn deletion_recovery_removes_a_blob_left_after_the_tombstone_commit() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let source_path = root.path().join("statement.pdf");
+        fs::write(&source_path, b"%PDF deletion recovery statement").expect("write fixture");
+        let mut store = open_store(root.path());
+        let imported = store
+            .register_import(
+                &import(&source_path, "document-delete", "audit-import"),
+                None,
+            )
+            .expect("import source");
+        let document = find_document_by_id(&store.connection, &imported.document_id)
+            .expect("find document")
+            .expect("imported document");
+        let encrypted_path = root.path().join(
+            document
+                .encrypted_locator
+                .as_deref()
+                .expect("available locator"),
+        );
+
+        persist_source_deletion(&mut store.connection, &document, "audit-delete")
+            .expect("commit deletion decision");
+        assert!(
+            encrypted_path.exists(),
+            "simulate crash before blob removal"
+        );
+        drop(store);
+
+        let reopened = open_store(root.path());
+        assert!(!encrypted_path.exists());
+        let tombstone = find_document_by_id(&reopened.connection, &imported.document_id)
+            .expect("find tombstone")
+            .expect("document row retained");
+        assert_eq!(tombstone.file_state, "deleted");
+        let deletion_audits: i64 = reopened
+            .connection
+            .query_row(
+                "SELECT count(*) FROM audit_log \
+                 WHERE entity_id = ?1 AND action = 'source_file_deletion_decided'",
+                [&imported.document_id],
+                |row| row.get(0),
+            )
+            .expect("count deletion audit");
+        assert_eq!(deletion_audits, 1);
+    }
+
+    #[test]
+    fn missing_storage_is_not_recorded_as_a_user_deletion() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let source_path = root.path().join("statement.pdf");
+        fs::write(&source_path, b"%PDF missing before deletion").expect("write fixture");
+        let mut store = open_store(root.path());
+        let imported = store
+            .register_import(
+                &import(&source_path, "document-missing-delete", "audit-import"),
+                None,
+            )
+            .expect("import source");
+        let locator = store.list_unassigned_documents().expect("list")[0]
+            .encrypted_locator
+            .clone()
+            .expect("available locator");
+        store
+            .files
+            .remove(&locator)
+            .expect("remove encrypted fixture");
+
+        assert!(
+            store
+                .delete_source_document(&imported.document_id, "audit-delete")
+                .is_err()
+        );
+        let document = find_document_by_id(&store.connection, &imported.document_id)
+            .expect("find document")
+            .expect("document row retained");
+        assert_eq!(document.file_state, "missing");
+        let deletion_audits: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM audit_log \
+                 WHERE entity_id = ?1 AND action = 'source_file_deletion_decided'",
+                [&imported.document_id],
+                |row| row.get(0),
+            )
+            .expect("count deletion audit");
+        assert_eq!(deletion_audits, 0);
     }
 
     #[test]
@@ -1220,7 +1547,10 @@ mod tests {
 
         assert!(
             store
-                .register_import(&import(&source_path, "document-rollback", "audit-conflict",))
+                .register_import(
+                    &import(&source_path, "document-rollback", "audit-conflict"),
+                    None,
+                )
                 .is_err()
         );
         let rows: i64 = store
@@ -1243,7 +1573,10 @@ mod tests {
         fs::write(&source_path, b"%PDF missing statement").expect("write fixture");
         let mut store = open_store(root.path());
         store
-            .register_import(&import(&source_path, "document-missing", "audit-import"))
+            .register_import(
+                &import(&source_path, "document-missing", "audit-import"),
+                None,
+            )
             .expect("import source");
         let locator = store.list_unassigned_documents().expect("list")[0]
             .encrypted_locator
@@ -1261,7 +1594,10 @@ mod tests {
             "missing"
         );
         let restored = reopened
-            .register_import(&import(&source_path, "document-ignored", "audit-restore"))
+            .register_import(
+                &import(&source_path, "document-ignored", "audit-restore"),
+                None,
+            )
             .expect("restore missing source");
         assert_eq!(restored.status, SourceDocumentImportStatus::Restored);
     }
@@ -1273,7 +1609,10 @@ mod tests {
         fs::write(&source_path, b"%PDF tampered statement").expect("write fixture");
         let mut store = open_store(root.path());
         store
-            .register_import(&import(&source_path, "document-tampered", "audit-import"))
+            .register_import(
+                &import(&source_path, "document-tampered", "audit-import"),
+                None,
+            )
             .expect("import source");
         let locator = store.list_unassigned_documents().expect("list")[0]
             .encrypted_locator
@@ -1301,10 +1640,13 @@ mod tests {
         fs::write(&second_path, b"%PDF second statement").expect("write second fixture");
         let mut store = open_store(root.path());
         store
-            .register_import(&import(&first_path, "document-first", "audit-first"))
+            .register_import(&import(&first_path, "document-first", "audit-first"), None)
             .expect("import first source");
         store
-            .register_import(&import(&second_path, "document-second", "audit-second"))
+            .register_import(
+                &import(&second_path, "document-second", "audit-second"),
+                None,
+            )
             .expect("import second source");
 
         let first_sha256 = FileVault::prepare(&first_path)
@@ -1343,7 +1685,10 @@ mod tests {
         assert_eq!(second_document.file_state, "missing");
 
         let restored = store
-            .register_import(&import(&second_path, "document-ignored", "audit-restored"))
+            .register_import(
+                &import(&second_path, "document-ignored", "audit-restored"),
+                None,
+            )
             .expect("restore second source");
         assert_eq!(restored.document_id, "document-second");
         assert_eq!(restored.status, SourceDocumentImportStatus::Restored);
