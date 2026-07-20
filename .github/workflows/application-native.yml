@@ -1,10 +1,18 @@
-name: Application fast
+name: Application native
 
 on:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
     paths:
-      - apps/**
-      - packages/**
+      - apps/desktop/src-tauri/**
+      - apps/desktop/package.json
+      - packages/ai/**
+      - packages/parsers/**
+      - packages/db/migrations/**
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
@@ -12,23 +20,8 @@ on:
       - .node-version
       - rust-toolchain.toml
       - scripts/dev-toolchain.env
-      - .github/workflows/application.yml
       - .github/workflows/application-native.yml
-  push:
-    branches:
-      - main
-    paths:
-      - apps/**
-      - packages/**
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - tsconfig.base.json
-      - .node-version
-      - rust-toolchain.toml
-      - scripts/dev-toolchain.env
-      - .github/workflows/application.yml
-      - .github/workflows/application-native.yml
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -38,8 +31,9 @@ permissions:
   contents: read
 
 jobs:
-  fast-application-gate:
-    runs-on: ubuntu-24.04
+  native-application-gate:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -52,11 +46,15 @@ jobs:
           corepack enable
           corepack install --global "pnpm@$PNPM_VERSION"
           test "$(pnpm --version)" = "$PNPM_VERSION"
-      - name: Install harness dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libdigest-sha-perl ripgrep ruby
+      - name: Prepare Rust and harness dependencies
+        run: |
+          rustup show active-toolchain
+          rustc --version
+          cargo clippy --version
+          brew install ripgrep
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
       - name: Run repository preflight
         run: .agents/scripts/agent-preflight.sh
-      - name: Run fast application gate
-        run: pnpm verify:fast
+      - name: Run native application gate
+        run: pnpm verify:native
