@@ -17,7 +17,7 @@ Define a small repo-local harness that helps coding agents read the right source
 - A semantic reviewer may return `needs_design`, but must not decide unresolved product, financial, security, privacy, or irreversible data questions.
 - App commands must not be invented before real package scripts and paths exist.
 - App implementation is routed through a machine-checked vertical-slice manifest.
-- Implementers, testers, and reviewers use the same generated slice context and implementation review packet.
+- Implementers, testers, and reviewers use the same generated slice readiness and canonical source index. Compact transport never reduces evidence: each role opens every indexed source in full from the exact working tree and head and records the inspected head and paths. The compact implementation review packet inventories the stable change and required handoff while each role reads source content and the cumulative diff directly from the shared repository.
 - Project-scoped custom agents pin executable role, model, reasoning, and intentional subagent permission defaults without duplicating workflow or product truth. Main-agent permissions remain user/session-owned, and the implementer imposes no repo-level sandbox default. The parent turn's live permission selection is reapplied to every child and may supersede any subagent default.
 - Execution is sized by consequence. Fast PR-comment maintenance stays in the root thread with focused checks and PR CI. Standard work adds at most one independent tester or reviewer when it materially improves evidence. High-risk financial/data, migration, security/privacy/secret, auto-commit, release/update, or agent-harness work keeps one production-code writer, its applicable independent review, and one final full relevant local gate. A separate tester is required only when the user requests it or execution independence changes the evidence. Complex structural analysis may use the optional read-only explorer.
 - Independent review has separate correctness/safety and critical-cleanup gates. Cleanup rejects unjustified complexity, incomplete replacements, diff-created orphans, dirty package/API boundaries, unexplained magic logic, and tests that miss the active path.
@@ -99,7 +99,7 @@ ready, in-progress, and completed slices use only Accepted required ADRs
 slice spec/ADR paths and active blocker names resolve
 every active P0/P1 alignment area is referenced by at least one non-completed slice
 every slice declares packages/surfaces, test gates, and an outcome
-implementation review uses the same generated context as implementation/testing
+implementation review points to the same generated readiness and canonical source index as implementation/testing without embedding that index, full source files, or the cumulative diff in the review packet
 the development/review loop retains preflight, root verification, a unique critical-cleanup gate, and cumulative-diff re-review after fixes
 skill frontmatter is valid and skill names match directories
 project agent files retain their required model, reasoning, explicit subagent permission defaults, and implementer omission of a repo-local sandbox default
@@ -140,9 +140,9 @@ The judge contract and required output shape live in `.agents/docs-semantic-revi
 .agents/scripts/implementation-review-packet.sh <slice-id> [base]
 ```
 
-The context generator always includes root instructions, the source contract, current state, active alignment register, and only the selected slice's canonical specs/ADRs. It must label each slice `STOP`, `EVIDENCE ONLY`, `READY`, or `COMPLETE`. `EVIDENCE ONLY` permits the named disposable spike/test work needed to resolve blockers, never production implementation or downstream work.
+The context generator always identifies root instructions, the source contract, current state, active alignment register, and only the selected slice's canonical specs/ADRs. It emits exact paths and heading line numbers rather than copying or summarizing canonical content; before acting, every role opens every indexed source in full from the exact working tree and head and records that evidence. It must label each slice `STOP`, `EVIDENCE ONLY`, `READY`, or `COMPLETE`. `EVIDENCE ONLY` permits the named disposable spike/test work needed to resolve blockers, never production implementation or downstream work.
 
-The implementation review packet combines that exact context with tracked and untracked changes, a compact diff stat, and rename/deletion evidence. It also names the required external handoff: the user's exact task, author assumptions and scope, success criteria, exact verification commands/results, and UI evidence when relevant. The packet cannot infer those inputs.
+The implementation review packet identifies the slice plus exact base/head commits, tracked/untracked inventory, compact diff stat, rename/deletion evidence, and commands for inspecting the complete cumulative diff directly from the shared repository. It points to the separately generated source index instead of embedding that index, file content, or the full diff. It also names the required external handoff: the user's exact task, author assumptions and scope, success criteria, selected execution tier and justification, every canonical source inspected at the exact head commit, exact verification commands/results, UI evidence when relevant, and previous findings/resolutions for re-review. The packet cannot infer those inputs.
 
 ## Subagent execution boundary
 
@@ -155,6 +155,8 @@ High     one writer -> focused checks -> applicable independent review -> one fi
 ```
 
 Do not run multiple source-writing agents concurrently. A separate implementer is optional, not mandatory. A tester is used only when requested or when an independent environment, UI execution, database state, or other execution boundary materially changes the evidence; otherwise the writer runs deterministic commands and the independent reviewer judges the cumulative diff. Docs/harness changes run preflight and harness self-test before the semantic reviewer required by `.agents/docs-semantic-review.md`, but do not run unrelated application builds. UI inspection is required for user-visible behavior only.
+
+An independent role receives a compact handoff containing the exact task, slice ID, review base, selected execution tier and justification, assumptions, success criteria, every canonical source inspected at the exact head commit, verification evidence, and prior findings. It must not require a copy of the root transcript or tool history because the repository, full contents of every indexed canonical source, and cumulative diff are the shared evidence. For pull-request work, collect available review findings while the PR is draft, route them to the sole writer as one batch, and mark the PR ready only for final CI evidence.
 
 Review findings return to the sole writer. The writer reruns affected focused checks, and the reviewer must re-review the entire cumulative diff. The full selected-slice or root application gate runs after review passes rather than before every review round. If that final gate requires a code fix, the changed cumulative diff returns to review and the failed/final gate reruns.
 
@@ -186,6 +188,7 @@ pnpm verify
 - Broken links, stale harness references, invalid skill metadata, and shell syntax errors fail preflight.
 - Custom agent model, reasoning, permission-default ownership, and nesting drift fails preflight.
 - Broken slice dependencies, missing spec/ADR/blocker references, missing test gates, and context-parity drift fail preflight.
+- Slice/review handoffs index the exact canonical sources and stable change without copying full source files, untracked content, or the cumulative diff; every role still opens every indexed source in full and records the inspected head and paths.
 - Harness self-tests prove that representative faults are detected.
 - GitHub pull requests and pushes to `main` that change docs, harness, or project agent configuration files run the deterministic gate.
 - Docs, harness, and project agent configuration changes require an independent semantic verdict.

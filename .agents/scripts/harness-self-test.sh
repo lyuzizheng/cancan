@@ -313,6 +313,35 @@ grep -v 'context-for-slice[.]sh.*slice_id' "$implementation_review.bak" > "$impl
 expect_failure "implementation review loses shared context" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$implementation_review.bak" "$implementation_review"
 
+cp "$implementation_review" "$implementation_review.bak"
+sed 's#context-for-slice[.]sh "[$]slice_id" >/dev/null#context-for-slice.sh "$slice_id"#' "$implementation_review.bak" > "$implementation_review"
+expect_failure "implementation review embeds shared context" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_review.bak" "$implementation_review"
+
+implementation_slices="$TEST_ROOT/.agents/scripts/implementation-slices.rb"
+cp "$implementation_slices" "$implementation_slices.bak"
+ruby -0pi -e 'sub("def print_source_index(path)\n", "def print_source_index(path)\n  puts File.read(File.join(ROOT, path))\n")' "$implementation_slices"
+expect_failure "implementation context copies canonical source content" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_slices.bak" "$implementation_slices"
+
+root_instructions="$TEST_ROOT/AGENTS.md"
+cp "$root_instructions" "$root_instructions.bak"
+sed 's/open the full contents of every listed source from the exact working tree and head/use the generated index/' "$root_instructions.bak" > "$root_instructions"
+expect_failure "root instructions lose full canonical-source inspection" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$root_instructions.bak" "$root_instructions"
+
+implement_workflow="$TEST_ROOT/.agents/workflows/implement-feature.md"
+cp "$implement_workflow" "$implement_workflow.bak"
+sed 's/Open the full contents of every source listed by the generated index/Inspect selected indexed sources/' "$implement_workflow.bak" > "$implement_workflow"
+expect_failure "implement workflow loses full canonical-source inspection" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implement_workflow.bak" "$implement_workflow"
+
+testing_workflow="$TEST_ROOT/.agents/workflows/simulated-testing.md"
+cp "$testing_workflow" "$testing_workflow.bak"
+sed 's/open the full contents of every source listed by the generated index/inspect selected indexed sources/' "$testing_workflow.bak" > "$testing_workflow"
+expect_failure "testing workflow loses full canonical-source inspection" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$testing_workflow.bak" "$testing_workflow"
+
 development_cycle="$TEST_ROOT/.agents/workflows/development-cycle.md"
 cp "$development_cycle" "$development_cycle.bak"
 sed 's#[.]agents/scripts/agent-preflight[.]sh#.agents/scripts/preflight-removed.sh#' "$development_cycle.bak" > "$development_cycle"
@@ -331,6 +360,11 @@ expect_failure "review workflow loses critical cleanup gate" env CANCAN_ROOT="$T
 mv "$review_workflow.bak" "$review_workflow"
 
 cp "$review_workflow" "$review_workflow.bak"
+sed 's/Open the full contents of every source listed by the generated index/Inspect selected indexed sources/' "$review_workflow.bak" > "$review_workflow"
+expect_failure "review workflow loses full canonical-source inspection" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$review_workflow.bak" "$review_workflow"
+
+cp "$review_workflow" "$review_workflow.bak"
 sed 's/Reject overengineering:/Consider complexity:/' "$review_workflow.bak" > "$review_workflow"
 expect_failure "review workflow loses critical cleanup content" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$review_workflow.bak" "$review_workflow"
@@ -340,21 +374,54 @@ sed 's/re-review the entire cumulative diff/review the latest fix/' "$developmen
 expect_failure "development cycle loses whole cumulative diff re-review" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$development_cycle.bak" "$development_cycle"
 
+cp "$development_cycle" "$development_cycle.bak"
+sed 's/Do not duplicate the root transcript or tool history/Copy the root transcript and tool history/' "$development_cycle.bak" > "$development_cycle"
+expect_failure "development cycle loses compact role handoff" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$development_cycle.bak" "$development_cycle"
+
+cp "$review_workflow" "$review_workflow.bak"
+sed 's/inspect the complete cumulative diff directly from the shared repository/use only the packet copy of the diff/' "$review_workflow.bak" > "$review_workflow"
+expect_failure "review workflow stops reading the repository diff" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$review_workflow.bak" "$review_workflow"
+
 printf 'implementation packet untracked probe\n' > "$TEST_ROOT/implementation-packet-probe.txt"
 review_packet="$TEST_ROOT/../cancan-implementation-review-packet.txt"
 CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/implementation-review-packet.sh" desktop-feasibility HEAD > "$review_packet"
 if ! rg -q 'implementation-packet-probe[.]txt' "$review_packet" ||
+   ! rg -q '^# CanCan Implementation Review Handoff$' "$review_packet" ||
+   ! rg -q '^- Base commit: [0-9a-f]{40}$' "$review_packet" ||
+   ! rg -q '^- Head commit: [0-9a-f]{40}$' "$review_packet" ||
    ! rg -q '^# Required External Handoff$' "$review_packet" ||
    ! rg -q '^## Diff stat$' "$review_packet" ||
-   ! rg -q '^## Rename and deletion summary$' "$review_packet"; then
+   ! rg -q '^## Rename and deletion summary$' "$review_packet" ||
+   ! rg -q '^## Repository inspection$' "$review_packet"; then
   echo "Implementation review packet omitted required context or evidence sections."
+  exit 1
+fi
+if rg -q '^implementation packet untracked probe$' "$review_packet"; then
+  echo "Implementation review packet copied untracked file content instead of indexing it."
   exit 1
 fi
 rm "$review_packet" "$TEST_ROOT/implementation-packet-probe.txt"
 
 cp "$implementation_review" "$implementation_review.bak"
+sed 's/^echo "- Tracked changes: git diff --no-ext-diff [$]base_sha -- [.]"$/git diff --no-ext-diff "$base_sha" -- ./' "$implementation_review.bak" > "$implementation_review"
+expect_failure "implementation review copies the full cumulative diff" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_review.bak" "$implementation_review"
+
+cp "$implementation_review" "$implementation_review.bak"
 grep -v 'Exact user request' "$implementation_review.bak" > "$implementation_review"
 expect_failure "implementation review loses required handoff evidence" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_review.bak" "$implementation_review"
+
+cp "$implementation_review" "$implementation_review.bak"
+grep -v 'Selected execution tier and justification' "$implementation_review.bak" > "$implementation_review"
+expect_failure "implementation review loses execution tier" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
+mv "$implementation_review.bak" "$implementation_review"
+
+cp "$implementation_review" "$implementation_review.bak"
+grep -v 'Canonical sources inspected at the exact head commit' "$implementation_review.bak" > "$implementation_review"
+expect_failure "implementation review loses canonical-source evidence" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$implementation_review.bak" "$implementation_review"
 
 cp "$implementation_review" "$implementation_review.bak"

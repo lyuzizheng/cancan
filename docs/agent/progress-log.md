@@ -9,11 +9,12 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Hardened manual and inactivity Vault locking so the renderer invalidates its Vault session, removes document names and rendered page pixels, and shows a non-interactive gate before waiting for the privileged lock command. A failed command now reconciles the actual Vault status and restores the unlocked view only when confirmed; renderer-side reconciliation stops after component teardown.
 - Split application CI into a Linux fast gate for every application pull-request revision and `main` push, plus a path-scoped macOS native gate for native desktop, sidecar/parser, migration, dependency, and toolchain changes. Draft pull requests skip native execution, ready pull requests run it, manual native verification remains available, and both workflows cancel superseded runs.
 - Added real `verify:fast` and `verify:native` root commands while preserving `pnpm verify` as the default local application gate. Updated deterministic CI validation and fault injection to protect safety coverage and runner boundaries instead of requiring every application change to use one fixed macOS job.
+- Replaced duplicated canonical-file and cumulative-diff copies in implementation handoffs with a shared readiness/source index and repository-inspection commands, while requiring every role to read every indexed canonical source in full from the exact head and record that evidence. Independent roles now receive compact task/evidence handoffs, retain the same source and diff coverage, and batch draft-PR review findings before the final local and CI gates.
 
 ### Next
 
 - Continue `vault-manual-import` with the accepted tombstone-first `Delete source file` checkpoint, including explicit confirmation, crash convergence, and exact-hash restore behavior. Keep automatic Inbox/Gmail deletion suppression in their later owning slices.
-- Measure one renderer-only pull request and one native pull request against the new trigger matrix before adding Cargo caching or sidecar artifact-reuse complexity.
+- Measure one renderer-only pull request and one native pull request against the new trigger matrix, plus three bounded tasks against the compact handoff flow, before adding Cargo caching, sidecar artifact reuse, or model-effort changes.
 
 ## 2026-07-19
 

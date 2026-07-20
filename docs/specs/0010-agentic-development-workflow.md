@@ -10,13 +10,13 @@ For each feature slice:
 
 ```text
 1. Select a machine-checked ID from docs/agent/implementation-slices.md
-2. Generate .agents/scripts/context-for-slice.sh <slice-id>
+2. Generate .agents/scripts/context-for-slice.sh <slice-id>, then open every indexed source in full from the exact working tree/head and record that evidence
 3. Obey the packet's STOP, EVIDENCE ONLY, or READY boundary
 4. For EVIDENCE ONLY, run only the named disposable spike/test work and add no production code
 5. Plan files, tests, build, and docs impact from the packet
 6. Select the smallest consequence-based execution tier and only the roles justified by 0012-repo-agent-workflows.md and .agents/workflows/development-cycle.md
 7. Let one production-code writer complete the smallest READY-slice change, focused tests, and required docs/progress updates
-8. Freeze the cumulative diff and generate the shared implementation review packet when the selected tier requires review
+8. Freeze the cumulative diff and generate the compact implementation review packet when the selected tier requires review; reviewers generate the same slice source index separately and open the complete repository diff directly
 9. Route findings back to the writer, rerun affected focused checks, and re-review the cumulative diff as required by 0012
 10. Run the selected tier's final relevant gate once after required code review passes; docs/harness changes follow their deterministic-then-semantic order
 11. Ask the user whenever product, security, or data decisions remain unresolved
@@ -84,7 +84,7 @@ Ask instead of guessing when the decision affects:
 ## Acceptance criteria
 
 - Agents have a repeatable loop for autonomous development.
-- Every implementation, testing, or review role used for a task shares one machine-checked slice context rather than loading all specs or choosing different contracts.
+- Every implementation, testing, or review role used for a task shares one machine-checked readiness and canonical source index, opens every indexed source in full from the exact working tree/head, and records that evidence rather than choosing different contracts.
 - One writer owns production-code changes; independent testing and review are applied only when required by the consequence-based path in `0012-repo-agent-workflows.md`.
 - Documentation/harness validation follows `0012-repo-agent-workflows.md`.
 - UI changes cannot be completed without visual inspection.
