@@ -110,8 +110,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setVaultStatus(nextStatus);
     setError(null);
     setNotice(null);
+    setPassword("");
     setUnassignedDocuments([]);
     setLoadingDocuments(false);
+    setBusy(false);
     return nextSessionId;
   }, [clearViewer]);
 
@@ -222,11 +224,15 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   }, [requestVaultLock, vaultStatus]);
 
   const refreshVaultStatus = useCallback(async () => {
+    const sessionId = vaultSessionId.current;
     setBusy(true);
     setVaultStatus("loading");
     setError(null);
     try {
       const access = await api.vaultAccessStatus();
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
       const nextStatus = access.status;
       documentLoadsAllowed.current = nextStatus === "unlocked";
       setRememberedOnThisMac(access.rememberedOnThisMac);
@@ -238,25 +244,65 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         clearViewer(false);
       }
     } catch (nextError) {
-      setError(commandErrorMessage(nextError));
+      if (vaultSessionId.current === sessionId) {
+        setError(commandErrorMessage(nextError));
+      }
     } finally {
-      setBusy(false);
+      if (vaultSessionId.current === sessionId) {
+        setBusy(false);
+      }
     }
   }, [clearViewer, loadUnassignedDocuments]);
+
+  useEffect(() => {
+    let active = true;
+    let removeListener: (() => void) | undefined;
+    void api.onVaultLocked(() => {
+      if (active) {
+        showVaultGate("locked");
+      }
+    }).then((remove) => {
+      if (active) {
+        removeListener = remove;
+      } else {
+        remove();
+      }
+    }).catch(() => {
+      // Focus and visibility reconciliation remain the fail-closed fallback.
+    });
+
+    const reconcileAfterSystemTransition = () => {
+      if (document.visibilityState === "visible") {
+        void refreshVaultStatus();
+      }
+    };
+    window.addEventListener("focus", reconcileAfterSystemTransition);
+    document.addEventListener("visibilitychange", reconcileAfterSystemTransition);
+    return () => {
+      active = false;
+      removeListener?.();
+      window.removeEventListener("focus", reconcileAfterSystemTransition);
+      document.removeEventListener("visibilitychange", reconcileAfterSystemTransition);
+    };
+  }, [api, refreshVaultStatus, showVaultGate]);
 
   useEffect(() => {
     void refreshVaultStatus();
   }, [refreshVaultStatus]);
 
-  const run = async (action: () => Promise<void>) => {
+  const run = async (action: () => Promise<void>, sessionId?: number) => {
     setBusy(true);
     setError(null);
     try {
       await action();
     } catch (nextError) {
-      setError(commandErrorMessage(nextError));
+      if (sessionId === undefined || vaultSessionId.current === sessionId) {
+        setError(commandErrorMessage(nextError));
+      }
     } finally {
-      setBusy(false);
+      if (sessionId === undefined || vaultSessionId.current === sessionId) {
+        setBusy(false);
+      }
     }
   };
 
@@ -266,24 +312,32 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       return;
     }
 
+    const sessionId = vaultSessionId.current;
     void run(async () => {
       const nextStatus =
         vaultStatus === "not_created"
           ? await api.createVault(password)
           : await api.unlockVault(password);
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
       setPassword("");
       documentLoadsAllowed.current = nextStatus === "unlocked";
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
         await loadUnassignedDocuments();
       }
-    });
+    }, sessionId);
   };
 
   const unlockWithKeychain = () => {
+    const sessionId = vaultSessionId.current;
     void run(async () => {
       try {
         const nextStatus = await api.unlockVaultWithKeychain();
+        if (vaultSessionId.current !== sessionId) {
+          return;
+        }
         documentLoadsAllowed.current = nextStatus === "unlocked";
         setVaultStatus(nextStatus);
         if (nextStatus === "unlocked") {
@@ -291,15 +345,20 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           await loadUnassignedDocuments();
         }
       } catch (nextError) {
+        if (vaultSessionId.current !== sessionId) {
+          return;
+        }
         try {
           const access = await api.vaultAccessStatus();
-          setRememberedOnThisMac(access.rememberedOnThisMac);
+          if (vaultSessionId.current === sessionId) {
+            setRememberedOnThisMac(access.rememberedOnThisMac);
+          }
         } catch {
           // Keep the original Keychain error as the user-facing outcome.
         }
         throw nextError;
       }
-    });
+    }, sessionId);
   };
 
   const updateRemembered = (remembered: boolean) => {

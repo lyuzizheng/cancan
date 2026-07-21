@@ -74,6 +74,7 @@ function createApi(overrides: Partial<VaultApi> = {}) {
         status: "needs_attention",
       }),
     ),
+    onVaultLocked: vi.fn(async () => () => undefined),
     renderSourceDocumentPage: vi.fn(
       async (_documentId: string, pageNumber: number): Promise<RenderedDocumentPage> => ({
         pageCount: 2,
@@ -551,6 +552,85 @@ describe("App manual import orchestration", () => {
     });
     expect(api.lockVault).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("clears document names and rendered pixels when the native host reports a system lock", async () => {
+    let notifyVaultLocked = () => undefined;
+    const removeListener = vi.fn();
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyVaultLocked = handler;
+        return removeListener;
+      }),
+    });
+
+    await mount(api);
+    await click("View document");
+    expect(container.querySelector("img")).not.toBeNull();
+
+    await act(async () => {
+      notifyVaultLocked();
+      await settle();
+    });
+
+    expect(api.lockVault).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain(availableDocument.originalFilename);
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("does not restore an unlocked view from a status request started before a system lock", async () => {
+    let notifyVaultLocked = () => undefined;
+    const access = deferred<VaultAccessStatus>();
+    const api = createApi({
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyVaultLocked = handler;
+        return () => undefined;
+      }),
+      vaultAccessStatus: vi.fn(() => access.promise),
+    });
+
+    await mount(api);
+    await act(async () => {
+      notifyVaultLocked();
+      access.resolve({ rememberedOnThisMac: false, status: "unlocked" });
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("Add file");
+    expect(api.listUnassignedSourceDocuments).not.toHaveBeenCalled();
+  });
+
+  it("does not apply an unlock completion that loses a race with a system lock", async () => {
+    let notifyVaultLocked = () => undefined;
+    const unlock = deferred<VaultStatus>();
+    const api = createApi({
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyVaultLocked = handler;
+        return () => undefined;
+      }),
+      unlockVault: vi.fn(() => unlock.promise),
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        rememberedOnThisMac: false,
+        status: "locked",
+      })),
+    });
+
+    await mount(api);
+    await enterPassword("vault-password");
+    await click("Unlock Vault");
+    await act(async () => {
+      notifyVaultLocked();
+      unlock.resolve("unlocked");
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("Add file");
+    expect(container.querySelector<HTMLInputElement>("#vault-password")?.value).toBe("");
+    expect(api.listUnassignedSourceDocuments).not.toHaveBeenCalled();
   });
 
   it("shows the backend Vault status after a manual lock", async () => {

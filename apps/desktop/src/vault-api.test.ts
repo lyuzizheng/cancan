@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { commandErrorMessage, createVaultApi, type TauriInvoke } from "./vault-api";
+import {
+  commandErrorMessage,
+  createVaultApi,
+  type TauriInvoke,
+  type TauriListen,
+} from "./vault-api";
 
 describe("Vault API", () => {
   it("allows only local and rendered in-memory images through the Tauri CSP", () => {
@@ -26,7 +31,12 @@ describe("Vault API", () => {
       calls.push([command, args]);
       return command === "list_unassigned_source_documents" ? [] : null;
     }) as TauriInvoke;
-    const api = createVaultApi(invoke);
+    const listenedEvents: string[] = [];
+    const subscribe = (async (event) => {
+      listenedEvents.push(event);
+      return () => undefined;
+    }) as TauriListen;
+    const api = createVaultApi(invoke, subscribe);
 
     await api.vaultStatus();
     await api.vaultAccessStatus();
@@ -39,6 +49,8 @@ describe("Vault API", () => {
     await api.deleteSourceDocument("document-1");
     await api.importSourceDocument();
     await api.listUnassignedSourceDocuments();
+    const removeVaultLockListener = await api.onVaultLocked(() => undefined);
+    removeVaultLockListener();
     await api.normalizeSourceDocument("document-1");
     await api.renderSourceDocumentPage("document-1", 2);
 
@@ -57,6 +69,7 @@ describe("Vault API", () => {
       ["normalize_source_document", { documentId: "document-1" }],
       ["render_source_document_page", { documentId: "document-1", pageNumber: 2 }],
     ]);
+    expect(listenedEvents).toEqual(["vault-locked"]);
   });
 
   it("maps command failures to safe user-facing copy", () => {

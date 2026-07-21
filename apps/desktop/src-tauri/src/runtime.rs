@@ -21,7 +21,10 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::Duration,
 };
 use tauri::{AppHandle, State};
@@ -169,6 +172,8 @@ struct RuntimeInner {
     remembered_keys: Arc<dyn RememberedKeyStore>,
     root: PathBuf,
     store: Mutex<Option<ManualImportStore>>,
+    system_lock_generation: AtomicU64,
+    system_session_active: AtomicBool,
 }
 
 trait RememberedKeyStore: Send + Sync {
@@ -275,6 +280,8 @@ impl VaultRuntime {
                 remembered_keys,
                 root,
                 store: Mutex::new(None),
+                system_lock_generation: AtomicU64::new(0),
+                system_session_active: AtomicBool::new(true),
             }),
         }
     }
@@ -293,6 +300,9 @@ impl VaultRuntime {
     }
 
     pub(crate) fn status(&self) -> Result<VaultStatus, RuntimeError> {
+        if !self.system_session_active() {
+            return self.locked_status();
+        }
         let store = self.store()?;
         if store.is_some() {
             return Ok(VaultStatus::Unlocked);
@@ -450,9 +460,30 @@ impl VaultRuntime {
     }
 
     pub(crate) fn lock(&self) -> Result<VaultStatus, RuntimeError> {
-        let mut store = self.store()?;
+        let mut store = self.raw_store()?;
         *store = None;
         self.locked_status()
+    }
+
+    pub(crate) fn request_system_lock(&self) -> Result<(), RuntimeError> {
+        self.inner
+            .system_session_active
+            .store(false, Ordering::SeqCst);
+        self.inner
+            .system_lock_generation
+            .fetch_add(1, Ordering::SeqCst);
+        let mut store = self.raw_store()?;
+        *store = None;
+        Ok(())
+    }
+
+    pub(crate) fn resume_system_session(&self) -> Result<(), RuntimeError> {
+        let mut store = self.raw_store()?;
+        *store = None;
+        self.inner
+            .system_session_active
+            .store(true, Ordering::SeqCst);
+        Ok(())
     }
 
     pub(crate) fn import_selected_document(
@@ -684,10 +715,35 @@ impl VaultRuntime {
     }
 
     fn store(&self) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
+        let system_lock_generation = self.inner.system_lock_generation.load(Ordering::SeqCst);
+        self.store_for_system_generation(system_lock_generation)
+    }
+
+    fn store_for_system_generation(
+        &self,
+        system_lock_generation: u64,
+    ) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
+        if !self.system_session_active() {
+            return Err(RuntimeError::new("vault_locked"));
+        }
+        let store = self.raw_store()?;
+        if !self.system_session_active()
+            || self.inner.system_lock_generation.load(Ordering::SeqCst) != system_lock_generation
+        {
+            return Err(RuntimeError::new("vault_locked"));
+        }
+        Ok(store)
+    }
+
+    fn raw_store(&self) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
         self.inner
             .store
             .lock()
             .map_err(|_| RuntimeError::new("runtime_unavailable"))
+    }
+
+    fn system_session_active(&self) -> bool {
+        self.inner.system_session_active.load(Ordering::SeqCst)
     }
 
     fn load_remembered_master_key(&self) -> Result<Option<Zeroizing<[u8; KEY_LEN]>>, ()> {
@@ -1302,6 +1358,52 @@ mod tests {
                 .unlock(b"synthetic-vault-password")
                 .expect("unlock Vault"),
             VaultStatus::Unlocked
+        );
+    }
+
+    #[test]
+    fn system_lock_waits_for_store_cleanup_and_rejects_a_stale_store_generation() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        let stale_generation = runtime.inner.system_lock_generation.load(Ordering::SeqCst);
+        let held_store = runtime.raw_store().expect("hold active store");
+        let locking_runtime = runtime.clone();
+        let (finished, completion) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            finished
+                .send(locking_runtime.request_system_lock())
+                .expect("send lock result");
+        });
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while runtime.system_session_active() && std::time::Instant::now() < deadline {
+            thread::yield_now();
+        }
+        assert!(!runtime.system_session_active());
+        assert!(completion.try_recv().is_err());
+        drop(held_store);
+        completion
+            .recv_timeout(Duration::from_secs(1))
+            .expect("system lock completion")
+            .expect("system lock");
+        assert_eq!(
+            runtime.status().expect("locked status"),
+            VaultStatus::Locked
+        );
+
+        runtime
+            .resume_system_session()
+            .expect("resume system session");
+        let stale_store = runtime.store_for_system_generation(stale_generation);
+        assert_eq!(
+            stale_store
+                .err()
+                .expect("reject a pre-lock store generation")
+                .code(),
+            "vault_locked"
         );
     }
 

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import type {
   DeleteSourceDocumentArgs,
@@ -21,6 +22,11 @@ export type TauriInvoke = <
   args?: Args,
 ) => Promise<Result>;
 
+export type TauriListen = (
+  event: string,
+  handler: () => void,
+) => Promise<() => void>;
+
 export interface VaultApi {
   createVault(password: string): Promise<VaultStatus>;
   deleteSourceDocument(documentId: string): Promise<boolean>;
@@ -31,6 +37,7 @@ export interface VaultApi {
   normalizeSourceDocument(
     documentId: string,
   ): Promise<SourceDocumentRoutingOutcome>;
+  onVaultLocked(handler: () => void): Promise<() => void>;
   rememberVaultOnThisMac(): Promise<void>;
   renderSourceDocumentPage(
     documentId: string,
@@ -44,8 +51,12 @@ export interface VaultApi {
 
 const tauriInvoke: TauriInvoke = (command, args) =>
   invoke(command, args as Record<string, unknown> | undefined);
+const tauriListen: TauriListen = (event, handler) => listen(event, handler);
 
-export function createVaultApi(call: TauriInvoke = tauriInvoke): VaultApi {
+export function createVaultApi(
+  call: TauriInvoke = tauriInvoke,
+  subscribe: TauriListen = tauriListen,
+): VaultApi {
   return {
     vaultAccessStatus: () => call<VaultAccessStatus>("vault_access_status"),
     vaultStatus: () => call<VaultStatus>("vault_status"),
@@ -80,6 +91,7 @@ export function createVaultApi(call: TauriInvoke = tauriInvoke): VaultApi {
         args,
       );
     },
+    onVaultLocked: (handler) => subscribe("vault-locked", handler),
     renderSourceDocumentPage: (documentId, pageNumber) => {
       const args: RenderSourceDocumentPageArgs = { documentId, pageNumber };
       return call<RenderedDocumentPage, RenderSourceDocumentPageArgs>(
