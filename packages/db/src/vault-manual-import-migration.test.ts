@@ -15,7 +15,7 @@ function migration(name: string): string {
   return readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8");
 }
 
-function openDatabase(maxVersion = 4): DatabaseSync {
+function openDatabase(maxVersion = 5): DatabaseSync {
   process.env.CANCAN_TEST = "1";
   const directory = mkdtempSync(join(tmpdir(), "cancan-test-vault-manual-import-"));
   testDirectories.push(directory);
@@ -28,6 +28,7 @@ function openDatabase(maxVersion = 4): DatabaseSync {
     { version: 2, name: "0002_vault_manual_import.sql" },
     { version: 3, name: "0003_source_document_pending_identity.sql" },
     { version: 4, name: "0004_source_document_pending_source.sql" },
+    { version: 5, name: "0005_money_source_statement_password.sql" },
   ]
     .filter(({ version }) => version <= maxVersion)
     .map(({ version, name }) => ({
@@ -274,5 +275,52 @@ describe("vault manual import migration", () => {
       .all("source-dbs")
       .map((row) => String(row.detail));
     expect(plan.join(" ")).toContain("source_documents_money_source_received");
+  });
+
+  it("stores only one statement-password reference and status per Money Source", () => {
+    const database = openDatabase();
+
+    expect(
+      database
+        .prepare("SELECT * FROM statement_secret_refs WHERE money_source_id = ?")
+        .get("source-dbs"),
+    ).toBeUndefined();
+
+    database
+      .prepare(`
+        INSERT INTO statement_secret_refs(
+          id, money_source_id, secret_storage_key, status, hint_label
+        ) VALUES (?, ?, ?, 'saved', NULL)
+      `)
+      .run("statement-ref-dbs", "source-dbs", "money-source:source-dbs");
+
+    expect(() =>
+      database
+        .prepare(`
+          INSERT INTO statement_secret_refs(
+            id, money_source_id, secret_storage_key, status
+          ) VALUES (?, ?, ?, 'saved')
+        `)
+        .run("duplicate-source", "source-dbs", "another-storage-key"),
+    ).toThrow(/UNIQUE constraint failed/);
+    expect(() =>
+      database
+        .prepare("UPDATE statement_secret_refs SET status = 'not_saved'")
+        .run(),
+    ).toThrow(/CHECK constraint failed/);
+
+    const columns = database
+      .prepare("PRAGMA table_info(statement_secret_refs)")
+      .all()
+      .map((column) => String(column.name));
+    expect(columns).toEqual([
+      "id",
+      "money_source_id",
+      "secret_storage_key",
+      "status",
+      "hint_label",
+      "created_at",
+      "updated_at",
+    ]);
   });
 });

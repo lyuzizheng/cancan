@@ -4,11 +4,13 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   DeleteSourceDocumentArgs,
   NormalizeSourceDocumentArgs,
+  RemoveStatementPasswordArgs,
   RenderedDocumentPage,
   RenderSourceDocumentPageArgs,
   SourceDocumentImportOutcome,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
+  StatementPasswordArgs,
   VaultAccessStatus,
   VaultPasswordArgs,
   VaultStatus,
@@ -39,11 +41,13 @@ export interface VaultApi {
   ): Promise<SourceDocumentRoutingOutcome>;
   onVaultLocked(handler: () => void): Promise<() => void>;
   rememberVaultOnThisMac(): Promise<void>;
+  removeStatementPassword(moneySourceId: string): Promise<void>;
   renderSourceDocumentPage(
     documentId: string,
     pageNumber: number,
   ): Promise<RenderedDocumentPage>;
   saveRecoveryFile(): Promise<boolean>;
+  saveStatementPassword(moneySourceId: string, password: string): Promise<void>;
   unlockVault(password: string): Promise<VaultStatus>;
   unlockVaultWithKeychain(): Promise<VaultStatus>;
   vaultAccessStatus(): Promise<VaultAccessStatus>;
@@ -73,6 +77,17 @@ export function createVaultApi(
       call<VaultStatus>("unlock_vault_with_keychain"),
     rememberVaultOnThisMac: () => call<void>("remember_vault_on_this_mac"),
     forgetVaultOnThisMac: () => call<void>("forget_vault_on_this_mac"),
+    saveStatementPassword: (moneySourceId, password) => {
+      const args: StatementPasswordArgs = { moneySourceId, password };
+      return call<void, StatementPasswordArgs>("save_statement_password", args);
+    },
+    removeStatementPassword: (moneySourceId) => {
+      const args: RemoveStatementPasswordArgs = { moneySourceId };
+      return call<void, RemoveStatementPasswordArgs>(
+        "remove_statement_password",
+        args,
+      );
+    },
     lockVault: () => call<VaultStatus>("lock_vault"),
     saveRecoveryFile: () => call<boolean>("save_recovery_file"),
     deleteSourceDocument: (documentId) => {
@@ -118,6 +133,12 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t save remembered unlock in this Mac’s Keychain.";
     case "forget_failed":
       return "CanCan couldn’t remove remembered unlock from this Mac’s Keychain.";
+    case "statement_password_required":
+      return "Enter the statement password to continue.";
+    case "statement_password_save_failed":
+      return "CanCan couldn’t save that statement password in this Mac’s Keychain.";
+    case "statement_password_remove_failed":
+      return "CanCan couldn’t remove that statement password from this Mac’s Keychain.";
     case "vault_locked":
       return "Unlock your Vault to continue.";
     case "vault_not_created":

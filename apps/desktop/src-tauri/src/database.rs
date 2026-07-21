@@ -41,6 +41,13 @@ const MIGRATIONS: &[Migration] = &[
         ),
         foreign_keys_off: true,
     },
+    Migration {
+        version: 5,
+        sql: include_str!(
+            "../../../../packages/db/migrations/0005_money_source_statement_password.sql"
+        ),
+        foreign_keys_off: false,
+    },
 ];
 
 type StoreResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
@@ -90,6 +97,20 @@ pub struct SourceDocumentView {
 pub struct SourceDocumentFileInput {
     pub mime_type: String,
     pub plaintext: Zeroizing<Vec<u8>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StatementPasswordStatus {
+    PendingDelete,
+    PendingSave,
+    Saved,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct StatementPasswordState {
+    pub(crate) money_source_id: String,
+    pub(crate) secret_storage_key: String,
+    pub(crate) status: StatementPasswordStatus,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -377,6 +398,83 @@ impl ManualImportStore {
         })
     }
 
+    pub(crate) fn statement_password_state(
+        &self,
+        money_source_id: &str,
+    ) -> StoreResult<Option<StatementPasswordState>> {
+        let state = self
+            .connection
+            .query_row(
+                "SELECT money_source_id, secret_storage_key, status \
+                 FROM statement_secret_refs WHERE money_source_id = ?1",
+                [money_source_id],
+                statement_password_state_from_row,
+            )
+            .optional()?;
+        Ok(state)
+    }
+
+    pub(crate) fn pending_statement_password_states(
+        &self,
+    ) -> StoreResult<Vec<StatementPasswordState>> {
+        let mut statement = self.connection.prepare(
+            "SELECT money_source_id, secret_storage_key, status \
+             FROM statement_secret_refs WHERE status <> 'saved' ORDER BY money_source_id",
+        )?;
+        let rows = statement.query_map([], statement_password_state_from_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub(crate) fn begin_statement_password_save(
+        &self,
+        money_source_id: &str,
+        secret_storage_key: &str,
+    ) -> StoreResult<()> {
+        self.connection.execute(
+            "INSERT INTO statement_secret_refs( \
+               id, money_source_id, secret_storage_key, status, hint_label \
+             ) VALUES (?1, ?2, ?3, 'pending_save', NULL)",
+            params![
+                format!("statement-secret-ref:{money_source_id}"),
+                money_source_id,
+                secret_storage_key
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn mark_statement_password_saved(&self, money_source_id: &str) -> StoreResult<()> {
+        update_statement_password_status(&self.connection, money_source_id, "pending_save", "saved")
+    }
+
+    pub(crate) fn begin_statement_password_delete(&self, money_source_id: &str) -> StoreResult<()> {
+        update_statement_password_status(
+            &self.connection,
+            money_source_id,
+            "saved",
+            "pending_delete",
+        )
+    }
+
+    pub(crate) fn remove_statement_password_ref(
+        &self,
+        money_source_id: &str,
+        expected_status: &str,
+    ) -> StoreResult<()> {
+        let changed = self.connection.execute(
+            "DELETE FROM statement_secret_refs WHERE money_source_id = ?1 AND status = ?2",
+            params![money_source_id, expected_status],
+        )?;
+        if changed != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "statement password state changed",
+            )
+            .into());
+        }
+        Ok(())
+    }
+
     pub fn apply_trusted_classification(
         &mut self,
         input: &TrustedDocumentClassification<'_>,
@@ -553,6 +651,51 @@ impl ManualImportStore {
         self.files.remove_unreferenced(&referenced)?;
         Ok(())
     }
+}
+
+fn statement_password_state_from_row(row: &Row<'_>) -> rusqlite::Result<StatementPasswordState> {
+    let status = match row.get::<_, String>(2)?.as_str() {
+        "pending_delete" => StatementPasswordStatus::PendingDelete,
+        "pending_save" => StatementPasswordStatus::PendingSave,
+        "saved" => StatementPasswordStatus::Saved,
+        _ => {
+            return Err(rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid statement password status",
+                )
+                .into(),
+            ));
+        }
+    };
+    Ok(StatementPasswordState {
+        money_source_id: row.get(0)?,
+        secret_storage_key: row.get(1)?,
+        status,
+    })
+}
+
+fn update_statement_password_status(
+    connection: &Connection,
+    money_source_id: &str,
+    expected_status: &str,
+    next_status: &str,
+) -> StoreResult<()> {
+    let changed = connection.execute(
+        "UPDATE statement_secret_refs SET status = ?1, updated_at = CURRENT_TIMESTAMP \
+         WHERE money_source_id = ?2 AND status = ?3",
+        params![next_status, money_source_id, expected_status],
+    )?;
+    if changed != 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "statement password state changed",
+        )
+        .into());
+    }
+    Ok(())
 }
 
 fn source_document_from_row(row: &Row<'_>) -> rusqlite::Result<SourceDocumentView> {
@@ -1722,6 +1865,73 @@ mod tests {
             !database_bytes
                 .windows("source-dbs".len())
                 .any(|part| part == b"source-dbs")
+        );
+    }
+
+    #[test]
+    fn persists_only_statement_password_reference_state() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let store = open_store(root.path());
+
+        assert_eq!(
+            store
+                .statement_password_state("source-dbs")
+                .expect("initial statement password state"),
+            None
+        );
+
+        store
+            .begin_statement_password_save("source-dbs", "money-source:source-dbs")
+            .expect("begin save");
+        assert_eq!(
+            store
+                .statement_password_state("source-dbs")
+                .expect("pending save state"),
+            Some(StatementPasswordState {
+                money_source_id: "source-dbs".to_owned(),
+                secret_storage_key: "money-source:source-dbs".to_owned(),
+                status: StatementPasswordStatus::PendingSave,
+            })
+        );
+        assert_eq!(
+            store
+                .pending_statement_password_states()
+                .expect("pending states")
+                .len(),
+            1
+        );
+
+        store
+            .mark_statement_password_saved("source-dbs")
+            .expect("finish save");
+        assert_eq!(
+            store
+                .statement_password_state("source-dbs")
+                .expect("saved state")
+                .expect("saved reference")
+                .status,
+            StatementPasswordStatus::Saved
+        );
+
+        store
+            .begin_statement_password_delete("source-dbs")
+            .expect("begin delete");
+        assert_eq!(
+            store
+                .statement_password_state("source-dbs")
+                .expect("pending delete state")
+                .expect("pending delete reference")
+                .status,
+            StatementPasswordStatus::PendingDelete
+        );
+        store
+            .remove_statement_password_ref("source-dbs", "pending_delete")
+            .expect("finish delete");
+        assert_eq!(
+            store
+                .statement_password_state("source-dbs")
+                .expect("cleared statement password state"),
+            None
         );
     }
 }

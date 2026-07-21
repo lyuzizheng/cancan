@@ -2,7 +2,7 @@ use crate::{
     database::{
         DATABASE_FILE_NAME, ManualImportStore, SourceDocumentFileInput, SourceDocumentImport,
         SourceDocumentImportOutcome, SourceDocumentImportStatus, SourceDocumentRoutingOutcome,
-        TrustedAccountCandidate, TrustedDocumentClassification,
+        StatementPasswordStatus, TrustedAccountCandidate, TrustedDocumentClassification,
     },
     vault::{
         create_password_wrapper, create_recovery_file, open_password_wrapper,
@@ -50,6 +50,7 @@ const RECOVERY_STATUS_MAGIC: &[u8; 8] = b"CCRECST1";
 const KEYCHAIN_ACCOUNT: &str = "active-vault";
 const KEYCHAIN_ITEM_NOT_FOUND_STATUS: i32 = -25300;
 const KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.remembered-vault";
+const STATEMENT_PASSWORD_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.statement-password";
 const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
@@ -181,6 +182,7 @@ pub(crate) struct VaultRuntime {
 struct RuntimeInner {
     remembered_keys: Arc<dyn RememberedKeyStore>,
     root: PathBuf,
+    statement_passwords: Arc<dyn StatementPasswordStore>,
     store: Mutex<Option<ManualImportStore>>,
     system_lock_generation: AtomicU64,
     system_session_active: AtomicBool,
@@ -191,6 +193,12 @@ trait RememberedKeyStore: Send + Sync {
     fn is_present(&self) -> Result<bool, ()>;
     fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
     fn save(&self, secret: &[u8]) -> Result<(), ()>;
+}
+
+trait StatementPasswordStore: Send + Sync {
+    fn delete(&self, secret_ref: &str) -> Result<(), ()>;
+    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
+    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()>;
 }
 
 #[derive(Clone)]
@@ -279,16 +287,104 @@ impl RememberedKeyStore for KeychainRememberedKeyStore {
     }
 }
 
-impl VaultRuntime {
-    pub(crate) fn new(root: PathBuf) -> Self {
-        Self::with_remembered_keys(root, Arc::new(KeychainRememberedKeyStore::production()))
+#[derive(Clone)]
+struct KeychainStatementPasswordStore {
+    service: String,
+}
+
+impl KeychainStatementPasswordStore {
+    fn production() -> Self {
+        Self::new(STATEMENT_PASSWORD_KEYCHAIN_SERVICE)
     }
 
+    fn new(service: impl Into<String>) -> Self {
+        Self {
+            service: service.into(),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn entry(&self, secret_ref: &str) -> Result<KeyringEntry, ()> {
+        KeychainCredential::build(MacKeychainDomain::User, &self.service, secret_ref)
+            .map_err(|_| ())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn entry(&self, _secret_ref: &str) -> Result<KeyringEntry, ()> {
+        Err(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn item_query(&self, secret_ref: &str) -> Result<ItemSearchOptions, ()> {
+        let keychain =
+            SecKeychain::default_for_domain(SecPreferencesDomain::User).map_err(|_| ())?;
+        let mut query = ItemSearchOptions::new();
+        query
+            .keychains(&[keychain])
+            .class(ItemClass::generic_password())
+            .service(&self.service)
+            .account(secret_ref)
+            .limit(1);
+        Ok(query)
+    }
+}
+
+impl StatementPasswordStore for KeychainStatementPasswordStore {
+    #[cfg(target_os = "macos")]
+    fn delete(&self, secret_ref: &str) -> Result<(), ()> {
+        match self.item_query(secret_ref)?.delete() {
+            Ok(()) => Ok(()),
+            Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn delete(&self, _secret_ref: &str) -> Result<(), ()> {
+        Err(())
+    }
+
+    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+        match self.entry(secret_ref)?.get_secret() {
+            Ok(secret) => Ok(Some(Zeroizing::new(secret))),
+            Err(KeyringError::NoEntry) => Ok(None),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()> {
+        self.entry(secret_ref)?.set_secret(secret).map_err(|_| ())
+    }
+}
+
+impl VaultRuntime {
+    pub(crate) fn new(root: PathBuf) -> Self {
+        Self::with_secret_stores(
+            root,
+            Arc::new(KeychainRememberedKeyStore::production()),
+            Arc::new(KeychainStatementPasswordStore::production()),
+        )
+    }
+
+    #[cfg(test)]
     fn with_remembered_keys(root: PathBuf, remembered_keys: Arc<dyn RememberedKeyStore>) -> Self {
+        Self::with_secret_stores(
+            root,
+            remembered_keys,
+            Arc::new(KeychainStatementPasswordStore::production()),
+        )
+    }
+
+    fn with_secret_stores(
+        root: PathBuf,
+        remembered_keys: Arc<dyn RememberedKeyStore>,
+        statement_passwords: Arc<dyn StatementPasswordStore>,
+    ) -> Self {
         Self {
             inner: Arc::new(RuntimeInner {
                 remembered_keys,
                 root,
+                statement_passwords,
                 store: Mutex::new(None),
                 system_lock_generation: AtomicU64::new(0),
                 system_session_active: AtomicBool::new(true),
@@ -432,6 +528,7 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("invalid_credentials"))?;
         let opened = ManualImportStore::open_existing(&self.inner.root, master_key)
             .map_err(|_| RuntimeError::new("invalid_vault"))?;
+        self.reconcile_statement_passwords(&opened)?;
         *store = Some(opened);
         Ok(VaultStatus::Unlocked)
     }
@@ -452,6 +549,7 @@ impl VaultRuntime {
         };
         match ManualImportStore::open_existing(&self.inner.root, master_key) {
             Ok(opened) => {
+                self.reconcile_statement_passwords(&opened)?;
                 *store = Some(opened);
                 Ok(VaultStatus::Unlocked)
             }
@@ -592,6 +690,129 @@ impl VaultRuntime {
     fn require_unlocked(&self) -> Result<(), RuntimeError> {
         if self.store()?.is_none() {
             return Err(RuntimeError::new("vault_locked"));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn save_statement_password(
+        &self,
+        money_source_id: &str,
+        password: &[u8],
+    ) -> Result<(), RuntimeError> {
+        let store = self.store()?;
+        let store = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        if money_source_id.is_empty() {
+            return Err(RuntimeError::new("invalid_source_request"));
+        }
+        if password.is_empty() {
+            return Err(RuntimeError::new("statement_password_required"));
+        }
+        self.reconcile_statement_passwords(store)?;
+        let state = store
+            .statement_password_state(money_source_id)
+            .map_err(|_| RuntimeError::new("invalid_source_request"))?;
+        match state {
+            Some(state) if state.status == StatementPasswordStatus::Saved => {
+                self.save_verified_statement_password(&state.secret_storage_key, password)
+            }
+            None => {
+                let secret_storage_key = statement_password_storage_key(money_source_id);
+                store
+                    .begin_statement_password_save(money_source_id, &secret_storage_key)
+                    .map_err(|_| RuntimeError::new("invalid_source_request"))?;
+                self.save_verified_statement_password(&secret_storage_key, password)?;
+                store
+                    .mark_statement_password_saved(money_source_id)
+                    .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
+                Ok(())
+            }
+            Some(_) => Err(RuntimeError::new("statement_password_state_invalid")),
+        }
+    }
+
+    fn save_verified_statement_password(
+        &self,
+        secret_ref: &str,
+        password: &[u8],
+    ) -> Result<(), RuntimeError> {
+        self.inner
+            .statement_passwords
+            .save(secret_ref, password)
+            .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
+        let saved = self
+            .inner
+            .statement_passwords
+            .load(secret_ref)
+            .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
+        if saved.as_ref().map(|secret| secret.as_slice()) != Some(password) {
+            return Err(RuntimeError::new("statement_password_save_failed"));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn remove_statement_password(
+        &self,
+        money_source_id: &str,
+    ) -> Result<(), RuntimeError> {
+        let store = self.store()?;
+        let store = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        if money_source_id.is_empty() {
+            return Err(RuntimeError::new("invalid_source_request"));
+        }
+        self.reconcile_statement_passwords(store)?;
+        let state = store
+            .statement_password_state(money_source_id)
+            .map_err(|_| RuntimeError::new("invalid_source_request"))?;
+        match state {
+            None => Ok(()),
+            Some(state) if state.status == StatementPasswordStatus::Saved => {
+                store
+                    .begin_statement_password_delete(money_source_id)
+                    .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
+                self.inner
+                    .statement_passwords
+                    .delete(&state.secret_storage_key)
+                    .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
+                store
+                    .remove_statement_password_ref(money_source_id, "pending_delete")
+                    .map_err(|_| RuntimeError::new("statement_password_remove_failed"))
+            }
+            Some(_) => Err(RuntimeError::new("statement_password_state_invalid")),
+        }
+    }
+
+    fn reconcile_statement_passwords(&self, store: &ManualImportStore) -> Result<(), RuntimeError> {
+        let states = store
+            .pending_statement_password_states()
+            .map_err(|_| RuntimeError::new("statement_password_state_invalid"))?;
+        for state in states {
+            match state.status {
+                StatementPasswordStatus::PendingSave => {
+                    self.inner
+                        .statement_passwords
+                        .delete(&state.secret_storage_key)
+                        .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
+                    store
+                        .remove_statement_password_ref(&state.money_source_id, "pending_save")
+                        .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
+                }
+                StatementPasswordStatus::PendingDelete => {
+                    self.inner
+                        .statement_passwords
+                        .delete(&state.secret_storage_key)
+                        .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
+                    store
+                        .remove_statement_password_ref(&state.money_source_id, "pending_delete")
+                        .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
+                }
+                StatementPasswordStatus::Saved => {
+                    return Err(RuntimeError::new("statement_password_state_invalid"));
+                }
+            }
         }
         Ok(())
     }
@@ -901,6 +1122,36 @@ pub(crate) async fn forget_vault_on_this_mac(
         .await
         .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
         .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn save_statement_password(
+    money_source_id: String,
+    password: String,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<(), VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    let password = Zeroizing::new(password);
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.save_statement_password(&money_source_id, password.as_bytes())
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn remove_statement_password(
+    money_source_id: String,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<(), VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.remove_statement_password(&money_source_id)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -1260,6 +1511,10 @@ fn random_identifier(prefix: &str) -> String {
     identifier
 }
 
+fn statement_password_storage_key(money_source_id: &str) -> String {
+    format!("money-source:{money_source_id}")
+}
+
 fn candidate_name() -> String {
     let mut random = [0_u8; 8];
     OsRng.fill_bytes(&mut random);
@@ -1309,7 +1564,7 @@ mod tests {
     use super::*;
     use crate::database::SourceDocumentImportStatus;
     use crate::vault::open_recovery_file;
-    use std::{thread, time::Duration};
+    use std::{collections::HashMap, thread, time::Duration};
 
     #[derive(Default)]
     struct MemoryRememberedKeyStore {
@@ -1399,6 +1654,74 @@ mod tests {
         fn save(&self, _secret: &[u8]) -> Result<(), ()> {
             Err(())
         }
+    }
+
+    #[derive(Default)]
+    struct MemoryStatementPasswordStore {
+        fail_delete: AtomicBool,
+        fail_save: AtomicBool,
+        secrets: Mutex<HashMap<String, Vec<u8>>>,
+    }
+
+    impl StatementPasswordStore for MemoryStatementPasswordStore {
+        fn delete(&self, secret_ref: &str) -> Result<(), ()> {
+            if self.fail_delete.load(Ordering::SeqCst) {
+                return Err(());
+            }
+            self.secrets.lock().map_err(|_| ())?.remove(secret_ref);
+            Ok(())
+        }
+
+        fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+            Ok(self
+                .secrets
+                .lock()
+                .map_err(|_| ())?
+                .get(secret_ref)
+                .cloned()
+                .map(Zeroizing::new))
+        }
+
+        fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()> {
+            if self.fail_save.load(Ordering::SeqCst) {
+                return Err(());
+            }
+            self.secrets
+                .lock()
+                .map_err(|_| ())?
+                .insert(secret_ref.to_owned(), secret.to_vec());
+            Ok(())
+        }
+    }
+
+    fn statement_password_runtime(
+        root: &Path,
+        statement_passwords: Arc<dyn StatementPasswordStore>,
+    ) -> VaultRuntime {
+        let runtime = VaultRuntime::with_secret_stores(
+            root.to_path_buf(),
+            Arc::new(MemoryRememberedKeyStore::default()),
+            statement_passwords,
+        );
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source("source-dbs", "dbs", "DBS", "bank")
+            .expect("seed Money Source");
+        runtime
+    }
+
+    fn statement_password_state(
+        runtime: &VaultRuntime,
+    ) -> Option<crate::database::StatementPasswordState> {
+        runtime
+            .store()
+            .expect("active store")
+            .as_ref()
+            .expect("unlocked store")
+            .statement_password_state("source-dbs")
+            .expect("statement password state")
     }
 
     #[test]
@@ -1864,6 +2187,255 @@ mod tests {
         );
     }
 
+    #[test]
+    fn saves_updates_and_removes_one_statement_password_per_money_source() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let statement_passwords = Arc::new(MemoryStatementPasswordStore::default());
+        let runtime =
+            statement_password_runtime(&parent.path().join("vault"), statement_passwords.clone());
+
+        runtime
+            .save_statement_password("source-dbs", b"first-statement-password")
+            .expect("save statement password");
+        let first_state = statement_password_state(&runtime).expect("saved state");
+        let secret_ref = first_state.secret_storage_key;
+        assert_eq!(first_state.status, StatementPasswordStatus::Saved);
+        assert_eq!(
+            statement_passwords
+                .load(&secret_ref)
+                .expect("load statement password")
+                .expect("saved statement password")
+                .as_slice(),
+            b"first-statement-password"
+        );
+
+        runtime
+            .save_statement_password("source-dbs", b"updated-statement-password")
+            .expect("replace statement password");
+        let updated_state = statement_password_state(&runtime).expect("updated state");
+        assert_eq!(updated_state.secret_storage_key, secret_ref);
+        assert_eq!(
+            statement_passwords
+                .load(&secret_ref)
+                .expect("load updated statement password")
+                .expect("updated statement password")
+                .as_slice(),
+            b"updated-statement-password"
+        );
+
+        runtime
+            .remove_statement_password("source-dbs")
+            .expect("remove statement password");
+        assert_eq!(statement_password_state(&runtime), None);
+        assert!(
+            statement_passwords
+                .load(&secret_ref)
+                .expect("load removed statement password")
+                .is_none()
+        );
+
+        runtime
+            .save_statement_password("source-dbs", b"locked-statement-password")
+            .expect("save before lock");
+        let locked_state = statement_password_state(&runtime).expect("state before lock");
+        runtime.lock().expect("lock Vault");
+        assert_eq!(
+            runtime
+                .save_statement_password("source-dbs", b"password")
+                .expect_err("reject save while locked")
+                .code(),
+            "vault_locked"
+        );
+        assert_eq!(
+            runtime
+                .remove_statement_password("source-dbs")
+                .expect_err("reject remove while locked")
+                .code(),
+            "vault_locked"
+        );
+        runtime
+            .unlock(b"synthetic-vault-password")
+            .expect("unlock Vault");
+        assert_eq!(
+            statement_password_state(&runtime).expect("state after locked commands"),
+            locked_state
+        );
+    }
+
+    #[test]
+    fn keeps_statement_password_reference_state_consistent_when_keychain_fails() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let statement_passwords = Arc::new(MemoryStatementPasswordStore::default());
+        let runtime =
+            statement_password_runtime(&parent.path().join("vault"), statement_passwords.clone());
+
+        statement_passwords.fail_save.store(true, Ordering::SeqCst);
+        assert_eq!(
+            runtime
+                .save_statement_password("source-dbs", b"statement-password")
+                .expect_err("surface Keychain save failure")
+                .code(),
+            "statement_password_save_failed"
+        );
+        assert_eq!(
+            statement_password_state(&runtime)
+                .expect("recoverable save state")
+                .status,
+            StatementPasswordStatus::PendingSave
+        );
+
+        statement_passwords.fail_save.store(false, Ordering::SeqCst);
+        runtime
+            .save_statement_password("source-dbs", b"statement-password")
+            .expect("save statement password");
+        statement_passwords
+            .fail_delete
+            .store(true, Ordering::SeqCst);
+        assert_eq!(
+            runtime
+                .remove_statement_password("source-dbs")
+                .expect_err("surface Keychain remove failure")
+                .code(),
+            "statement_password_remove_failed"
+        );
+        assert_eq!(
+            statement_password_state(&runtime)
+                .expect("recoverable delete state")
+                .status,
+            StatementPasswordStatus::PendingDelete
+        );
+        statement_passwords
+            .fail_delete
+            .store(false, Ordering::SeqCst);
+        runtime
+            .remove_statement_password("source-dbs")
+            .expect("retry pending delete");
+        assert_eq!(statement_password_state(&runtime), None);
+    }
+
+    #[test]
+    fn reconciles_statement_password_crash_boundaries_after_unlock() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let statement_passwords = Arc::new(MemoryStatementPasswordStore::default());
+        let runtime =
+            statement_password_runtime(&parent.path().join("vault"), statement_passwords.clone());
+        let storage_key = statement_password_storage_key("source-dbs");
+
+        runtime
+            .store()
+            .expect("active store")
+            .as_ref()
+            .expect("unlocked store")
+            .begin_statement_password_save("source-dbs", &storage_key)
+            .expect("persist pending save");
+        statement_passwords
+            .save(&storage_key, b"unverified-different-password")
+            .expect("simulate unverified Keychain write before crash");
+        runtime.lock().expect("simulate process lock");
+        runtime
+            .unlock(b"synthetic-vault-password")
+            .expect("unlock and discard unverified pending save");
+        assert_eq!(statement_password_state(&runtime), None);
+        assert!(
+            statement_passwords
+                .load(&storage_key)
+                .expect("load discarded pending secret")
+                .is_none()
+        );
+
+        runtime
+            .save_statement_password("source-dbs", b"verified-statement-password")
+            .expect("save verified password after recovery");
+        runtime
+            .store()
+            .expect("active store")
+            .as_ref()
+            .expect("unlocked store")
+            .begin_statement_password_delete("source-dbs")
+            .expect("persist pending delete");
+        statement_passwords
+            .delete(&storage_key)
+            .expect("simulate Keychain delete before crash");
+        runtime.lock().expect("simulate second process lock");
+        runtime
+            .unlock(b"synthetic-vault-password")
+            .expect("unlock and reconcile pending delete");
+        assert_eq!(statement_password_state(&runtime), None);
+    }
+
+    #[test]
+    fn unlock_paths_propagate_statement_password_reconciliation_failures() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let statement_passwords = Arc::new(MemoryStatementPasswordStore::default());
+        let runtime =
+            statement_password_runtime(&parent.path().join("vault"), statement_passwords.clone());
+
+        runtime
+            .save_statement_password("source-dbs", b"verified-statement-password")
+            .expect("save statement password");
+        runtime
+            .store()
+            .expect("active store")
+            .as_ref()
+            .expect("unlocked store")
+            .begin_statement_password_delete("source-dbs")
+            .expect("persist pending delete");
+        statement_passwords
+            .fail_delete
+            .store(true, Ordering::SeqCst);
+        runtime.lock().expect("lock Vault");
+
+        assert_eq!(
+            runtime
+                .unlock(b"synthetic-vault-password")
+                .expect_err("surface password-unlock reconciliation failure")
+                .code(),
+            "statement_password_remove_failed"
+        );
+        assert!(runtime.store().expect("runtime store").is_none());
+
+        statement_passwords
+            .fail_delete
+            .store(false, Ordering::SeqCst);
+        runtime
+            .unlock(b"synthetic-vault-password")
+            .expect("retry password unlock");
+        assert_eq!(statement_password_state(&runtime), None);
+
+        runtime
+            .save_statement_password("source-dbs", b"replacement-statement-password")
+            .expect("save replacement password");
+        runtime
+            .store()
+            .expect("active store")
+            .as_ref()
+            .expect("unlocked store")
+            .begin_statement_password_delete("source-dbs")
+            .expect("persist second pending delete");
+        runtime.remember_on_this_mac().expect("remember Vault");
+        statement_passwords
+            .fail_delete
+            .store(true, Ordering::SeqCst);
+        runtime.lock().expect("lock Vault again");
+
+        assert_eq!(
+            runtime
+                .unlock_with_keychain()
+                .expect_err("surface Keychain-unlock reconciliation failure")
+                .code(),
+            "statement_password_remove_failed"
+        );
+        assert!(runtime.store().expect("runtime store").is_none());
+
+        statement_passwords
+            .fail_delete
+            .store(false, Ordering::SeqCst);
+        runtime
+            .unlock_with_keychain()
+            .expect("retry Keychain unlock");
+        assert_eq!(statement_password_state(&runtime), None);
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn production_keychain_store_round_trips_binary_secret() {
@@ -1896,6 +2468,59 @@ mod tests {
         );
         restarted.delete().expect("delete Keychain secret");
         assert!(!restarted.is_present().expect("test entry is absent"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn production_statement_password_store_replaces_and_removes_secret() {
+        struct Cleanup {
+            secret_ref: String,
+            store: KeychainStatementPasswordStore,
+        }
+
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = self.store.delete(&self.secret_ref);
+            }
+        }
+
+        let service = format!(
+            "{STATEMENT_PASSWORD_KEYCHAIN_SERVICE}.test.{}",
+            candidate_name()
+        );
+        let secret_ref = random_identifier("statement-password-test");
+        let store = KeychainStatementPasswordStore::new(service);
+        store
+            .delete(&secret_ref)
+            .expect("remove pre-existing test entry");
+        let _cleanup = Cleanup {
+            secret_ref: secret_ref.clone(),
+            store: store.clone(),
+        };
+
+        store
+            .save(&secret_ref, b"first-synthetic-password")
+            .expect("save statement password");
+        store
+            .save(&secret_ref, b"updated-synthetic-password")
+            .expect("replace statement password");
+        assert_eq!(
+            store
+                .load(&secret_ref)
+                .expect("load statement password")
+                .expect("saved statement password exists")
+                .as_slice(),
+            b"updated-synthetic-password"
+        );
+        store
+            .delete(&secret_ref)
+            .expect("delete statement password");
+        assert!(
+            store
+                .load(&secret_ref)
+                .expect("load deleted statement password")
+                .is_none()
+        );
     }
 
     #[test]
