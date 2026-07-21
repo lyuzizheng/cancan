@@ -45,6 +45,8 @@ describe("Vault API", () => {
     await api.unlockVaultWithKeychain();
     await api.rememberVaultOnThisMac();
     await api.forgetVaultOnThisMac();
+    await api.saveStatementPassword("source-dbs", "statement-password");
+    await api.removeStatementPassword("source-dbs");
     await api.lockVault();
     await api.saveRecoveryFile();
     await api.deleteSourceDocument("document-1");
@@ -63,6 +65,11 @@ describe("Vault API", () => {
       ["unlock_vault_with_keychain", undefined],
       ["remember_vault_on_this_mac", undefined],
       ["forget_vault_on_this_mac", undefined],
+      [
+        "save_statement_password",
+        { moneySourceId: "source-dbs", password: "statement-password" },
+      ],
+      ["remove_statement_password", { moneySourceId: "source-dbs" }],
       ["lock_vault", undefined],
       ["save_recovery_file", undefined],
       ["delete_source_document", { documentId: "document-1" }],
@@ -83,6 +90,14 @@ describe("Vault API", () => {
     );
     expect(commandErrorMessage({ code: "remember_failed" })).toBe(
       "CanCan couldn’t save remembered unlock in this Mac’s Keychain.",
+    );
+    expect(
+      commandErrorMessage({ code: "statement_password_save_failed" }),
+    ).toBe("CanCan couldn’t save that statement password in this Mac’s Keychain.");
+    expect(
+      commandErrorMessage({ code: "statement_password_remove_failed" }),
+    ).toBe(
+      "CanCan couldn’t remove that statement password from this Mac’s Keychain.",
     );
     expect(commandErrorMessage({ code: "recovery_status_failed" })).toBe(
       "The recovery file was saved, but CanCan couldn’t record setup. Keep the file private and try again.",

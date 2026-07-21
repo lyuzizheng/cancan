@@ -12,6 +12,13 @@ export type NormalizeSourceDocumentArgs = { documentId: string };
 
 export type DeleteSourceDocumentArgs = { documentId: string };
 
+export type StatementPasswordArgs = {
+  moneySourceId: string;
+  password: string;
+};
+
+export type RemoveStatementPasswordArgs = { moneySourceId: string };
+
 export type RenderSourceDocumentPageArgs = {
   documentId: string;
   pageNumber: number;

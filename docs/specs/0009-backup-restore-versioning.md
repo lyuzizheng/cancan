@@ -32,6 +32,12 @@ Rules:
 - system sleep/lock locks the vault immediately;
 - fifteen minutes of inactivity locks the vault in MVP rather than adding another settings panel.
 
+## Vault process ownership
+
+Before constructing or opening the Vault runtime, the desktop process must acquire one exclusive OS-backed lock from a persistent sibling file in the application-data directory. The lock is held for the complete process lifetime and released by the operating system on normal exit or crash.
+
+Lock contention or an ownership-check failure must stop the second process before it can open SQLCipher, reconcile encrypted files, create recovery state, or mutate the Vault. The lock file must remain outside the `vault/` directory so first-run ownership does not make an uncreated Vault look present. This process boundary protects the desktop application; it does not replace SQLite transactions or file/database rollback and recovery behavior.
+
 ## Internal key model
 
 Keep implementation robust but hidden:
@@ -222,6 +228,7 @@ After restore on a new device, CanCan opens the restored non-secret data and a r
 - Backup has manifest, checksums, schema/app version markers.
 - User-facing security is limited to vault password, optional Keychain remembering, and one recovery file.
 - MVP has no server recovery, key-rotation UI, or separate backup password.
+- A desktop process acquires exclusive Vault ownership before runtime construction; contention and lock errors fail closed before reconciliation or mutation.
 - Internal DB/file/identifier/backup keys are context-separated without becoming user settings.
 - New app can migrate old vaults when supported.
 - Old app refuses newer vaults with a clear upgrade message.
