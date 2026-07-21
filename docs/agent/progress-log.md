@@ -2,6 +2,16 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-22
+
+### Completed
+
+- Added protected-PDF detection and local unlock to `vault-manual-import`. Core Graphics inspects and verifies the encrypted PDF only inside Rust, `Use once` keeps a zeroizing document password only for the unlocked Vault session, and `Update saved password` can reach Keychain only after that password successfully unlocks the selected document. A security-scoped source chooser exposes only configured Money Source IDs, display names, and saved-password availability; choosing a source scopes the credential but does not assign the document. Locked rows remain visible as `Password needed`, automatically try the selected source's saved password, and clear password UI/session state on Vault lock without creating an unlocked duplicate. An unlocked protected statement is explicitly view-only: routing stays unavailable until protected-PDF extraction exists, while malformed PDFs fail closed during inspection.
+
+### Next
+
+- Continue `vault-manual-import` with the separate `Save a copy` checkpoint: host-owned warning and save picker, atomic plaintext export to the selected destination, cancellation/failure cleanup, and focused browser/native coverage. Keep non-PDF viewing and broader safe source display/list work separate.
+
 ## 2026-07-21
 
 ### Completed
@@ -13,7 +23,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Continue `vault-manual-import` with protected-PDF detection and the `Use once` / `Update saved password` unlock flow, using the narrow Money Source choice required when a protected file cannot reveal its provider. `Save a copy`, non-PDF viewing, and the broader safe source display/list checkpoints remain separate. Recovery import remains in `backup-release`; keep automatic Inbox/Gmail tombstone suppression in their later owning slices.
+- Completed on 2026-07-22. `Save a copy`, non-PDF viewing, and the broader safe source display/list checkpoints remain separate. Recovery import remains in `backup-release`; keep automatic Inbox/Gmail tombstone suppression in their later owning slices.
 
 ## 2026-07-20
 

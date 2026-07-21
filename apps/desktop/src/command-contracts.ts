@@ -12,9 +12,16 @@ export type NormalizeSourceDocumentArgs = { documentId: string };
 
 export type DeleteSourceDocumentArgs = { documentId: string };
 
-export type StatementPasswordArgs = {
+export type DocumentStatementPasswordArgs = {
+  documentId: string;
   moneySourceId: string;
   password: string;
+  updateSavedPassword: boolean;
+};
+
+export type TrySavedStatementPasswordArgs = {
+  documentId: string;
+  moneySourceId: string;
 };
 
 export type RemoveStatementPasswordArgs = { moneySourceId: string };
@@ -32,10 +39,22 @@ export interface SourceDocumentImportOutcome {
 export interface SourceDocumentSummary {
   byteSize: number;
   documentId: string;
+  documentStatus:
+    | "inspection_failed"
+    | "password_required"
+    | "protected_unlocked"
+    | "ready"
+    | "unavailable";
   fileState: "available" | "deleted" | "missing";
   mimeType: "application/pdf" | "text/csv";
   originalFilename: string;
   receivedAt: string;
+}
+
+export interface StatementPasswordSourceSummary {
+  displayName: string;
+  hasSavedPassword: boolean;
+  moneySourceId: string;
 }
 
 export interface SourceDocumentRoutingOutcome {

@@ -45,7 +45,14 @@ describe("Vault API", () => {
     await api.unlockVaultWithKeychain();
     await api.rememberVaultOnThisMac();
     await api.forgetVaultOnThisMac();
-    await api.saveStatementPassword("source-dbs", "statement-password");
+    await api.listStatementPasswordSources();
+    await api.trySavedStatementPassword("document-1", "source-dbs");
+    await api.unlockSourceDocument(
+      "document-1",
+      "source-dbs",
+      "statement-password",
+      true,
+    );
     await api.removeStatementPassword("source-dbs");
     await api.lockVault();
     await api.saveRecoveryFile();
@@ -65,9 +72,19 @@ describe("Vault API", () => {
       ["unlock_vault_with_keychain", undefined],
       ["remember_vault_on_this_mac", undefined],
       ["forget_vault_on_this_mac", undefined],
+      ["list_statement_password_sources", undefined],
       [
-        "save_statement_password",
-        { moneySourceId: "source-dbs", password: "statement-password" },
+        "try_saved_statement_password",
+        { documentId: "document-1", moneySourceId: "source-dbs" },
+      ],
+      [
+        "unlock_source_document",
+        {
+          documentId: "document-1",
+          moneySourceId: "source-dbs",
+          password: "statement-password",
+          updateSavedPassword: true,
+        },
       ],
       ["remove_statement_password", { moneySourceId: "source-dbs" }],
       ["lock_vault", undefined],

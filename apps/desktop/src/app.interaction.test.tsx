@@ -45,6 +45,7 @@ function sourceDocument(
   return {
     byteSize: 42,
     documentId: "document-1",
+    documentStatus: "ready",
     fileState: "available",
     mimeType: "application/pdf",
     originalFilename: "June statement.pdf",
@@ -61,6 +62,7 @@ function createApi(overrides: Partial<VaultApi> = {}) {
     importSourceDocument: vi.fn(
       async (): Promise<SourceDocumentImportOutcome | null> => null,
     ),
+    listStatementPasswordSources: vi.fn(async () => []),
     listUnassignedSourceDocuments: vi.fn(
       async (): Promise<SourceDocumentSummary[]> => [],
     ),
@@ -84,6 +86,8 @@ function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
     saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
+    trySavedStatementPassword: vi.fn(async (): Promise<boolean> => false),
+    unlockSourceDocument: vi.fn(async (): Promise<void> => undefined),
     unlockVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     unlockVaultWithKeychain: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     vaultAccessStatus: vi.fn(
@@ -145,7 +149,11 @@ async function click(label: string) {
 }
 
 async function enterPassword(password: string) {
-  const input = container.querySelector<HTMLInputElement>("#vault-password");
+  await enterInput("#vault-password", password);
+}
+
+async function enterInput(selector: string, value: string) {
+  const input = container.querySelector<HTMLInputElement>(selector);
   expect(input).not.toBeNull();
   const setter = Object.getOwnPropertyDescriptor(
     HTMLInputElement.prototype,
@@ -154,7 +162,7 @@ async function enterPassword(password: string) {
   expect(setter).toBeDefined();
 
   await act(async () => {
-    setter!.call(input, password);
+    setter!.call(input, value);
     input!.dispatchEvent(new Event("input", { bubbles: true }));
     await settle();
   });
@@ -372,6 +380,142 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain("Already in CanCan");
     await click("Add file");
     expect(container.textContent).toContain("Evidence restored");
+  });
+
+  it("tries a source-scoped saved password before offering use-once or verified replacement", async () => {
+    let unlocked = false;
+    const protectedDocument = sourceDocument({ documentStatus: "password_required" });
+    const unlockSourceDocument = vi.fn(
+      async (
+        _documentId: string,
+        _moneySourceId: string,
+        _password: string,
+        _updateSavedPassword: boolean,
+      ): Promise<void> => {
+        unlocked = true;
+      },
+    );
+    unlockSourceDocument.mockRejectedValueOnce({
+      code: "statement_password_invalid",
+    });
+    const api = createApi({
+      listStatementPasswordSources: vi.fn(async () => [{
+        displayName: "DBS",
+        hasSavedPassword: true,
+        moneySourceId: "source-dbs",
+      }]),
+      listUnassignedSourceDocuments: vi.fn(async () => [
+        unlocked ? sourceDocument({ documentStatus: "protected_unlocked" }) : protectedDocument,
+      ]),
+      trySavedStatementPassword: vi.fn(async () => false),
+      unlockSourceDocument,
+    });
+
+    await mount(api);
+    expect(container.textContent).toContain("Password needed");
+    expect(container.textContent).not.toContain("Check routing");
+    expect(container.textContent).toContain("Delete source file");
+    await click("Unlock");
+
+    expect(api.trySavedStatementPassword).toHaveBeenCalledWith(
+      "document-1",
+      "source-dbs",
+    );
+    expect(container.textContent).toContain(
+      "The saved password did not work.",
+    );
+    expect(
+      container.querySelector<HTMLSelectElement>("#statement-money-source")?.value,
+    ).toBe("source-dbs");
+
+    await enterInput("#statement-password", "wrong-password");
+    await click("Use once");
+    expect(unlockSourceDocument).toHaveBeenLastCalledWith(
+      "document-1",
+      "source-dbs",
+      "wrong-password",
+      false,
+    );
+    expect(container.textContent).toContain(
+      "That password did not unlock this statement.",
+    );
+    expect(
+      container.querySelector<HTMLInputElement>("#statement-password")?.value,
+    ).toBe("");
+
+    await enterInput("#statement-password", "current-password");
+    await click("Update saved password");
+    expect(unlockSourceDocument).toHaveBeenLastCalledWith(
+      "document-1",
+      "source-dbs",
+      "current-password",
+      true,
+    );
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("Statement unlocked");
+    expect(container.textContent).toContain("View document");
+    expect(container.textContent).toContain("Routing unavailable");
+    expect(container.textContent).not.toContain("Check routing");
+  });
+
+  it("distinguishes a Money Source load failure from an empty configured-source list", async () => {
+    const listSources = vi.fn()
+      .mockRejectedValueOnce({ code: "list_sources_failed" })
+      .mockResolvedValueOnce([{
+        displayName: "DBS",
+        hasSavedPassword: false,
+        moneySourceId: "source-dbs",
+      }]);
+    const api = createApi({
+      listStatementPasswordSources: listSources,
+      listUnassignedSourceDocuments: vi.fn(async () => [
+        sourceDocument({ documentStatus: "password_required" }),
+      ]),
+    });
+
+    await mount(api);
+    await click("Unlock");
+    expect(container.textContent).toContain("Money Sources couldn’t be loaded");
+    expect(container.textContent).not.toContain("No Money Source is configured");
+
+    await click("Try again");
+    expect(listSources).toHaveBeenCalledTimes(2);
+    expect(container.querySelector("#statement-money-source")).not.toBeNull();
+  });
+
+  it("does not restore protected-document UI after a native Vault lock", async () => {
+    const savedPassword = deferred<boolean>();
+    let notifyLocked: (() => void) | undefined;
+    const api = createApi({
+      listStatementPasswordSources: vi.fn(async () => [{
+        displayName: "DBS",
+        hasSavedPassword: true,
+        moneySourceId: "source-dbs",
+      }]),
+      listUnassignedSourceDocuments: vi.fn(async () => [
+        sourceDocument({ documentStatus: "password_required" }),
+      ]),
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyLocked = handler;
+        return () => undefined;
+      }),
+      trySavedStatementPassword: vi.fn(() => savedPassword.promise),
+    });
+
+    await mount(api);
+    await click("Unlock");
+    expect(api.trySavedStatementPassword).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      notifyLocked?.();
+      savedPassword.resolve(true);
+      await settle();
+    });
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("June statement.pdf");
+    expect(container.textContent).not.toContain("Statement unlocked");
   });
 
   it("routes only available evidence, keeps ambiguous evidence unassigned, and locks the Vault", async () => {
