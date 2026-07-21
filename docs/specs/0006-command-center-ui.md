@@ -142,13 +142,16 @@ The first viewport should be multi-dimensional but not too dense.
 Recommended priority:
 
 ```text
-1. Top overview: native totals, timestamps, vault/backup health
-2. Main stream: money source activity and recent flows
-3. Source snapshots: tailored status per source type
-4. Insight: monthly/weekly summary or deterministic missing-statement prompt
-5. Compact review status: needs review, failed jobs, suggested links
-6. Lower section: detailed Needs Review / New Evidence / Failed Jobs
+1. Compact To do banner list for incomplete safety/setup actions
+2. Top overview: native totals, timestamps, vault/backup health
+3. Main stream: money source activity and recent flows
+4. Source snapshots: tailored status per source type
+5. Insight: monthly/weekly summary or deterministic missing-statement prompt
+6. Compact review status: needs review, failed jobs, suggested links
+7. Lower section: detailed Needs Review / New Evidence / Failed Jobs
 ```
+
+The `To do` list is action-oriented rather than a notification feed. A deferred recovery-file save appears here with a direct `Save recovery file` action and remains until the host confirms both the external file and Vault-side configured state were saved. It must not block entry into Command Center.
 
 ## Source-specific modules
 
@@ -226,3 +229,4 @@ A Figma prototype can be generated after visual tokens are accepted. The Figma o
 - Empty states guide the user to add files, choose an Inbox folder, or optionally configure Gmail after creating sources.
 - Evidence documents are reached through Source detail rather than a standalone Library sidebar item.
 - AI Assistant is represented as a future-ready surface/tool entry, but cannot bypass safety boundaries.
+- Deferred safety/setup work appears as a compact actionable `To do` banner list rather than blocking onboarding.

@@ -25,6 +25,7 @@ Rules:
 - the vault password creates and unlocks the local vault;
 - `Remember on this Mac` is an explicit opt-in backed by OS Keychain/secret storage;
 - the recovery file is generated once, strongly recommended, and saved outside the vault;
+- the recovery file is a bearer secret; anyone who obtains it can recover compatible Vault data without a second password;
 - CanCan has no server-side password reset or recovery service;
 - losing both password access and the recovery file makes the vault unrecoverable;
 - MVP has no user-facing key-rotation workflow;
@@ -76,6 +77,21 @@ offset  size  value
 `ciphertext length` includes the 16-byte Poly1305 tag, so it is the plaintext length plus 16. Algorithm 1 uses a 256-bit key and a fresh 192-bit nonce; the complete serialized header through the nonce is associated data.
 
 Password wrappers carry exactly one 128-bit salt and one of the stored Argon2id profiles. Non-KDF file, recovery, and backup envelopes carry no salt. HKDF-SHA-256 derives purpose-separated database, file, and backup keys from the master key with the versioned contexts `cancan:database:v1`, `cancan:file:v1`, and `cancan:backup:v1`. SQLCipher receives the 256-bit database subkey through its raw-key form so it does not repeat the password KDF. A reader rejects unknown versions, purposes, algorithms, KDF profiles, invalid lengths, wrong-purpose keys, wrong credentials, and any header or ciphertext tampering. Changing these bytes or contexts requires a new storage/envelope version; existing version-1 data is never silently rewritten.
+
+## Recovery-file format and configured state
+
+The version-1 recovery file is self-contained and has this binary layout:
+
+```text
+offset  size  value
+0       8     ASCII `CCREC001`
+8       32    random 256-bit recovery key
+40      n     `CCENV001` purpose-3 wrapper of the 256-bit Vault master key
+```
+
+The purpose-3 wrapper uses XChaCha20-Poly1305, KDF profile `none`, no salt, and a fresh nonce. The raw recovery key appears only in the user-saved recovery file. On supported macOS systems, both the atomic-write temporary file and the final recovery file must be owner-only mode `0600` from creation; the application must not rely on the process umask for bearer-secret protection. CanCan stores no recovery key or recovery-file path in the Vault; after the external file is durably saved, the Vault stores only versioned configured-state magic plus the SHA-256 fingerprint of the complete recovery file. Cancellation or a handled write failure must not create configured state, and the Command Center reminder disappears only after both saves succeed.
+
+Recovery-file import and backup-bundle recovery remain owned by the later `backup-release` slice. The production writer and deterministic reader in the current slice establish the compatibility contract without adding a restore UI early.
 
 ## Feasibility evidence
 

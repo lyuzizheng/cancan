@@ -10,7 +10,8 @@ use runtime::{
     VaultRuntime, create_vault, delete_source_document, forget_vault_on_this_mac,
     import_source_document, list_source_documents, list_unassigned_source_documents, lock_vault,
     normalize_source_document, remember_vault_on_this_mac, render_source_document_page,
-    unlock_vault, unlock_vault_with_keychain, vault_access_status, vault_status,
+    save_recovery_file, unlock_vault, unlock_vault_with_keychain, vault_access_status,
+    vault_status,
 };
 use tauri::Manager;
 
@@ -33,6 +34,7 @@ pub fn run() {
             remember_vault_on_this_mac,
             forget_vault_on_this_mac,
             lock_vault,
+            save_recovery_file,
             import_source_document,
             delete_source_document,
             list_source_documents,

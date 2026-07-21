@@ -83,10 +83,12 @@ function createApi(overrides: Partial<VaultApi> = {}) {
       }),
     ),
     rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
+    saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
     unlockVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     unlockVaultWithKeychain: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     vaultAccessStatus: vi.fn(
       async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
         rememberedOnThisMac: false,
         status: "unlocked",
       }),
@@ -164,6 +166,7 @@ describe("App manual import orchestration", () => {
       listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
       unlockVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
         rememberedOnThisMac: false,
         status: "locked",
       })),
@@ -187,6 +190,7 @@ describe("App manual import orchestration", () => {
   it("creates a Vault when setup is needed", async () => {
     const api = createApi({
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
         rememberedOnThisMac: false,
         status: "not_created",
       })),
@@ -201,9 +205,35 @@ describe("App manual import orchestration", () => {
     expect(button("Add file")).toBeDefined();
   });
 
+  it("keeps recovery optional and removes its task only after a successful save", async () => {
+    const api = createApi({
+      saveRecoveryFile: vi.fn(async (): Promise<boolean> => true),
+    });
+
+    await mount(api);
+    expect(container.textContent).toContain("Save your recovery file");
+
+    await click("Save recovery file");
+
+    expect(api.saveRecoveryFile).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("Save your recovery file");
+    expect(container.textContent).toContain("Recovery file saved");
+  });
+
+  it("keeps the recovery task after the save picker is cancelled", async () => {
+    const api = createApi();
+
+    await mount(api);
+    await click("Save recovery file");
+
+    expect(container.textContent).toContain("Save your recovery file");
+    expect(container.textContent).toContain("Recovery is not configured");
+  });
+
   it("unlocks through Keychain only after an explicit user action and clears the unused password", async () => {
     const api = createApi({
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
         rememberedOnThisMac: true,
         status: "locked",
       })),
@@ -226,6 +256,7 @@ describe("App manual import orchestration", () => {
   it("keeps password unlock available when Keychain presence is unknown", async () => {
     const api = createApi({
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
         rememberedOnThisMac: null,
         status: "locked",
       })),
@@ -292,8 +323,8 @@ describe("App manual import orchestration", () => {
   it("removes a stale remembered-unlock action after Keychain unlock fails", async () => {
     const vaultAccessStatus = vi
       .fn<() => Promise<VaultAccessStatus>>()
-      .mockResolvedValueOnce({ rememberedOnThisMac: true, status: "locked" })
-      .mockResolvedValueOnce({ rememberedOnThisMac: false, status: "locked" });
+      .mockResolvedValueOnce({ recoveryConfigured: false, rememberedOnThisMac: true, status: "locked" })
+      .mockResolvedValueOnce({ recoveryConfigured: false, rememberedOnThisMac: false, status: "locked" });
     const api = createApi({
       unlockVaultWithKeychain: vi.fn(async (): Promise<VaultStatus> => {
         throw { code: "remembered_unlock_unavailable" };
@@ -594,7 +625,7 @@ describe("App manual import orchestration", () => {
     await mount(api);
     await act(async () => {
       notifyVaultLocked();
-      access.resolve({ rememberedOnThisMac: false, status: "unlocked" });
+      access.resolve({ recoveryConfigured: false, rememberedOnThisMac: false, status: "unlocked" });
       await settle();
     });
 
@@ -613,6 +644,7 @@ describe("App manual import orchestration", () => {
       }),
       unlockVault: vi.fn(() => unlock.promise),
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
         rememberedOnThisMac: false,
         status: "locked",
       })),
@@ -943,6 +975,7 @@ describe("App manual import orchestration", () => {
         throw { code: "invalid_credentials" };
       }),
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
         rememberedOnThisMac: false,
         status: "locked",
       })),

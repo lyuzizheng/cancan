@@ -37,12 +37,15 @@ const baseProps: VaultManualImportViewProps = {
   onPasswordChange: () => undefined,
   onRefresh: () => undefined,
   onRememberedChange: () => undefined,
+  onSaveRecoveryFile: () => undefined,
   onSubmitPassword: () => undefined,
   onUnlockWithKeychain: () => undefined,
   onView: () => undefined,
   onViewerPage: () => undefined,
   password: "",
   rememberedOnThisMac: false,
+  recoveryConfigured: false,
+  savingRecoveryFile: false,
   unassignedDocuments: [],
   updatingRemembered: false,
   vaultStatus: "unlocked",
@@ -85,6 +88,17 @@ describe("VaultManualImportView", () => {
     expect(markup).toContain("View document");
     expect(markup).toContain("Check routing");
     expect(markup).toContain("Delete source file");
+  });
+
+  it("keeps recovery as a non-blocking task until the file is saved", () => {
+    const pending = render();
+    expect(pending).toContain("To do");
+    expect(pending).toContain("Save your recovery file");
+    expect(pending).toContain("Save recovery file");
+
+    const configured = render({ recoveryConfigured: true });
+    expect(configured).not.toContain("Save your recovery file");
+    expect(configured).toContain("Add a statement or export");
   });
 
   it("renders only page pixels and bounded viewer navigation", () => {

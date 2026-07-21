@@ -1,6 +1,7 @@
 export type VaultStatus = "not_created" | "locked" | "unlocked";
 
 export interface VaultAccessStatus {
+  recoveryConfigured: boolean;
   rememberedOnThisMac: boolean | null;
   status: VaultStatus;
 }

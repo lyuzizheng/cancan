@@ -184,7 +184,8 @@ button:disabled {
 .ledger-header h1,
 .vault-gate h2,
 .intake-intro h2,
-.attention-panel h2 {
+.attention-panel h2,
+.todo-panel h2 {
   margin: 8px 0 0;
   color: var(--ledger-ink);
   font-size: clamp(1.8rem, 3vw, 2.75rem);
@@ -371,6 +372,57 @@ input:focus-visible {
 .intake-intro {
   padding-bottom: 28px;
   border-bottom: 1px solid var(--ledger-rule);
+}
+
+.todo-panel {
+  margin-bottom: 34px;
+  border-top: 2px solid var(--signal-amber);
+  border-bottom: 1px solid var(--ledger-rule);
+}
+
+.todo-panel-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0 14px;
+}
+
+.todo-panel h2 {
+  font-size: clamp(1.25rem, 2vw, 1.55rem);
+}
+
+.todo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.todo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px 0;
+  border-top: 1px solid var(--ledger-rule);
+}
+
+.todo-title,
+.todo-copy {
+  margin: 0;
+}
+
+.todo-title {
+  color: var(--ledger-ink);
+  font-weight: 650;
+}
+
+.todo-copy {
+  max-width: 600px;
+  margin-top: 5px;
+  color: var(--ledger-text-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
 }
 
 .attention-panel {
@@ -637,6 +689,15 @@ input:focus-visible {
 
   .evidence-row {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .todo-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .todo-row .button {
+    width: 100%;
   }
 
   .evidence-row .button {

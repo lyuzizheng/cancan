@@ -4,7 +4,10 @@ use crate::{
         SourceDocumentImportOutcome, SourceDocumentImportStatus, SourceDocumentRoutingOutcome,
         TrustedAccountCandidate, TrustedDocumentClassification,
     },
-    vault::{create_password_wrapper, open_password_wrapper, password_wrapper_profile},
+    vault::{
+        create_password_wrapper, create_recovery_file, open_password_wrapper,
+        password_wrapper_profile, recovery_file_fingerprint,
+    },
     viewer::{RenderedDocumentPage, render_pdf_page},
 };
 #[cfg(target_os = "macos")]
@@ -17,6 +20,10 @@ use security_framework::{
     os::macos::keychain::{SecKeychain, SecPreferencesDomain},
 };
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+#[cfg(all(test, unix))]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
@@ -38,6 +45,8 @@ use zeroize::Zeroizing;
 
 const KEY_LEN: usize = 32;
 const KEY_FILE_NAME: &str = "vault-key.ccenv";
+const RECOVERY_STATUS_FILE_NAME: &str = "vault-recovery.status";
+const RECOVERY_STATUS_MAGIC: &[u8; 8] = b"CCRECST1";
 const KEYCHAIN_ACCOUNT: &str = "active-vault";
 const KEYCHAIN_ITEM_NOT_FOUND_STATUS: i32 = -25300;
 const KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.remembered-vault";
@@ -56,6 +65,7 @@ pub(crate) enum VaultStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VaultAccessStatus {
+    recovery_configured: bool,
     remembered_on_this_mac: Option<bool>,
     status: VaultStatus,
 }
@@ -294,9 +304,18 @@ impl VaultRuntime {
             self.inner.remembered_keys.is_present().ok()
         };
         Ok(VaultAccessStatus {
+            recovery_configured: self.recovery_configured(),
             remembered_on_this_mac,
             status,
         })
+    }
+
+    fn recovery_configured(&self) -> bool {
+        let Ok(status) = fs::read(self.inner.root.join(RECOVERY_STATUS_FILE_NAME)) else {
+            return false;
+        };
+        status.len() == RECOVERY_STATUS_MAGIC.len() + KEY_LEN
+            && &status[..RECOVERY_STATUS_MAGIC.len()] == RECOVERY_STATUS_MAGIC
     }
 
     pub(crate) fn status(&self) -> Result<VaultStatus, RuntimeError> {
@@ -457,6 +476,40 @@ impl VaultRuntime {
             .remembered_keys
             .delete()
             .map_err(|_| RuntimeError::new("forget_failed"))
+    }
+
+    pub(crate) fn save_recovery_file(&self, destination: &Path) -> Result<(), RuntimeError> {
+        let store = self.store()?;
+        let store = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        if self.recovery_configured() {
+            return Err(RuntimeError::new("recovery_already_configured"));
+        }
+        let destination_parent = destination
+            .parent()
+            .ok_or_else(|| RuntimeError::new("recovery_save_failed"))?
+            .canonicalize()
+            .map_err(|_| RuntimeError::new("recovery_save_failed"))?;
+        let vault_root = self
+            .inner
+            .root
+            .canonicalize()
+            .map_err(|_| RuntimeError::new("invalid_vault"))?;
+        if destination_parent.starts_with(&vault_root) {
+            return Err(RuntimeError::new("recovery_location_invalid"));
+        }
+
+        let recovery_file = create_recovery_file(store.master_key())
+            .map_err(|_| RuntimeError::new("recovery_create_failed"))?;
+        write_atomic(destination, &recovery_file)
+            .map_err(|_| RuntimeError::new("recovery_save_failed"))?;
+
+        let mut status = Vec::with_capacity(RECOVERY_STATUS_MAGIC.len() + KEY_LEN);
+        status.extend_from_slice(RECOVERY_STATUS_MAGIC);
+        status.extend_from_slice(&recovery_file_fingerprint(&recovery_file));
+        write_atomic(&self.inner.root.join(RECOVERY_STATUS_FILE_NAME), &status)
+            .map_err(|_| RuntimeError::new("recovery_status_failed"))
     }
 
     pub(crate) fn lock(&self) -> Result<VaultStatus, RuntimeError> {
@@ -862,6 +915,35 @@ pub(crate) async fn lock_vault(
 }
 
 #[tauri::command]
+pub(crate) async fn save_recovery_file(
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<bool, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<bool, RuntimeError> {
+        runtime.require_unlocked()?;
+        let selected = app
+            .dialog()
+            .file()
+            .set_title("Save your CanCan recovery file")
+            .set_file_name("CanCan Recovery.cancan-recovery")
+            .add_filter("CanCan recovery file", &["cancan-recovery"])
+            .blocking_save_file();
+        let Some(selected) = selected else {
+            return Ok(false);
+        };
+        let destination = selected
+            .into_path()
+            .map_err(|_| RuntimeError::new("file_selection_failed"))?;
+        runtime.save_recovery_file(&destination)?;
+        Ok(true)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
 pub(crate) async fn import_source_document(
     app: AppHandle,
     runtime: State<'_, VaultRuntime>,
@@ -1190,9 +1272,32 @@ fn candidate_name() -> String {
 }
 
 fn write_new_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path)?;
     file.write_all(bytes)?;
     file.sync_all()
+}
+
+fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing parent directory"))?;
+    let temporary = parent.join(format!(
+        ".cancan-write-{}.tmp",
+        random_identifier("recovery")
+    ));
+    let result = (|| {
+        write_new_synced(&temporary, bytes)?;
+        fs::rename(&temporary, path)?;
+        sync_directory(parent)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temporary);
+    }
+    result
 }
 
 fn sync_directory(path: &Path) -> io::Result<()> {
@@ -1203,6 +1308,7 @@ fn sync_directory(path: &Path) -> io::Result<()> {
 mod tests {
     use super::*;
     use crate::database::SourceDocumentImportStatus;
+    use crate::vault::open_recovery_file;
     use std::{thread, time::Duration};
 
     #[derive(Default)]
@@ -1362,6 +1468,133 @@ mod tests {
     }
 
     #[test]
+    fn saves_recovery_outside_the_vault_and_persists_only_its_fingerprint() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let root = parent.path().join("vault");
+        let destination = parent.path().join("CanCan Recovery.cancan-recovery");
+        let runtime = VaultRuntime::new(root.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        assert!(
+            !runtime
+                .access_status()
+                .expect("access status")
+                .recovery_configured
+        );
+
+        runtime
+            .save_recovery_file(&destination)
+            .expect("save recovery file");
+
+        let recovery_file = fs::read(&destination).expect("read recovery file");
+        assert_eq!(&recovery_file[..8], b"CCREC001");
+        #[cfg(unix)]
+        assert_eq!(
+            fs::metadata(&destination)
+                .expect("recovery metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        let recovered_key = open_recovery_file(&recovery_file).expect("recover master key");
+        let store = runtime.store().expect("active store");
+        assert_eq!(
+            recovered_key.as_slice(),
+            store.as_ref().expect("unlocked store").master_key()
+        );
+        drop(store);
+
+        let status = fs::read(root.join(RECOVERY_STATUS_FILE_NAME)).expect("read status");
+        assert_eq!(status.len(), RECOVERY_STATUS_MAGIC.len() + KEY_LEN);
+        assert_eq!(
+            &status[..RECOVERY_STATUS_MAGIC.len()],
+            RECOVERY_STATUS_MAGIC
+        );
+        assert_eq!(
+            &status[RECOVERY_STATUS_MAGIC.len()..],
+            recovery_file_fingerprint(&recovery_file)
+        );
+        assert!(
+            runtime
+                .access_status()
+                .expect("access status")
+                .recovery_configured
+        );
+        assert_eq!(
+            runtime
+                .save_recovery_file(&parent.path().join("second.cancan-recovery"))
+                .expect_err("recovery is generated once")
+                .code(),
+            "recovery_already_configured"
+        );
+
+        runtime.lock().expect("lock Vault");
+        drop(runtime);
+        let restarted = VaultRuntime::new(root);
+        assert!(
+            restarted
+                .access_status()
+                .expect("restart status")
+                .recovery_configured
+        );
+    }
+
+    #[test]
+    fn rejects_recovery_inside_the_vault_without_marking_it_configured() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let root = parent.path().join("vault");
+        let runtime = VaultRuntime::new(root.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+
+        assert_eq!(
+            runtime
+                .save_recovery_file(&root.join("recovery.cancan-recovery"))
+                .expect_err("reject recovery inside Vault")
+                .code(),
+            "recovery_location_invalid"
+        );
+        assert!(!root.join("recovery.cancan-recovery").exists());
+        assert!(
+            !runtime
+                .access_status()
+                .expect("access status")
+                .recovery_configured
+        );
+    }
+
+    #[test]
+    fn failed_recovery_write_does_not_mark_the_vault_configured() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+
+        assert_eq!(
+            runtime
+                .save_recovery_file(
+                    &parent
+                        .path()
+                        .join("missing")
+                        .join("recovery.cancan-recovery"),
+                )
+                .expect_err("reject unavailable destination")
+                .code(),
+            "recovery_save_failed"
+        );
+        assert!(
+            !runtime
+                .access_status()
+                .expect("access status")
+                .recovery_configured
+        );
+    }
+
+    #[test]
     fn system_lock_waits_for_store_cleanup_and_rejects_a_stale_store_generation() {
         let parent = tempfile::tempdir().expect("temporary app data");
         let runtime = VaultRuntime::new(parent.path().join("vault"));
@@ -1420,6 +1653,7 @@ mod tests {
         assert_eq!(
             runtime.access_status().expect("remembered status"),
             VaultAccessStatus {
+                recovery_configured: false,
                 remembered_on_this_mac: Some(true),
                 status: VaultStatus::Unlocked,
             }
@@ -1431,6 +1665,7 @@ mod tests {
         assert_eq!(
             restarted.access_status().expect("restart status"),
             VaultAccessStatus {
+                recovery_configured: false,
                 remembered_on_this_mac: Some(true),
                 status: VaultStatus::Locked,
             }
@@ -1449,6 +1684,7 @@ mod tests {
         assert_eq!(
             forgotten.access_status().expect("forgotten status"),
             VaultAccessStatus {
+                recovery_configured: false,
                 remembered_on_this_mac: Some(false),
                 status: VaultStatus::Locked,
             }
@@ -1481,6 +1717,7 @@ mod tests {
         assert_eq!(
             runtime.access_status().expect("presence-only status"),
             VaultAccessStatus {
+                recovery_configured: false,
                 remembered_on_this_mac: Some(true),
                 status: VaultStatus::Locked,
             }
