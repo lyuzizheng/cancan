@@ -528,7 +528,7 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("invalid_credentials"))?;
         let opened = ManualImportStore::open_existing(&self.inner.root, master_key)
             .map_err(|_| RuntimeError::new("invalid_vault"))?;
-        let _ = self.reconcile_statement_passwords(&opened);
+        self.reconcile_statement_passwords(&opened)?;
         *store = Some(opened);
         Ok(VaultStatus::Unlocked)
     }
@@ -549,7 +549,7 @@ impl VaultRuntime {
         };
         match ManualImportStore::open_existing(&self.inner.root, master_key) {
             Ok(opened) => {
-                let _ = self.reconcile_statement_passwords(&opened);
+                self.reconcile_statement_passwords(&opened)?;
                 *store = Some(opened);
                 Ok(VaultStatus::Unlocked)
             }
@@ -2360,6 +2360,79 @@ mod tests {
         runtime
             .unlock(b"synthetic-vault-password")
             .expect("unlock and reconcile pending delete");
+        assert_eq!(statement_password_state(&runtime), None);
+    }
+
+    #[test]
+    fn unlock_paths_propagate_statement_password_reconciliation_failures() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let statement_passwords = Arc::new(MemoryStatementPasswordStore::default());
+        let runtime =
+            statement_password_runtime(&parent.path().join("vault"), statement_passwords.clone());
+
+        runtime
+            .save_statement_password("source-dbs", b"verified-statement-password")
+            .expect("save statement password");
+        runtime
+            .store()
+            .expect("active store")
+            .as_ref()
+            .expect("unlocked store")
+            .begin_statement_password_delete("source-dbs")
+            .expect("persist pending delete");
+        statement_passwords
+            .fail_delete
+            .store(true, Ordering::SeqCst);
+        runtime.lock().expect("lock Vault");
+
+        assert_eq!(
+            runtime
+                .unlock(b"synthetic-vault-password")
+                .expect_err("surface password-unlock reconciliation failure")
+                .code(),
+            "statement_password_remove_failed"
+        );
+        assert!(runtime.store().expect("runtime store").is_none());
+
+        statement_passwords
+            .fail_delete
+            .store(false, Ordering::SeqCst);
+        runtime
+            .unlock(b"synthetic-vault-password")
+            .expect("retry password unlock");
+        assert_eq!(statement_password_state(&runtime), None);
+
+        runtime
+            .save_statement_password("source-dbs", b"replacement-statement-password")
+            .expect("save replacement password");
+        runtime
+            .store()
+            .expect("active store")
+            .as_ref()
+            .expect("unlocked store")
+            .begin_statement_password_delete("source-dbs")
+            .expect("persist second pending delete");
+        runtime.remember_on_this_mac().expect("remember Vault");
+        statement_passwords
+            .fail_delete
+            .store(true, Ordering::SeqCst);
+        runtime.lock().expect("lock Vault again");
+
+        assert_eq!(
+            runtime
+                .unlock_with_keychain()
+                .expect_err("surface Keychain-unlock reconciliation failure")
+                .code(),
+            "statement_password_remove_failed"
+        );
+        assert!(runtime.store().expect("runtime store").is_none());
+
+        statement_passwords
+            .fail_delete
+            .store(false, Ordering::SeqCst);
+        runtime
+            .unlock_with_keychain()
+            .expect("retry Keychain unlock");
         assert_eq!(statement_password_state(&runtime), None);
     }
 
