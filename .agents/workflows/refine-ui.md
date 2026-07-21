@@ -2,6 +2,8 @@
 
 Use this when the user asks to improve visual quality, interaction quality, or UI design.
 
+Frontend implementation is reserved to Kimi Code CLI (AGENTS.md item 9). Any other agent must stop here and direct the user to run this work through Kimi Code CLI.
+
 ## Steps
 
 1. Read `docs/specs/0006-command-center-ui.md`.
