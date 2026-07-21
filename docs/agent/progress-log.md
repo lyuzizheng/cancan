@@ -2,6 +2,16 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-21
+
+### Completed
+
+- Added immediate macOS sleep/session-lock Vault locking. AppKit notifications mark the host session system-locked, reject queued unlocks through a monotonic generation, synchronously drop the Rust-only store, and only then notify the renderer. The renderer clears document names and rendered page pixels, rejects stale async completions, and rechecks host state after wake.
+
+### Next
+
+- Continue `vault-manual-import` with recovery-file, statement-password, `Save a copy`, non-PDF viewing, and safe source display/list checkpoints. Keep automatic Inbox/Gmail tombstone suppression in their later owning slices.
+
 ## 2026-07-20
 
 ### Completed

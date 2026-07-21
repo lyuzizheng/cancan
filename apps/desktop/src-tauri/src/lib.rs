@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 mod database;
 mod runtime;
+mod system_lock;
 #[allow(dead_code)]
 mod vault;
 mod viewer;
@@ -20,6 +21,7 @@ pub fn run() {
         .setup(|app| {
             let root = app.path().app_data_dir()?.join("vault");
             app.manage(VaultRuntime::new(root));
+            system_lock::install(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
