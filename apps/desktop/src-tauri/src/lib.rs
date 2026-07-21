@@ -9,9 +9,9 @@ mod viewer;
 use runtime::{
     VaultRuntime, create_vault, delete_source_document, forget_vault_on_this_mac,
     import_source_document, list_source_documents, list_unassigned_source_documents, lock_vault,
-    normalize_source_document, remember_vault_on_this_mac, render_source_document_page,
-    save_recovery_file, unlock_vault, unlock_vault_with_keychain, vault_access_status,
-    vault_status,
+    normalize_source_document, remember_vault_on_this_mac, remove_statement_password,
+    render_source_document_page, save_recovery_file, save_statement_password, unlock_vault,
+    unlock_vault_with_keychain, vault_access_status, vault_status,
 };
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
@@ -67,6 +67,8 @@ pub fn run() {
             unlock_vault_with_keychain,
             remember_vault_on_this_mac,
             forget_vault_on_this_mac,
+            save_statement_password,
+            remove_statement_password,
             lock_vault,
             save_recovery_file,
             import_source_document,
