@@ -1,5 +1,5 @@
 import { AppShell } from "@cancan/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
   RenderedDocumentPage,
@@ -532,6 +532,21 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
           <span className="vault-mark" aria-hidden="true">C</span>
           <span>CanCan</span>
         </div>
+        <nav className="vault-nav" aria-label="Command Center">
+          <p className="vault-nav-label">Command Center</p>
+          <ul className="vault-nav-list">
+            <li><span className="vault-nav-item vault-nav-item-active" aria-current="page"><NavIcon name="sources" />Sources<span className="vault-nav-dot" aria-hidden="true" /></span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="assets" />Assets</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="transactions" />Transactions</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="review" />Review</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="money-flow" />Money Flow</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="jobs" />Jobs</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="settings" />Settings</span></li>
+          </ul>
+        </nav>
+        <div className="vault-assistant">
+          <span className="vault-nav-item vault-nav-upcoming"><NavIcon name="assistant" />AI Assistant</span>
+        </div>
         <div className="vault-spine-status">
           <p className="vault-spine-label">Local Vault</p>
           <p className="vault-spine-state">
@@ -596,10 +611,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
             {!props.recoveryConfigured ? (
               <section className="todo-panel" aria-labelledby="todo-heading">
                 <div className="todo-panel-heading">
-                  <div>
-                    <p className="ledger-eyebrow">Vault setup</p>
-                    <h2 id="todo-heading">To do</h2>
-                  </div>
+                  <h2 id="todo-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />To do</h2>
                   <span className="attention-count" aria-label="1 task">1</span>
                 </div>
                 <ul className="todo-list">
@@ -617,7 +629,6 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
             ) : null}
 
             <section className="intake-intro">
-              <p className="ledger-eyebrow">Encrypted capture</p>
               <h2>Add a statement or export</h2>
               <p>Choose a PDF or CSV. CanCan saves it in your Vault before checking its configured source.</p>
             </section>
@@ -626,10 +637,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
 
             <section className="attention-panel" aria-labelledby="attention-heading">
               <div className="attention-panel-heading">
-                <div>
-                  <p className="ledger-eyebrow">Source routing</p>
-                  <h2 id="attention-heading">Needs attention</h2>
-                </div>
+                <h2 id="attention-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />Needs attention</h2>
                 <span className="attention-count" aria-label={`${props.unassignedDocuments.length} documents`}>
                   {props.unassignedDocuments.length}
                 </span>
@@ -650,8 +658,12 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                         <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : "CSV"}</span>
                         <div className="evidence-details">
                           <p>{document.originalFilename}</p>
-                          <span>{fileStateLabel(document.fileState)}</span>
+                          <span className="evidence-meta">{evidenceMeta(document)}</span>
                         </div>
+                        <p className={`doc-status doc-status-${document.fileState}`}>
+                          <span className="doc-status-dot" aria-hidden="true" />
+                          {fileStateLabel(document.fileState)}
+                        </p>
                         <div className="evidence-actions">
                           {document.mimeType === "application/pdf" ? (
                             <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
@@ -662,7 +674,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                             {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
                           </button>
                           {routingAvailable ? (
-                            <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
+                            <button className="button button-quiet button-danger" disabled={props.busy || props.normalizingDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
                               {deleting ? "Deleting…" : "Delete source file"}
                             </button>
                           ) : null}
@@ -735,7 +747,6 @@ function DocumentViewer({
       <section aria-labelledby="document-viewer-title" aria-modal="true" className="document-viewer" ref={dialog} role="dialog">
         <header className="document-viewer-header">
           <div>
-            <p className="ledger-eyebrow">Encrypted evidence</p>
             <h2 id="document-viewer-title">{viewer.documentTitle}</h2>
           </div>
           <button autoFocus className="button button-quiet" onClick={onClose} type="button">Close</button>
@@ -779,7 +790,6 @@ function VaultGate({
   const acceptsPassword = onPasswordChange !== undefined && onSubmit !== undefined;
   return (
     <section className="vault-gate" aria-labelledby="vault-gate-title">
-      <p className="ledger-eyebrow">Vault access</p>
       <h2 id="vault-gate-title">{title}</h2>
       <p>{body}</p>
       {rememberedOnThisMac === null ? (
@@ -833,4 +843,97 @@ function vaultStatusLabel(status: VaultScreenStatus) {
 
 function fileStateLabel(fileState: SourceDocumentSummary["fileState"]) {
   return fileState === "available" ? "Ready for routing" : fileState === "deleted" ? "File deleted" : "File missing";
+}
+
+const META_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+function evidenceMeta(document: SourceDocumentSummary) {
+  return `Added ${formatMetaDate(document.receivedAt)} · ${formatByteSize(document.byteSize)}`;
+}
+
+function formatMetaDate(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return `${date.getUTCDate()} ${META_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+function formatByteSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+type NavIconName =
+  | "sources"
+  | "assets"
+  | "transactions"
+  | "review"
+  | "money-flow"
+  | "jobs"
+  | "settings"
+  | "assistant";
+
+function NavIcon({ name }: { name: NavIconName }) {
+  const shapes: Record<NavIconName, ReactNode> = {
+    sources: (
+      <>
+        <rect x="3" y="3" width="12" height="12" rx="2" />
+        <path d="M3 8h12" />
+      </>
+    ),
+    assets: (
+      <>
+        <circle cx="9" cy="9" r="6" />
+        <path d="M9 3v6l4.2 2.4" />
+      </>
+    ),
+    transactions: (
+      <>
+        <path d="M3 6h10" />
+        <path d="M10 3l3 3-3 3" />
+        <path d="M15 12H5" />
+        <path d="M8 9l-3 3 3 3" />
+      </>
+    ),
+    review: (
+      <>
+        <rect x="3" y="3" width="12" height="12" rx="2" />
+        <path d="M6 9.2l2.2 2.2 4-4.4" />
+      </>
+    ),
+    "money-flow": <path d="M3 13.5l3.8-3.8 3 3 5.2-5.7" />,
+    jobs: <path d="M5 4.5h8M5 9h8M5 13.5h5" />,
+    settings: (
+      <>
+        <circle cx="9" cy="9" r="2.2" />
+        <path d="M9 3v2.1M9 12.9V15M3 9h2.1M12.9 9H15M5.2 5.2l1.5 1.5M11.3 11.3l1.5 1.5M12.8 5.2l-1.5 1.5M6.7 11.3l-1.5 1.5" />
+      </>
+    ),
+    assistant: (
+      <path d="M4 3.5h10a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-4.5 3v-12a1.5 1.5 0 0 1 .5-1z" />
+    ),
+  };
+  return (
+    <svg
+      aria-hidden="true"
+      className="vault-nav-icon"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+      viewBox="0 0 18 18"
+    >
+      {shapes[name]}
+    </svg>
+  );
 }
