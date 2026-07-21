@@ -629,6 +629,7 @@ describe("App manual import orchestration", () => {
 
     expect(container.textContent).toContain("Unlock your Vault");
     expect(container.textContent).not.toContain("Add file");
+    expect(container.querySelector<HTMLInputElement>("#vault-password")?.value).toBe("");
     expect(api.listUnassignedSourceDocuments).not.toHaveBeenCalled();
   });
 

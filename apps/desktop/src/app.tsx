@@ -110,6 +110,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setVaultStatus(nextStatus);
     setError(null);
     setNotice(null);
+    setPassword("");
     setUnassignedDocuments([]);
     setLoadingDocuments(false);
     setBusy(false);

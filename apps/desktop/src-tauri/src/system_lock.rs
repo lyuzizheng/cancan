@@ -1,7 +1,66 @@
 use crate::runtime::VaultRuntime;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
 const VAULT_LOCKED_EVENT: &str = "vault-locked";
+
+#[derive(Clone, Copy)]
+enum SystemEvent {
+    DidWake,
+    SessionBecameActive,
+    SessionResigned,
+    WillSleep,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SystemLockAction {
+    KeepLocked,
+    Lock,
+    Resume,
+}
+
+struct SystemLockState {
+    session_active: bool,
+    sleeping: bool,
+}
+
+impl SystemLockState {
+    fn new() -> Self {
+        Self {
+            session_active: true,
+            sleeping: false,
+        }
+    }
+
+    fn apply(&mut self, event: SystemEvent) -> SystemLockAction {
+        match event {
+            SystemEvent::WillSleep => {
+                self.sleeping = true;
+                SystemLockAction::Lock
+            }
+            SystemEvent::SessionResigned => {
+                self.session_active = false;
+                SystemLockAction::Lock
+            }
+            SystemEvent::DidWake => {
+                self.sleeping = false;
+                if self.session_active {
+                    SystemLockAction::Resume
+                } else {
+                    SystemLockAction::KeepLocked
+                }
+            }
+            SystemEvent::SessionBecameActive => {
+                self.session_active = true;
+                if self.sleeping {
+                    SystemLockAction::KeepLocked
+                } else {
+                    SystemLockAction::Resume
+                }
+            }
+        }
+    }
+}
 
 fn lock_and_notify(app: &AppHandle) {
     request_lock_and_notify(app.state::<VaultRuntime>().inner(), || {
@@ -19,6 +78,20 @@ fn resume_and_notify(app: &AppHandle) {
     let _ = app.emit(VAULT_LOCKED_EVENT, ());
 }
 
+fn handle_system_event(app: &AppHandle, state: &Mutex<SystemLockState>, event: SystemEvent) {
+    let action = state
+        .lock()
+        .map(|mut state| state.apply(event))
+        .unwrap_or(SystemLockAction::KeepLocked);
+    match action {
+        SystemLockAction::Lock => lock_and_notify(app),
+        SystemLockAction::Resume => resume_and_notify(app),
+        SystemLockAction::KeepLocked => {
+            let _ = app.emit(VAULT_LOCKED_EVENT, ());
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub(crate) fn install(app: AppHandle) {
     use block2::RcBlock;
@@ -30,30 +103,28 @@ pub(crate) fn install(app: AppHandle) {
     use std::ptr::NonNull;
 
     let center = NSWorkspace::sharedWorkspace().notificationCenter();
+    let state = Arc::new(Mutex::new(SystemLockState::new()));
     // AppKit publishes these process-lifetime notification-name constants.
-    let lock_names = unsafe {
+    let notifications = unsafe {
         [
-            NSWorkspaceWillSleepNotification,
-            NSWorkspaceSessionDidResignActiveNotification,
+            (NSWorkspaceWillSleepNotification, SystemEvent::WillSleep),
+            (NSWorkspaceDidWakeNotification, SystemEvent::DidWake),
+            (
+                NSWorkspaceSessionDidResignActiveNotification,
+                SystemEvent::SessionResigned,
+            ),
+            (
+                NSWorkspaceSessionDidBecomeActiveNotification,
+                SystemEvent::SessionBecameActive,
+            ),
         ]
     };
-    for name in lock_names {
+    for (name, event) in notifications {
         let app = app.clone();
-        let observer = RcBlock::new(move |_: NonNull<NSNotification>| lock_and_notify(&app));
-        unsafe {
-            center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &observer);
-        }
-    }
-    // Wake and session activation re-enable explicit unlock only after the store is closed.
-    let resume_names = unsafe {
-        [
-            NSWorkspaceDidWakeNotification,
-            NSWorkspaceSessionDidBecomeActiveNotification,
-        ]
-    };
-    for name in resume_names {
-        let app = app.clone();
-        let observer = RcBlock::new(move |_: NonNull<NSNotification>| resume_and_notify(&app));
+        let state = state.clone();
+        let observer = RcBlock::new(move |_: NonNull<NSNotification>| {
+            handle_system_event(&app, &state, event)
+        });
         unsafe {
             center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &observer);
         }
@@ -103,6 +174,27 @@ mod tests {
                 .unlock(b"vault-password")
                 .expect("unlock after resume"),
             VaultStatus::Unlocked
+        );
+    }
+
+    #[test]
+    fn wake_resumes_only_while_the_user_session_is_active() {
+        let mut state = SystemLockState::new();
+        assert_eq!(state.apply(SystemEvent::WillSleep), SystemLockAction::Lock);
+        assert_eq!(state.apply(SystemEvent::DidWake), SystemLockAction::Resume);
+
+        assert_eq!(
+            state.apply(SystemEvent::SessionResigned),
+            SystemLockAction::Lock
+        );
+        assert_eq!(state.apply(SystemEvent::WillSleep), SystemLockAction::Lock);
+        assert_eq!(
+            state.apply(SystemEvent::DidWake),
+            SystemLockAction::KeepLocked
+        );
+        assert_eq!(
+            state.apply(SystemEvent::SessionBecameActive),
+            SystemLockAction::Resume
         );
     }
 }
