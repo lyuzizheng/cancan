@@ -405,6 +405,30 @@ impl ManualImportStore {
         })
     }
 
+    pub fn source_document_mime_type(&self, document_id: &str) -> StoreResult<String> {
+        let document = self
+            .connection
+            .query_row(
+                "SELECT mime_type, file_state FROM source_documents WHERE id = ?1",
+                [document_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        let Some((mime_type, file_state)) = document else {
+            return Err(
+                io::Error::new(io::ErrorKind::NotFound, "source document not found").into(),
+            );
+        };
+        if file_state != "available" {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "source document file is unavailable",
+            )
+            .into());
+        }
+        Ok(mime_type)
+    }
+
     pub(crate) fn statement_password_state(
         &self,
         money_source_id: &str,

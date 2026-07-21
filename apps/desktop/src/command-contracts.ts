@@ -17,6 +17,8 @@ export type NormalizeSourceDocumentArgs = { documentId: string };
 
 export type DeleteSourceDocumentArgs = { documentId: string };
 
+export type SaveSourceDocumentCopyArgs = { documentId: string };
+
 export type DocumentStatementPasswordArgs = {
   documentId: string;
   moneySourceId: string;

@@ -7,10 +7,11 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 ### Completed
 
 - Added protected-PDF detection and local unlock to `vault-manual-import`. Core Graphics inspects and verifies the encrypted PDF only inside Rust, `Use once` keeps a zeroizing document password only for the unlocked Vault session, and `Update saved password` can reach Keychain only after that password successfully unlocks the selected document. A security-scoped source chooser exposes only configured Money Source IDs, display names, and saved-password availability; choosing a source scopes the credential but does not assign the document. Locked rows remain visible as `Needs attention` with an `Unlock` action, automatically try the selected source's saved password, and clear password UI/session state on Vault lock without creating an unlocked duplicate. An unlocked protected statement returns to `Ready` but remains explicitly view-only: routing stays unavailable until protected-PDF extraction exists, while malformed PDFs fail closed during inspection.
+- Added the explicit `Save a copy` source-export checkpoint. A document-ID-only host command warns that the selected copy leaves CanCan's encrypted Vault, then opens the native save picker and writes the original source bytes through a private, synced, same-directory temporary file before atomic rename. Destinations inside the Vault are rejected; cancellation and pre-rename failure leave no partial destination, and the renderer receives only completion or a safe error.
 
 ### Next
 
-- Continue `vault-manual-import` with the separate `Save a copy` checkpoint: host-owned warning and save picker, atomic plaintext export to the selected destination, cancellation/failure cleanup, and focused browser/native coverage. Keep non-PDF viewing and broader safe source display/list work separate.
+- Continue `vault-manual-import` with non-PDF viewing and the broader safe source display/list checkpoints. Keep protected-PDF extraction/routing separate until a real in-memory extraction path exists.
 
 ## 2026-07-21
 

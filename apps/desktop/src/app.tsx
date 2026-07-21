@@ -60,6 +60,7 @@ export interface VaultManualImportViewProps {
   onRefresh: () => void;
   onRememberedChange: (remembered: boolean) => void;
   onSaveRecoveryFile: () => void;
+  onSaveSourceCopy: (documentId: string) => void;
   onSubmitPassword: () => void;
   onUnlockWithKeychain: () => void;
   onUnlockPasswordChange: (password: string) => void;
@@ -74,6 +75,7 @@ export interface VaultManualImportViewProps {
   rememberedOnThisMac: boolean | null;
   recoveryConfigured: boolean;
   savingRecoveryFile: boolean;
+  savingCopyDocumentId: string | null;
   unassignedDocuments: SourceDocumentSummary[];
   unlockingDocument: DocumentUnlockState | null;
   updatingRemembered: boolean;
@@ -109,6 +111,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [viewingPage, setViewingPage] = useState(false);
   const [updatingRemembered, setUpdatingRemembered] = useState(false);
   const [savingRecoveryFile, setSavingRecoveryFile] = useState(false);
+  const [savingCopyDocumentId, setSavingCopyDocumentId] = useState<string | null>(null);
   const viewerRequestId = useRef(0);
   const unlockRequestId = useRef(0);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
@@ -142,6 +145,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setPassword("");
     setUnassignedDocuments([]);
     setLoadingDocuments(false);
+    setSavingCopyDocumentId(null);
     setBusy(false);
     return nextSessionId;
   }, [clearViewer]);
@@ -476,6 +480,27 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }).finally(() => setDeletingDocumentId(null));
   };
 
+  const saveSourceCopy = (documentId: string) => {
+    const sessionId = vaultSessionId.current;
+    setSavingCopyDocumentId(documentId);
+    void run(async () => {
+      if (
+        await api.saveSourceDocumentCopy(documentId)
+        && vaultSessionId.current === sessionId
+      ) {
+        setNotice({
+          body: "The copy is outside CanCan’s encrypted Vault and is now your responsibility.",
+          tone: "success",
+          title: "Copy saved",
+        });
+      }
+    }, sessionId).finally(() => {
+      if (vaultSessionId.current === sessionId) {
+        setSavingCopyDocumentId(null);
+      }
+    });
+  };
+
   const trySavedStatementPassword = async (
     documentId: string,
     moneySourceId: string,
@@ -671,6 +696,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onRefresh={() => void refreshVaultStatus()}
       onRememberedChange={updateRemembered}
       onSaveRecoveryFile={saveRecoveryFile}
+      onSaveSourceCopy={saveSourceCopy}
       onSubmitPassword={submitPassword}
       onUnlockWithKeychain={unlockWithKeychain}
       onUnlockPasswordChange={(nextPassword) => setUnlockingDocument((current) => current
@@ -691,6 +717,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       rememberedOnThisMac={rememberedOnThisMac}
       recoveryConfigured={recoveryConfigured}
       savingRecoveryFile={savingRecoveryFile}
+      savingCopyDocumentId={savingCopyDocumentId}
       unassignedDocuments={unassignedDocuments}
       unlockingDocument={unlockingDocument}
       updatingRemembered={updatingRemembered}
@@ -830,6 +857,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                     const routingAvailable = fileAvailable && document.documentStatus === "ready";
                     const deleting = props.deletingDocumentId === document.documentId;
                     const normalizing = props.normalizingDocumentId === document.documentId;
+                    const savingCopy = props.savingCopyDocumentId === document.documentId;
                     return (
                       <li className="evidence-row" key={document.documentId}>
                         <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : "CSV"}</span>
@@ -839,21 +867,26 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                         </div>
                         <div className="evidence-actions">
                           {passwordRequired ? (
-                            <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null} onClick={() => props.onOpenUnlock(document)} type="button">
+                            <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onOpenUnlock(document)} type="button">
                               Unlock
                             </button>
                           ) : document.mimeType === "application/pdf" ? (
-                            <button className="button button-quiet" disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
+                            <button className="button button-quiet" disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
                               {!viewingAvailable ? "View unavailable" : "View document"}
                             </button>
                           ) : null}
                           {!passwordRequired && document.documentStatus !== "inspection_failed" ? (
-                            <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
+                            <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
                               {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
                             </button>
                           ) : null}
                           {fileAvailable ? (
-                            <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
+                            <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onSaveSourceCopy(document.documentId)} type="button">
+                              {savingCopy ? "Saving copy…" : "Save a copy"}
+                            </button>
+                          ) : null}
+                          {fileAvailable ? (
+                            <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
                               {deleting ? "Deleting…" : "Delete source file"}
                             </button>
                           ) : null}

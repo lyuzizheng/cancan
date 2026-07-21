@@ -8,6 +8,7 @@ import type {
   RenderedDocumentPage,
   RenderSourceDocumentPageArgs,
   SavedStatementPasswordResult,
+  SaveSourceDocumentCopyArgs,
   SourceDocumentImportOutcome,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
@@ -51,6 +52,7 @@ export interface VaultApi {
     pageNumber: number,
   ): Promise<RenderedDocumentPage>;
   saveRecoveryFile(): Promise<boolean>;
+  saveSourceDocumentCopy(documentId: string): Promise<boolean>;
   trySavedStatementPassword(
     documentId: string,
     moneySourceId: string,
@@ -128,6 +130,13 @@ export function createVaultApi(
     },
     lockVault: () => call<VaultStatus>("lock_vault"),
     saveRecoveryFile: () => call<boolean>("save_recovery_file"),
+    saveSourceDocumentCopy: (documentId) => {
+      const args: SaveSourceDocumentCopyArgs = { documentId };
+      return call<boolean, SaveSourceDocumentCopyArgs>(
+        "save_source_document_copy",
+        args,
+      );
+    },
     deleteSourceDocument: (documentId) => {
       const args: DeleteSourceDocumentArgs = { documentId };
       return call<boolean, DeleteSourceDocumentArgs>(
@@ -197,6 +206,10 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t save the recovery file to that location.";
     case "recovery_status_failed":
       return "The recovery file was saved, but CanCan couldn’t record setup. Keep the file private and try again.";
+    case "source_copy_location_invalid":
+      return "Save the copy somewhere outside your CanCan Vault.";
+    case "source_copy_save_failed":
+      return "CanCan couldn’t save a complete copy to that location.";
     case "unsupported_document":
       return "Choose a PDF or CSV file.";
     case "normalizer_failed":
