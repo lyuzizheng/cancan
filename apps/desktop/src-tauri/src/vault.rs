@@ -19,6 +19,7 @@ const MAGIC: &[u8; 8] = b"CCENV001";
 const VERSION: u8 = 1;
 const PURPOSE_FILE: u8 = 1;
 const PURPOSE_PASSWORD_WRAPPER: u8 = 2;
+const PURPOSE_RECOVERY_WRAPPER: u8 = 3;
 const ALGORITHM_XCHACHA20_POLY1305: u8 = 1;
 const KDF_NONE: u8 = 0;
 const KDF_RFC9106_LOW_MEMORY_V1: u8 = 1;
@@ -27,6 +28,7 @@ const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 24;
 const HEADER_FIXED_LEN: usize = 24;
 const FILE_KEY_CONTEXT: &[u8] = b"cancan:file:v1";
+const RECOVERY_FILE_MAGIC: &[u8; 8] = b"CCREC001";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -360,6 +362,78 @@ pub(crate) fn open_password_wrapper(
     Ok(Zeroizing::new(master_key))
 }
 
+pub(crate) fn create_recovery_file(master_key: &[u8; KEY_LEN]) -> io::Result<Zeroizing<Vec<u8>>> {
+    let mut recovery_key = Zeroizing::new([0_u8; KEY_LEN]);
+    OsRng.fill_bytes(recovery_key.as_mut());
+    let mut nonce = [0_u8; NONCE_LEN];
+    OsRng.fill_bytes(&mut nonce);
+    let recovery_file = seal_recovery_file_with_nonce(master_key, &recovery_key, &nonce)?;
+    if open_recovery_file(&recovery_file)?.as_slice() != master_key {
+        return Err(io::Error::other("recovery file verification failed"));
+    }
+    Ok(recovery_file)
+}
+
+fn seal_recovery_file_with_nonce(
+    master_key: &[u8; KEY_LEN],
+    recovery_key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_LEN],
+) -> io::Result<Zeroizing<Vec<u8>>> {
+    let wrapper = seal_envelope_with_nonce(
+        PURPOSE_RECOVERY_WRAPPER,
+        KDF_NONE,
+        &[],
+        recovery_key,
+        nonce,
+        master_key,
+    )?;
+    let mut recovery_file = Zeroizing::new(Vec::with_capacity(
+        RECOVERY_FILE_MAGIC.len() + KEY_LEN + wrapper.len(),
+    ));
+    recovery_file.extend_from_slice(RECOVERY_FILE_MAGIC);
+    recovery_file.extend_from_slice(recovery_key);
+    recovery_file.extend_from_slice(&wrapper);
+    Ok(recovery_file)
+}
+
+pub(crate) fn open_recovery_file(recovery_file: &[u8]) -> io::Result<Zeroizing<[u8; KEY_LEN]>> {
+    let wrapper_offset = RECOVERY_FILE_MAGIC.len() + KEY_LEN;
+    if recovery_file.len() <= wrapper_offset
+        || &recovery_file[..RECOVERY_FILE_MAGIC.len()] != RECOVERY_FILE_MAGIC
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid recovery file header",
+        ));
+    }
+    let recovery_key: &[u8; KEY_LEN] = recovery_file[RECOVERY_FILE_MAGIC.len()..wrapper_offset]
+        .try_into()
+        .expect("fixed recovery key length");
+    let wrapper = &recovery_file[wrapper_offset..];
+    let parsed = parse_envelope(wrapper)?;
+    if parsed.purpose != PURPOSE_RECOVERY_WRAPPER
+        || parsed.profile != KDF_NONE
+        || parsed.ciphertext.len() != KEY_LEN + 16
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid recovery wrapper",
+        ));
+    }
+    let plaintext = open_envelope(wrapper, PURPOSE_RECOVERY_WRAPPER, recovery_key)?;
+    let master_key: [u8; KEY_LEN] = plaintext.as_slice().try_into().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "recovery wrapper contains an invalid master key",
+        )
+    })?;
+    Ok(Zeroizing::new(master_key))
+}
+
+pub(crate) fn recovery_file_fingerprint(recovery_file: &[u8]) -> [u8; KEY_LEN] {
+    Sha256::digest(recovery_file).into()
+}
+
 fn derive_password_key(
     password: &[u8],
     salt: &[u8],
@@ -641,6 +715,30 @@ mod tests {
             );
             assert!(open_password_wrapper(&wrapper, b"wrong-password").is_err());
         }
+    }
+
+    #[test]
+    fn creates_a_self_contained_recovery_file_and_rejects_tampering() {
+        let master_key = [0x55; KEY_LEN];
+        let recovery_file =
+            seal_recovery_file_with_nonce(&master_key, &[0x81; KEY_LEN], &[0x91; NONCE_LEN])
+                .expect("seal recovery fixture");
+
+        assert_eq!(&recovery_file[..8], b"CCREC001");
+        assert_eq!(
+            open_recovery_file(&recovery_file)
+                .expect("open recovery fixture")
+                .as_slice(),
+            master_key
+        );
+        assert_eq!(
+            hex_digest(&recovery_file),
+            "c8c47e271e3e765cf20dc343b6cd26824695c4a97d96601ba669e9370673d813"
+        );
+
+        let mut tampered = recovery_file;
+        *tampered.last_mut().expect("recovery file is not empty") ^= 1;
+        assert!(open_recovery_file(&tampered).is_err());
     }
 
     #[test]

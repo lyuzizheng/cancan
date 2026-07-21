@@ -44,6 +44,7 @@ export interface VaultManualImportViewProps {
   onPasswordChange: (password: string) => void;
   onRefresh: () => void;
   onRememberedChange: (remembered: boolean) => void;
+  onSaveRecoveryFile: () => void;
   onSubmitPassword: () => void;
   onUnlockWithKeychain: () => void;
   onView: (
@@ -53,6 +54,8 @@ export interface VaultManualImportViewProps {
   onViewerPage: (pageNumber: number) => void;
   password: string;
   rememberedOnThisMac: boolean | null;
+  recoveryConfigured: boolean;
+  savingRecoveryFile: boolean;
   unassignedDocuments: SourceDocumentSummary[];
   updatingRemembered: boolean;
   vaultStatus: VaultScreenStatus;
@@ -71,6 +74,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [rememberedOnThisMac, setRememberedOnThisMac] = useState<boolean | null>(
     false,
   );
+  const [recoveryConfigured, setRecoveryConfigured] = useState(false);
   const [unassignedDocuments, setUnassignedDocuments] = useState<
     SourceDocumentSummary[]
   >([]);
@@ -84,6 +88,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [viewer, setViewer] = useState<DocumentViewerState | null>(null);
   const [viewingPage, setViewingPage] = useState(false);
   const [updatingRemembered, setUpdatingRemembered] = useState(false);
+  const [savingRecoveryFile, setSavingRecoveryFile] = useState(false);
   const viewerRequestId = useRef(0);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
   const documentLoadsAllowed = useRef(false);
@@ -236,6 +241,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       const nextStatus = access.status;
       documentLoadsAllowed.current = nextStatus === "unlocked";
       setRememberedOnThisMac(access.rememberedOnThisMac);
+      setRecoveryConfigured(access.recoveryConfigured);
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
         await loadUnassignedDocuments();
@@ -398,6 +404,27 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }).finally(() => setImporting(false));
   };
 
+  const saveRecoveryFile = () => {
+    setSavingRecoveryFile(true);
+    void run(async () => {
+      setNotice(null);
+      if (await api.saveRecoveryFile()) {
+        setRecoveryConfigured(true);
+        setNotice({
+          body: "Keep this bearer-secret file somewhere private and separate from your Mac.",
+          tone: "success",
+          title: "Recovery file saved",
+        });
+      } else {
+        setNotice({
+          body: "Your Vault is still usable. This task will stay here until saving succeeds.",
+          tone: "attention",
+          title: "Recovery is not configured",
+        });
+      }
+    }).finally(() => setSavingRecoveryFile(false));
+  };
+
   const normalizeDocument = (documentId: string) => {
     setNormalizingDocumentId(documentId);
     void run(async () => {
@@ -470,6 +497,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onPasswordChange={setPassword}
       onRefresh={() => void refreshVaultStatus()}
       onRememberedChange={updateRemembered}
+      onSaveRecoveryFile={saveRecoveryFile}
       onSubmitPassword={submitPassword}
       onUnlockWithKeychain={unlockWithKeychain}
       onView={(document, trigger) => {
@@ -483,6 +511,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       }}
       password={password}
       rememberedOnThisMac={rememberedOnThisMac}
+      recoveryConfigured={recoveryConfigured}
+      savingRecoveryFile={savingRecoveryFile}
       unassignedDocuments={unassignedDocuments}
       updatingRemembered={updatingRemembered}
       vaultStatus={vaultStatus}
@@ -563,6 +593,29 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
 
         {unlocked ? (
           <section className="intake-content" aria-label="Manual import">
+            {!props.recoveryConfigured ? (
+              <section className="todo-panel" aria-labelledby="todo-heading">
+                <div className="todo-panel-heading">
+                  <div>
+                    <p className="ledger-eyebrow">Vault setup</p>
+                    <h2 id="todo-heading">To do</h2>
+                  </div>
+                  <span className="attention-count" aria-label="1 task">1</span>
+                </div>
+                <ul className="todo-list">
+                  <li className="todo-row">
+                    <div>
+                      <p className="todo-title">Save your recovery file</p>
+                      <p className="todo-copy">Use it to recover your Vault if you lose access to this Mac or forget your password. Anyone with the file can recover compatible Vault data, so store it privately.</p>
+                    </div>
+                    <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onSaveRecoveryFile} type="button">
+                      {props.savingRecoveryFile ? "Saving…" : "Save recovery file"}
+                    </button>
+                  </li>
+                </ul>
+              </section>
+            ) : null}
+
             <section className="intake-intro">
               <p className="ledger-eyebrow">Encrypted capture</p>
               <h2>Add a statement or export</h2>

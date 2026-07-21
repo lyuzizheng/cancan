@@ -74,7 +74,7 @@ Welcome / product promise
 -> How the vault protects data
 -> Create local vault
 -> Choose vault password / local key setup
--> Save the recovery file now, or continue with recovery visibly not configured
+-> Save the recovery file now, or choose `Skip for now` and continue with recovery visibly not configured
 -> AI provider setup
 -> Add a first file or choose a supported Money Source
 -> Detect and confirm/create the Money Source plus sub-account(s) as evidence arrives
@@ -121,7 +121,7 @@ Crash reporting or diagnostics when later defined
 
 Each row shows `On`, `Off`, `Not configured`, or `Needs attention`, a one-line consequence, and an edit action. Do not hide privacy-sensitive defaults or force the user to revisit earlier steps to understand what is enabled.
 
-Saving the recovery file is recommended but may be deferred. Deferring it does not block entry into Command Center; setup review and Settings must keep recovery visibly `Not configured`, explain the consequence, and provide a direct action to save it later.
+Saving the recovery file is recommended but may be deferred. Deferring it does not block entry into Command Center. Setup review and Settings keep recovery visibly `Not configured`; the Command Center `To do` banner list also keeps a direct `Save recovery file` action until saving succeeds. Cancellation or a failed save leaves the task visible and the Vault unconfigured.
 
 ## Network and telemetry boundary
 

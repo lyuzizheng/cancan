@@ -46,6 +46,7 @@ describe("Vault API", () => {
     await api.rememberVaultOnThisMac();
     await api.forgetVaultOnThisMac();
     await api.lockVault();
+    await api.saveRecoveryFile();
     await api.deleteSourceDocument("document-1");
     await api.importSourceDocument();
     await api.listUnassignedSourceDocuments();
@@ -63,6 +64,7 @@ describe("Vault API", () => {
       ["remember_vault_on_this_mac", undefined],
       ["forget_vault_on_this_mac", undefined],
       ["lock_vault", undefined],
+      ["save_recovery_file", undefined],
       ["delete_source_document", { documentId: "document-1" }],
       ["import_source_document", undefined],
       ["list_unassigned_source_documents", undefined],
@@ -81,6 +83,9 @@ describe("Vault API", () => {
     );
     expect(commandErrorMessage({ code: "remember_failed" })).toBe(
       "CanCan couldn’t save remembered unlock in this Mac’s Keychain.",
+    );
+    expect(commandErrorMessage({ code: "recovery_status_failed" })).toBe(
+      "The recovery file was saved, but CanCan couldn’t record setup. Keep the file private and try again.",
     );
     expect(commandErrorMessage('{"code":"normalizer_failed"}')).toBe(
       "CanCan could not finish the secure document check. Try again.",

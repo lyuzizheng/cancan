@@ -7,10 +7,11 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 ### Completed
 
 - Added immediate macOS sleep/session-lock Vault locking. AppKit notifications mark the host session system-locked, reject queued unlocks through a monotonic generation, synchronously drop the Rust-only store, and only then notify the renderer. The renderer clears document names and rendered page pixels, rejects stale async completions, and rechecks host state after wake.
+- Added the recovery-file save checkpoint without blocking onboarding. The Rust host writes a self-contained versioned `CCREC001` bearer secret outside the Vault, verifies its purpose-3 wrapper, stores only versioned configured state plus the file fingerprint in the Vault, and leaves cancellation or handled save failure unconfigured. The unlocked main surface keeps a responsive `To do` banner and direct save action until both writes succeed.
 
 ### Next
 
-- Continue `vault-manual-import` with recovery-file, statement-password, `Save a copy`, non-PDF viewing, and safe source display/list checkpoints. Keep automatic Inbox/Gmail tombstone suppression in their later owning slices.
+- Continue `vault-manual-import` with statement-password, `Save a copy`, non-PDF viewing, and safe source display/list checkpoints. Recovery import remains in `backup-release`; keep automatic Inbox/Gmail tombstone suppression in their later owning slices.
 
 ## 2026-07-20
 

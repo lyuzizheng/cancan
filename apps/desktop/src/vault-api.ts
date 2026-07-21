@@ -43,6 +43,7 @@ export interface VaultApi {
     documentId: string,
     pageNumber: number,
   ): Promise<RenderedDocumentPage>;
+  saveRecoveryFile(): Promise<boolean>;
   unlockVault(password: string): Promise<VaultStatus>;
   unlockVaultWithKeychain(): Promise<VaultStatus>;
   vaultAccessStatus(): Promise<VaultAccessStatus>;
@@ -73,6 +74,7 @@ export function createVaultApi(
     rememberVaultOnThisMac: () => call<void>("remember_vault_on_this_mac"),
     forgetVaultOnThisMac: () => call<void>("forget_vault_on_this_mac"),
     lockVault: () => call<VaultStatus>("lock_vault"),
+    saveRecoveryFile: () => call<boolean>("save_recovery_file"),
     deleteSourceDocument: (documentId) => {
       const args: DeleteSourceDocumentArgs = { documentId };
       return call<boolean, DeleteSourceDocumentArgs>(
@@ -120,6 +122,16 @@ export function commandErrorMessage(error: unknown): string {
       return "Unlock your Vault to continue.";
     case "vault_not_created":
       return "Create your Vault before adding evidence.";
+    case "recovery_already_configured":
+      return "A recovery file is already configured for this Vault.";
+    case "recovery_location_invalid":
+      return "Save the recovery file somewhere outside your CanCan Vault.";
+    case "recovery_create_failed":
+      return "CanCan couldn’t create a recovery file safely.";
+    case "recovery_save_failed":
+      return "CanCan couldn’t save the recovery file to that location.";
+    case "recovery_status_failed":
+      return "The recovery file was saved, but CanCan couldn’t record setup. Keep the file private and try again.";
     case "unsupported_document":
       return "Choose a PDF or CSV file.";
     case "normalizer_failed":
