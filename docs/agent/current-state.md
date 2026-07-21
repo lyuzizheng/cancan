@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-07-21
+Last updated: 2026-07-22
 
 ## Product phase
 
@@ -41,7 +41,7 @@ The current product target is an inbox-first local financial evidence vault and 
 - Vault password wrappers use versioned Argon2id profiles, with the RFC 9106 64 MiB profile preferred inside a 750 ms supported-Mac budget and the OWASP 19 MiB minimum as the only accepted fallback. Keychain keeps the normal remembered unlock path fast. One optional PDF password per Money Source is also stored in Keychain and excluded from backup.
 - New-device restore validates a new Vault before atomic switch, restores non-secret data, and opens a resumable Setup Checklist for Gmail, AI, statement passwords, remembered unlock, and backup target.
 - Recovery-file saving may be deferred during initial setup; the app must keep the recovery action visible and accurately show that recovery is not yet configured.
-- The accepted visual direction is `Precision Vaultpunk — Obsidian Spine + Light Ledger`. Its version-1 palette, Geologica/Martian Mono roles, precision-motion rhythm, anti-Material/anti-vibe-code guardrails, selected mock, and rejected alternatives are recorded in the canonical design specs and `resources/design/vault-archive-2026-07/`. The narrow manual-evidence checkpoint implements the tokenized Vault Spine/Light Ledger composition with responsive and reduced-motion behavior; it is not a broad Command Center or document library.
+- The accepted visual direction is `Precision Vaultpunk — Obsidian Spine + Light Ledger`. Its version-1 palette, Geologica/Martian Mono roles, fixed type scale, precision-motion rhythm, anti-Material/anti-vibe-code guardrails, selected mock, and rejected alternatives are recorded in the canonical design specs and `resources/design/vault-archive-2026-07/`. The narrow manual-evidence checkpoint implements the tokenized Vault Spine/Light Ledger composition with a Command Center navigation skeleton whose entries beyond Sources are inert upcoming markers, month-grouped ledger evidence rows, and responsive and reduced-motion behavior; it is not a broad Command Center or document library.
 
 The old broad numbered product-doc layer and duplicated alignment/harness projections have been removed. Do not recreate them.
 

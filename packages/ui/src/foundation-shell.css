@@ -32,6 +32,25 @@
   --signal-amber-text: oklch(48.3% 0.1 67.8);
   --signal-cinnabar: oklch(53.9% 0.151 31.4);
   --signal-danger-text: oklch(43.7% 0.126 29.9);
+
+  --text-xs: 0.72rem;
+  --text-sm: 0.8rem;
+  --text-base: 0.88rem;
+  --text-md: 0.92rem;
+  --text-lg: 1.1rem;
+  --text-xl: 1.3rem;
+  --text-2xl: 1.5rem;
+
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+
+  --motion-feedback: 120ms;
+  --motion-state: 180ms;
+  --motion-transition: 240ms;
+  --ease-precision: cubic-bezier(0.22, 1, 0.36, 1);
+
   color: var(--ledger-ink);
   background: var(--ledger-mineral);
   font-family: "Geologica Variable", "Avenir Next", Avenir, "Segoe UI", sans-serif;
@@ -100,7 +119,7 @@ button:disabled {
   place-items: center;
   color: var(--signal-emerald);
   border: 1px solid var(--vault-seam);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--vault-graphite);
   box-shadow: inset 0 0 0 1px var(--vault-seam);
   font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
@@ -138,8 +157,8 @@ button:disabled {
   gap: 10px;
   color: var(--vault-text-muted);
   border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 0.88rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
   font-weight: 560;
 }
 
@@ -200,7 +219,7 @@ button:disabled {
   gap: 8px;
   margin: 8px 0 5px;
   color: var(--vault-text);
-  font-size: 0.88rem;
+  font-size: var(--text-base);
   font-weight: 600;
 }
 
@@ -209,6 +228,10 @@ button:disabled {
   height: 8px;
   border-radius: 50%;
   background: var(--signal-amber);
+}
+
+.vault-status-loading {
+  animation: status-pulse 1.6s ease-in-out infinite;
 }
 
 .vault-status-unlocked {
@@ -254,7 +277,7 @@ button:disabled {
 .ledger-header h1 {
   margin: 6px 0 0;
   color: var(--ledger-ink);
-  font-size: 1.5rem;
+  font-size: var(--text-2xl);
   font-weight: 650;
   letter-spacing: -0.02em;
   line-height: 1.15;
@@ -266,18 +289,18 @@ button:disabled {
 .todo-panel h2 {
   margin: 4px 0 0;
   color: var(--ledger-ink);
-  font-size: 1.1rem;
+  font-size: var(--text-lg);
   font-weight: 650;
   letter-spacing: -0.01em;
   line-height: 1.25;
 }
 
 .vault-gate h2 {
-  font-size: 1.3rem;
+  font-size: var(--text-xl);
 }
 
 .intake-intro h2 {
-  font-size: 1.3rem;
+  font-size: var(--text-xl);
 }
 
 .ledger-actions,
@@ -295,10 +318,15 @@ button:disabled {
   gap: 8px;
   color: var(--ledger-ink);
   border: 1px solid var(--ledger-rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ledger-porcelain);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   font-weight: 610;
+  transition: border-color var(--motion-state) var(--ease-precision);
+}
+
+.remember-vault-control:not(:has(input:disabled)):hover {
+  border-color: var(--vault-seam);
 }
 
 .remember-vault-control input {
@@ -316,14 +344,14 @@ button:disabled {
   min-height: 36px;
   padding: 0 13px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.85rem;
   font-weight: 610;
   line-height: 1;
   transition:
-    color 120ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    color var(--motion-feedback) var(--ease-precision),
+    background-color var(--motion-state) var(--ease-precision),
+    border-color var(--motion-state) var(--ease-precision);
 }
 
 .button:focus-visible,
@@ -344,6 +372,11 @@ input:focus-visible {
   border-color: var(--vault-graphite);
 }
 
+.button-primary:not(:disabled):active {
+  background: var(--vault-obsidian);
+  border-color: var(--vault-obsidian);
+}
+
 .button-quiet {
   color: var(--ledger-ink);
   background: transparent;
@@ -353,6 +386,10 @@ input:focus-visible {
 .button-quiet:not(:disabled):hover {
   background: var(--ledger-porcelain);
   border-color: var(--vault-seam);
+}
+
+.button-quiet:not(:disabled):active {
+  background: var(--ledger-rule);
 }
 
 .button-danger:not(:disabled):hover {
@@ -420,8 +457,13 @@ input:focus-visible {
   padding: 0 12px;
   color: var(--ledger-ink);
   border: 1px solid var(--ledger-rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ledger-porcelain);
+  transition: border-color var(--motion-state) var(--ease-precision);
+}
+
+.vault-password-controls input:focus-visible {
+  border-color: var(--signal-emerald);
 }
 
 /* ---------- Feedback ---------- */
@@ -437,13 +479,13 @@ input:focus-visible {
   border: 1px solid var(--ledger-rule);
   border-left-width: 3px;
   background: var(--ledger-porcelain);
-  animation: feedback-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: feedback-in var(--motion-state) var(--ease-precision);
 }
 
 .feedback p {
   margin: 0;
   color: var(--ledger-text-muted);
-  font-size: 0.88rem;
+  font-size: var(--text-base);
   line-height: 1.5;
 }
 
@@ -520,7 +562,7 @@ input:focus-visible {
 
 .todo-title {
   color: var(--ledger-ink);
-  font-size: 0.92rem;
+  font-size: var(--text-md);
   font-weight: 620;
 }
 
@@ -563,11 +605,33 @@ input:focus-visible {
   margin: 0;
   padding: 14px 0 18px;
   color: var(--ledger-text-muted);
-  font-size: 0.88rem;
+  font-size: var(--text-base);
   line-height: 1.5;
 }
 
 /* ---------- Evidence rows ---------- */
+
+.evidence-group + .evidence-group {
+  margin-top: 18px;
+}
+
+.evidence-group-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding-bottom: 6px;
+  color: var(--ledger-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 620;
+}
+
+.evidence-group-count {
+  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
 
 .evidence-list {
   margin: 0;
@@ -591,7 +655,7 @@ input:focus-visible {
   place-items: center;
   color: var(--signal-emerald);
   border: 1px solid var(--ledger-rule);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--ledger-porcelain);
   font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
   font-size: 0.66rem;
@@ -618,7 +682,7 @@ input:focus-visible {
   margin-top: 3px;
   color: var(--ledger-text-muted);
   font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
 }
 
 .doc-status {
@@ -627,7 +691,7 @@ input:focus-visible {
   margin: 0;
   gap: 7px;
   color: var(--ledger-text-muted);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 
@@ -669,7 +733,7 @@ input:focus-visible {
   overflow: hidden;
   border: 1px solid var(--vault-seam);
   border-top: 3px solid var(--signal-emerald);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--ledger-mineral);
   box-shadow: 0 30px 80px rgb(0 0 0 / 32%);
 }
@@ -739,7 +803,7 @@ input:focus-visible {
   color: var(--vault-text);
   background: var(--vault-obsidian);
   font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   transform: translate(-50%, -50%);
 }
 
@@ -752,6 +816,17 @@ input:focus-visible {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
   }
 }
 

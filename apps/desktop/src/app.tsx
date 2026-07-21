@@ -648,8 +648,16 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                 <p className="panel-status">No evidence needs your attention.</p>
               ) : null}
               {props.unassignedDocuments.length > 0 ? (
-                <ul className="evidence-list">
-                  {props.unassignedDocuments.map((document) => {
+                groupEvidenceByMonth(props.unassignedDocuments).map((group) => (
+                  <section className="evidence-group" key={group.key}>
+                    <p className="evidence-group-label">
+                      {group.label}
+                      <span className="evidence-group-count">
+                        {group.documents.length} {group.documents.length === 1 ? "document" : "documents"}
+                      </span>
+                    </p>
+                    <ul className="evidence-list">
+                      {group.documents.map((document) => {
                     const routingAvailable = document.fileState === "available";
                     const deleting = props.deletingDocumentId === document.documentId;
                     const normalizing = props.normalizingDocumentId === document.documentId;
@@ -681,8 +689,10 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                         </div>
                       </li>
                     );
-                  })}
-                </ul>
+                      })}
+                    </ul>
+                  </section>
+                ))
               ) : null}
             </section>
           </section>
@@ -850,6 +860,11 @@ const META_MONTHS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ] as const;
 
+const GROUP_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
 function evidenceMeta(document: SourceDocumentSummary) {
   return `Added ${formatMetaDate(document.receivedAt)} · ${formatByteSize(document.byteSize)}`;
 }
@@ -870,6 +885,46 @@ function formatByteSize(bytes: number) {
     return `${Math.round(bytes / 1024)} KB`;
   }
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export interface EvidenceMonthGroup {
+  documents: SourceDocumentSummary[];
+  key: string;
+  label: string;
+}
+
+export function groupEvidenceByMonth(
+  documents: SourceDocumentSummary[],
+): EvidenceMonthGroup[] {
+  const groups = new Map<string, EvidenceMonthGroup>();
+  for (const document of documents) {
+    const date = new Date(document.receivedAt);
+    const valid = !Number.isNaN(date.getTime());
+    const key = valid
+      ? `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`
+      : "unknown";
+    const existing = groups.get(key);
+    if (existing) {
+      existing.documents.push(document);
+    } else {
+      groups.set(key, {
+        documents: [document],
+        key,
+        label: valid
+          ? `${GROUP_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+          : "Unknown date",
+      });
+    }
+  }
+  return [...groups.values()].sort((a, b) => {
+    if (a.key === "unknown") {
+      return 1;
+    }
+    if (b.key === "unknown") {
+      return -1;
+    }
+    return b.key.localeCompare(a.key);
+  });
 }
 
 type NavIconName =
