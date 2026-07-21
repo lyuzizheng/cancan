@@ -1,5 +1,10 @@
 export type VaultStatus = "not_created" | "locked" | "unlocked";
 
+export interface VaultAccessStatus {
+  rememberedOnThisMac: boolean | null;
+  status: VaultStatus;
+}
+
 export type VaultPasswordArgs = { password: string };
 
 export type NormalizeSourceDocumentArgs = { documentId: string };

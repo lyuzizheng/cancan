@@ -7,7 +7,15 @@ use crate::{
     vault::{create_password_wrapper, open_password_wrapper, password_wrapper_profile},
     viewer::{RenderedDocumentPage, render_pdf_page},
 };
+#[cfg(target_os = "macos")]
+use apple_native_keyring_store::keychain::{Cred as KeychainCredential, MacKeychainDomain};
+use keyring_core::{Entry as KeyringEntry, Error as KeyringError};
 use rand::{RngCore, rngs::OsRng};
+#[cfg(target_os = "macos")]
+use security_framework::{
+    item::{ItemClass, ItemSearchOptions},
+    os::macos::keychain::{SecKeychain, SecPreferencesDomain},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -27,6 +35,9 @@ use zeroize::Zeroizing;
 
 const KEY_LEN: usize = 32;
 const KEY_FILE_NAME: &str = "vault-key.ccenv";
+const KEYCHAIN_ACCOUNT: &str = "active-vault";
+const KEYCHAIN_ITEM_NOT_FOUND_STATUS: i32 = -25300;
+const KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.remembered-vault";
 const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
@@ -37,6 +48,13 @@ pub(crate) enum VaultStatus {
     NotCreated,
     Locked,
     Unlocked,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VaultAccessStatus {
+    remembered_on_this_mac: Option<bool>,
+    status: VaultStatus,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -148,18 +166,130 @@ pub(crate) struct VaultRuntime {
 }
 
 struct RuntimeInner {
+    remembered_keys: Arc<dyn RememberedKeyStore>,
     root: PathBuf,
     store: Mutex<Option<ManualImportStore>>,
 }
 
+trait RememberedKeyStore: Send + Sync {
+    fn delete(&self) -> Result<(), ()>;
+    fn is_present(&self) -> Result<bool, ()>;
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
+    fn save(&self, secret: &[u8]) -> Result<(), ()>;
+}
+
+#[derive(Clone)]
+struct KeychainRememberedKeyStore {
+    account: String,
+    service: String,
+}
+
+impl KeychainRememberedKeyStore {
+    fn production() -> Self {
+        Self::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+    }
+
+    fn new(service: impl Into<String>, account: impl Into<String>) -> Self {
+        Self {
+            account: account.into(),
+            service: service.into(),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn entry(&self) -> Result<KeyringEntry, ()> {
+        KeychainCredential::build(MacKeychainDomain::User, &self.service, &self.account)
+            .map_err(|_| ())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn entry(&self) -> Result<KeyringEntry, ()> {
+        Err(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn item_query(&self) -> Result<ItemSearchOptions, ()> {
+        let keychain =
+            SecKeychain::default_for_domain(SecPreferencesDomain::User).map_err(|_| ())?;
+        let mut query = ItemSearchOptions::new();
+        query
+            .keychains(&[keychain])
+            .class(ItemClass::generic_password())
+            .service(&self.service)
+            .account(&self.account)
+            .limit(1);
+        Ok(query)
+    }
+}
+
+impl RememberedKeyStore for KeychainRememberedKeyStore {
+    #[cfg(target_os = "macos")]
+    fn delete(&self) -> Result<(), ()> {
+        match self.item_query()?.delete() {
+            Ok(()) => Ok(()),
+            Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn delete(&self) -> Result<(), ()> {
+        Err(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn is_present(&self) -> Result<bool, ()> {
+        match self.item_query()?.search() {
+            Ok(_) => Ok(true),
+            Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(false),
+            Err(_) => Err(()),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn is_present(&self) -> Result<bool, ()> {
+        Err(())
+    }
+
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+        match self.entry()?.get_secret() {
+            Ok(secret) => Ok(Some(Zeroizing::new(secret))),
+            Err(KeyringError::NoEntry) => Ok(None),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn save(&self, secret: &[u8]) -> Result<(), ()> {
+        self.entry()?.set_secret(secret).map_err(|_| ())
+    }
+}
+
 impl VaultRuntime {
     pub(crate) fn new(root: PathBuf) -> Self {
+        Self::with_remembered_keys(root, Arc::new(KeychainRememberedKeyStore::production()))
+    }
+
+    fn with_remembered_keys(root: PathBuf, remembered_keys: Arc<dyn RememberedKeyStore>) -> Self {
         Self {
             inner: Arc::new(RuntimeInner {
+                remembered_keys,
                 root,
                 store: Mutex::new(None),
             }),
         }
+    }
+
+    pub(crate) fn access_status(&self) -> Result<VaultAccessStatus, RuntimeError> {
+        let status = self.status()?;
+        let remembered_on_this_mac = if status == VaultStatus::NotCreated {
+            Some(false)
+        } else {
+            self.inner.remembered_keys.is_present().ok()
+        };
+        Ok(VaultAccessStatus {
+            remembered_on_this_mac,
+            status,
+        })
     }
 
     pub(crate) fn status(&self) -> Result<VaultStatus, RuntimeError> {
@@ -275,6 +405,48 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("invalid_vault"))?;
         *store = Some(opened);
         Ok(VaultStatus::Unlocked)
+    }
+
+    pub(crate) fn unlock_with_keychain(&self) -> Result<VaultStatus, RuntimeError> {
+        let mut store = self.store()?;
+        if store.is_some() {
+            return Ok(VaultStatus::Unlocked);
+        }
+        if self.locked_status()? != VaultStatus::Locked {
+            return Err(RuntimeError::new("vault_not_created"));
+        }
+        let Some(master_key) = self
+            .load_remembered_master_key()
+            .map_err(|_| RuntimeError::new("remembered_unlock_failed"))?
+        else {
+            return Err(RuntimeError::new("remembered_unlock_unavailable"));
+        };
+        match ManualImportStore::open_existing(&self.inner.root, master_key) {
+            Ok(opened) => {
+                *store = Some(opened);
+                Ok(VaultStatus::Unlocked)
+            }
+            Err(_) => Err(RuntimeError::new("remembered_unlock_failed")),
+        }
+    }
+
+    pub(crate) fn remember_on_this_mac(&self) -> Result<(), RuntimeError> {
+        let store = self.store()?;
+        let store = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        self.inner
+            .remembered_keys
+            .save(store.master_key())
+            .map_err(|_| RuntimeError::new("remember_failed"))
+    }
+
+    pub(crate) fn forget_this_mac(&self) -> Result<(), RuntimeError> {
+        self.require_unlocked()?;
+        self.inner
+            .remembered_keys
+            .delete()
+            .map_err(|_| RuntimeError::new("forget_failed"))
     }
 
     pub(crate) fn lock(&self) -> Result<VaultStatus, RuntimeError> {
@@ -517,6 +689,20 @@ impl VaultRuntime {
             .lock()
             .map_err(|_| RuntimeError::new("runtime_unavailable"))
     }
+
+    fn load_remembered_master_key(&self) -> Result<Option<Zeroizing<[u8; KEY_LEN]>>, ()> {
+        let Some(secret) = self.inner.remembered_keys.load()? else {
+            return Ok(None);
+        };
+        let master_key = match secret.as_slice().try_into() {
+            Ok(master_key) => master_key,
+            Err(_) => {
+                self.inner.remembered_keys.delete()?;
+                return Ok(None);
+            }
+        };
+        Ok(Some(Zeroizing::new(master_key)))
+    }
 }
 
 fn document_render_error(error: io::Error) -> RuntimeError {
@@ -533,6 +719,17 @@ pub(crate) async fn vault_status(
 ) -> Result<VaultStatus, VaultCommandError> {
     let runtime = runtime.inner().clone();
     tauri::async_runtime::spawn_blocking(move || runtime.status())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn vault_access_status(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<VaultAccessStatus, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.access_status())
         .await
         .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
         .map_err(Into::into)
@@ -559,6 +756,39 @@ pub(crate) async fn unlock_vault(
     let runtime = runtime.inner().clone();
     let password = Zeroizing::new(password);
     tauri::async_runtime::spawn_blocking(move || runtime.unlock(password.as_bytes()))
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn unlock_vault_with_keychain(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<VaultStatus, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.unlock_with_keychain())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn remember_vault_on_this_mac(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<(), VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.remember_on_this_mac())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn forget_vault_on_this_mac(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<(), VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.forget_this_mac())
         .await
         .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
         .map_err(Into::into)
@@ -919,6 +1149,96 @@ mod tests {
     use crate::database::SourceDocumentImportStatus;
     use std::{thread, time::Duration};
 
+    #[derive(Default)]
+    struct MemoryRememberedKeyStore {
+        secret: Mutex<Option<Vec<u8>>>,
+    }
+
+    impl RememberedKeyStore for MemoryRememberedKeyStore {
+        fn delete(&self) -> Result<(), ()> {
+            *self.secret.lock().map_err(|_| ())? = None;
+            Ok(())
+        }
+
+        fn is_present(&self) -> Result<bool, ()> {
+            Ok(self.secret.lock().map_err(|_| ())?.is_some())
+        }
+
+        fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+            Ok(self
+                .secret
+                .lock()
+                .map_err(|_| ())?
+                .clone()
+                .map(Zeroizing::new))
+        }
+
+        fn save(&self, secret: &[u8]) -> Result<(), ()> {
+            *self.secret.lock().map_err(|_| ())? = Some(secret.to_vec());
+            Ok(())
+        }
+    }
+
+    struct FailingRememberedKeyStore;
+
+    impl RememberedKeyStore for FailingRememberedKeyStore {
+        fn delete(&self) -> Result<(), ()> {
+            Err(())
+        }
+
+        fn is_present(&self) -> Result<bool, ()> {
+            Err(())
+        }
+
+        fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+            Ok(None)
+        }
+
+        fn save(&self, _secret: &[u8]) -> Result<(), ()> {
+            Err(())
+        }
+    }
+
+    struct PresenceOnlyRememberedKeyStore;
+
+    impl RememberedKeyStore for PresenceOnlyRememberedKeyStore {
+        fn delete(&self) -> Result<(), ()> {
+            Err(())
+        }
+
+        fn is_present(&self) -> Result<bool, ()> {
+            Ok(true)
+        }
+
+        fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+            panic!("status must not load the remembered secret")
+        }
+
+        fn save(&self, _secret: &[u8]) -> Result<(), ()> {
+            Err(())
+        }
+    }
+
+    struct MalformedDeleteFailingRememberedKeyStore;
+
+    impl RememberedKeyStore for MalformedDeleteFailingRememberedKeyStore {
+        fn delete(&self) -> Result<(), ()> {
+            Err(())
+        }
+
+        fn is_present(&self) -> Result<bool, ()> {
+            Ok(true)
+        }
+
+        fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+            Ok(Some(Zeroizing::new(vec![0x55; KEY_LEN - 1])))
+        }
+
+        fn save(&self, _secret: &[u8]) -> Result<(), ()> {
+            Err(())
+        }
+    }
+
     #[test]
     fn accepts_only_the_expected_normalizer_handshake() {
         assert!(valid_normalizer_ready(1, "single-pass-mock", true));
@@ -983,6 +1303,260 @@ mod tests {
                 .expect("unlock Vault"),
             VaultStatus::Unlocked
         );
+    }
+
+    #[test]
+    fn remembers_unlock_in_the_secret_store_and_removes_it_explicitly() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let root = parent.path().join("vault");
+        let remembered_keys = Arc::new(MemoryRememberedKeyStore::default());
+        let runtime = VaultRuntime::with_remembered_keys(root.clone(), remembered_keys.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime.remember_on_this_mac().expect("remember Vault");
+        assert_eq!(
+            runtime.access_status().expect("remembered status"),
+            VaultAccessStatus {
+                remembered_on_this_mac: Some(true),
+                status: VaultStatus::Unlocked,
+            }
+        );
+        runtime.lock().expect("lock Vault");
+        drop(runtime);
+
+        let restarted = VaultRuntime::with_remembered_keys(root.clone(), remembered_keys.clone());
+        assert_eq!(
+            restarted.access_status().expect("restart status"),
+            VaultAccessStatus {
+                remembered_on_this_mac: Some(true),
+                status: VaultStatus::Locked,
+            }
+        );
+        assert_eq!(
+            restarted
+                .unlock_with_keychain()
+                .expect("unlock through Keychain"),
+            VaultStatus::Unlocked
+        );
+        restarted.forget_this_mac().expect("forget this Mac");
+        restarted.lock().expect("lock forgotten Vault");
+        drop(restarted);
+
+        let forgotten = VaultRuntime::with_remembered_keys(root, remembered_keys);
+        assert_eq!(
+            forgotten.access_status().expect("forgotten status"),
+            VaultAccessStatus {
+                remembered_on_this_mac: Some(false),
+                status: VaultStatus::Locked,
+            }
+        );
+        assert_eq!(
+            forgotten
+                .unlock_with_keychain()
+                .expect_err("remembered key was removed")
+                .code(),
+            "remembered_unlock_unavailable"
+        );
+    }
+
+    #[test]
+    fn access_status_checks_presence_without_loading_the_secret() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let root = parent.path().join("vault");
+        let setup = VaultRuntime::with_remembered_keys(
+            root.clone(),
+            Arc::new(MemoryRememberedKeyStore::default()),
+        );
+        setup
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        setup.lock().expect("lock Vault");
+        drop(setup);
+
+        let runtime =
+            VaultRuntime::with_remembered_keys(root, Arc::new(PresenceOnlyRememberedKeyStore));
+        assert_eq!(
+            runtime.access_status().expect("presence-only status"),
+            VaultAccessStatus {
+                remembered_on_this_mac: Some(true),
+                status: VaultStatus::Locked,
+            }
+        );
+    }
+
+    #[test]
+    fn removes_a_malformed_remembered_secret_before_password_fallback() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let root = parent.path().join("vault");
+        let remembered_keys = Arc::new(MemoryRememberedKeyStore::default());
+        let runtime = VaultRuntime::with_remembered_keys(root, remembered_keys.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime.lock().expect("lock Vault");
+        remembered_keys
+            .save(&[0x55; KEY_LEN - 1])
+            .expect("seed malformed secret");
+
+        assert_eq!(
+            runtime
+                .unlock_with_keychain()
+                .expect_err("reject malformed secret")
+                .code(),
+            "remembered_unlock_unavailable"
+        );
+        assert_eq!(
+            runtime
+                .access_status()
+                .expect("status after malformed secret")
+                .remembered_on_this_mac,
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn reports_cleanup_failure_for_a_malformed_remembered_secret() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let root = parent.path().join("vault");
+        let setup = VaultRuntime::with_remembered_keys(
+            root.clone(),
+            Arc::new(MemoryRememberedKeyStore::default()),
+        );
+        setup
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        setup.lock().expect("lock Vault");
+        drop(setup);
+
+        let runtime = VaultRuntime::with_remembered_keys(
+            root,
+            Arc::new(MalformedDeleteFailingRememberedKeyStore),
+        );
+        assert_eq!(
+            runtime
+                .unlock_with_keychain()
+                .expect_err("surface malformed-secret cleanup failure")
+                .code(),
+            "remembered_unlock_failed"
+        );
+        assert_eq!(
+            runtime
+                .access_status()
+                .expect("failed cleanup remains visible")
+                .remembered_on_this_mac,
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn preserves_an_unverified_key_after_open_failure_and_keeps_password_unlock_available() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let root = parent.path().join("vault");
+        let remembered_keys = Arc::new(MemoryRememberedKeyStore::default());
+        let runtime = VaultRuntime::with_remembered_keys(root.clone(), remembered_keys.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime.lock().expect("lock Vault");
+        remembered_keys
+            .save(&[0x55; KEY_LEN])
+            .expect("seed stale key");
+        drop(runtime);
+
+        let restarted = VaultRuntime::with_remembered_keys(root, remembered_keys);
+        assert_eq!(
+            restarted
+                .unlock_with_keychain()
+                .expect_err("reject unverified remembered key")
+                .code(),
+            "remembered_unlock_failed"
+        );
+        assert_eq!(
+            restarted
+                .access_status()
+                .expect("status after open failure")
+                .remembered_on_this_mac,
+            Some(true)
+        );
+        assert_eq!(
+            restarted
+                .unlock(b"synthetic-vault-password")
+                .expect("password fallback"),
+            VaultStatus::Unlocked
+        );
+    }
+
+    #[test]
+    fn reports_a_safe_error_when_keychain_storage_fails() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let runtime = VaultRuntime::with_remembered_keys(
+            parent.path().join("vault"),
+            Arc::new(FailingRememberedKeyStore),
+        );
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+
+        assert_eq!(
+            runtime
+                .remember_on_this_mac()
+                .expect_err("surface Keychain failure")
+                .code(),
+            "remember_failed"
+        );
+        assert_eq!(
+            runtime.status().expect("Vault remains open"),
+            VaultStatus::Unlocked
+        );
+        assert_eq!(
+            runtime
+                .forget_this_mac()
+                .expect_err("surface Keychain deletion failure")
+                .code(),
+            "forget_failed"
+        );
+        assert_eq!(
+            runtime
+                .access_status()
+                .expect("status remains available")
+                .remembered_on_this_mac,
+            None
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn production_keychain_store_round_trips_binary_secret() {
+        struct Cleanup(KeychainRememberedKeyStore);
+
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = self.0.delete();
+            }
+        }
+
+        let service = format!("{KEYCHAIN_SERVICE}.test.{}", candidate_name());
+        let store = KeychainRememberedKeyStore::new(service.clone(), KEYCHAIN_ACCOUNT);
+        store.delete().expect("remove pre-existing test entry");
+        let _cleanup = Cleanup(store.clone());
+        assert!(!store.is_present().expect("test entry starts absent"));
+
+        let secret = [0_u8, 1, 2, 0, 4, 5, 6, 7];
+        store.save(&secret).expect("save binary Keychain secret");
+        assert!(store.is_present().expect("test entry is present"));
+
+        let restarted = KeychainRememberedKeyStore::new(service, KEYCHAIN_ACCOUNT);
+        assert_eq!(
+            restarted
+                .load()
+                .expect("load Keychain secret")
+                .expect("saved secret exists")
+                .as_slice(),
+            secret
+        );
+        restarted.delete().expect("delete Keychain secret");
+        assert!(!restarted.is_present().expect("test entry is absent"));
     }
 
     #[test]

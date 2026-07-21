@@ -185,6 +185,10 @@ impl ManualImportStore {
         Ok(store)
     }
 
+    pub(crate) fn master_key(&self) -> &[u8; KEY_LEN] {
+        &self.master_key
+    }
+
     pub fn register_import(
         &mut self,
         input: &SourceDocumentImport<'_>,

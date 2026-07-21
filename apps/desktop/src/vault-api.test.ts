@@ -29,8 +29,12 @@ describe("Vault API", () => {
     const api = createVaultApi(invoke);
 
     await api.vaultStatus();
+    await api.vaultAccessStatus();
     await api.createVault("password");
     await api.unlockVault("password");
+    await api.unlockVaultWithKeychain();
+    await api.rememberVaultOnThisMac();
+    await api.forgetVaultOnThisMac();
     await api.lockVault();
     await api.deleteSourceDocument("document-1");
     await api.importSourceDocument();
@@ -40,8 +44,12 @@ describe("Vault API", () => {
 
     expect(calls).toEqual([
       ["vault_status", undefined],
+      ["vault_access_status", undefined],
       ["create_vault", { password: "password" }],
       ["unlock_vault", { password: "password" }],
+      ["unlock_vault_with_keychain", undefined],
+      ["remember_vault_on_this_mac", undefined],
+      ["forget_vault_on_this_mac", undefined],
       ["lock_vault", undefined],
       ["delete_source_document", { documentId: "document-1" }],
       ["import_source_document", undefined],
@@ -54,6 +62,12 @@ describe("Vault API", () => {
   it("maps command failures to safe user-facing copy", () => {
     expect(commandErrorMessage({ code: "vault_locked" })).toBe(
       "Unlock your Vault to continue.",
+    );
+    expect(commandErrorMessage({ code: "remembered_unlock_unavailable" })).toBe(
+      "Remembered unlock is no longer available. Use your Vault password instead.",
+    );
+    expect(commandErrorMessage({ code: "remember_failed" })).toBe(
+      "CanCan couldn’t save remembered unlock in this Mac’s Keychain.",
     );
     expect(commandErrorMessage('{"code":"normalizer_failed"}')).toBe(
       "CanCan could not finish the secure document check. Try again.",
