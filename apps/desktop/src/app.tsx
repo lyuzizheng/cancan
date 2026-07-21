@@ -287,6 +287,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         documentLoadsAllowed.current = nextStatus === "unlocked";
         setVaultStatus(nextStatus);
         if (nextStatus === "unlocked") {
+          setPassword("");
           await loadUnassignedDocuments();
         }
       } catch (nextError) {

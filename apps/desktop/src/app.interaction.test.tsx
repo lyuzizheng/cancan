@@ -200,7 +200,7 @@ describe("App manual import orchestration", () => {
     expect(button("Add file")).toBeDefined();
   });
 
-  it("unlocks through Keychain only after an explicit user action", async () => {
+  it("unlocks through Keychain only after an explicit user action and clears the unused password", async () => {
     const api = createApi({
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
         rememberedOnThisMac: true,
@@ -212,10 +212,14 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain("Unlock with this Mac");
     expect(api.unlockVaultWithKeychain).not.toHaveBeenCalled();
 
+    await enterPassword("typed-but-unused");
     await click("Unlock with this Mac");
 
     expect(api.unlockVaultWithKeychain).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("Add file");
+
+    await click("Lock Vault");
+    expect(container.querySelector<HTMLInputElement>("#vault-password")?.value).toBe("");
   });
 
   it("keeps password unlock available when Keychain presence is unknown", async () => {
