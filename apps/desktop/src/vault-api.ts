@@ -4,11 +4,14 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   DeleteSourceDocumentArgs,
   NormalizeSourceDocumentArgs,
+  PreviewSourceDocumentArgs,
   RemoveStatementPasswordArgs,
   RenderedDocumentPage,
   RenderSourceDocumentPageArgs,
   SavedStatementPasswordResult,
+  SaveSourceDocumentCopyArgs,
   SourceDocumentImportOutcome,
+  SourceDocumentPreview,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   DocumentStatementPasswordArgs,
@@ -44,6 +47,7 @@ export interface VaultApi {
     documentId: string,
   ): Promise<SourceDocumentRoutingOutcome>;
   onVaultLocked(handler: () => void): Promise<() => void>;
+  previewSourceDocument(documentId: string): Promise<SourceDocumentPreview>;
   rememberVaultOnThisMac(): Promise<void>;
   removeStatementPassword(moneySourceId: string): Promise<void>;
   renderSourceDocumentPage(
@@ -51,6 +55,7 @@ export interface VaultApi {
     pageNumber: number,
   ): Promise<RenderedDocumentPage>;
   saveRecoveryFile(): Promise<boolean>;
+  saveSourceDocumentCopy(documentId: string): Promise<boolean>;
   trySavedStatementPassword(
     documentId: string,
     moneySourceId: string,
@@ -128,6 +133,13 @@ export function createVaultApi(
     },
     lockVault: () => call<VaultStatus>("lock_vault"),
     saveRecoveryFile: () => call<boolean>("save_recovery_file"),
+    saveSourceDocumentCopy: (documentId) => {
+      const args: SaveSourceDocumentCopyArgs = { documentId };
+      return call<boolean, SaveSourceDocumentCopyArgs>(
+        "save_source_document_copy",
+        args,
+      );
+    },
     deleteSourceDocument: (documentId) => {
       const args: DeleteSourceDocumentArgs = { documentId };
       return call<boolean, DeleteSourceDocumentArgs>(
@@ -147,6 +159,13 @@ export function createVaultApi(
       );
     },
     onVaultLocked: (handler) => subscribe("vault-locked", handler),
+    previewSourceDocument: (documentId) => {
+      const args: PreviewSourceDocumentArgs = { documentId };
+      return call<SourceDocumentPreview, PreviewSourceDocumentArgs>(
+        "preview_source_document",
+        args,
+      );
+    },
     renderSourceDocumentPage: (documentId, pageNumber) => {
       const args: RenderSourceDocumentPageArgs = { documentId, pageNumber };
       return call<RenderedDocumentPage, RenderSourceDocumentPageArgs>(
@@ -197,6 +216,10 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t save the recovery file to that location.";
     case "recovery_status_failed":
       return "The recovery file was saved, but CanCan couldn’t record setup. Keep the file private and try again.";
+    case "source_copy_location_invalid":
+      return "Save the copy somewhere outside your CanCan Vault.";
+    case "source_copy_save_failed":
+      return "CanCan couldn’t save a complete copy to that location.";
     case "unsupported_document":
       return "Choose a PDF or CSV file.";
     case "normalizer_failed":

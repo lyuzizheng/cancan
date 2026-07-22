@@ -17,6 +17,8 @@ export type NormalizeSourceDocumentArgs = { documentId: string };
 
 export type DeleteSourceDocumentArgs = { documentId: string };
 
+export type SaveSourceDocumentCopyArgs = { documentId: string };
+
 export type DocumentStatementPasswordArgs = {
   documentId: string;
   moneySourceId: string;
@@ -35,6 +37,8 @@ export type RenderSourceDocumentPageArgs = {
   documentId: string;
   pageNumber: number;
 };
+
+export type PreviewSourceDocumentArgs = { documentId: string };
 
 export interface SourceDocumentImportOutcome {
   documentId: string;
@@ -74,4 +78,11 @@ export interface RenderedDocumentPage {
   pageCount: number;
   pageNumber: number;
   pngBase64: string;
+}
+
+export interface SourceDocumentPreview {
+  lineCount: number;
+  previewLines: number;
+  previewText: string;
+  truncated: boolean;
 }

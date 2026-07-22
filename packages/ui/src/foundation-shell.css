@@ -680,6 +680,20 @@ input:focus-visible {
   box-shadow: 0 12px 34px rgb(0 0 0 / 18%);
 }
 
+.document-preview-page {
+  background: var(--ledger-porcelain);
+}
+
+.document-preview-text {
+  margin: 0;
+  color: var(--ledger-ink);
+  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .viewer-loading {
   position: absolute;
   inset: 50% auto auto 50%;

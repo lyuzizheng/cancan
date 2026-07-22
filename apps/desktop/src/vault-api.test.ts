@@ -56,6 +56,7 @@ describe("Vault API", () => {
     await api.removeStatementPassword("source-dbs");
     await api.lockVault();
     await api.saveRecoveryFile();
+    await api.saveSourceDocumentCopy("document-1");
     await api.deleteSourceDocument("document-1");
     await api.importSourceDocument();
     await api.listUnassignedSourceDocuments();
@@ -63,6 +64,7 @@ describe("Vault API", () => {
     removeVaultLockListener();
     await api.normalizeSourceDocument("document-1");
     await api.renderSourceDocumentPage("document-1", 2);
+    await api.previewSourceDocument("document-1");
 
     expect(calls).toEqual([
       ["vault_status", undefined],
@@ -89,11 +91,13 @@ describe("Vault API", () => {
       ["remove_statement_password", { moneySourceId: "source-dbs" }],
       ["lock_vault", undefined],
       ["save_recovery_file", undefined],
+      ["save_source_document_copy", { documentId: "document-1" }],
       ["delete_source_document", { documentId: "document-1" }],
       ["import_source_document", undefined],
       ["list_unassigned_source_documents", undefined],
       ["normalize_source_document", { documentId: "document-1" }],
       ["render_source_document_page", { documentId: "document-1", pageNumber: 2 }],
+      ["preview_source_document", { documentId: "document-1" }],
     ]);
     expect(listenedEvents).toEqual(["vault-locked"]);
   });
@@ -118,6 +122,12 @@ describe("Vault API", () => {
     );
     expect(commandErrorMessage({ code: "recovery_status_failed" })).toBe(
       "The recovery file was saved, but CanCan couldn’t record setup. Keep the file private and try again.",
+    );
+    expect(commandErrorMessage({ code: "source_copy_location_invalid" })).toBe(
+      "Save the copy somewhere outside your CanCan Vault.",
+    );
+    expect(commandErrorMessage({ code: "source_copy_save_failed" })).toBe(
+      "CanCan couldn’t save a complete copy to that location.",
     );
     expect(commandErrorMessage('{"code":"normalizer_failed"}')).toBe(
       "CanCan could not finish the secure document check. Try again.",

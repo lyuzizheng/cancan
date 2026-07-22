@@ -8,6 +8,7 @@ import type {
   SourceDocumentImportOutcome,
   RenderedDocumentPage,
   SavedStatementPasswordResult,
+  SourceDocumentPreview,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   VaultAccessStatus,
@@ -78,6 +79,14 @@ function createApi(overrides: Partial<VaultApi> = {}) {
       }),
     ),
     onVaultLocked: vi.fn(async () => () => undefined),
+    previewSourceDocument: vi.fn(
+      async (): Promise<SourceDocumentPreview> => ({
+        lineCount: 0,
+        previewLines: 0,
+        previewText: "",
+        truncated: false,
+      }),
+    ),
     renderSourceDocumentPage: vi.fn(
       async (_documentId: string, pageNumber: number): Promise<RenderedDocumentPage> => ({
         pageCount: 2,
@@ -87,6 +96,7 @@ function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
     saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
+    saveSourceDocumentCopy: vi.fn(async (): Promise<boolean> => false),
     trySavedStatementPassword: vi.fn(
       async (): Promise<SavedStatementPasswordResult> => "invalid",
     ),
@@ -701,6 +711,116 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain("Unlock your Vault");
   });
 
+  it("opens a bounded CSV preview and clears it on close or Vault lock", async () => {
+    const csvDocument = sourceDocument({
+      documentId: "document-csv",
+      mimeType: "text/csv",
+      originalFilename: "wise-export.csv",
+    });
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [csvDocument]),
+      previewSourceDocument: vi.fn(
+        async (): Promise<SourceDocumentPreview> => ({
+          lineCount: 1,
+          previewLines: 1,
+          previewText: "memo,partial content",
+          truncated: true,
+        }),
+      ),
+    });
+
+    await mount(api);
+    const viewTrigger = button("View document");
+    await click("View document");
+
+    expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
+    expect(api.renderSourceDocumentPage).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.textContent).toContain("memo,partial content");
+    expect(container.textContent).toContain(
+      "Preview truncated. Displaying content from 1 of 1 line; the final displayed line may be partial. Save a copy to view the full file.",
+    );
+
+    await click("Close");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(viewTrigger);
+
+    await click("View document");
+    await click("Lock Vault");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).not.toContain("memo,partial content");
+    expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("ignores a delayed CSV preview completion after native Vault lock", async () => {
+    const csvDocument = sourceDocument({
+      documentId: "document-csv",
+      mimeType: "text/csv",
+      originalFilename: "wise-export.csv",
+    });
+    const preview = deferred<SourceDocumentPreview>();
+    let notifyLocked: (() => void) | undefined;
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [csvDocument]),
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyLocked = handler;
+        return () => undefined;
+      }),
+      previewSourceDocument: vi.fn(() => preview.promise),
+    });
+
+    await mount(api);
+    await click("View document");
+    expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
+
+    await act(async () => {
+      notifyLocked?.();
+      preview.resolve({
+        lineCount: 2,
+        previewLines: 2,
+        previewText: "date,amount\n2026-07-01,10.00",
+        truncated: false,
+      });
+      await settle();
+    });
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("date,amount");
+  });
+
+  it("does not surface a preview failure that lands after native Vault lock", async () => {
+    const csvDocument = sourceDocument({
+      documentId: "document-csv",
+      mimeType: "text/csv",
+      originalFilename: "wise-export.csv",
+    });
+    const preview = deferred<SourceDocumentPreview>();
+    let notifyLocked: (() => void) | undefined;
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [csvDocument]),
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyLocked = handler;
+        return () => undefined;
+      }),
+      previewSourceDocument: vi.fn(() => preview.promise),
+    });
+
+    await mount(api);
+    await click("View document");
+    expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
+
+    await act(async () => {
+      notifyLocked?.();
+      preview.reject({ code: "vault_locked" });
+      await settle();
+    });
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("Unlock your Vault to continue.");
+  });
+
   it("deletes an available source file and keeps its tombstone visible", async () => {
     const deletedDocument = sourceDocument({ fileState: "deleted" });
     const listUnassignedSourceDocuments = vi
@@ -721,6 +841,56 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).not.toContain("Delete source file");
     expect(container.textContent).toContain("View unavailable");
     expect(container.textContent).toContain("Routing unavailable");
+  });
+
+  it("reports a saved source copy but keeps cancellation silent", async () => {
+    const outcomes = [false, true];
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      saveSourceDocumentCopy: vi.fn(async () => outcomes.shift()!),
+    });
+
+    await mount(api);
+    await click("Save a copy");
+    expect(container.textContent).not.toContain("Copy saved");
+
+    await click("Save a copy");
+    expect(api.saveSourceDocumentCopy).toHaveBeenNthCalledWith(
+      2,
+      availableDocument.documentId,
+    );
+    expect(container.textContent).toContain("Copy saved");
+    expect(container.textContent).toContain(
+      "outside CanCan’s encrypted Vault",
+    );
+  });
+
+  it("ignores a delayed source-copy completion after native Vault lock", async () => {
+    const copy = deferred<boolean>();
+    let notifyLocked: (() => void) | undefined;
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyLocked = handler;
+        return () => undefined;
+      }),
+      saveSourceDocumentCopy: vi.fn(() => copy.promise),
+    });
+
+    await mount(api);
+    await click("Save a copy");
+    expect(container.textContent).toContain("Saving copy…");
+
+    await act(async () => {
+      notifyLocked?.();
+      copy.resolve(true);
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("Copy saved");
+    expect(container.textContent).not.toContain("Saving copy…");
+    expect(container.textContent).not.toContain(availableDocument.originalFilename);
   });
 
   it("keeps an available source file when deletion confirmation is cancelled", async () => {
