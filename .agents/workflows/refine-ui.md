@@ -2,6 +2,8 @@
 
 Use this when the user asks to improve visual quality, interaction quality, or UI design.
 
+Kimi Code CLI leads UX direction, advanced visual design, and the final designer-level review of customer-facing UI (AGENTS.md item 9). Other agents may make UI changes with this workflow, but route advanced visual/UX work and its final visual review through Kimi Code CLI.
+
 ## Steps
 
 1. Read `docs/specs/0006-command-center-ui.md`.

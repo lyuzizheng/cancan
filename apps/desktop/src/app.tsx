@@ -1,5 +1,5 @@
 import { AppShell } from "@cancan/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
   RenderedDocumentPage,
@@ -783,6 +783,21 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
           <span className="vault-mark" aria-hidden="true">C</span>
           <span>CanCan</span>
         </div>
+        <nav className="vault-nav" aria-label="Command Center">
+          <p className="vault-nav-label">Command Center</p>
+          <ul className="vault-nav-list">
+            <li><span className="vault-nav-item vault-nav-item-active" aria-current="page"><NavIcon name="sources" />Sources<span className="vault-nav-dot" aria-hidden="true" /></span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="assets" />Assets</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="transactions" />Transactions</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="review" />Review</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="money-flow" />Money Flow</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="jobs" />Jobs</span></li>
+            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="settings" />Settings</span></li>
+          </ul>
+        </nav>
+        <div className="vault-assistant">
+          <span className="vault-nav-item vault-nav-upcoming"><NavIcon name="assistant" />AI Assistant</span>
+        </div>
         <div className="vault-spine-status">
           <p className="vault-spine-label">Local Vault</p>
           <p className="vault-spine-state">
@@ -847,10 +862,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
             {!props.recoveryConfigured ? (
               <section className="todo-panel" aria-labelledby="todo-heading">
                 <div className="todo-panel-heading">
-                  <div>
-                    <p className="ledger-eyebrow">Vault setup</p>
-                    <h2 id="todo-heading">To do</h2>
-                  </div>
+                  <h2 id="todo-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />To do</h2>
                   <span className="attention-count" aria-label="1 task">1</span>
                 </div>
                 <ul className="todo-list">
@@ -868,7 +880,6 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
             ) : null}
 
             <section className="intake-intro">
-              <p className="ledger-eyebrow">Encrypted capture</p>
               <h2>Add a statement or export</h2>
               <p>Choose a PDF or CSV. CanCan saves it in your Vault before checking its configured source.</p>
             </section>
@@ -877,10 +888,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
 
             <section className="attention-panel" aria-labelledby="attention-heading">
               <div className="attention-panel-heading">
-                <div>
-                  <p className="ledger-eyebrow">Source routing</p>
-                  <h2 id="attention-heading">Needs attention</h2>
-                </div>
+                <h2 id="attention-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />Needs attention</h2>
                 <span className="attention-count" aria-label={`${props.unassignedDocuments.length} documents`}>
                   {props.unassignedDocuments.length}
                 </span>
@@ -891,54 +899,70 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                 <p className="panel-status">No evidence needs your attention.</p>
               ) : null}
               {props.unassignedDocuments.length > 0 ? (
-                <ul className="evidence-list">
-                  {props.unassignedDocuments.map((document) => {
-                    const passwordRequired = document.documentStatus === "password_required";
-                    const protectedUnlocked = document.documentStatus === "protected_unlocked";
-                    const fileAvailable = document.fileState === "available";
-                    const viewingAvailable = fileAvailable
-                      && (document.documentStatus === "ready" || protectedUnlocked);
-                    const routingAvailable = fileAvailable && document.documentStatus === "ready";
-                    const deleting = props.deletingDocumentId === document.documentId;
-                    const normalizing = props.normalizingDocumentId === document.documentId;
-                    const savingCopy = props.savingCopyDocumentId === document.documentId;
-                    return (
-                      <li className="evidence-row" key={document.documentId}>
-                        <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : "CSV"}</span>
-                        <div className="evidence-details">
-                          <p>{document.originalFilename}</p>
-                          <span>{documentStatusLabel(document)}</span>
-                        </div>
-                        <div className="evidence-actions">
-                          {passwordRequired ? (
-                            <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onOpenUnlock(document)} type="button">
-                              Unlock
-                            </button>
-                          ) : (
-                            <button className="button button-quiet" disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
-                              {!viewingAvailable ? "View unavailable" : "View document"}
-                            </button>
-                          )}
-                          {!passwordRequired && document.documentStatus !== "inspection_failed" ? (
-                            <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
-                              {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
-                            </button>
-                          ) : null}
-                          {fileAvailable ? (
-                            <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onSaveSourceCopy(document.documentId)} type="button">
-                              {savingCopy ? "Saving copy…" : "Save a copy"}
-                            </button>
-                          ) : null}
-                          {fileAvailable ? (
-                            <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
-                              {deleting ? "Deleting…" : "Delete source file"}
-                            </button>
-                          ) : null}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                groupEvidenceByMonth(props.unassignedDocuments).map((group) => (
+                  <section className="evidence-group" key={group.key}>
+                    <p className="evidence-group-label">
+                      {group.label}
+                      <span className="evidence-group-count">
+                        {group.documents.length} {group.documents.length === 1 ? "document" : "documents"}
+                      </span>
+                    </p>
+                    <ul className="evidence-list">
+                      {group.documents.map((document) => {
+                        const passwordRequired = document.documentStatus === "password_required";
+                        const protectedUnlocked = document.documentStatus === "protected_unlocked";
+                        const fileAvailable = document.fileState === "available";
+                        const viewingAvailable = fileAvailable
+                          && (document.documentStatus === "ready" || protectedUnlocked);
+                        const routingAvailable = fileAvailable && document.documentStatus === "ready";
+                        const attentionRequired = passwordRequired
+                          || document.documentStatus === "inspection_failed";
+                        const deleting = props.deletingDocumentId === document.documentId;
+                        const normalizing = props.normalizingDocumentId === document.documentId;
+                        const savingCopy = props.savingCopyDocumentId === document.documentId;
+                        return (
+                          <li className="evidence-row" key={document.documentId}>
+                            <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : "CSV"}</span>
+                            <div className="evidence-details">
+                              <p>{document.originalFilename}</p>
+                              <span className="evidence-meta">{evidenceMeta(document)}</span>
+                            </div>
+                            <p className={`doc-status doc-status-${attentionRequired ? "attention" : document.fileState}`}>
+                              <span className="doc-status-dot" aria-hidden="true" />
+                              {documentStatusLabel(document)}
+                            </p>
+                            <div className="evidence-actions">
+                              {passwordRequired ? (
+                                <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onOpenUnlock(document)} type="button">
+                                  Unlock
+                                </button>
+                              ) : (
+                                <button className="button button-quiet" disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
+                                  {!viewingAvailable ? "View unavailable" : "View document"}
+                                </button>
+                              )}
+                              {!passwordRequired && document.documentStatus !== "inspection_failed" ? (
+                                <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
+                                  {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
+                                </button>
+                              ) : null}
+                              {fileAvailable ? (
+                                <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onSaveSourceCopy(document.documentId)} type="button">
+                                  {savingCopy ? "Saving copy…" : "Save a copy"}
+                                </button>
+                              ) : null}
+                              {fileAvailable ? (
+                                <button className="button button-quiet button-danger" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
+                                  {deleting ? "Deleting…" : "Delete source file"}
+                                </button>
+                              ) : null}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                ))
               ) : null}
             </section>
           </section>
@@ -1139,7 +1163,6 @@ function DocumentViewer({
       <section aria-labelledby="document-viewer-title" aria-modal="true" className="document-viewer" ref={dialog} role="dialog">
         <header className="document-viewer-header">
           <div>
-            <p className="ledger-eyebrow">Encrypted evidence</p>
             <h2 id="document-viewer-title">{viewer.documentTitle}</h2>
           </div>
           <button autoFocus className="button button-quiet" onClick={onClose} type="button">Close</button>
@@ -1252,7 +1275,6 @@ function VaultGate({
   const acceptsPassword = onPasswordChange !== undefined && onSubmit !== undefined;
   return (
     <section className="vault-gate" aria-labelledby="vault-gate-title">
-      <p className="ledger-eyebrow">Vault access</p>
       <h2 id="vault-gate-title">{title}</h2>
       <p>{body}</p>
       {rememberedOnThisMac === null ? (
@@ -1321,4 +1343,151 @@ function documentStatusLabel(document: SourceDocumentSummary) {
     default:
       return fileStateLabel(document.fileState);
   }
+}
+
+const META_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+const GROUP_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
+const SQLITE_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
+
+export function parseReceivedAt(receivedAt: string) {
+  const timestamp = SQLITE_UTC_TIMESTAMP.test(receivedAt)
+    ? `${receivedAt.replace(" ", "T")}Z`
+    : receivedAt;
+  return new Date(timestamp);
+}
+
+function evidenceMeta(document: SourceDocumentSummary) {
+  return `Added ${formatMetaDate(document.receivedAt)} · ${formatByteSize(document.byteSize)}`;
+}
+
+function formatMetaDate(iso: string) {
+  const date = parseReceivedAt(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return `${date.getUTCDate()} ${META_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+function formatByteSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export interface EvidenceMonthGroup {
+  documents: SourceDocumentSummary[];
+  key: string;
+  label: string;
+}
+
+export function groupEvidenceByMonth(
+  documents: SourceDocumentSummary[],
+): EvidenceMonthGroup[] {
+  const groups = new Map<string, EvidenceMonthGroup>();
+  for (const document of documents) {
+    const date = parseReceivedAt(document.receivedAt);
+    const valid = !Number.isNaN(date.getTime());
+    const key = valid
+      ? `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`
+      : "unknown";
+    const existing = groups.get(key);
+    if (existing) {
+      existing.documents.push(document);
+    } else {
+      groups.set(key, {
+        documents: [document],
+        key,
+        label: valid
+          ? `${GROUP_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+          : "Unknown date",
+      });
+    }
+  }
+  return [...groups.values()].sort((a, b) => {
+    if (a.key === "unknown") {
+      return 1;
+    }
+    if (b.key === "unknown") {
+      return -1;
+    }
+    return b.key.localeCompare(a.key);
+  });
+}
+
+type NavIconName =
+  | "sources"
+  | "assets"
+  | "transactions"
+  | "review"
+  | "money-flow"
+  | "jobs"
+  | "settings"
+  | "assistant";
+
+function NavIcon({ name }: { name: NavIconName }) {
+  const shapes: Record<NavIconName, ReactNode> = {
+    sources: (
+      <>
+        <rect x="3" y="3" width="12" height="12" rx="2" />
+        <path d="M3 8h12" />
+      </>
+    ),
+    assets: (
+      <>
+        <circle cx="9" cy="9" r="6" />
+        <path d="M9 3v6l4.2 2.4" />
+      </>
+    ),
+    transactions: (
+      <>
+        <path d="M3 6h10" />
+        <path d="M10 3l3 3-3 3" />
+        <path d="M15 12H5" />
+        <path d="M8 9l-3 3 3 3" />
+      </>
+    ),
+    review: (
+      <>
+        <rect x="3" y="3" width="12" height="12" rx="2" />
+        <path d="M6 9.2l2.2 2.2 4-4.4" />
+      </>
+    ),
+    "money-flow": <path d="M3 13.5l3.8-3.8 3 3 5.2-5.7" />,
+    jobs: <path d="M5 4.5h8M5 9h8M5 13.5h5" />,
+    settings: (
+      <>
+        <circle cx="9" cy="9" r="2.2" />
+        <path d="M9 3v2.1M9 12.9V15M3 9h2.1M12.9 9H15M5.2 5.2l1.5 1.5M11.3 11.3l1.5 1.5M12.8 5.2l-1.5 1.5M6.7 11.3l-1.5 1.5" />
+      </>
+    ),
+    assistant: (
+      <path d="M4 3.5h10a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-4.5 3v-12a1.5 1.5 0 0 1 .5-1z" />
+    ),
+  };
+  return (
+    <svg
+      aria-hidden="true"
+      className="vault-nav-icon"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+      viewBox="0 0 18 18"
+    >
+      {shapes[name]}
+    </svg>
+  );
 }

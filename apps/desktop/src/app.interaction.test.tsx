@@ -496,7 +496,7 @@ describe("App manual import orchestration", () => {
 
     const statusFor = (filename: string) => [...container.querySelectorAll(".evidence-row")]
       .find((row) => row.textContent?.includes(filename))
-      ?.querySelector(".evidence-details span")
+      ?.querySelector(".doc-status")
       ?.textContent;
     expect(statusFor("Protected.pdf")).toBe("Ready");
     expect(statusFor("Corrupt.pdf")).toBe("Needs attention");

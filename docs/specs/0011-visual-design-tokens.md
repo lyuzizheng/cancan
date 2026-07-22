@@ -112,6 +112,18 @@ Numbers: tabular numerals enabled
 Weights: regular, medium, semibold; bold only when a financial hierarchy requires it
 ```
 
+Version-1 type scale, exposed as CSS custom properties in `packages/ui`:
+
+```text
+text.xs    0.72rem  mono metadata and dense labels
+text.sm    0.80rem  secondary labels and compact controls
+text.base  0.88rem  default UI body and navigation
+text.md    0.92rem  emphasized row and list titles
+text.lg    1.10rem  section headings
+text.xl    1.30rem  panel and gate headings
+text.2xl   1.50rem  page title, the largest in-app size
+```
+
 Requirements:
 
 - Use tabular numbers for balances and transaction tables.

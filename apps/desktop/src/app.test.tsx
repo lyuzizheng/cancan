@@ -8,6 +8,7 @@ import type {
 import {
   VaultManualImportView,
   importNotice,
+  parseReceivedAt,
   routingNotice,
   type VaultManualImportViewProps,
 } from "./app";
@@ -101,6 +102,33 @@ describe("VaultManualImportView", () => {
     expect(markup).toContain("Check routing");
     expect(markup).toContain("Delete source file");
     expect(markup).toContain("Save a copy");
+  });
+
+  it("groups unassigned evidence by received month, newest first", () => {
+    const older: SourceDocumentSummary = {
+      ...document,
+      documentId: "document-2",
+      originalFilename: "May statement.pdf",
+      receivedAt: "2026-05-03T09:18:00Z",
+    };
+    const markup = render({ unassignedDocuments: [document, older] });
+
+    expect(markup).toContain("July 2026");
+    expect(markup).toContain("May 2026");
+    expect(markup.indexOf("July 2026")).toBeLessThan(markup.indexOf("May 2026"));
+    expect(markup).toContain("1 document");
+  });
+
+  it("treats SQLite import timestamps as UTC", () => {
+    const receivedAt = "2026-07-19 00:00:00";
+    const markup = render({
+      unassignedDocuments: [{ ...document, receivedAt }],
+    });
+
+    expect(parseReceivedAt(receivedAt).toISOString()).toBe(
+      "2026-07-19T00:00:00.000Z",
+    );
+    expect(markup).toContain("Added 19 Jul 2026");
   });
 
   it("keeps recovery as a non-blocking task until the file is saved", () => {
