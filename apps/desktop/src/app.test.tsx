@@ -8,6 +8,7 @@ import type {
 import {
   VaultManualImportView,
   importNotice,
+  parseReceivedAt,
   routingNotice,
   type VaultManualImportViewProps,
 } from "./app";
@@ -31,6 +32,7 @@ const baseProps: VaultManualImportViewProps = {
   normalizingDocumentId: null,
   notice: null,
   onCloseUnlock: () => undefined,
+  onClosePreview: () => undefined,
   onCloseViewer: () => undefined,
   onDelete: () => undefined,
   onImport: () => undefined,
@@ -42,6 +44,7 @@ const baseProps: VaultManualImportViewProps = {
   onRefresh: () => undefined,
   onRememberedChange: () => undefined,
   onSaveRecoveryFile: () => undefined,
+  onSaveSourceCopy: () => undefined,
   onSubmitPassword: () => undefined,
   onUnlockWithKeychain: () => undefined,
   onUnlockPasswordChange: () => undefined,
@@ -50,9 +53,11 @@ const baseProps: VaultManualImportViewProps = {
   onView: () => undefined,
   onViewerPage: () => undefined,
   password: "",
+  preview: null,
   rememberedOnThisMac: false,
   recoveryConfigured: false,
   savingRecoveryFile: false,
+  savingCopyDocumentId: null,
   unassignedDocuments: [],
   unlockingDocument: null,
   updatingRemembered: false,
@@ -96,6 +101,7 @@ describe("VaultManualImportView", () => {
     expect(markup).toContain("View document");
     expect(markup).toContain("Check routing");
     expect(markup).toContain("Delete source file");
+    expect(markup).toContain("Save a copy");
   });
 
   it("groups unassigned evidence by received month, newest first", () => {
@@ -111,6 +117,18 @@ describe("VaultManualImportView", () => {
     expect(markup).toContain("May 2026");
     expect(markup.indexOf("July 2026")).toBeLessThan(markup.indexOf("May 2026"));
     expect(markup).toContain("1 document");
+  });
+
+  it("treats SQLite import timestamps as UTC", () => {
+    const receivedAt = "2026-07-19 00:00:00";
+    const markup = render({
+      unassignedDocuments: [{ ...document, receivedAt }],
+    });
+
+    expect(parseReceivedAt(receivedAt).toISOString()).toBe(
+      "2026-07-19T00:00:00.000Z",
+    );
+    expect(markup).toContain("Added 19 Jul 2026");
   });
 
   it("keeps recovery as a non-blocking task until the file is saved", () => {

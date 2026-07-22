@@ -7,10 +7,12 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 ### Completed
 
 - Added protected-PDF detection and local unlock to `vault-manual-import`. Core Graphics inspects and verifies the encrypted PDF only inside Rust, `Use once` keeps a zeroizing document password only for the unlocked Vault session, and `Update saved password` can reach Keychain only after that password successfully unlocks the selected document. A security-scoped source chooser exposes only configured Money Source IDs, display names, and saved-password availability; choosing a source scopes the credential but does not assign the document. Locked rows remain visible as `Needs attention` with an `Unlock` action, automatically try the selected source's saved password, and clear password UI/session state on Vault lock without creating an unlocked duplicate. An unlocked protected statement returns to `Ready` but remains explicitly view-only: routing stays unavailable until protected-PDF extraction exists, while malformed PDFs fail closed during inspection.
+- Added the explicit `Save a copy` source-export checkpoint. A document-ID-only host command warns that the selected copy leaves CanCan's encrypted Vault, then opens the native save picker and writes the original source bytes through a private, synced, same-directory temporary file before atomic rename. Destinations inside the Vault are rejected; cancellation and pre-rename failure leave no partial destination, and the renderer receives only completion or a safe error.
+- Added CSV source viewing to `vault-manual-import`. A document-ID-only `preview_source_document` command decrypts CSV evidence in memory inside Rust and returns at most the first 200 lines and 32 KiB of UTF-8 preview plaintext with total counts and a truncation flag. A small CSV file within both caps may appear in full, but the renderer never receives a raw original-file byte payload or unbounded content. The preview preserves leading blank lines, describes byte-capped final lines as potentially partial, reuses the viewer's dialog chrome, points to `Save a copy` for the full file, and clears on close and every Vault lock path.
 
 ### Next
 
-- Continue `vault-manual-import` with the separate `Save a copy` checkpoint: host-owned warning and save picker, atomic plaintext export to the selected destination, cancellation/failure cleanup, and focused browser/native coverage. Keep non-PDF viewing and broader safe source display/list work separate.
+- Continue `vault-manual-import` with the broader safe source display/list checkpoints. Keep protected-PDF extraction/routing separate until a real in-memory extraction path exists.
 
 ## 2026-07-21
 
@@ -23,7 +25,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Completed on 2026-07-22. `Save a copy`, non-PDF viewing, and the broader safe source display/list checkpoints remain separate. Recovery import remains in `backup-release`; keep automatic Inbox/Gmail tombstone suppression in their later owning slices.
+- Completed on 2026-07-22. The broader safe source display/list checkpoints remain separate. Recovery import remains in `backup-release`; keep automatic Inbox/Gmail tombstone suppression in their later owning slices.
 
 ## 2026-07-20
 
@@ -40,7 +42,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Continue `vault-manual-import` with recovery-file, system sleep/lock, statement-password, `Save a copy`, non-PDF viewing, and safe source display/list checkpoints. Keep automatic Inbox/Gmail tombstone suppression in their later owning slices.
+- Continue `vault-manual-import` with recovery-file, system sleep/lock, statement-password, `Save a copy`, CSV viewing, and safe source display/list checkpoints. Keep automatic Inbox/Gmail tombstone suppression in their later owning slices.
 
 ## 2026-07-19
 
@@ -59,7 +61,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Continue `vault-manual-import` with the remaining Keychain, system sleep/lock, statement-password, deletion, recovery-file, `Save a copy`, and non-PDF viewing checkpoints. A named source display/Documents view waits for safe source display/list and source-management APIs. Keep folder automation, Gmail, mobile intake, and live AI out of this checkpoint.
+- Continue `vault-manual-import` with the remaining Keychain, system sleep/lock, statement-password, deletion, recovery-file, `Save a copy`, and CSV viewing checkpoints. A named source display/Documents view waits for safe source display/list and source-management APIs. Keep folder automation, Gmail, mobile intake, and live AI out of this checkpoint.
 
 ## 2026-07-18
 

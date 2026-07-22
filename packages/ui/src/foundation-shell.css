@@ -878,6 +878,20 @@ input:focus-visible {
   box-shadow: 0 12px 34px rgb(0 0 0 / 18%);
 }
 
+.document-preview-page {
+  background: var(--ledger-porcelain);
+}
+
+.document-preview-text {
+  margin: 0;
+  color: var(--ledger-ink);
+  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .viewer-loading {
   position: absolute;
   inset: 50% auto auto 50%;
@@ -914,6 +928,18 @@ input:focus-visible {
 }
 
 /* ---------- Narrow layout ---------- */
+
+@media (min-width: 761px) and (max-width: 1180px) {
+  .evidence-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .evidence-actions {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
 
 @media (max-width: 760px) {
   .vault-app {

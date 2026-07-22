@@ -117,7 +117,7 @@ That feasibility evidence is `arm64`-only. Phase 1 support requires the producti
 
 The encrypted file belongs to its `source_documents` registry row; MVP has no separate `vault_files` table and stores no second unlocked source copy.
 
-Normal viewing decrypts and renders requested pages in memory inside Rust/Tauri. It does not create a plaintext temporary file. `Save a copy` is an explicit warned export to a user-selected path outside the Vault.
+Normal PDF viewing decrypts and renders requested pages in memory inside Rust/Tauri. CSV viewing may send at most the first 200 lines and 32 KiB of UTF-8 preview plaintext to the renderer; a CSV file within both caps may appear in full. Neither viewing path creates a plaintext temporary file or sends a raw original-file byte payload. `Save a copy` is the only explicit warned export of the original source file to a user-selected path outside the Vault.
 
 One optional statement-PDF password may be saved per Money Source in macOS Keychain. SQLite stores only its secret reference and status. Gmail and manual imports assigned to that Money Source try the same password. If it does not unlock a document, CanCan asks for a password and offers `Use once` or `Update saved password`; MVP stores no password history and no unlocked duplicate of the PDF.
 
@@ -236,7 +236,7 @@ After restore on a new device, CanCan opens the restored non-secret data and a r
 - Secrets are not restored silently.
 - Argon2id parameters are stored as versioned wrapper profiles; new macOS vaults prefer RFC 9106's 64 MiB profile within the unlock budget and may fall back only to the OWASP minimum profile.
 - `Remember on this Mac` uses Keychain to keep the common unlock path fast; Argon2id is not a per-document encryption step.
-- Normal document viewing uses in-memory rendering without a plaintext temporary file; only explicit `Save a copy` exports plaintext.
+- Normal PDF viewing sends only in-memory rendered pixels, and CSV viewing sends only the bounded UTF-8 preview described above; neither creates a plaintext temporary file or sends raw original-file bytes. Only explicit `Save a copy` exports the original source file.
 - Statement passwords are optional one-per-Money-Source Keychain secrets, excluded from backups, with use-once/update behavior and no password history.
 - Deleted source files are absent from future backups while their tombstones and relationships remain; older backup copies are not claimed to be erased.
 - Restore validates a new Vault before switching and opens a resumable new-device Setup Checklist without hiding restored non-secret data.
