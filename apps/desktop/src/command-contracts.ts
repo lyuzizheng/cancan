@@ -1,5 +1,10 @@
 export type VaultStatus = "not_created" | "locked" | "unlocked";
 
+export type SavedStatementPasswordResult =
+  | "invalid"
+  | "unavailable"
+  | "unlocked";
+
 export interface VaultAccessStatus {
   recoveryConfigured: boolean;
   rememberedOnThisMac: boolean | null;

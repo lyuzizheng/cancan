@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   SourceDocumentImportOutcome,
   RenderedDocumentPage,
+  SavedStatementPasswordResult,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   VaultAccessStatus,
@@ -86,7 +87,9 @@ function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
     saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
-    trySavedStatementPassword: vi.fn(async (): Promise<boolean> => false),
+    trySavedStatementPassword: vi.fn(
+      async (): Promise<SavedStatementPasswordResult> => "invalid",
+    ),
     unlockSourceDocument: vi.fn(async (): Promise<void> => undefined),
     unlockVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     unlockVaultWithKeychain: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
@@ -407,12 +410,12 @@ describe("App manual import orchestration", () => {
       listUnassignedSourceDocuments: vi.fn(async () => [
         unlocked ? sourceDocument({ documentStatus: "protected_unlocked" }) : protectedDocument,
       ]),
-      trySavedStatementPassword: vi.fn(async () => false),
+      trySavedStatementPassword: vi.fn(async () => "invalid" as const),
       unlockSourceDocument,
     });
 
     await mount(api);
-    expect(container.textContent).toContain("Password needed");
+    expect(container.textContent).toContain("Needs attention");
     expect(container.textContent).not.toContain("Check routing");
     expect(container.textContent).toContain("Delete source file");
     await click("Unlock");
@@ -458,6 +461,62 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).not.toContain("Check routing");
   });
 
+  it("maps technical document statuses to the canonical primary row states", async () => {
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [
+        sourceDocument({
+          documentId: "protected",
+          documentStatus: "protected_unlocked",
+          originalFilename: "Protected.pdf",
+        }),
+        sourceDocument({
+          documentId: "inspection-failed",
+          documentStatus: "inspection_failed",
+          originalFilename: "Corrupt.pdf",
+        }),
+        sourceDocument({
+          documentId: "unavailable",
+          documentStatus: "unavailable",
+          originalFilename: "Unavailable.pdf",
+        }),
+      ]),
+    });
+
+    await mount(api);
+
+    const statusFor = (filename: string) => [...container.querySelectorAll(".evidence-row")]
+      .find((row) => row.textContent?.includes(filename))
+      ?.querySelector(".evidence-details span")
+      ?.textContent;
+    expect(statusFor("Protected.pdf")).toBe("Ready");
+    expect(statusFor("Corrupt.pdf")).toBe("Needs attention");
+    expect(statusFor("Unavailable.pdf")).toBe("Missing");
+  });
+
+  it("distinguishes a missing device-local saved password from an invalid one", async () => {
+    const api = createApi({
+      listStatementPasswordSources: vi.fn(async () => [{
+        displayName: "DBS",
+        hasSavedPassword: true,
+        moneySourceId: "source-dbs",
+      }]),
+      listUnassignedSourceDocuments: vi.fn(async () => [
+        sourceDocument({ documentStatus: "password_required" }),
+      ]),
+      trySavedStatementPassword: vi.fn(async () => "unavailable" as const),
+    });
+
+    await mount(api);
+    await click("Unlock");
+
+    expect(container.textContent).toContain(
+      "The saved password is not available on this Mac.",
+    );
+    expect(container.textContent).not.toContain(
+      "The saved password did not work.",
+    );
+  });
+
   it("distinguishes a Money Source load failure from an empty configured-source list", async () => {
     const listSources = vi.fn()
       .mockRejectedValueOnce({ code: "list_sources_failed" })
@@ -484,7 +543,7 @@ describe("App manual import orchestration", () => {
   });
 
   it("does not restore protected-document UI after a native Vault lock", async () => {
-    const savedPassword = deferred<boolean>();
+    const savedPassword = deferred<SavedStatementPasswordResult>();
     let notifyLocked: (() => void) | undefined;
     const api = createApi({
       listStatementPasswordSources: vi.fn(async () => [{
@@ -508,7 +567,7 @@ describe("App manual import orchestration", () => {
 
     await act(async () => {
       notifyLocked?.();
-      savedPassword.resolve(true);
+      savedPassword.resolve("unlocked");
       await settle();
     });
 

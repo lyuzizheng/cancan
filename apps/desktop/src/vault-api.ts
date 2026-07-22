@@ -7,6 +7,7 @@ import type {
   RemoveStatementPasswordArgs,
   RenderedDocumentPage,
   RenderSourceDocumentPageArgs,
+  SavedStatementPasswordResult,
   SourceDocumentImportOutcome,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
@@ -53,7 +54,7 @@ export interface VaultApi {
   trySavedStatementPassword(
     documentId: string,
     moneySourceId: string,
-  ): Promise<boolean>;
+  ): Promise<SavedStatementPasswordResult>;
   unlockSourceDocument(
     documentId: string,
     moneySourceId: string,
@@ -96,7 +97,7 @@ export function createVaultApi(
         documentId,
         moneySourceId,
       };
-      return call<boolean, TrySavedStatementPasswordArgs>(
+      return call<SavedStatementPasswordResult, TrySavedStatementPasswordArgs>(
         "try_saved_statement_password",
         args,
       );

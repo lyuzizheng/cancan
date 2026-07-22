@@ -67,6 +67,14 @@ pub(crate) enum VaultStatus {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SavedStatementPasswordResult {
+    Invalid,
+    Unavailable,
+    Unlocked,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VaultAccessStatus {
     recovery_configured: bool,
@@ -890,24 +898,24 @@ impl VaultRuntime {
         } else if document.mime_type != "application/pdf" {
             "ready"
         } else {
-            let input = store
-                .source_document_input(&document.document_id)
-                .map_err(|_| RuntimeError::new("document_unavailable"))?;
-            match pdf_access(&input.plaintext, None) {
-                Ok(PdfAccess::Ready) => "ready",
-                Ok(PdfAccess::PasswordRequired) => {
-                    let passwords = self.document_passwords()?;
-                    let password = passwords
-                        .get(&document.document_id)
-                        .map(|value| value.as_slice());
-                    match password
-                        .and_then(|password| pdf_access(&input.plaintext, Some(password)).ok())
-                    {
-                        Some(PdfAccess::Ready) => "protected_unlocked",
-                        _ => "password_required",
+            match store.source_document_input(&document.document_id) {
+                Ok(input) => match pdf_access(&input.plaintext, None) {
+                    Ok(PdfAccess::Ready) => "ready",
+                    Ok(PdfAccess::PasswordRequired) => {
+                        let passwords = self.document_passwords()?;
+                        let password = passwords
+                            .get(&document.document_id)
+                            .map(|value| value.as_slice());
+                        match password
+                            .and_then(|password| pdf_access(&input.plaintext, Some(password)).ok())
+                        {
+                            Some(PdfAccess::Ready) => "protected_unlocked",
+                            _ => "password_required",
+                        }
                     }
-                }
-                Err(_) => "inspection_failed",
+                    Err(_) => "inspection_failed",
+                },
+                Err(_) => "unavailable",
             }
         };
         Ok(SourceDocumentSummary {
@@ -947,7 +955,7 @@ impl VaultRuntime {
         &self,
         document_id: &str,
         money_source_id: &str,
-    ) -> Result<bool, RuntimeError> {
+    ) -> Result<SavedStatementPasswordResult, RuntimeError> {
         if document_id.is_empty() || money_source_id.is_empty() {
             return Err(RuntimeError::new("invalid_document_request"));
         }
@@ -961,7 +969,7 @@ impl VaultRuntime {
             .statement_password_state(money_source_id)
             .map_err(|_| RuntimeError::new("invalid_source_request"))?
         else {
-            return Ok(false);
+            return Ok(SavedStatementPasswordResult::Unavailable);
         };
         if state.status != StatementPasswordStatus::Saved {
             return Err(RuntimeError::new("statement_password_state_invalid"));
@@ -972,14 +980,14 @@ impl VaultRuntime {
             .load(&state.secret_storage_key)
             .map_err(|_| RuntimeError::new("statement_password_load_failed"))?
         else {
-            return Ok(false);
+            return Ok(SavedStatementPasswordResult::Unavailable);
         };
         if !statement_password_unlocks(store, document_id, &password)? {
-            return Ok(false);
+            return Ok(SavedStatementPasswordResult::Invalid);
         }
         self.document_passwords()?
             .insert(document_id.to_owned(), password);
-        Ok(true)
+        Ok(SavedStatementPasswordResult::Unlocked)
     }
 
     pub(crate) fn unlock_source_document(
@@ -1360,7 +1368,7 @@ pub(crate) async fn try_saved_statement_password(
     document_id: String,
     money_source_id: String,
     runtime: State<'_, VaultRuntime>,
-) -> Result<bool, VaultCommandError> {
+) -> Result<SavedStatementPasswordResult, VaultCommandError> {
     let runtime = runtime.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         runtime.try_saved_statement_password(&document_id, &money_source_id)
@@ -2077,10 +2085,11 @@ mod tests {
         runtime
             .unlock(b"synthetic-vault-password")
             .expect("reopen saved-password Vault");
-        assert!(
+        assert_eq!(
             runtime
                 .try_saved_statement_password(&outcome.document_id, "source-dbs")
-                .expect("try saved password")
+                .expect("try saved password"),
+            SavedStatementPasswordResult::Unlocked
         );
         assert_eq!(
             runtime
@@ -2088,6 +2097,31 @@ mod tests {
                 .expect("list saved-password statement")[0]
                 .document_status,
             "protected_unlocked"
+        );
+
+        statement_passwords
+            .delete("money-source:source-dbs")
+            .expect("remove device-local saved password");
+        assert_eq!(
+            runtime
+                .try_saved_statement_password(&outcome.document_id, "source-dbs")
+                .expect("report unavailable saved password"),
+            SavedStatementPasswordResult::Unavailable
+        );
+        assert_eq!(
+            statement_password_state(&runtime)
+                .expect("preserve saved-password reference")
+                .status,
+            StatementPasswordStatus::Saved
+        );
+        statement_passwords
+            .save("money-source:source-dbs", b"wrong-password")
+            .expect("save invalid password fixture");
+        assert_eq!(
+            runtime
+                .try_saved_statement_password(&outcome.document_id, "source-dbs")
+                .expect("report invalid saved password"),
+            SavedStatementPasswordResult::Invalid
         );
 
         let files_directory = parent.path().join("vault").join("files");
@@ -2146,6 +2180,64 @@ mod tests {
                 .expect("corrupt PDF must not reach normalization")
                 .code(),
             "document_render_failed"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn keeps_listing_other_documents_when_one_encrypted_blob_is_unreadable() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let vault_root = parent.path().join("vault");
+        let runtime = VaultRuntime::new(vault_root.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+
+        let pdf = parent.path().join("protected-statement.pdf");
+        fs::write(&pdf, protected_pdf_fixture()).expect("write protected PDF fixture");
+        let pdf_outcome = runtime
+            .import_selected_document(&pdf, None)
+            .expect("import protected statement");
+        let csv = parent.path().join("transactions.csv");
+        fs::write(&csv, b"date,amount\n2026-07-01,10.00\n").expect("write CSV fixture");
+        let csv_outcome = runtime
+            .import_selected_document(&csv, None)
+            .expect("import CSV");
+
+        let encrypted_locator = {
+            let store = runtime.store().expect("active store");
+            store
+                .as_ref()
+                .expect("unlocked store")
+                .list_unassigned_documents()
+                .expect("list imported documents")
+                .into_iter()
+                .find(|document| document.document_id == pdf_outcome.document_id)
+                .and_then(|document| document.encrypted_locator)
+                .expect("protected PDF encrypted locator")
+        };
+        fs::remove_file(vault_root.join(encrypted_locator))
+            .expect("remove protected PDF encrypted blob");
+
+        let documents = runtime
+            .list_unassigned_source_documents()
+            .expect("list remaining documents");
+        assert_eq!(documents.len(), 2);
+        assert_eq!(
+            documents
+                .iter()
+                .find(|document| document.document_id == pdf_outcome.document_id)
+                .expect("unreadable PDF row")
+                .document_status,
+            "unavailable"
+        );
+        assert_eq!(
+            documents
+                .iter()
+                .find(|document| document.document_id == csv_outcome.document_id)
+                .expect("readable CSV row")
+                .document_status,
+            "ready"
         );
     }
 

@@ -35,7 +35,7 @@ export interface DocumentUnlockState {
   documentTitle: string;
   error: string | null;
   password: string;
-  savedPasswordFailed: boolean;
+  savedPasswordStatus: "invalid" | "unavailable" | null;
   selectedMoneySourceId: string;
   sources: StatementPasswordSourceSummary[] | null;
 }
@@ -482,14 +482,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     requestId: number,
   ) => {
     setUnlockingDocument((current) => current?.documentId === documentId
-      ? { ...current, busy: true, error: null, savedPasswordFailed: false }
+      ? { ...current, busy: true, error: null, savedPasswordStatus: null }
       : current);
     try {
-      const unlocked = await api.trySavedStatementPassword(documentId, moneySourceId);
+      const result = await api.trySavedStatementPassword(documentId, moneySourceId);
       if (unlockRequestId.current !== requestId) {
         return;
       }
-      if (unlocked) {
+      if (result === "unlocked") {
         setUnlockingDocument(null);
         setNotice({
           body: "The saved password worked. This statement is ready to view for this Vault session. Routing remains unavailable for protected statements.",
@@ -500,7 +500,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         return;
       }
       setUnlockingDocument((current) => current?.documentId === documentId
-        ? { ...current, busy: false, savedPasswordFailed: true }
+        ? { ...current, busy: false, savedPasswordStatus: result }
         : current);
     } catch (nextError) {
       if (unlockRequestId.current === requestId) {
@@ -523,7 +523,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       busy: false,
       error: null,
       password: "",
-      savedPasswordFailed: false,
+      savedPasswordStatus: null,
       selectedMoneySourceId: moneySourceId,
     });
     if (current.sources?.find((source) => source.moneySourceId === moneySourceId)?.hasSavedPassword) {
@@ -540,7 +540,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       documentTitle,
       error: null,
       password: "",
-      savedPasswordFailed: false,
+      savedPasswordStatus: null,
       selectedMoneySourceId: "",
       sources: null,
     });
@@ -993,7 +993,8 @@ function DocumentUnlock({
                 value={state.password}
               />
               {state.busy ? <p className="panel-status" role="status">Trying the statement password locally…</p> : null}
-              {state.savedPasswordFailed ? <p className="unlock-hint">The saved password did not work. Enter the current password below.</p> : null}
+              {state.savedPasswordStatus === "invalid" ? <p className="unlock-hint">The saved password did not work. Enter the current password below.</p> : null}
+              {state.savedPasswordStatus === "unavailable" ? <p className="unlock-hint">The saved password is not available on this Mac. Enter it again below.</p> : null}
               {state.error ? <p className="unlock-error" role="alert">{state.error}</p> : null}
               <div className="document-unlock-actions">
                 <button className="button button-quiet" disabled={state.busy || !state.password} type="submit">Use once</button>
@@ -1152,17 +1153,19 @@ function vaultStatusLabel(status: VaultScreenStatus) {
 }
 
 function fileStateLabel(fileState: SourceDocumentSummary["fileState"]) {
-  return fileState === "available" ? "Ready for routing" : fileState === "deleted" ? "File deleted" : "File missing";
+  return fileState === "available" ? "Ready" : fileState === "deleted" ? "File deleted" : "Missing";
 }
 
 function documentStatusLabel(document: SourceDocumentSummary) {
   switch (document.documentStatus) {
     case "password_required":
-      return "Password needed";
+      return "Needs attention";
     case "protected_unlocked":
-      return "Unlocked for viewing";
+      return "Ready";
     case "inspection_failed":
-      return "PDF inspection failed";
+      return "Needs attention";
+    case "unavailable":
+      return "Missing";
     default:
       return fileStateLabel(document.fileState);
   }
