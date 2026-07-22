@@ -1951,6 +1951,8 @@ fn write_export_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
     } else {
+        // After rename, the complete user copy is visible and cannot be rolled back safely
+        // without risking removal of a valid export.
         let _ = sync_directory(parent);
     }
     result
