@@ -207,6 +207,7 @@ struct RuntimeInner {
     store: Mutex<Option<ManualImportStore>>,
     system_lock_generation: AtomicU64,
     system_session_active: AtomicBool,
+    vault_session_generation: AtomicU64,
 }
 
 trait RememberedKeyStore: Send + Sync {
@@ -410,6 +411,7 @@ impl VaultRuntime {
                 store: Mutex::new(None),
                 system_lock_generation: AtomicU64::new(0),
                 system_session_active: AtomicBool::new(true),
+                vault_session_generation: AtomicU64::new(0),
             }),
         }
     }
@@ -483,6 +485,7 @@ impl VaultRuntime {
         }
         let opened = result?;
         *store = Some(opened);
+        self.advance_vault_session();
         Ok(VaultStatus::Unlocked)
     }
 
@@ -552,6 +555,7 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("invalid_vault"))?;
         self.reconcile_statement_passwords(&opened)?;
         *store = Some(opened);
+        self.advance_vault_session();
         Ok(VaultStatus::Unlocked)
     }
 
@@ -573,6 +577,7 @@ impl VaultRuntime {
             Ok(opened) => {
                 self.reconcile_statement_passwords(&opened)?;
                 *store = Some(opened);
+                self.advance_vault_session();
                 Ok(VaultStatus::Unlocked)
             }
             Err(_) => Err(RuntimeError::new("remembered_unlock_failed")),
@@ -633,6 +638,7 @@ impl VaultRuntime {
     }
 
     pub(crate) fn lock(&self) -> Result<VaultStatus, RuntimeError> {
+        self.advance_vault_session();
         let mut store = self.raw_store()?;
         *store = None;
         self.document_passwords()?.clear();
@@ -646,6 +652,7 @@ impl VaultRuntime {
         self.inner
             .system_lock_generation
             .fetch_add(1, Ordering::SeqCst);
+        self.advance_vault_session();
         let mut store = self.raw_store()?;
         *store = None;
         self.document_passwords()?.clear();
@@ -653,6 +660,7 @@ impl VaultRuntime {
     }
 
     pub(crate) fn resume_system_session(&self) -> Result<(), RuntimeError> {
+        self.advance_vault_session();
         let mut store = self.raw_store()?;
         *store = None;
         self.document_passwords()?.clear();
@@ -712,11 +720,68 @@ impl VaultRuntime {
         })
     }
 
+    pub(crate) fn source_document_copy_context(
+        &self,
+        document_id: &str,
+    ) -> Result<(String, u64), RuntimeError> {
+        if document_id.is_empty() {
+            return Err(RuntimeError::new("invalid_document_request"));
+        }
+        let store = self.store()?;
+        let store = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        let mime_type = store
+            .source_document_mime_type(document_id)
+            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+        let generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
+        Ok((mime_type, generation))
+    }
+
+    pub(crate) fn save_source_document_copy(
+        &self,
+        document_id: &str,
+        destination: &Path,
+        session_generation: u64,
+    ) -> Result<(), RuntimeError> {
+        if document_id.is_empty() {
+            return Err(RuntimeError::new("invalid_document_request"));
+        }
+        ensure_copy_outside_vault(&self.inner.root, destination)?;
+        self.require_vault_session(session_generation)?;
+        // Keep the session mutex through the write so Vault lock cannot report
+        // success while the decrypted source buffer is still alive.
+        let store = self.store()?;
+        if self.inner.vault_session_generation.load(Ordering::SeqCst) != session_generation {
+            return Err(RuntimeError::new("vault_locked"));
+        }
+        let input = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .source_document_input(document_id)
+            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+        write_export_atomically(destination, &input.plaintext)
+            .map_err(|_| RuntimeError::new("source_copy_save_failed"))
+    }
+
     fn require_unlocked(&self) -> Result<(), RuntimeError> {
         if self.store()?.is_none() {
             return Err(RuntimeError::new("vault_locked"));
         }
         Ok(())
+    }
+
+    fn require_vault_session(&self, generation: u64) -> Result<(), RuntimeError> {
+        if self.inner.vault_session_generation.load(Ordering::SeqCst) != generation {
+            return Err(RuntimeError::new("vault_locked"));
+        }
+        self.require_unlocked()
+    }
+
+    fn advance_vault_session(&self) {
+        self.inner
+            .vault_session_generation
+            .fetch_add(1, Ordering::SeqCst);
     }
 
     #[cfg(test)]
@@ -1442,6 +1507,60 @@ pub(crate) async fn save_recovery_file(
 }
 
 #[tauri::command]
+pub(crate) async fn save_source_document_copy(
+    document_id: String,
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<bool, VaultCommandError> {
+    if document_id.is_empty() {
+        return Err(VaultCommandError::new("invalid_document_request"));
+    }
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<bool, RuntimeError> {
+        let (mime_type, session_generation) =
+            runtime.source_document_copy_context(&document_id)?;
+        let confirmed = app
+            .dialog()
+            .message(
+                "Save a normal file outside CanCan's encrypted Vault? The saved copy will no longer be protected by CanCan and becomes your responsibility.",
+            )
+            .title("Save a copy outside the Vault?")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Save a copy".to_owned(),
+                "Cancel".to_owned(),
+            ))
+            .blocking_show();
+        if !confirmed {
+            return Ok(false);
+        }
+        runtime.require_vault_session(session_generation)?;
+        let default_name = match mime_type.as_str() {
+            "application/pdf" => "CanCan source copy.pdf",
+            "text/csv" => "CanCan source copy.csv",
+            _ => return Err(RuntimeError::new("unsupported_document")),
+        };
+        let selected = app
+            .dialog()
+            .file()
+            .set_title("Save a copy")
+            .set_file_name(default_name)
+            .blocking_save_file();
+        let Some(selected) = selected else {
+            return Ok(false);
+        };
+        let destination = selected
+            .into_path()
+            .map_err(|_| RuntimeError::new("file_selection_failed"))?;
+        runtime.save_source_document_copy(&document_id, &destination, session_generation)?;
+        Ok(true)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
 pub(crate) async fn import_source_document(
     app: AppHandle,
     runtime: State<'_, VaultRuntime>,
@@ -1802,6 +1921,43 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     result
 }
 
+fn ensure_copy_outside_vault(vault_root: &Path, destination: &Path) -> Result<(), RuntimeError> {
+    let vault_root = fs::canonicalize(vault_root)
+        .map_err(|_| RuntimeError::new("source_copy_location_invalid"))?;
+    let parent = destination
+        .parent()
+        .ok_or_else(|| RuntimeError::new("source_copy_location_invalid"))?;
+    let parent =
+        fs::canonicalize(parent).map_err(|_| RuntimeError::new("source_copy_location_invalid"))?;
+    if parent.starts_with(&vault_root)
+        || destination
+            .canonicalize()
+            .is_ok_and(|path| path.starts_with(&vault_root))
+    {
+        return Err(RuntimeError::new("source_copy_location_invalid"));
+    }
+    Ok(())
+}
+
+fn write_export_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing parent directory"))?;
+    let temporary = parent.join(format!(".cancan-export-{}.tmp", random_identifier("copy")));
+    let result = (|| {
+        write_new_synced(&temporary, bytes)?;
+        fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    } else {
+        // After rename, the complete user copy is visible and cannot be rolled back safely
+        // without risking removal of a valid export.
+        let _ = sync_directory(parent);
+    }
+    result
+}
+
 fn sync_directory(path: &Path) -> io::Result<()> {
     File::open(path)?.sync_all()
 }
@@ -2124,6 +2280,23 @@ mod tests {
             SavedStatementPasswordResult::Invalid
         );
 
+        let protected_copy = parent.path().join("protected-copy.pdf");
+        let (_, copy_generation) = runtime
+            .source_document_copy_context(&outcome.document_id)
+            .expect("read protected copy context");
+        runtime
+            .save_source_document_copy(&outcome.document_id, &protected_copy, copy_generation)
+            .expect("save protected source copy");
+        let copied_bytes = fs::read(&protected_copy).expect("read protected source copy");
+        assert_eq!(
+            copied_bytes,
+            fs::read(&source).expect("read original protected source")
+        );
+        assert_eq!(
+            pdf_access(&copied_bytes, None).expect("inspect protected source copy"),
+            PdfAccess::PasswordRequired
+        );
+
         let files_directory = parent.path().join("vault").join("files");
         let original_permissions = fs::metadata(&files_directory)
             .expect("read files directory metadata")
@@ -2145,6 +2318,13 @@ mod tests {
                 .expect("document password cache")
                 .contains_key(&outcome.document_id),
             "deletion must clear the document password even when blob cleanup fails"
+        );
+        assert_eq!(
+            runtime
+                .source_document_copy_context(&outcome.document_id)
+                .expect_err("deleted source must not open an export dialog")
+                .code(),
+            "document_unavailable"
         );
     }
 
@@ -2262,6 +2442,142 @@ mod tests {
         assert_eq!(
             document_render_error(io::Error::from(io::ErrorKind::InvalidData)).code(),
             "document_render_failed"
+        );
+    }
+
+    #[test]
+    fn saves_an_atomic_plaintext_copy_only_outside_the_vault() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source = parent.path().join("statement.csv");
+        let source_bytes = b"date,amount\n2026-07-22,42";
+        fs::write(&source, source_bytes).expect("write source fixture");
+        let root = parent.path().join("vault");
+        let runtime = VaultRuntime::new(root.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        let imported = runtime
+            .import_selected_document(&source, None)
+            .expect("import source");
+
+        let (mime_type, session_generation) = runtime
+            .source_document_copy_context(&imported.document_id)
+            .expect("read source copy context");
+        assert_eq!(mime_type, "text/csv");
+        let destination = parent.path().join("statement-copy.csv");
+        fs::write(&destination, b"existing copy").expect("write existing destination");
+        runtime
+            .save_source_document_copy(&imported.document_id, &destination, session_generation)
+            .expect("save source copy");
+        assert_eq!(
+            fs::read(&destination).expect("read saved copy"),
+            source_bytes
+        );
+        assert!(
+            fs::read_dir(parent.path())
+                .expect("list export directory")
+                .all(|entry| !entry
+                    .expect("directory entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".cancan-export-"))
+        );
+
+        assert_eq!(
+            runtime
+                .save_source_document_copy(
+                    &imported.document_id,
+                    &root.join("copy-inside-vault.csv"),
+                    session_generation,
+                )
+                .expect_err("reject copy inside Vault")
+                .code(),
+            "source_copy_location_invalid"
+        );
+        runtime.lock().expect("lock Vault");
+        assert_eq!(
+            runtime
+                .save_source_document_copy(&imported.document_id, &destination, session_generation,)
+                .expect_err("reject copy while locked")
+                .code(),
+            "vault_locked"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_the_existing_destination_when_source_copy_write_fails() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source = parent.path().join("statement.csv");
+        fs::write(&source, b"date,amount\n2026-07-22,42").expect("write source fixture");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        let imported = runtime
+            .import_selected_document(&source, None)
+            .expect("import source");
+        let destination_directory = parent.path().join("exports");
+        fs::create_dir(&destination_directory).expect("create export directory");
+        let destination = destination_directory.join("statement.csv");
+        fs::write(&destination, b"existing copy").expect("write existing destination");
+        let original_permissions = fs::metadata(&destination_directory)
+            .expect("read destination permissions")
+            .permissions();
+        fs::set_permissions(&destination_directory, fs::Permissions::from_mode(0o500))
+            .expect("make destination read-only");
+
+        let (_, session_generation) = runtime
+            .source_document_copy_context(&imported.document_id)
+            .expect("read source copy context");
+        let result = runtime.save_source_document_copy(
+            &imported.document_id,
+            &destination,
+            session_generation,
+        );
+        fs::set_permissions(&destination_directory, original_permissions)
+            .expect("restore destination permissions");
+
+        assert_eq!(
+            result.expect_err("surface copy write failure").code(),
+            "source_copy_save_failed"
+        );
+        assert_eq!(
+            fs::read(&destination).expect("read preserved destination"),
+            b"existing copy"
+        );
+        assert!(
+            fs::read_dir(&destination_directory)
+                .expect("list destination directory")
+                .all(|entry| !entry
+                    .expect("directory entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".cancan-export-"))
+        );
+
+        let directory_destination = destination_directory.join("existing-directory");
+        fs::create_dir(&directory_destination).expect("create directory destination");
+        assert_eq!(
+            runtime
+                .save_source_document_copy(
+                    &imported.document_id,
+                    &directory_destination,
+                    session_generation,
+                )
+                .expect_err("rename over a directory must fail")
+                .code(),
+            "source_copy_save_failed"
+        );
+        assert!(directory_destination.is_dir());
+        assert!(
+            fs::read_dir(&destination_directory)
+                .expect("list destination after rename failure")
+                .all(|entry| !entry
+                    .expect("directory entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".cancan-export-"))
         );
     }
 

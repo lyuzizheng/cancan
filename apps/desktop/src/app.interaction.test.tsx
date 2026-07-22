@@ -87,6 +87,7 @@ function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
     saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
+    saveSourceDocumentCopy: vi.fn(async (): Promise<boolean> => false),
     trySavedStatementPassword: vi.fn(
       async (): Promise<SavedStatementPasswordResult> => "invalid",
     ),
@@ -721,6 +722,56 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).not.toContain("Delete source file");
     expect(container.textContent).toContain("View unavailable");
     expect(container.textContent).toContain("Routing unavailable");
+  });
+
+  it("reports a saved source copy but keeps cancellation silent", async () => {
+    const outcomes = [false, true];
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      saveSourceDocumentCopy: vi.fn(async () => outcomes.shift()!),
+    });
+
+    await mount(api);
+    await click("Save a copy");
+    expect(container.textContent).not.toContain("Copy saved");
+
+    await click("Save a copy");
+    expect(api.saveSourceDocumentCopy).toHaveBeenNthCalledWith(
+      2,
+      availableDocument.documentId,
+    );
+    expect(container.textContent).toContain("Copy saved");
+    expect(container.textContent).toContain(
+      "outside CanCan’s encrypted Vault",
+    );
+  });
+
+  it("ignores a delayed source-copy completion after native Vault lock", async () => {
+    const copy = deferred<boolean>();
+    let notifyLocked: (() => void) | undefined;
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyLocked = handler;
+        return () => undefined;
+      }),
+      saveSourceDocumentCopy: vi.fn(() => copy.promise),
+    });
+
+    await mount(api);
+    await click("Save a copy");
+    expect(container.textContent).toContain("Saving copy…");
+
+    await act(async () => {
+      notifyLocked?.();
+      copy.resolve(true);
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("Copy saved");
+    expect(container.textContent).not.toContain("Saving copy…");
+    expect(container.textContent).not.toContain(availableDocument.originalFilename);
   });
 
   it("keeps an available source file when deletion confirmation is cancelled", async () => {

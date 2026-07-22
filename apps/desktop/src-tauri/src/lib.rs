@@ -11,8 +11,9 @@ use runtime::{
     import_source_document, list_source_documents, list_statement_password_sources,
     list_unassigned_source_documents, lock_vault, normalize_source_document,
     remember_vault_on_this_mac, remove_statement_password, render_source_document_page,
-    save_recovery_file, try_saved_statement_password, unlock_source_document, unlock_vault,
-    unlock_vault_with_keychain, vault_access_status, vault_status,
+    save_recovery_file, save_source_document_copy, try_saved_statement_password,
+    unlock_source_document, unlock_vault, unlock_vault_with_keychain, vault_access_status,
+    vault_status,
 };
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
@@ -74,6 +75,7 @@ pub fn run() {
             unlock_source_document,
             lock_vault,
             save_recovery_file,
+            save_source_document_copy,
             import_source_document,
             delete_source_document,
             list_source_documents,
