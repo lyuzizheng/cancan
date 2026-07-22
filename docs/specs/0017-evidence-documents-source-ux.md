@@ -231,11 +231,14 @@ Rules:
 decrypt only inside the trusted Rust/Tauri boundary after Vault unlock
 render requested pages into memory for the in-app viewer
 send rendered page pixels, not the complete original file bytes, to the web UI
+for non-PDF text evidence, send only a bounded line- and byte-capped preview, never the complete original file bytes
 do not create a plaintext temporary file for normal viewing
 release plaintext/page buffers on viewer close and Vault lock as far as the platform permits
 never upload the file to a server merely for preview
 show File deleted or Missing distinctly when the current file is unavailable
 ```
+
+A truncated preview states how many lines it omits and points to `Save a copy` for the full file.
 
 `Save a copy` opens the OS save picker and writes a normal plaintext file only to the location the user selects. The confirmation states that the saved copy is outside CanCan's encrypted Vault and becomes the user's responsibility. Cancelling or failing the export must not leave a partial destination file.
 

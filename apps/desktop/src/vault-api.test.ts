@@ -64,6 +64,7 @@ describe("Vault API", () => {
     removeVaultLockListener();
     await api.normalizeSourceDocument("document-1");
     await api.renderSourceDocumentPage("document-1", 2);
+    await api.previewSourceDocument("document-1");
 
     expect(calls).toEqual([
       ["vault_status", undefined],
@@ -96,6 +97,7 @@ describe("Vault API", () => {
       ["list_unassigned_source_documents", undefined],
       ["normalize_source_document", { documentId: "document-1" }],
       ["render_source_document_page", { documentId: "document-1", pageNumber: 2 }],
+      ["preview_source_document", { documentId: "document-1" }],
     ]);
     expect(listenedEvents).toEqual(["vault-locked"]);
   });

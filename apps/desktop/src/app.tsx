@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   RenderedDocumentPage,
   SourceDocumentImportOutcome,
+  SourceDocumentPreview,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   StatementPasswordSourceSummary,
@@ -29,6 +30,12 @@ export interface DocumentViewerState {
   page: RenderedDocumentPage;
 }
 
+export interface DocumentPreviewState {
+  documentId: string;
+  documentTitle: string;
+  preview: SourceDocumentPreview;
+}
+
 export interface DocumentUnlockState {
   busy: boolean;
   documentId: string;
@@ -49,6 +56,7 @@ export interface VaultManualImportViewProps {
   normalizingDocumentId: string | null;
   notice: Notice | null;
   onCloseViewer: () => void;
+  onClosePreview: () => void;
   onCloseUnlock: () => void;
   onDelete: (documentId: string) => void;
   onImport: () => void;
@@ -72,6 +80,7 @@ export interface VaultManualImportViewProps {
   ) => void;
   onViewerPage: (pageNumber: number) => void;
   password: string;
+  preview: DocumentPreviewState | null;
   rememberedOnThisMac: boolean | null;
   recoveryConfigured: boolean;
   savingRecoveryFile: boolean;
@@ -107,12 +116,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<DocumentViewerState | null>(null);
+  const [preview, setPreview] = useState<DocumentPreviewState | null>(null);
   const [unlockingDocument, setUnlockingDocument] = useState<DocumentUnlockState | null>(null);
   const [viewingPage, setViewingPage] = useState(false);
   const [updatingRemembered, setUpdatingRemembered] = useState(false);
   const [savingRecoveryFile, setSavingRecoveryFile] = useState(false);
   const [savingCopyDocumentId, setSavingCopyDocumentId] = useState<string | null>(null);
   const viewerRequestId = useRef(0);
+  const previewRequestId = useRef(0);
   const unlockRequestId = useRef(0);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
   const documentLoadsAllowed = useRef(false);
@@ -121,6 +132,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   useEffect(() => () => {
     vaultSessionId.current += 1;
     unlockRequestId.current += 1;
+    previewRequestId.current += 1;
   }, []);
 
   const clearViewer = useCallback((restoreFocus = true) => {
@@ -132,11 +144,17 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   }, []);
 
+  const clearPreview = useCallback(() => {
+    previewRequestId.current += 1;
+    setPreview(null);
+  }, []);
+
   const showVaultGate = useCallback((nextStatus: VaultScreenStatus) => {
     const nextSessionId = vaultSessionId.current + 1;
     vaultSessionId.current = nextSessionId;
     documentLoadsAllowed.current = false;
     clearViewer(false);
+    clearPreview();
     unlockRequestId.current += 1;
     setUnlockingDocument(null);
     setVaultStatus(nextStatus);
@@ -148,14 +166,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setSavingCopyDocumentId(null);
     setBusy(false);
     return nextSessionId;
-  }, [clearViewer]);
+  }, [clearViewer, clearPreview]);
 
   useEffect(() => {
-    if (viewer === null && viewerReturnFocus.current) {
+    if (viewer === null && preview === null && viewerReturnFocus.current) {
       viewerReturnFocus.current.focus();
       viewerReturnFocus.current = null;
     }
-  }, [viewer]);
+  }, [viewer, preview]);
 
   const loadUnassignedDocuments = useCallback(async () => {
     if (!documentLoadsAllowed.current) {
@@ -276,6 +294,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       } else {
         setUnassignedDocuments([]);
         clearViewer(false);
+        clearPreview();
         unlockRequestId.current += 1;
         setUnlockingDocument(null);
       }
@@ -288,7 +307,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setBusy(false);
       }
     }
-  }, [clearViewer, loadUnassignedDocuments]);
+  }, [clearViewer, clearPreview, loadUnassignedDocuments]);
 
   useEffect(() => {
     let active = true;
@@ -668,6 +687,24 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     });
   };
 
+  const loadDocumentPreview = (documentId: string, documentTitle: string) => {
+    const requestId = previewRequestId.current + 1;
+    previewRequestId.current = requestId;
+    void run(async () => {
+      try {
+        const nextPreview = await api.previewSourceDocument(documentId);
+        if (previewRequestId.current === requestId) {
+          setPreview({ documentId, documentTitle, preview: nextPreview });
+        }
+      } catch (nextError) {
+        if (previewRequestId.current !== requestId) {
+          return;
+        }
+        throw nextError;
+      }
+    });
+  };
+
   return (
     <VaultManualImportView
       busy={busy}
@@ -678,6 +715,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       normalizingDocumentId={normalizingDocumentId}
       notice={notice}
       onCloseViewer={clearViewer}
+      onClosePreview={clearPreview}
       onCloseUnlock={() => {
         unlockRequestId.current += 1;
         setUnlockingDocument(null);
@@ -706,7 +744,11 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onUnlockSubmit={submitDocumentPassword}
       onView={(document, trigger) => {
         viewerReturnFocus.current = trigger;
-        loadViewerPage(document.documentId, document.originalFilename, 1);
+        if (document.mimeType === "application/pdf") {
+          loadViewerPage(document.documentId, document.originalFilename, 1);
+        } else {
+          loadDocumentPreview(document.documentId, document.originalFilename);
+        }
       }}
       onViewerPage={(pageNumber) => {
         if (viewer) {
@@ -714,6 +756,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         }
       }}
       password={password}
+      preview={preview}
       rememberedOnThisMac={rememberedOnThisMac}
       recoveryConfigured={recoveryConfigured}
       savingRecoveryFile={savingRecoveryFile}
@@ -730,7 +773,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
 
 export function VaultManualImportView(props: VaultManualImportViewProps) {
   const unlocked = props.vaultStatus === "unlocked";
-  const modalOpen = props.viewer !== null || props.unlockingDocument !== null;
+  const modalOpen = props.viewer !== null
+    || props.preview !== null
+    || props.unlockingDocument !== null;
 
   return (
     <AppShell>
@@ -870,11 +915,11 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                             <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onOpenUnlock(document)} type="button">
                               Unlock
                             </button>
-                          ) : document.mimeType === "application/pdf" ? (
+                          ) : (
                             <button className="button button-quiet" disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
                               {!viewingAvailable ? "View unavailable" : "View document"}
                             </button>
-                          ) : null}
+                          )}
                           {!passwordRequired && document.documentStatus !== "inspection_failed" ? (
                             <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
                               {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
@@ -906,6 +951,12 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
           onPage={props.onViewerPage}
           viewer={props.viewer}
           viewingPage={props.viewingPage}
+        />
+      ) : null}
+      {unlocked && props.preview ? (
+        <DocumentPreview
+          onClose={props.onClosePreview}
+          state={props.preview}
         />
       ) : null}
       {unlocked && props.unlockingDocument ? (
@@ -1105,6 +1156,74 @@ function DocumentViewer({
           <button className="button button-quiet" disabled={viewingPage || viewer.page.pageNumber === 1} onClick={() => onPage(viewer.page.pageNumber - 1)} type="button">Previous</button>
           <p>Page {viewer.page.pageNumber} of {viewer.page.pageCount}</p>
           <button className="button button-quiet" disabled={viewingPage || viewer.page.pageNumber === viewer.page.pageCount} onClick={() => onPage(viewer.page.pageNumber + 1)} type="button">Next</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function DocumentPreview({
+  onClose,
+  state,
+}: {
+  onClose: () => void;
+  state: DocumentPreviewState;
+}) {
+  const dialog = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const containKeyboardFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const focusable = [...(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+      } else if (!dialog.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", containKeyboardFocus);
+    return () => window.removeEventListener("keydown", containKeyboardFocus);
+  }, [onClose]);
+
+  const { lineCount, previewLines, previewText, truncated } = state.preview;
+  return (
+    <div className="viewer-backdrop">
+      <section aria-labelledby="document-preview-title" aria-modal="true" className="document-viewer" ref={dialog} role="dialog">
+        <header className="document-viewer-header">
+          <div>
+            <p className="ledger-eyebrow">Encrypted evidence</p>
+            <h2 id="document-preview-title">{state.documentTitle}</h2>
+          </div>
+          <button autoFocus className="button button-quiet" onClick={onClose} type="button">Close</button>
+        </header>
+        <div className="document-page document-preview-page">
+          {lineCount === 0 ? (
+            <p className="panel-status">This file is empty.</p>
+          ) : (
+            <pre className="document-preview-text">{previewText}</pre>
+          )}
+        </div>
+        <footer className="document-viewer-footer">
+          <p>
+            {truncated
+              ? `Showing the first ${previewLines} of ${lineCount} lines. Save a copy to view the full file.`
+              : `${lineCount} ${lineCount === 1 ? "line" : "lines"}`}
+          </p>
         </footer>
       </section>
     </div>

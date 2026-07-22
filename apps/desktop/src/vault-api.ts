@@ -4,12 +4,14 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   DeleteSourceDocumentArgs,
   NormalizeSourceDocumentArgs,
+  PreviewSourceDocumentArgs,
   RemoveStatementPasswordArgs,
   RenderedDocumentPage,
   RenderSourceDocumentPageArgs,
   SavedStatementPasswordResult,
   SaveSourceDocumentCopyArgs,
   SourceDocumentImportOutcome,
+  SourceDocumentPreview,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   DocumentStatementPasswordArgs,
@@ -45,6 +47,7 @@ export interface VaultApi {
     documentId: string,
   ): Promise<SourceDocumentRoutingOutcome>;
   onVaultLocked(handler: () => void): Promise<() => void>;
+  previewSourceDocument(documentId: string): Promise<SourceDocumentPreview>;
   rememberVaultOnThisMac(): Promise<void>;
   removeStatementPassword(moneySourceId: string): Promise<void>;
   renderSourceDocumentPage(
@@ -156,6 +159,13 @@ export function createVaultApi(
       );
     },
     onVaultLocked: (handler) => subscribe("vault-locked", handler),
+    previewSourceDocument: (documentId) => {
+      const args: PreviewSourceDocumentArgs = { documentId };
+      return call<SourceDocumentPreview, PreviewSourceDocumentArgs>(
+        "preview_source_document",
+        args,
+      );
+    },
     renderSourceDocumentPage: (documentId, pageNumber) => {
       const args: RenderSourceDocumentPageArgs = { documentId, pageNumber };
       return call<RenderedDocumentPage, RenderSourceDocumentPageArgs>(

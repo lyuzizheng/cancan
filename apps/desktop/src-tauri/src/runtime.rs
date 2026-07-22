@@ -56,6 +56,12 @@ const STATEMENT_PASSWORD_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.statement-
 const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+// A non-PDF preview returns only the first lines of the decrypted text, never
+// the complete original file bytes. The caps give enough context to recognize
+// a statement export while keeping the renderer boundary and IPC bounded,
+// mirroring the PDF viewer's bounded-pixel budget.
+const PREVIEW_MAX_LINES: usize = 200;
+const PREVIEW_MAX_BYTES: usize = 32 * 1024;
 type DocumentPasswordSessions = HashMap<String, Zeroizing<Vec<u8>>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -105,6 +111,15 @@ pub(crate) struct StatementPasswordSourceSummary {
     display_name: String,
     has_saved_password: bool,
     money_source_id: String,
+}
+
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SourceDocumentPreview {
+    line_count: u64,
+    preview_lines: u64,
+    preview_text: String,
+    truncated: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1139,6 +1154,27 @@ impl VaultRuntime {
             .map_err(document_render_error)
     }
 
+    fn preview_source_document(
+        &self,
+        document_id: &str,
+    ) -> Result<SourceDocumentPreview, RuntimeError> {
+        if document_id.is_empty() {
+            return Err(RuntimeError::new("invalid_document_request"));
+        }
+        // Keep the session mutex through preview extraction so Vault lock cannot
+        // report success while this decrypted buffer is still alive.
+        let store = self.store()?;
+        let input = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .source_document_input(document_id)
+            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+        if input.mime_type != "text/csv" {
+            return Err(RuntimeError::new("viewer_unsupported"));
+        }
+        Ok(bounded_text_preview(&input.plaintext))
+    }
+
     fn apply_normalizer_result(
         &self,
         document_id: &str,
@@ -1284,6 +1320,50 @@ fn document_render_error(error: io::Error) -> RuntimeError {
         io::ErrorKind::PermissionDenied => RuntimeError::new("statement_password_required"),
         io::ErrorKind::Unsupported => RuntimeError::new("viewer_unsupported"),
         _ => RuntimeError::new("document_render_failed"),
+    }
+}
+
+fn bounded_text_preview(plaintext: &[u8]) -> SourceDocumentPreview {
+    // from_utf8_lossy copies the whole buffer for invalid UTF-8; keep every
+    // full-plaintext copy inside a zeroizing wrapper like the normalizer path.
+    let text = Zeroizing::new(String::from_utf8_lossy(plaintext).into_owned());
+    let mut line_count = 0_usize;
+    let mut preview_lines = 0_usize;
+    let mut preview_text = String::new();
+    let mut truncated = false;
+    for line in text.lines() {
+        line_count += 1;
+        if truncated || preview_lines == PREVIEW_MAX_LINES {
+            truncated = true;
+            continue;
+        }
+        let separator = usize::from(!preview_text.is_empty());
+        if preview_text.len() + separator + line.len() <= PREVIEW_MAX_BYTES {
+            if separator == 1 {
+                preview_text.push('\n');
+            }
+            preview_text.push_str(line);
+            preview_lines += 1;
+            continue;
+        }
+        // Keep a cut prefix of an overlong line so a single huge row still
+        // previews; stop at a UTF-8 boundary.
+        let remaining = PREVIEW_MAX_BYTES.saturating_sub(preview_text.len() + separator);
+        let cut = line.floor_char_boundary(remaining);
+        if cut > 0 {
+            if separator == 1 {
+                preview_text.push('\n');
+            }
+            preview_text.push_str(&line[..cut]);
+            preview_lines += 1;
+        }
+        truncated = true;
+    }
+    SourceDocumentPreview {
+        line_count: line_count as u64,
+        preview_lines: preview_lines as u64,
+        preview_text,
+        truncated,
     }
 }
 
@@ -1713,6 +1793,21 @@ pub(crate) async fn render_source_document_page(
     .await
     .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
     .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn preview_source_document(
+    document_id: String,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<SourceDocumentPreview, VaultCommandError> {
+    if document_id.is_empty() {
+        return Err(VaultCommandError::new("invalid_document_request"));
+    }
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.preview_source_document(&document_id))
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
 }
 
 fn source_document_metadata(source_path: &Path) -> Result<(String, &'static str), RuntimeError> {
@@ -3685,6 +3780,126 @@ mod tests {
                 .expect_err("reject missing document")
                 .code(),
             "document_unavailable"
+        );
+    }
+
+    #[test]
+    fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+
+        let csv_path = parent.path().join("wise-export.csv");
+        fs::write(
+            &csv_path,
+            b"date,amount\r\n2026-07-01,10.00\r\n2026-07-02,-4.25\n",
+        )
+        .expect("write CSV fixture");
+        let imported = runtime
+            .import_selected_document(&csv_path, None)
+            .expect("import CSV");
+        let preview = runtime
+            .preview_source_document(&imported.document_id)
+            .expect("preview CSV");
+        assert_eq!(preview.line_count, 3);
+        assert_eq!(preview.preview_lines, 3);
+        assert_eq!(
+            preview.preview_text,
+            "date,amount\n2026-07-01,10.00\n2026-07-02,-4.25"
+        );
+        assert!(!preview.truncated);
+
+        let mut big_content = String::from("date,amount\n");
+        for row in 1..=300 {
+            big_content.push_str(&format!("2026-07-01,{row}.00\n"));
+        }
+        let big_path = parent.path().join("big-export.csv");
+        fs::write(&big_path, big_content).expect("write big CSV fixture");
+        let big = runtime
+            .import_selected_document(&big_path, None)
+            .expect("import big CSV");
+        let big_preview = runtime
+            .preview_source_document(&big.document_id)
+            .expect("preview big CSV");
+        assert_eq!(big_preview.line_count, 301);
+        assert_eq!(big_preview.preview_lines, PREVIEW_MAX_LINES as u64);
+        assert!(big_preview.truncated);
+        assert_eq!(big_preview.preview_text.lines().count(), PREVIEW_MAX_LINES);
+        assert!(big_preview.preview_text.starts_with("date,amount\n"));
+
+        let long_path = parent.path().join("long-line.csv");
+        let long_content = format!("memo,{}\n2026-07-02,1.00\n", "é".repeat(PREVIEW_MAX_BYTES));
+        fs::write(&long_path, long_content).expect("write long-line CSV fixture");
+        let long = runtime
+            .import_selected_document(&long_path, None)
+            .expect("import long-line CSV");
+        let long_preview = runtime
+            .preview_source_document(&long.document_id)
+            .expect("preview long-line CSV");
+        assert_eq!(long_preview.line_count, 2);
+        assert_eq!(long_preview.preview_lines, 1);
+        assert!(long_preview.truncated);
+        assert!(long_preview.preview_text.len() <= PREVIEW_MAX_BYTES);
+        assert!(long_preview.preview_text.starts_with("memo,"));
+
+        // The byte budget is never exceeded, even by a separator byte or a
+        // zero-byte trailing line.
+        let capped_path = parent.path().join("capped.csv");
+        let capped_content = format!("{}\n\n", "x".repeat(PREVIEW_MAX_BYTES));
+        fs::write(&capped_path, capped_content).expect("write capped CSV fixture");
+        let capped = runtime
+            .import_selected_document(&capped_path, None)
+            .expect("import capped CSV");
+        let capped_preview = runtime
+            .preview_source_document(&capped.document_id)
+            .expect("preview capped CSV");
+        assert_eq!(capped_preview.line_count, 2);
+        assert_eq!(capped_preview.preview_lines, 1);
+        assert!(capped_preview.truncated);
+        assert_eq!(capped_preview.preview_text.len(), PREVIEW_MAX_BYTES);
+
+        let empty_path = parent.path().join("empty.csv");
+        fs::write(&empty_path, b"").expect("write empty CSV fixture");
+        let empty = runtime
+            .import_selected_document(&empty_path, None)
+            .expect("import empty CSV");
+        let empty_preview = runtime
+            .preview_source_document(&empty.document_id)
+            .expect("preview empty CSV");
+        assert_eq!(empty_preview.line_count, 0);
+        assert_eq!(empty_preview.preview_lines, 0);
+        assert!(!empty_preview.truncated);
+        assert!(empty_preview.preview_text.is_empty());
+
+        let pdf_path = parent.path().join("statement.pdf");
+        fs::write(&pdf_path, synthetic_pdf()).expect("write PDF fixture");
+        let pdf = runtime
+            .import_selected_document(&pdf_path, None)
+            .expect("import PDF");
+        assert_eq!(
+            runtime
+                .preview_source_document(&pdf.document_id)
+                .expect_err("PDF keeps the pixel viewer")
+                .code(),
+            "viewer_unsupported"
+        );
+        assert_eq!(
+            runtime
+                .preview_source_document("missing-document")
+                .expect_err("reject missing document")
+                .code(),
+            "document_unavailable"
+        );
+
+        runtime.lock().expect("lock Vault");
+        assert_eq!(
+            runtime
+                .preview_source_document(&imported.document_id)
+                .expect_err("reject preview while locked")
+                .code(),
+            "vault_locked"
         );
     }
 

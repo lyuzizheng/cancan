@@ -38,6 +38,8 @@ export type RenderSourceDocumentPageArgs = {
   pageNumber: number;
 };
 
+export type PreviewSourceDocumentArgs = { documentId: string };
+
 export interface SourceDocumentImportOutcome {
   documentId: string;
   status: "imported" | "already_present" | "restored";
@@ -76,4 +78,11 @@ export interface RenderedDocumentPage {
   pageCount: number;
   pageNumber: number;
   pngBase64: string;
+}
+
+export interface SourceDocumentPreview {
+  lineCount: number;
+  previewLines: number;
+  previewText: string;
+  truncated: boolean;
 }

@@ -8,6 +8,7 @@ import type {
   SourceDocumentImportOutcome,
   RenderedDocumentPage,
   SavedStatementPasswordResult,
+  SourceDocumentPreview,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   VaultAccessStatus,
@@ -78,6 +79,14 @@ function createApi(overrides: Partial<VaultApi> = {}) {
       }),
     ),
     onVaultLocked: vi.fn(async () => () => undefined),
+    previewSourceDocument: vi.fn(
+      async (): Promise<SourceDocumentPreview> => ({
+        lineCount: 0,
+        previewLines: 0,
+        previewText: "",
+        truncated: false,
+      }),
+    ),
     renderSourceDocumentPage: vi.fn(
       async (_documentId: string, pageNumber: number): Promise<RenderedDocumentPage> => ({
         pageCount: 2,
@@ -700,6 +709,116 @@ describe("App manual import orchestration", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("opens a bounded CSV preview and clears it on close or Vault lock", async () => {
+    const csvDocument = sourceDocument({
+      documentId: "document-csv",
+      mimeType: "text/csv",
+      originalFilename: "wise-export.csv",
+    });
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [csvDocument]),
+      previewSourceDocument: vi.fn(
+        async (): Promise<SourceDocumentPreview> => ({
+          lineCount: 342,
+          previewLines: 200,
+          previewText: "date,amount\n2026-07-01,10.00",
+          truncated: true,
+        }),
+      ),
+    });
+
+    await mount(api);
+    const viewTrigger = button("View document");
+    await click("View document");
+
+    expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
+    expect(api.renderSourceDocumentPage).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.textContent).toContain("date,amount");
+    expect(container.textContent).toContain(
+      "Showing the first 200 of 342 lines. Save a copy to view the full file.",
+    );
+
+    await click("Close");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(viewTrigger);
+
+    await click("View document");
+    await click("Lock Vault");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).not.toContain("date,amount");
+    expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("ignores a delayed CSV preview completion after native Vault lock", async () => {
+    const csvDocument = sourceDocument({
+      documentId: "document-csv",
+      mimeType: "text/csv",
+      originalFilename: "wise-export.csv",
+    });
+    const preview = deferred<SourceDocumentPreview>();
+    let notifyLocked: (() => void) | undefined;
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [csvDocument]),
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyLocked = handler;
+        return () => undefined;
+      }),
+      previewSourceDocument: vi.fn(() => preview.promise),
+    });
+
+    await mount(api);
+    await click("View document");
+    expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
+
+    await act(async () => {
+      notifyLocked?.();
+      preview.resolve({
+        lineCount: 2,
+        previewLines: 2,
+        previewText: "date,amount\n2026-07-01,10.00",
+        truncated: false,
+      });
+      await settle();
+    });
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("date,amount");
+  });
+
+  it("does not surface a preview failure that lands after native Vault lock", async () => {
+    const csvDocument = sourceDocument({
+      documentId: "document-csv",
+      mimeType: "text/csv",
+      originalFilename: "wise-export.csv",
+    });
+    const preview = deferred<SourceDocumentPreview>();
+    let notifyLocked: (() => void) | undefined;
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [csvDocument]),
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyLocked = handler;
+        return () => undefined;
+      }),
+      previewSourceDocument: vi.fn(() => preview.promise),
+    });
+
+    await mount(api);
+    await click("View document");
+    expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
+
+    await act(async () => {
+      notifyLocked?.();
+      preview.reject({ code: "vault_locked" });
+      await settle();
+    });
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("Unlock your Vault to continue.");
   });
 
   it("deletes an available source file and keeps its tombstone visible", async () => {
