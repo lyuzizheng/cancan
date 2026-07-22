@@ -7,10 +7,13 @@ import type {
   RemoveStatementPasswordArgs,
   RenderedDocumentPage,
   RenderSourceDocumentPageArgs,
+  SavedStatementPasswordResult,
   SourceDocumentImportOutcome,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
-  StatementPasswordArgs,
+  DocumentStatementPasswordArgs,
+  StatementPasswordSourceSummary,
+  TrySavedStatementPasswordArgs,
   VaultAccessStatus,
   VaultPasswordArgs,
   VaultStatus,
@@ -34,6 +37,7 @@ export interface VaultApi {
   deleteSourceDocument(documentId: string): Promise<boolean>;
   forgetVaultOnThisMac(): Promise<void>;
   importSourceDocument(): Promise<SourceDocumentImportOutcome | null>;
+  listStatementPasswordSources(): Promise<StatementPasswordSourceSummary[]>;
   listUnassignedSourceDocuments(): Promise<SourceDocumentSummary[]>;
   lockVault(): Promise<VaultStatus>;
   normalizeSourceDocument(
@@ -47,7 +51,16 @@ export interface VaultApi {
     pageNumber: number,
   ): Promise<RenderedDocumentPage>;
   saveRecoveryFile(): Promise<boolean>;
-  saveStatementPassword(moneySourceId: string, password: string): Promise<void>;
+  trySavedStatementPassword(
+    documentId: string,
+    moneySourceId: string,
+  ): Promise<SavedStatementPasswordResult>;
+  unlockSourceDocument(
+    documentId: string,
+    moneySourceId: string,
+    password: string,
+    updateSavedPassword: boolean,
+  ): Promise<void>;
   unlockVault(password: string): Promise<VaultStatus>;
   unlockVaultWithKeychain(): Promise<VaultStatus>;
   vaultAccessStatus(): Promise<VaultAccessStatus>;
@@ -77,9 +90,34 @@ export function createVaultApi(
       call<VaultStatus>("unlock_vault_with_keychain"),
     rememberVaultOnThisMac: () => call<void>("remember_vault_on_this_mac"),
     forgetVaultOnThisMac: () => call<void>("forget_vault_on_this_mac"),
-    saveStatementPassword: (moneySourceId, password) => {
-      const args: StatementPasswordArgs = { moneySourceId, password };
-      return call<void, StatementPasswordArgs>("save_statement_password", args);
+    listStatementPasswordSources: () =>
+      call<StatementPasswordSourceSummary[]>("list_statement_password_sources"),
+    trySavedStatementPassword: (documentId, moneySourceId) => {
+      const args: TrySavedStatementPasswordArgs = {
+        documentId,
+        moneySourceId,
+      };
+      return call<SavedStatementPasswordResult, TrySavedStatementPasswordArgs>(
+        "try_saved_statement_password",
+        args,
+      );
+    },
+    unlockSourceDocument: (
+      documentId,
+      moneySourceId,
+      password,
+      updateSavedPassword,
+    ) => {
+      const args: DocumentStatementPasswordArgs = {
+        documentId,
+        moneySourceId,
+        password,
+        updateSavedPassword,
+      };
+      return call<void, DocumentStatementPasswordArgs>(
+        "unlock_source_document",
+        args,
+      );
     },
     removeStatementPassword: (moneySourceId) => {
       const args: RemoveStatementPasswordArgs = { moneySourceId };
@@ -137,8 +175,14 @@ export function commandErrorMessage(error: unknown): string {
       return "Enter the statement password to continue.";
     case "statement_password_save_failed":
       return "CanCan couldn’t save that statement password in this Mac’s Keychain.";
+    case "statement_password_load_failed":
+      return "CanCan couldn’t access the saved statement password in this Mac’s Keychain.";
+    case "statement_password_invalid":
+      return "That password did not unlock this statement.";
     case "statement_password_remove_failed":
       return "CanCan couldn’t remove that statement password from this Mac’s Keychain.";
+    case "protected_pdf_normalization_unsupported":
+      return "Routing isn’t available for protected statements yet.";
     case "vault_locked":
       return "Unlock your Vault to continue.";
     case "vault_not_created":

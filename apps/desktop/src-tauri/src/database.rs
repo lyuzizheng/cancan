@@ -113,6 +113,13 @@ pub(crate) struct StatementPasswordState {
     pub(crate) status: StatementPasswordStatus,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct StatementPasswordSource {
+    pub(crate) display_name: String,
+    pub(crate) has_saved_password: bool,
+    pub(crate) money_source_id: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceDocumentRoutingStatus {
@@ -412,6 +419,27 @@ impl ManualImportStore {
             )
             .optional()?;
         Ok(state)
+    }
+
+    pub(crate) fn statement_password_sources(&self) -> StoreResult<Vec<StatementPasswordSource>> {
+        let mut statement = self.connection.prepare(
+            "SELECT money_sources.id, money_sources.display_name, \
+                    EXISTS( \
+                      SELECT 1 FROM statement_secret_refs \
+                      WHERE statement_secret_refs.money_source_id = money_sources.id \
+                        AND statement_secret_refs.status = 'saved' \
+                    ) \
+             FROM money_sources \
+             ORDER BY money_sources.display_name, money_sources.id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(StatementPasswordSource {
+                money_source_id: row.get(0)?,
+                display_name: row.get(1)?,
+                has_saved_password: row.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     pub(crate) fn pending_statement_password_states(

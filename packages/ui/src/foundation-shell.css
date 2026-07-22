@@ -738,6 +738,89 @@ input:focus-visible {
   box-shadow: 0 30px 80px rgb(0 0 0 / 32%);
 }
 
+.document-unlock {
+  width: min(620px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--vault-seam);
+  border-top: 3px solid var(--signal-amber);
+  border-radius: 4px;
+  background: var(--ledger-porcelain);
+  box-shadow: 0 30px 80px rgb(0 0 0 / 32%);
+}
+
+.document-unlock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--ledger-rule);
+}
+
+.document-unlock-header h2 {
+  overflow: hidden;
+  max-width: 440px;
+  margin: 3px 0 0;
+  font-size: 1.15rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-unlock-body {
+  padding: 22px;
+}
+
+.document-unlock-body form {
+  display: grid;
+  gap: 10px;
+}
+
+.document-unlock-body label {
+  color: var(--ledger-text-muted);
+  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.document-unlock-body input,
+.document-unlock-body select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  color: var(--ledger-ink);
+  border: 1px solid var(--ledger-rule);
+  border-radius: 3px;
+  background: white;
+  font: inherit;
+}
+
+.document-unlock-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.unlock-hint,
+.unlock-error,
+.unlock-footnote {
+  margin: 2px 0 0;
+  line-height: 1.5;
+}
+
+.unlock-hint,
+.unlock-footnote {
+  color: var(--ledger-text-muted);
+  font-size: 0.82rem;
+}
+
+.unlock-error {
+  color: var(--signal-danger-text);
+  font-weight: 600;
+}
+
 .document-viewer-header,
 .document-viewer-footer {
   display: flex;
@@ -953,6 +1036,23 @@ input:focus-visible {
     border: 0;
     border-top: 3px solid var(--signal-emerald);
     border-radius: 0;
+  }
+
+  .document-unlock {
+    width: 100%;
+    max-height: 100%;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .document-unlock-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .document-unlock-actions .button {
+    width: 100%;
   }
 
   .document-page {
