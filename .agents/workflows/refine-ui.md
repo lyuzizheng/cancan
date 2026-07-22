@@ -2,7 +2,7 @@
 
 Use this when the user asks to improve visual quality, interaction quality, or UI design.
 
-Frontend implementation is reserved to Kimi Code CLI (AGENTS.md item 9). Any other agent must stop here and direct the user to run this work through Kimi Code CLI.
+Kimi Code CLI leads UX direction, advanced visual design, and the final designer-level review of customer-facing UI (AGENTS.md item 9). Other agents may make UI changes with this workflow, but route advanced visual/UX work and its final visual review through Kimi Code CLI.
 
 ## Steps
 
