@@ -6,6 +6,7 @@ import type {
   SourceDocumentImportOutcome,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
+  StatementPasswordSourceSummary,
   VaultStatus,
 } from "./command-contracts";
 import {
@@ -28,6 +29,17 @@ export interface DocumentViewerState {
   page: RenderedDocumentPage;
 }
 
+export interface DocumentUnlockState {
+  busy: boolean;
+  documentId: string;
+  documentTitle: string;
+  error: string | null;
+  password: string;
+  savedPasswordStatus: "invalid" | "unavailable" | null;
+  selectedMoneySourceId: string;
+  sources: StatementPasswordSourceSummary[] | null;
+}
+
 export interface VaultManualImportViewProps {
   busy: boolean;
   deletingDocumentId: string | null;
@@ -37,16 +49,22 @@ export interface VaultManualImportViewProps {
   normalizingDocumentId: string | null;
   notice: Notice | null;
   onCloseViewer: () => void;
+  onCloseUnlock: () => void;
   onDelete: (documentId: string) => void;
   onImport: () => void;
   onLock: () => void;
   onNormalize: (documentId: string) => void;
+  onOpenUnlock: (document: SourceDocumentSummary) => void;
+  onRetryUnlockSources: () => void;
   onPasswordChange: (password: string) => void;
   onRefresh: () => void;
   onRememberedChange: (remembered: boolean) => void;
   onSaveRecoveryFile: () => void;
   onSubmitPassword: () => void;
   onUnlockWithKeychain: () => void;
+  onUnlockPasswordChange: (password: string) => void;
+  onUnlockSourceChange: (moneySourceId: string) => void;
+  onUnlockSubmit: (updateSavedPassword: boolean) => void;
   onView: (
     document: SourceDocumentSummary,
     trigger: HTMLButtonElement,
@@ -57,6 +75,7 @@ export interface VaultManualImportViewProps {
   recoveryConfigured: boolean;
   savingRecoveryFile: boolean;
   unassignedDocuments: SourceDocumentSummary[];
+  unlockingDocument: DocumentUnlockState | null;
   updatingRemembered: boolean;
   vaultStatus: VaultScreenStatus;
   viewer: DocumentViewerState | null;
@@ -86,16 +105,19 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<DocumentViewerState | null>(null);
+  const [unlockingDocument, setUnlockingDocument] = useState<DocumentUnlockState | null>(null);
   const [viewingPage, setViewingPage] = useState(false);
   const [updatingRemembered, setUpdatingRemembered] = useState(false);
   const [savingRecoveryFile, setSavingRecoveryFile] = useState(false);
   const viewerRequestId = useRef(0);
+  const unlockRequestId = useRef(0);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
   const documentLoadsAllowed = useRef(false);
   const vaultSessionId = useRef(0);
 
   useEffect(() => () => {
     vaultSessionId.current += 1;
+    unlockRequestId.current += 1;
   }, []);
 
   const clearViewer = useCallback((restoreFocus = true) => {
@@ -112,6 +134,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     vaultSessionId.current = nextSessionId;
     documentLoadsAllowed.current = false;
     clearViewer(false);
+    unlockRequestId.current += 1;
+    setUnlockingDocument(null);
     setVaultStatus(nextStatus);
     setError(null);
     setNotice(null);
@@ -248,6 +272,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       } else {
         setUnassignedDocuments([]);
         clearViewer(false);
+        unlockRequestId.current += 1;
+        setUnlockingDocument(null);
       }
     } catch (nextError) {
       if (vaultSessionId.current === sessionId) {
@@ -450,6 +476,143 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }).finally(() => setDeletingDocumentId(null));
   };
 
+  const trySavedStatementPassword = async (
+    documentId: string,
+    moneySourceId: string,
+    requestId: number,
+  ) => {
+    setUnlockingDocument((current) => current?.documentId === documentId
+      ? { ...current, busy: true, error: null, savedPasswordStatus: null }
+      : current);
+    try {
+      const result = await api.trySavedStatementPassword(documentId, moneySourceId);
+      if (unlockRequestId.current !== requestId) {
+        return;
+      }
+      if (result === "unlocked") {
+        setUnlockingDocument(null);
+        setNotice({
+          body: "The saved password worked. This statement is ready to view for this Vault session. Routing remains unavailable for protected statements.",
+          tone: "success",
+          title: "Statement unlocked",
+        });
+        await loadUnassignedDocuments();
+        return;
+      }
+      setUnlockingDocument((current) => current?.documentId === documentId
+        ? { ...current, busy: false, savedPasswordStatus: result }
+        : current);
+    } catch (nextError) {
+      if (unlockRequestId.current === requestId) {
+        setUnlockingDocument((current) => current?.documentId === documentId
+          ? { ...current, busy: false, error: commandErrorMessage(nextError) }
+          : current);
+      }
+    }
+  };
+
+  const selectUnlockSource = (moneySourceId: string) => {
+    const current = unlockingDocument;
+    if (!current) {
+      return;
+    }
+    const requestId = unlockRequestId.current + 1;
+    unlockRequestId.current = requestId;
+    setUnlockingDocument({
+      ...current,
+      busy: false,
+      error: null,
+      password: "",
+      savedPasswordStatus: null,
+      selectedMoneySourceId: moneySourceId,
+    });
+    if (current.sources?.find((source) => source.moneySourceId === moneySourceId)?.hasSavedPassword) {
+      void trySavedStatementPassword(current.documentId, moneySourceId, requestId);
+    }
+  };
+
+  const loadUnlockSources = (documentId: string, documentTitle: string) => {
+    const requestId = unlockRequestId.current + 1;
+    unlockRequestId.current = requestId;
+    setUnlockingDocument({
+      busy: true,
+      documentId,
+      documentTitle,
+      error: null,
+      password: "",
+      savedPasswordStatus: null,
+      selectedMoneySourceId: "",
+      sources: null,
+    });
+    void api.listStatementPasswordSources().then((sources) => {
+      if (unlockRequestId.current !== requestId) {
+        return;
+      }
+      const onlySource = sources.length === 1 ? sources[0] : undefined;
+      const selectedMoneySourceId = onlySource?.moneySourceId ?? "";
+      setUnlockingDocument((current) => current?.documentId === documentId
+        ? { ...current, busy: false, selectedMoneySourceId, sources }
+        : current);
+      if (onlySource?.hasSavedPassword) {
+        void trySavedStatementPassword(documentId, selectedMoneySourceId, requestId);
+      }
+    }).catch((nextError) => {
+      if (unlockRequestId.current === requestId) {
+        setUnlockingDocument((current) => current?.documentId === documentId
+          ? { ...current, busy: false, error: commandErrorMessage(nextError), sources: [] }
+          : current);
+      }
+    });
+  };
+
+  const openDocumentUnlock = (document: SourceDocumentSummary) => {
+    loadUnlockSources(document.documentId, document.originalFilename);
+  };
+
+  const submitDocumentPassword = (updateSavedPassword: boolean) => {
+    const current = unlockingDocument;
+    if (!current) {
+      return;
+    }
+    if (!current.selectedMoneySourceId) {
+      setUnlockingDocument({ ...current, error: "Choose the Money Source for this statement." });
+      return;
+    }
+    if (!current.password) {
+      setUnlockingDocument({ ...current, error: "Enter the statement password to continue." });
+      return;
+    }
+    const requestId = unlockRequestId.current + 1;
+    unlockRequestId.current = requestId;
+    const password = current.password;
+    setUnlockingDocument({ ...current, busy: true, error: null, password: "" });
+    void api.unlockSourceDocument(
+      current.documentId,
+      current.selectedMoneySourceId,
+      password,
+      updateSavedPassword,
+    ).then(async () => {
+      if (unlockRequestId.current !== requestId) {
+        return;
+      }
+      setUnlockingDocument(null);
+      setNotice({
+        body: updateSavedPassword
+          ? "The verified password replaced this Money Source’s saved password. This statement is ready to view; routing remains unavailable for protected statements."
+          : "This statement is ready to view until the Vault locks. Routing remains unavailable for protected statements.",
+        tone: "success",
+        title: "Statement unlocked",
+      });
+      await loadUnassignedDocuments();
+    }).catch((nextError) => {
+      if (unlockRequestId.current === requestId) {
+        setUnlockingDocument((latest) => latest?.documentId === current.documentId
+          ? { ...latest, busy: false, error: commandErrorMessage(nextError), password: "" }
+          : latest);
+      }
+    });
+  };
+
   const loadViewerPage = (
     documentId: string,
     documentTitle: string,
@@ -490,16 +653,31 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       normalizingDocumentId={normalizingDocumentId}
       notice={notice}
       onCloseViewer={clearViewer}
+      onCloseUnlock={() => {
+        unlockRequestId.current += 1;
+        setUnlockingDocument(null);
+      }}
       onDelete={deleteDocument}
       onImport={importDocument}
       onLock={() => void requestVaultLock()}
       onNormalize={normalizeDocument}
+      onOpenUnlock={openDocumentUnlock}
+      onRetryUnlockSources={() => {
+        if (unlockingDocument) {
+          loadUnlockSources(unlockingDocument.documentId, unlockingDocument.documentTitle);
+        }
+      }}
       onPasswordChange={setPassword}
       onRefresh={() => void refreshVaultStatus()}
       onRememberedChange={updateRemembered}
       onSaveRecoveryFile={saveRecoveryFile}
       onSubmitPassword={submitPassword}
       onUnlockWithKeychain={unlockWithKeychain}
+      onUnlockPasswordChange={(nextPassword) => setUnlockingDocument((current) => current
+        ? { ...current, error: null, password: nextPassword }
+        : current)}
+      onUnlockSourceChange={selectUnlockSource}
+      onUnlockSubmit={submitDocumentPassword}
       onView={(document, trigger) => {
         viewerReturnFocus.current = trigger;
         loadViewerPage(document.documentId, document.originalFilename, 1);
@@ -514,6 +692,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       recoveryConfigured={recoveryConfigured}
       savingRecoveryFile={savingRecoveryFile}
       unassignedDocuments={unassignedDocuments}
+      unlockingDocument={unlockingDocument}
       updatingRemembered={updatingRemembered}
       vaultStatus={vaultStatus}
       viewer={viewer}
@@ -524,10 +703,11 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
 
 export function VaultManualImportView(props: VaultManualImportViewProps) {
   const unlocked = props.vaultStatus === "unlocked";
+  const modalOpen = props.viewer !== null || props.unlockingDocument !== null;
 
   return (
     <AppShell>
-      <aside aria-hidden={props.viewer ? true : undefined} className="vault-spine" inert={props.viewer !== null} aria-label="CanCan Vault">
+      <aside aria-hidden={modalOpen ? true : undefined} className="vault-spine" inert={modalOpen} aria-label="CanCan Vault">
         <div className="vault-brand">
           <span className="vault-mark" aria-hidden="true">C</span>
           <span>CanCan</span>
@@ -543,7 +723,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
         <p className="vault-spine-footnote">Manual import</p>
       </aside>
 
-      <section aria-hidden={props.viewer ? true : undefined} className="ledger" inert={props.viewer !== null} aria-busy={props.vaultStatus === "loading"}>
+      <section aria-hidden={modalOpen ? true : undefined} className="ledger" inert={modalOpen} aria-busy={props.vaultStatus === "loading"}>
         <header className="ledger-header">
           <div>
             <p className="ledger-eyebrow">Sources / Evidence</p>
@@ -642,7 +822,12 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
               {props.unassignedDocuments.length > 0 ? (
                 <ul className="evidence-list">
                   {props.unassignedDocuments.map((document) => {
-                    const routingAvailable = document.fileState === "available";
+                    const passwordRequired = document.documentStatus === "password_required";
+                    const protectedUnlocked = document.documentStatus === "protected_unlocked";
+                    const fileAvailable = document.fileState === "available";
+                    const viewingAvailable = fileAvailable
+                      && (document.documentStatus === "ready" || protectedUnlocked);
+                    const routingAvailable = fileAvailable && document.documentStatus === "ready";
                     const deleting = props.deletingDocumentId === document.documentId;
                     const normalizing = props.normalizingDocumentId === document.documentId;
                     return (
@@ -650,18 +835,24 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                         <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : "CSV"}</span>
                         <div className="evidence-details">
                           <p>{document.originalFilename}</p>
-                          <span>{fileStateLabel(document.fileState)}</span>
+                          <span>{documentStatusLabel(document)}</span>
                         </div>
                         <div className="evidence-actions">
-                          {document.mimeType === "application/pdf" ? (
-                            <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
-                              {!routingAvailable ? "View unavailable" : "View document"}
+                          {passwordRequired ? (
+                            <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null} onClick={() => props.onOpenUnlock(document)} type="button">
+                              Unlock
+                            </button>
+                          ) : document.mimeType === "application/pdf" ? (
+                            <button className="button button-quiet" disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
+                              {!viewingAvailable ? "View unavailable" : "View document"}
                             </button>
                           ) : null}
-                          <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
-                            {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
-                          </button>
-                          {routingAvailable ? (
+                          {!passwordRequired && document.documentStatus !== "inspection_failed" ? (
+                            <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
+                              {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
+                            </button>
+                          ) : null}
+                          {fileAvailable ? (
                             <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
                               {deleting ? "Deleting…" : "Delete source file"}
                             </button>
@@ -684,7 +875,137 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
           viewingPage={props.viewingPage}
         />
       ) : null}
+      {unlocked && props.unlockingDocument ? (
+        <DocumentUnlock
+          onClose={props.onCloseUnlock}
+          onPasswordChange={props.onUnlockPasswordChange}
+          onRetrySources={props.onRetryUnlockSources}
+          onSourceChange={props.onUnlockSourceChange}
+          onSubmit={props.onUnlockSubmit}
+          state={props.unlockingDocument}
+        />
+      ) : null}
     </AppShell>
+  );
+}
+
+function DocumentUnlock({
+  onClose,
+  onPasswordChange,
+  onRetrySources,
+  onSourceChange,
+  onSubmit,
+  state,
+}: {
+  onClose: () => void;
+  onPasswordChange: (password: string) => void;
+  onRetrySources: () => void;
+  onSourceChange: (moneySourceId: string) => void;
+  onSubmit: (updateSavedPassword: boolean) => void;
+  state: DocumentUnlockState;
+}) {
+  const hasSources = state.sources !== null && state.sources.length > 0;
+  const dialog = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const containKeyboardFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>(
+        "button:not(:disabled), input:not(:disabled), select:not(:disabled)",
+      ) ?? [])];
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+      } else if (!dialog.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", containKeyboardFocus);
+    return () => window.removeEventListener("keydown", containKeyboardFocus);
+  }, [onClose]);
+
+  return (
+    <div className="viewer-backdrop">
+      <section aria-labelledby="document-unlock-title" aria-modal="true" className="document-unlock" ref={dialog} role="dialog">
+        <header className="document-unlock-header">
+          <div>
+            <p className="ledger-eyebrow">Protected statement</p>
+            <h2 id="document-unlock-title">Unlock {state.documentTitle}</h2>
+          </div>
+          <button autoFocus className="button button-quiet" onClick={onClose} type="button">Close</button>
+        </header>
+        <div className="document-unlock-body">
+          {state.sources === null ? <p className="panel-status" role="status">Loading Money Sources…</p> : null}
+          {state.sources?.length === 0 && state.error ? (
+            <Feedback
+              body={state.error}
+              title="Money Sources couldn’t be loaded"
+              tone="attention"
+            />
+          ) : null}
+          {state.sources?.length === 0 && state.error ? (
+            <button className="button button-primary" onClick={onRetrySources} type="button">Try again</button>
+          ) : null}
+          {state.sources?.length === 0 && !state.error ? (
+            <Feedback
+              body="Set up a Money Source before unlocking this protected statement. CanCan needs the source to scope saved passwords safely."
+              title="No Money Source is configured"
+              tone="attention"
+            />
+          ) : null}
+          {hasSources ? (
+            <form onSubmit={(event) => { event.preventDefault(); onSubmit(false); }}>
+              <label htmlFor="statement-money-source">Money Source</label>
+              <select
+                disabled={state.busy}
+                id="statement-money-source"
+                onChange={(event) => onSourceChange(event.target.value)}
+                value={state.selectedMoneySourceId}
+              >
+                <option value="">Choose a Money Source</option>
+                {state.sources?.map((source) => (
+                  <option key={source.moneySourceId} value={source.moneySourceId}>
+                    {source.displayName}{source.hasSavedPassword ? " — saved password" : ""}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="statement-password">Statement password</label>
+              <input
+                autoComplete="off"
+                disabled={state.busy || !state.selectedMoneySourceId}
+                id="statement-password"
+                onChange={(event) => onPasswordChange(event.target.value)}
+                type="password"
+                value={state.password}
+              />
+              {state.busy ? <p className="panel-status" role="status">Trying the statement password locally…</p> : null}
+              {state.savedPasswordStatus === "invalid" ? <p className="unlock-hint">The saved password did not work. Enter the current password below.</p> : null}
+              {state.savedPasswordStatus === "unavailable" ? <p className="unlock-hint">The saved password is not available on this Mac. Enter it again below.</p> : null}
+              {state.error ? <p className="unlock-error" role="alert">{state.error}</p> : null}
+              <div className="document-unlock-actions">
+                <button className="button button-quiet" disabled={state.busy || !state.password} type="submit">Use once</button>
+                <button className="button button-primary" disabled={state.busy || !state.password} onClick={() => onSubmit(true)} type="button">Update saved password</button>
+              </div>
+              <p className="unlock-footnote">Use once is forgotten when the Vault locks. Updating saves one verified password for this Money Source in this Mac’s Keychain.</p>
+            </form>
+          ) : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -832,5 +1153,20 @@ function vaultStatusLabel(status: VaultScreenStatus) {
 }
 
 function fileStateLabel(fileState: SourceDocumentSummary["fileState"]) {
-  return fileState === "available" ? "Ready for routing" : fileState === "deleted" ? "File deleted" : "File missing";
+  return fileState === "available" ? "Ready" : fileState === "deleted" ? "File deleted" : "Missing";
+}
+
+function documentStatusLabel(document: SourceDocumentSummary) {
+  switch (document.documentStatus) {
+    case "password_required":
+      return "Needs attention";
+    case "protected_unlocked":
+      return "Ready";
+    case "inspection_failed":
+      return "Needs attention";
+    case "unavailable":
+      return "Missing";
+    default:
+      return fileStateLabel(document.fileState);
+  }
 }
