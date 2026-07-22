@@ -56,10 +56,10 @@ const STATEMENT_PASSWORD_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.statement-
 const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
-// A non-PDF preview returns only the first lines of the decrypted text, never
-// the complete original file bytes. The caps give enough context to recognize
-// a statement export while keeping the renderer boundary and IPC bounded,
-// mirroring the PDF viewer's bounded-pixel budget.
+// A CSV preview returns at most the first lines of the decrypted text. A small
+// CSV may appear in full, but the renderer never receives raw original-file
+// bytes or unbounded content. The caps keep IPC bounded while giving enough
+// context to recognize a statement export.
 const PREVIEW_MAX_LINES: usize = 200;
 const PREVIEW_MAX_BYTES: usize = 32 * 1024;
 type DocumentPasswordSessions = HashMap<String, Zeroizing<Vec<u8>>>;
@@ -1337,7 +1337,7 @@ fn bounded_text_preview(plaintext: &[u8]) -> SourceDocumentPreview {
             truncated = true;
             continue;
         }
-        let separator = usize::from(!preview_text.is_empty());
+        let separator = usize::from(preview_lines > 0);
         if preview_text.len() + separator + line.len() <= PREVIEW_MAX_BYTES {
             if separator == 1 {
                 preview_text.push('\n');
@@ -3810,6 +3810,17 @@ mod tests {
             "date,amount\n2026-07-01,10.00\n2026-07-02,-4.25"
         );
         assert!(!preview.truncated);
+
+        let complete_text = b"date,amount\n2026-07-01,10.00";
+        let complete_preview = bounded_text_preview(complete_text);
+        assert_eq!(complete_preview.preview_text.as_bytes(), complete_text);
+        assert!(!complete_preview.truncated);
+
+        let leading_blank_preview = bounded_text_preview(b"\n\ndate,amount");
+        assert_eq!(leading_blank_preview.line_count, 3);
+        assert_eq!(leading_blank_preview.preview_lines, 3);
+        assert_eq!(leading_blank_preview.preview_text, "\n\ndate,amount");
+        assert!(!leading_blank_preview.truncated);
 
         let mut big_content = String::from("date,amount\n");
         for row in 1..=300 {

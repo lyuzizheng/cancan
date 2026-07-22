@@ -31,7 +31,6 @@ export interface DocumentViewerState {
 }
 
 export interface DocumentPreviewState {
-  documentId: string;
   documentTitle: string;
   preview: SourceDocumentPreview;
 }
@@ -694,7 +693,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       try {
         const nextPreview = await api.previewSourceDocument(documentId);
         if (previewRequestId.current === requestId) {
-          setPreview({ documentId, documentTitle, preview: nextPreview });
+          setPreview({ documentTitle, preview: nextPreview });
         }
       } catch (nextError) {
         if (previewRequestId.current !== requestId) {
@@ -1201,6 +1200,7 @@ function DocumentPreview({
   }, [onClose]);
 
   const { lineCount, previewLines, previewText, truncated } = state.preview;
+  const lineUnit = lineCount === 1 ? "line" : "lines";
   return (
     <div className="viewer-backdrop">
       <section aria-labelledby="document-preview-title" aria-modal="true" className="document-viewer" ref={dialog} role="dialog">
@@ -1221,8 +1221,8 @@ function DocumentPreview({
         <footer className="document-viewer-footer">
           <p>
             {truncated
-              ? `Showing the first ${previewLines} of ${lineCount} lines. Save a copy to view the full file.`
-              : `${lineCount} ${lineCount === 1 ? "line" : "lines"}`}
+              ? `Preview truncated. Displaying content from ${previewLines} of ${lineCount} ${lineUnit}; the final displayed line may be partial. Save a copy to view the full file.`
+              : `${lineCount} ${lineUnit}`}
           </p>
         </footer>
       </section>

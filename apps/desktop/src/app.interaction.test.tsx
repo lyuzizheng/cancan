@@ -721,9 +721,9 @@ describe("App manual import orchestration", () => {
       listUnassignedSourceDocuments: vi.fn(async () => [csvDocument]),
       previewSourceDocument: vi.fn(
         async (): Promise<SourceDocumentPreview> => ({
-          lineCount: 342,
-          previewLines: 200,
-          previewText: "date,amount\n2026-07-01,10.00",
+          lineCount: 1,
+          previewLines: 1,
+          previewText: "memo,partial content",
           truncated: true,
         }),
       ),
@@ -736,9 +736,9 @@ describe("App manual import orchestration", () => {
     expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
     expect(api.renderSourceDocumentPage).not.toHaveBeenCalled();
     expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(container.textContent).toContain("date,amount");
+    expect(container.textContent).toContain("memo,partial content");
     expect(container.textContent).toContain(
-      "Showing the first 200 of 342 lines. Save a copy to view the full file.",
+      "Preview truncated. Displaying content from 1 of 1 line; the final displayed line may be partial. Save a copy to view the full file.",
     );
 
     await click("Close");
@@ -748,7 +748,7 @@ describe("App manual import orchestration", () => {
     await click("View document");
     await click("Lock Vault");
     expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.textContent).not.toContain("date,amount");
+    expect(container.textContent).not.toContain("memo,partial content");
     expect(container.textContent).toContain("Unlock your Vault");
   });
 
