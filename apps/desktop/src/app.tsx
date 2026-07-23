@@ -1026,9 +1026,9 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                           : "View documents"}
                       </button>
                     </div>
-                    {selected && documents === null ? (
-                      <p className="panel-status" role="status">Loading documents…</p>
-                    ) : null}
+                  {selected && documents === null && props.loadingDocuments ? (
+                    <p className="panel-status" role="status">Loading documents…</p>
+                  ) : null}
                     {selected && documents?.length === 0 ? (
                       <p className="panel-status">No routed documents yet.</p>
                     ) : null}

@@ -253,6 +253,29 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain(availableDocument.originalFilename);
   });
 
+  it("does not leave a failed Money Source selection in a loading state", async () => {
+    const api = createApi({
+      listMoneySources: vi.fn(async () => [moneySource]),
+      listSourceDocuments: vi.fn(async () => {
+        throw new Error("source documents unavailable");
+      }),
+    });
+
+    await mount(api);
+    const selectSource = container.querySelector<HTMLButtonElement>(
+      `[aria-label="View documents for ${moneySource.displayName}"]`,
+    );
+    expect(selectSource).not.toBeNull();
+    await act(async () => {
+      selectSource!.click();
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Something needs your attention");
+    expect(container.textContent).not.toContain("Loading documents…");
+    expect(selectSource!.disabled).toBe(false);
+  });
+
   it("creates a Vault when setup is needed", async () => {
     const api = createApi({
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
