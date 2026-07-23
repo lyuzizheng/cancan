@@ -231,7 +231,7 @@ impl ManualImportStore {
         restore_deleted_document_id: Option<&str>,
     ) -> StoreResult<SourceDocumentImportOutcome> {
         validate_import(input)?;
-        let source = FileVault::prepare(input.source_path)?;
+        let source = FileVault::prepare_for_mime(input.source_path, input.mime_type)?;
         let existing = find_exact_document(&self.connection, source.file_sha256())?;
         match (existing.as_ref(), restore_deleted_document_id) {
             (Some(existing), None) if existing.file_state == "deleted" => {

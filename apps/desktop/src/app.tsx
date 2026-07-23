@@ -849,10 +849,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onUnlockSubmit={submitDocumentPassword}
       onView={(document, trigger) => {
         viewerReturnFocus.current = trigger;
-        if (document.mimeType === "application/pdf") {
-          loadViewerPage(document.documentId, document.originalFilename, 1);
-        } else {
+        if (document.mimeType === "text/csv") {
           loadDocumentPreview(document.documentId, document.originalFilename);
+        } else {
+          loadViewerPage(document.documentId, document.originalFilename, 1);
         }
       }}
       onViewerPage={(pageNumber) => {
@@ -989,7 +989,7 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
 
             <section className="intake-intro">
               <h2>Add a statement or export</h2>
-              <p>Choose a PDF or CSV. CanCan saves it in your Vault before checking its configured source.</p>
+              <p>Choose a PDF, CSV, PNG, or JPEG. CanCan saves it in your Vault before checking its configured source.</p>
             </section>
 
             {props.notice ? <Feedback {...props.notice} /> : null}
@@ -1120,7 +1120,7 @@ function EvidenceDocumentGroups({
           const savingCopy = props.savingCopyDocumentId === document.documentId;
           return (
             <li className="evidence-row" key={document.documentId}>
-              <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : "CSV"}</span>
+              <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : document.mimeType === "text/csv" ? "CSV" : document.mimeType === "image/png" ? "PNG" : "JPEG"}</span>
               <div className="evidence-details">
                 <p>{document.originalFilename}</p>
                 <span className="evidence-meta">{evidenceMeta(document)}</span>
@@ -1478,7 +1478,7 @@ export function importNotice(status: SourceDocumentImportOutcome["status"] | "ca
     imported: { tone: "success", title: "Added to your Vault", body: "Your file is safely stored. Check its routing when you’re ready." },
     already_present: { tone: "success", title: "Already in CanCan", body: "This exact file is already safely stored in your Vault." },
     restored: { tone: "success", title: "Evidence restored", body: "Your saved evidence is available in the Vault again." },
-    cancelled: { tone: "attention", title: "No file was imported", body: "You can add a PDF or CSV whenever you’re ready." },
+    cancelled: { tone: "attention", title: "No file was imported", body: "You can add a PDF, CSV, PNG, or JPEG whenever you’re ready." },
   };
   return notices[status];
 }

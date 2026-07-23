@@ -9,7 +9,10 @@ use crate::{
         create_password_wrapper, create_recovery_file, open_password_wrapper,
         password_wrapper_profile, recovery_file_fingerprint,
     },
-    viewer::{PdfAccess, RenderedDocumentPage, pdf_access, render_pdf_page_with_password},
+    viewer::{
+        PdfAccess, RenderedDocumentPage, pdf_access, render_image_document,
+        render_pdf_page_with_password,
+    },
 };
 #[cfg(target_os = "macos")]
 use apple_native_keyring_store::keychain::{Cred as KeychainCredential, MacKeychainDomain};
@@ -1171,13 +1174,19 @@ impl VaultRuntime {
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
             .source_document_input(document_id)
             .map_err(|_| RuntimeError::new("document_unavailable"))?;
-        if input.mime_type != "application/pdf" {
-            return Err(RuntimeError::new("viewer_unsupported"));
+        match input.mime_type.as_str() {
+            "application/pdf" => {
+                let passwords = self.document_passwords()?;
+                let password = passwords.get(document_id).map(|value| value.as_slice());
+                render_pdf_page_with_password(&input.plaintext, page_number, password)
+                    .map_err(document_render_error)
+            }
+            "image/png" | "image/jpeg" => {
+                render_image_document(&input.plaintext, &input.mime_type, page_number)
+                    .map_err(document_render_error)
+            }
+            _ => Err(RuntimeError::new("viewer_unsupported")),
         }
-        let passwords = self.document_passwords()?;
-        let password = passwords.get(document_id).map(|value| value.as_slice());
-        render_pdf_page_with_password(&input.plaintext, page_number, password)
-            .map_err(document_render_error)
     }
 
     fn preview_source_document(
@@ -1644,6 +1653,8 @@ pub(crate) async fn save_source_document_copy(
         let default_name = match mime_type.as_str() {
             "application/pdf" => "CanCan source copy.pdf",
             "text/csv" => "CanCan source copy.csv",
+            "image/png" => "CanCan source copy.png",
+            "image/jpeg" => "CanCan source copy.jpg",
             _ => return Err(RuntimeError::new("unsupported_document")),
         };
         let selected = app
@@ -1679,7 +1690,7 @@ pub(crate) async fn import_source_document(
             .dialog()
             .file()
             .set_title("Import a statement")
-            .add_filter("Financial documents", &["pdf", "csv"])
+            .add_filter("Financial documents", &["pdf", "csv", "png", "jpg", "jpeg"])
             .blocking_pick_file();
         let Some(selected) = selected else {
             return Ok(None);
@@ -1855,6 +1866,8 @@ fn source_document_metadata(source_path: &Path) -> Result<(String, &'static str)
     {
         Some("pdf") => "application/pdf",
         Some("csv") => "text/csv",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
         _ => return Err(RuntimeError::new("unsupported_document")),
     };
     let metadata = fs::metadata(source_path).map_err(|_| RuntimeError::new("import_failed"))?;
@@ -2109,7 +2122,7 @@ mod tests {
     use crate::database::SourceDocumentImportStatus;
     use crate::vault::open_recovery_file;
     #[cfg(target_os = "macos")]
-    use crate::viewer::tests::protected_pdf_fixture;
+    use crate::viewer::tests::{protected_pdf_fixture, synthetic_png_fixture};
     use std::{collections::HashMap, thread, time::Duration};
 
     #[derive(Default)]
@@ -3796,6 +3809,62 @@ mod tests {
                 .code(),
             "vault_locked"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn imports_and_renders_an_image_in_memory_only() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("phone-statement.png");
+        fs::write(&source_path, synthetic_png_fixture()).expect("write PNG fixture");
+        let vault_root = parent.path().join("vault");
+        let runtime = VaultRuntime::new(vault_root.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        let imported = runtime
+            .import_selected_document(&source_path, None)
+            .expect("import PNG");
+        let before = vault_entries(&vault_root);
+
+        let rendered = runtime
+            .render_source_document_page(&imported.document_id, 1)
+            .expect("render PNG");
+
+        assert_eq!(rendered.page_count, 1);
+        assert_eq!(rendered.page_number, 1);
+        assert!(!rendered.png_base64.is_empty());
+        assert_eq!(vault_entries(&vault_root), before);
+        assert_eq!(
+            runtime
+                .render_source_document_page(&imported.document_id, 2)
+                .expect_err("reject image page two")
+                .code(),
+            "invalid_document_request"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn rejects_an_invalid_image_before_storing_it() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("not-an-image.png");
+        fs::write(&source_path, b"not a PNG").expect("write invalid PNG fixture");
+        let vault_root = parent.path().join("vault");
+        let runtime = VaultRuntime::new(vault_root.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        let before = vault_entries(&vault_root);
+
+        assert_eq!(
+            runtime
+                .import_selected_document(&source_path, None)
+                .expect_err("reject invalid PNG")
+                .code(),
+            "import_failed"
+        );
+        assert_eq!(vault_entries(&vault_root), before);
     }
 
     #[test]

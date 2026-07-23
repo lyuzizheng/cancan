@@ -73,11 +73,16 @@ function isExtractionBundle(value: unknown): value is ExtractionBundle {
     !isNonEmptyString(value.sourceDocumentId) ||
     typeof value.fileSha256 !== "string" ||
     !/^[a-f0-9]{64}$/.test(value.fileSha256) ||
-    (value.mimeType !== "application/pdf" && value.mimeType !== "text/csv") ||
+    (value.mimeType !== "application/pdf" &&
+      value.mimeType !== "text/csv" &&
+      value.mimeType !== "image/png" &&
+      value.mimeType !== "image/jpeg") ||
     !isExtractionMetadata(value.metadata) ||
     !Array.isArray(value.observations) ||
     value.metadata.observationCount !== value.observations.length ||
-    !value.observations.every(isSourceObservation)
+    !value.observations.every((observation) =>
+      isSourceObservation(observation, value.mimeType),
+    )
   ) {
     return false;
   }
@@ -103,7 +108,7 @@ function isExtractionMetadata(value: unknown): value is {
   );
 }
 
-function isSourceObservation(value: unknown): boolean {
+function isSourceObservation(value: unknown, mimeType: unknown): boolean {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, OBSERVATION_REQUIRED_KEYS, OBSERVATION_OPTIONAL_KEYS) ||
@@ -143,7 +148,17 @@ function isSourceObservation(value: unknown): boolean {
       value.confidence === undefined
     );
   }
-  if (value.kind === "ocr_text" || value.kind === "document_region") {
+  if (value.kind === "ocr_text") {
+    return (
+      value.row === undefined &&
+      value.column === undefined &&
+      value.textSpan === undefined &&
+      (mimeType === "image/png" || mimeType === "image/jpeg"
+        ? value.page === undefined && value.boundingBox === undefined
+        : value.page !== undefined && value.boundingBox !== undefined)
+    );
+  }
+  if (value.kind === "document_region") {
     return (
       value.page !== undefined &&
       value.boundingBox !== undefined &&

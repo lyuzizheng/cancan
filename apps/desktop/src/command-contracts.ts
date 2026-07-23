@@ -55,7 +55,7 @@ export interface SourceDocumentSummary {
     | "ready"
     | "unavailable";
   fileState: "available" | "deleted" | "missing";
-  mimeType: "application/pdf" | "text/csv";
+  mimeType: "application/pdf" | "text/csv" | "image/png" | "image/jpeg";
   originalFilename: string;
   receivedAt: string;
 }

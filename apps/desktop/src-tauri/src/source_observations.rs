@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, io};
 use zeroize::{Zeroize, Zeroizing};
 
 #[cfg(target_os = "macos")]
-use crate::viewer::render_pdf_page_png_with_password;
+use crate::viewer::{render_image_preview_png, render_pdf_page_png_with_password};
 
 const CSV_ENGINE: &str = "rust-csv";
 const CSV_ENGINE_VERSION: &str = "1.4.0";
@@ -140,6 +140,7 @@ pub(crate) fn extract_bundle(
     let observations = match mime_type {
         "application/pdf" => extract_pdf_observations(plaintext, password)?,
         "text/csv" => extract_csv_observations(plaintext)?,
+        "image/png" | "image/jpeg" => extract_image_observations(plaintext, mime_type)?,
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -325,6 +326,45 @@ where
     Ok(observations)
 }
 
+#[cfg(target_os = "macos")]
+fn extract_image_observations(
+    plaintext: &[u8],
+    mime_type: &str,
+) -> io::Result<Vec<SourceObservation>> {
+    let preview = render_image_preview_png(plaintext, mime_type)?;
+    let mut engine = VisionOcrEngine;
+    extract_image_observations_with_ocr(&preview, &mut engine)
+}
+
+fn extract_image_observations_with_ocr<OcrEngine>(
+    image: &[u8],
+    engine: &mut OcrEngine,
+) -> io::Result<Vec<SourceObservation>>
+where
+    OcrEngine: PdfOcrEngine,
+{
+    engine
+        .recognize_page(1, image)?
+        .into_iter()
+        .enumerate()
+        .map(|(index, mut block)| {
+            Ok(SourceObservation {
+                id: format!("image-ocr-text-{}", index + 1),
+                kind: SourceObservationKind::OcrText,
+                page: None,
+                row: None,
+                column: None,
+                text: std::mem::take(&mut block.text),
+                text_span: None,
+                bounding_box: None,
+                engine: engine.engine().to_owned(),
+                engine_version: engine.engine_version().to_owned(),
+                confidence: Some(block.confidence),
+            })
+        })
+        .collect()
+}
+
 fn native_text_needs_ocr(text: &str) -> bool {
     text.trim().is_empty()
         || text.chars().any(|character| {
@@ -453,6 +493,17 @@ fn extract_pdf_observations(
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "native PDF extraction requires macOS",
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn extract_image_observations(
+    _plaintext: &[u8],
+    _mime_type: &str,
+) -> io::Result<Vec<SourceObservation>> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "local image OCR requires macOS",
     ))
 }
 
@@ -640,6 +691,54 @@ mod tests {
     }
 
     #[test]
+    fn image_ocr_keeps_vision_provenance_without_coordinates() {
+        let mut engine = FakeOcrEngine {
+            blocks: vec![OcrTextBlock {
+                text: "TOTAL 123.45".to_owned(),
+                confidence: 0.88,
+                vision_bounding_box: BoundingBox {
+                    x: 0.2,
+                    y: 0.1,
+                    width: 0.3,
+                    height: 0.4,
+                },
+            }],
+            calls: Vec::new(),
+            fails: false,
+        };
+
+        let observations = extract_image_observations_with_ocr(b"synthetic image", &mut engine)
+            .expect("extract image OCR observations");
+
+        assert_eq!(engine.calls, vec![1]);
+        assert_eq!(observations.len(), 1);
+        let observation = &observations[0];
+        assert_eq!(observation.id, "image-ocr-text-1");
+        assert_eq!(observation.kind, SourceObservationKind::OcrText);
+        assert_eq!(observation.page, None);
+        assert_eq!(observation.text, "TOTAL 123.45");
+        assert_eq!(observation.engine, "fake-vision");
+        assert_eq!(observation.engine_version, "fake-v1");
+        assert_eq!(observation.confidence, Some(0.88));
+        assert_eq!(observation.bounding_box, None);
+    }
+
+    #[test]
+    fn image_ocr_failure_rejects_the_bundle() {
+        let mut engine = FakeOcrEngine {
+            blocks: Vec::new(),
+            calls: Vec::new(),
+            fails: true,
+        };
+
+        let error = extract_image_observations_with_ocr(b"synthetic image", &mut engine)
+            .expect_err("image OCR failure must reject the extraction bundle");
+
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(engine.calls, vec![1]);
+    }
+
+    #[test]
     fn detects_only_clear_broken_native_text_markers() {
         assert!(native_text_needs_ocr("   \n\t"));
         assert!(native_text_needs_ocr("bad\0text"));
@@ -691,6 +790,29 @@ mod tests {
                 .iter()
                 .all(|block| is_unit_square_box(&block.vision_bounding_box))
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn extracts_local_image_ocr_without_location_claims() {
+        let png = render_pdf_page_png_with_password(&synthetic_text_pdf(), 1, None)
+            .expect("render synthetic text page");
+
+        let observations =
+            extract_image_observations(&png, "image/png").expect("extract image OCR text");
+        let recognized = observations
+            .iter()
+            .map(|observation| observation.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert!(
+            recognized.contains("TOTAL") && recognized.contains("123.45"),
+            "Vision did not recognize the synthetic statement text: {recognized:?}"
+        );
+        assert!(observations.iter().all(|observation| {
+            observation.page.is_none() && observation.bounding_box.is_none()
+        }));
     }
 
     #[cfg(target_os = "macos")]

@@ -229,8 +229,9 @@ Rules:
 
 ```text
 decrypt only inside the trusted Rust/Tauri boundary after Vault unlock
-render requested pages into memory for the in-app viewer
-send rendered page pixels, not raw PDF bytes, to the web UI
+render requested PDF pages or validated PNG/JPEG images into memory for the in-app viewer
+send rendered pixels, not raw PDF or image bytes, to the web UI
+for PNG/JPEG evidence, apply ImageIO orientation and return only one re-encoded PNG bounded to 1,200 by 1,600 pixels and 1.92 million pixels; reject sources above 12,000 pixels in either dimension or 64 million pixels total
 for CSV evidence, send at most the first 200 lines and 32 KiB of UTF-8 preview plaintext to the web UI
 a CSV file that fits within both caps may appear in full, but the renderer never receives an unbounded or raw original-file byte payload
 do not create a plaintext temporary file for normal viewing

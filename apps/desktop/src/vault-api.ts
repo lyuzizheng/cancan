@@ -231,7 +231,7 @@ export function commandErrorMessage(error: unknown): string {
     case "source_copy_save_failed":
       return "CanCan couldn’t save a complete copy to that location.";
     case "unsupported_document":
-      return "Choose a PDF or CSV file.";
+      return "Choose a PDF, CSV, PNG, or JPEG file.";
     case "normalizer_failed":
       return "CanCan could not finish the secure document check. Try again.";
     case "document_unavailable":
@@ -241,7 +241,7 @@ export function commandErrorMessage(error: unknown): string {
     case "viewer_unsupported":
       return "Preview isn’t available for this evidence.";
     case "document_render_failed":
-      return "CanCan couldn’t render that PDF page.";
+      return "CanCan couldn’t render that document.";
     case "delete_source_failed":
       return "CanCan couldn’t finish removing this Vault file. Refresh its status before trying again.";
     default:
