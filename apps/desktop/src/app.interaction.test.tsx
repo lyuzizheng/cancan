@@ -908,6 +908,35 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain("Unlock your Vault");
   });
 
+  it("opens an image in the rendered viewer", async () => {
+    const imageDocument = sourceDocument({
+      documentId: "document-image",
+      mimeType: "image/png",
+      originalFilename: "phone-statement.png",
+    });
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [imageDocument]),
+      renderSourceDocumentPage: vi.fn(
+        async (): Promise<RenderedDocumentPage> => ({
+          pageCount: 1,
+          pageNumber: 1,
+          pngBase64: "cmVuZGVyZWQtaW1hZ2U=",
+        }),
+      ),
+    });
+
+    await mount(api);
+    expect(container.textContent).toContain("PNG");
+    await click("View document");
+
+    expect(api.renderSourceDocumentPage).toHaveBeenCalledWith("document-image", 1);
+    expect(api.previewSourceDocument).not.toHaveBeenCalled();
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,cmVuZGVyZWQtaW1hZ2U=",
+    );
+    expect(container.textContent).toContain("Page 1 of 1");
+  });
+
   it("opens a bounded CSV preview and clears it on close or Vault lock", async () => {
     const csvDocument = sourceDocument({
       documentId: "document-csv",
@@ -1509,7 +1538,7 @@ describe("App manual import orchestration", () => {
 
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector("img")).toBeNull();
-    expect(container.textContent).not.toContain("CanCan couldn’t render that PDF page.");
+    expect(container.textContent).not.toContain("CanCan couldn’t render that document.");
   });
 
   it("closes the viewer and shows a safe error when page navigation fails", async () => {
@@ -1535,7 +1564,7 @@ describe("App manual import orchestration", () => {
 
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector("img")).toBeNull();
-    expect(container.textContent).toContain("CanCan couldn’t render that PDF page.");
+    expect(container.textContent).toContain("CanCan couldn’t render that document.");
     expect(container.textContent).not.toContain("Core Graphics detail");
   });
 

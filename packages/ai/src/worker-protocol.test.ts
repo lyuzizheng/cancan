@@ -36,6 +36,24 @@ describe("normalizer worker protocol", () => {
     });
   });
 
+  it("accepts image OCR text without page or coordinate claims", () => {
+    const command = validCommand();
+    command.extractionBundle.mimeType = "image/png";
+    command.extractionBundle.observations[0] = {
+      id: "image-ocr-text-1",
+      kind: "ocr_text",
+      text: "CANCAN_SYNTHETIC_STATEMENT_V1",
+      confidence: 0.99,
+      engine: "apple-vision",
+      engineVersion: "revision-3-accurate",
+    } as never;
+
+    expect(parseWorkerCommand(command)).toMatchObject({
+      type: "normalize",
+      documentId: "document-fixture",
+    });
+  });
+
   it("rejects missing, lossy, and malformed extraction bundles", () => {
     const missingBundle = validCommand();
     delete (missingBundle as { extractionBundle?: unknown }).extractionBundle;

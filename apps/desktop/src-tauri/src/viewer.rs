@@ -6,11 +6,29 @@ use std::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
+#[cfg(target_os = "macos")]
+use objc2_core_foundation::{
+    CFBoolean, CFData, CFDictionary, CFNumber, CFRetained, CFString, CFType, kCFAllocatorNull,
+};
+#[cfg(target_os = "macos")]
+use objc2_core_graphics::CGImage;
+#[cfg(target_os = "macos")]
+use objc2_image_io::{
+    CGImageSource, kCGImagePropertyPixelHeight, kCGImagePropertyPixelWidth,
+    kCGImageSourceCreateThumbnailFromImageAlways, kCGImageSourceCreateThumbnailWithTransform,
+    kCGImageSourceThumbnailMaxPixelSize,
+};
+
 // Keep one page at or below 1,920,000 RGBA pixels (7.68 MB raw) before PNG encoding and IPC,
 // while allowing ordinary statement pages to render at up to 2x their PDF point dimensions.
 const MAX_RENDER_WIDTH: f64 = 1_200.0;
 const MAX_RENDER_HEIGHT: f64 = 1_600.0;
 const MAX_RENDER_SCALE: f64 = 2.0;
+const MAX_RENDER_PIXELS: u64 = 1_920_000;
+const MAX_SOURCE_IMAGE_DIMENSION: u64 = 12_000;
+const MAX_SOURCE_IMAGE_PIXELS: u64 = 64_000_000;
+const IMAGE_THUMBNAIL_MAX_DIMENSION: i64 = 1_600;
+const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +72,38 @@ pub(crate) fn render_pdf_page_png_with_password(
     rendered_png_bytes(&rendered)
 }
 
+pub(crate) fn render_image_document(
+    image: &[u8],
+    mime_type: &str,
+    page_number: u32,
+) -> io::Result<RenderedDocumentPage> {
+    if page_number != 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "images have one page",
+        ));
+    }
+    let png = render_image_preview_png(image, mime_type)?;
+    Ok(RenderedDocumentPage {
+        page_count: 1,
+        page_number,
+        png_base64: STANDARD.encode(&*png),
+    })
+}
+
+pub(crate) fn validate_image_container(image: &[u8], mime_type: &str) -> io::Result<()> {
+    let _ = render_image_preview_png(image, mime_type)?;
+    Ok(())
+}
+
+pub(crate) fn render_image_preview_png(
+    image: &[u8],
+    mime_type: &str,
+) -> io::Result<Zeroizing<Vec<u8>>> {
+    let rendered = render_image_pixels(image, mime_type)?;
+    rendered_png_bytes(&rendered)
+}
+
 fn rendered_png_bytes(rendered: &RenderedPixels) -> io::Result<Zeroizing<Vec<u8>>> {
     let mut png = Zeroizing::new(Vec::new());
     {
@@ -62,10 +112,10 @@ fn rendered_png_bytes(rendered: &RenderedPixels) -> io::Result<Zeroizing<Vec<u8>
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder
             .write_header()
-            .map_err(|_| io::Error::other("PDF page PNG header failed"))?;
+            .map_err(|_| io::Error::other("rendered page PNG header failed"))?;
         writer
             .write_image_data(&rendered.pixels)
-            .map_err(|_| io::Error::other("PDF page PNG encoding failed"))?;
+            .map_err(|_| io::Error::other("rendered page PNG encoding failed"))?;
     }
     Ok(png)
 }
@@ -228,6 +278,181 @@ fn render_pdf_page_pixels(
     })
 }
 
+#[cfg(target_os = "macos")]
+fn render_image_pixels(image: &[u8], mime_type: &str) -> io::Result<RenderedPixels> {
+    let image = image_thumbnail(image, mime_type)?;
+    let (width, height, bytes_per_row, pixel_len) =
+        render_image_dimensions(CGImage::width(Some(&image)), CGImage::height(Some(&image)))?;
+    let color_space = unsafe { CGColorSpaceCreateDeviceRGB() };
+    if color_space.is_null() {
+        return Err(io::Error::other("Core Graphics color space failed"));
+    }
+    let mut pixels = vec![0_u8; pixel_len];
+    let context = unsafe {
+        CGBitmapContextCreate(
+            pixels.as_mut_ptr().cast(),
+            width as usize,
+            height as usize,
+            8,
+            bytes_per_row,
+            color_space,
+            ALPHA_PREMULTIPLIED_LAST,
+        )
+    };
+    if context.is_null() {
+        unsafe { CGColorSpaceRelease(color_space) };
+        return Err(io::Error::other("Core Graphics bitmap context failed"));
+    }
+    let target = CGRect {
+        origin: CGPoint { x: 0.0, y: 0.0 },
+        size: CGSize {
+            width: f64::from(width),
+            height: f64::from(height),
+        },
+    };
+    unsafe {
+        CGContextDrawImage(context, target, CFRetained::as_ptr(&image).as_ptr().cast());
+        CGContextRelease(context);
+        CGColorSpaceRelease(color_space);
+    }
+    Ok(RenderedPixels {
+        height,
+        page_count: 1,
+        pixels,
+        width,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn image_thumbnail(image: &[u8], mime_type: &str) -> io::Result<CFRetained<CGImage>> {
+    if !image_signature_matches(image, mime_type) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "image container does not match its MIME type",
+        ));
+    }
+    let image_length = isize::try_from(image.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "image input is too large"))?;
+    let allocator = unsafe { kCFAllocatorNull };
+    let data = unsafe { CFData::with_bytes_no_copy(None, image.as_ptr(), image_length, allocator) }
+        .ok_or_else(|| io::Error::other("Core Foundation image data failed"))?;
+    let source = unsafe { CGImageSource::with_data(&data, None) }.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "ImageIO rejected the image container",
+        )
+    })?;
+    if unsafe { source.count() } != 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "image evidence must contain exactly one image",
+        ));
+    }
+    let properties = unsafe { source.properties_at_index(0, None) }.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "image dimensions are unavailable",
+        )
+    })?;
+    validate_source_image_dimensions(&properties)?;
+
+    let thumbnail_size = CFNumber::new_i64(IMAGE_THUMBNAIL_MAX_DIMENSION);
+    let (create_thumbnail, transform, max_pixel_size) = unsafe {
+        (
+            kCGImageSourceCreateThumbnailFromImageAlways,
+            kCGImageSourceCreateThumbnailWithTransform,
+            kCGImageSourceThumbnailMaxPixelSize,
+        )
+    };
+    let options = CFDictionary::<CFType, CFType>::from_slices(
+        &[
+            create_thumbnail.as_ref(),
+            transform.as_ref(),
+            max_pixel_size.as_ref(),
+        ],
+        &[
+            CFBoolean::new(true).as_ref(),
+            CFBoolean::new(true).as_ref(),
+            thumbnail_size.as_ref(),
+        ],
+    );
+    unsafe { source.thumbnail_at_index(0, Some(options.as_opaque())) }.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "ImageIO could not decode the image container",
+        )
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn validate_source_image_dimensions(properties: &CFDictionary) -> io::Result<()> {
+    let width = image_property_dimension(properties, unsafe { kCGImagePropertyPixelWidth })?;
+    let height = image_property_dimension(properties, unsafe { kCGImagePropertyPixelHeight })?;
+    let source_pixels = width.checked_mul(height).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "image dimensions exceed the source safety limit",
+        )
+    })?;
+    if width == 0
+        || height == 0
+        || width > MAX_SOURCE_IMAGE_DIMENSION
+        || height > MAX_SOURCE_IMAGE_DIMENSION
+        || source_pixels > MAX_SOURCE_IMAGE_PIXELS
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "image dimensions exceed the source safety limit",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn image_property_dimension(properties: &CFDictionary, key: &CFString) -> io::Result<u64> {
+    let properties = unsafe { properties.cast_unchecked::<CFString, CFNumber>() };
+    let value = properties.get(key).ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidData, "image dimension is unavailable")
+    })?;
+    value
+        .as_i64()
+        .and_then(|value| u64::try_from(value).ok())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "image dimension is invalid"))
+}
+
+#[cfg(target_os = "macos")]
+fn render_image_dimensions(
+    source_width: usize,
+    source_height: usize,
+) -> io::Result<(u32, u32, usize, usize)> {
+    let source_width = u32::try_from(source_width)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "image width is invalid"))?;
+    let source_height = u32::try_from(source_height)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "image height is invalid"))?;
+    if source_width == 0 || source_height == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "image dimensions are invalid",
+        ));
+    }
+    let source_pixels = f64::from(source_width) * f64::from(source_height);
+    let scale = 1.0_f64
+        .min(MAX_RENDER_WIDTH / f64::from(source_width))
+        .min(MAX_RENDER_HEIGHT / f64::from(source_height))
+        .min((MAX_RENDER_PIXELS as f64 / source_pixels).sqrt());
+    let width = (f64::from(source_width) * scale).floor().max(1.0) as u32;
+    let height = (f64::from(source_height) * scale).floor().max(1.0) as u32;
+    let bytes_per_row = usize::try_from(width)
+        .ok()
+        .and_then(|value| value.checked_mul(4))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "image dimensions overflow"))?;
+    let pixel_len = usize::try_from(height)
+        .ok()
+        .and_then(|value| value.checked_mul(bytes_per_row))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "image dimensions overflow"))?;
+    Ok((width, height, bytes_per_row, pixel_len))
+}
+
 #[cfg(not(target_os = "macos"))]
 fn render_pdf_page_pixels(
     _pdf: &[u8],
@@ -237,6 +462,14 @@ fn render_pdf_page_pixels(
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "the Phase 1 viewer requires macOS",
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn render_image_pixels(_image: &[u8], _mime_type: &str) -> io::Result<RenderedPixels> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "the Phase 1 image viewer requires macOS",
     ))
 }
 
@@ -292,6 +525,14 @@ impl Drop for PdfDocument {
             CGPDFDocumentRelease(self.document);
             CGDataProviderRelease(self.provider);
         }
+    }
+}
+
+fn image_signature_matches(bytes: &[u8], mime_type: &str) -> bool {
+    match mime_type {
+        "image/png" => bytes.starts_with(PNG_SIGNATURE),
+        "image/jpeg" => bytes.starts_with(&[0xff, 0xd8]),
+        _ => false,
     }
 }
 
@@ -374,6 +615,7 @@ unsafe extern "C" {
     ) -> *mut c_void;
     fn CGContextConcatCTM(context: *mut c_void, transform: CGAffineTransform);
     fn CGContextDrawPDFPage(context: *mut c_void, page: *mut c_void);
+    fn CGContextDrawImage(context: *mut c_void, rect: CGRect, image: *mut c_void);
     fn CGContextRelease(context: *mut c_void);
 }
 
@@ -384,10 +626,125 @@ pub(crate) mod tests {
 
     const PROTECTED_PDF_BASE64: &str = "JVBERi0xLjYKJcTl8uXrp/Og0MTGCjMgMCBvYmoKPDwgL0ZpbHRlciAvRmxhdGVEZWNvZGUgL0xlbmd0aCA0OCA+PgpzdHJlYW0Kdvnn8TYAawsf7ZKWOt+r4vzn9PQlUt/9bTWr4mUQ1yE4PqmdgFwBETqsz2CEUOtHCmVuZHN0cmVhbQplbmRvYmoKMSAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9SZXNvdXJjZXMgNCAwIFIgL0NvbnRlbnRzIDMgMCBSID4+CmVuZG9iago0IDAgb2JqCjw8IC9Qcm9jU2V0IFsgL1BERiBdID4+CmVuZG9iagoyIDAgb2JqCjw8IC9UeXBlIC9QYWdlcyAvTWVkaWFCb3ggWzAgMCA2NCA5Nl0gL0NvdW50IDEgL0tpZHMgWyAxIDAgUiBdID4+CmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9DYXRhbG9nIC9QYWdlcyAyIDAgUiAvVmVyc2lvbiAvMS42ID4+CmVuZG9iago2IDAgb2JqCjw8IC9DcmVhdGlvbkRhdGUgKHb55/E2XDAwMGtcMDEzXDAzN+2Sljrfq+KxMPTDg6DGLOhcMDI1uPxt1l1iQabUyb/RtGyIXDAxNdJCV7LXeCkKL1Byb2R1Y2VyICh2+efxNlwwMDBrXDAxM1wwMzftkpY636viZS+2ytJqJddIyvWmXDAzN384+MxM0ug5n6C1XFyqhdNcKVwwMjJ4NUpcMDE2XDAyNsWdWdTiIJUzL0S+XDAyMlxcOMLz7lwwMDDGj+da66tv0uKjZSkKL01vZERhdGUgKHb55/E2XDAwMGtcMDEzXDAzN+2Sljrfq+KxMPTDg6DGLOhcMDI1uPxt1l1iQabUyb/RtGyIXDAxNdJCV7LXeCkKPj4KZW5kb2JqCjcgMCBvYmoKPDwgL0ZpbHRlciAvU3RhbmRhcmQgL1YgNCAvUiA0IC9MZW5ndGggMTI4IC9DRiA8PCAvU3RkQ0YgPDwgL0F1dGhFdmVudCAvRG9jT3BlbgovQ0ZNIC9BRVNWMiAvTGVuZ3RoIDE2ID4+ID4+IC9TdG1GIC9TdGRDRiAvU3RyRiAvU3RkQ0YgL0VuY3J5cHRNZXRhZGF0YSB0cnVlCi9PIDxmYjRjZTZmNjYyYWJjNzI0NTVmMjdiMWRkNmI0NjVkNWZjZTc0ZWIwOGRlYjBmMThmM2ZlZTJiZGZhZjcwMmY5PiAvVSA8ZWZkNzgwY2ZhODc5ZDQ0MWJhYzExNjE5YjEzNWMwZjMwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD4KL1AgLTQgPj4KZW5kb2JqCnhyZWYKMCA4CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDE0MSAwMDAwMCBuIAowMDAwMDAwMjYwIDAwMDAwIG4gCjAwMDAwMDAwMjIgMDAwMDAgbiAKMDAwMDAwMDIyMSAwMDAwMCBuIAowMDAwMDAwMzQxIDAwMDAwIG4gCjAwMDAwMDA0MDQgMDAwMDAgbiAKMDAwMDAwMDcwMyAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDggL1Jvb3QgNSAwIFIgL0VuY3J5cHQgNyAwIFIgL0luZm8gNiAwIFIgL0lEIFsgPDJlYTIwZDllMmRjNTAzYWU2ZmEyYjI0MDkxZWI5ZjRlPgo8MmVhMjBkOWUyZGM1MDNhZTZmYTJiMjQwOTFlYjlmNGU+IF0gPj4Kc3RhcnR4cmVmCjEwMjQKJSVFT0YK";
 
+    const TINY_JPEG_BASE64: &str = "/9j/4AAQSkZJRgABAQAASABIAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAYAAAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAgADAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8Ak8F/8ge4/wCwlqn/AKXT11lcn4L/AOQPcf8AYS1T/wBLp66yvRe5ww+FH//Z";
+
     pub(crate) fn protected_pdf_fixture() -> Vec<u8> {
         STANDARD
             .decode(PROTECTED_PDF_BASE64)
             .expect("decode protected PDF fixture")
+    }
+
+    pub(crate) fn synthetic_png_fixture() -> Vec<u8> {
+        synthetic_png(2, 2)
+    }
+
+    pub(crate) fn synthetic_jpeg_fixture() -> Vec<u8> {
+        STANDARD
+            .decode(TINY_JPEG_BASE64)
+            .expect("decode synthetic JPEG fixture")
+    }
+
+    #[test]
+    fn validates_and_reencodes_png_and_jpeg_images_without_source_bytes() {
+        for (mime_type, image) in [
+            ("image/png", synthetic_png_fixture()),
+            ("image/jpeg", synthetic_jpeg_fixture()),
+        ] {
+            validate_image_container(&image, mime_type)
+                .unwrap_or_else(|error| panic!("validate {mime_type}: {error}"));
+            let rendered =
+                render_image_document(&image, mime_type, 1).expect("render supported image as PNG");
+            let png = STANDARD
+                .decode(&rendered.png_base64)
+                .expect("decode rendered image PNG");
+
+            assert_eq!(rendered.page_count, 1);
+            assert_eq!(rendered.page_number, 1);
+            assert_eq!(&png[..8], PNG_SIGNATURE);
+            assert_ne!(
+                png, image,
+                "the renderer must not return original image bytes"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_a_jpeg_primary_image_with_trailing_motion_bytes() {
+        let mut jpeg = synthetic_jpeg_fixture();
+        jpeg.extend_from_slice(b"motion-photo-video");
+
+        validate_image_container(&jpeg, "image/jpeg")
+            .expect("validate JPEG with harmless trailing bytes");
+        let rendered = render_image_document(&jpeg, "image/jpeg", 1)
+            .expect("render JPEG with harmless trailing bytes");
+        let png = STANDARD
+            .decode(&rendered.png_base64)
+            .expect("decode rendered PNG");
+
+        assert_eq!(&png[..8], PNG_SIGNATURE);
+    }
+
+    #[test]
+    fn applies_jpeg_exif_orientation_before_reencoding() {
+        let rendered = render_image_document(&synthetic_jpeg_fixture(), "image/jpeg", 1)
+            .expect("render EXIF-oriented JPEG");
+        let png = STANDARD
+            .decode(&rendered.png_base64)
+            .expect("decode rendered PNG");
+        let decoder = png::Decoder::new(Cursor::new(png));
+        let reader = decoder.read_info().expect("read rendered PNG info");
+        let info = reader.info();
+
+        assert_eq!((info.width, info.height), (2, 3));
+    }
+
+    #[test]
+    fn rejects_spoofed_corrupt_and_excessive_source_images() {
+        let png = synthetic_png_fixture();
+        assert_eq!(
+            validate_image_container(&png, "image/jpeg")
+                .expect_err("reject PNG bytes claimed as JPEG")
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(
+            validate_image_container(&png[..PNG_SIGNATURE.len()], "image/png")
+                .expect_err("reject truncated PNG")
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+        let jpeg = synthetic_jpeg_fixture();
+        assert_eq!(
+            validate_image_container(&jpeg[..jpeg.len() / 2], "image/jpeg")
+                .expect_err("reject truncated JPEG")
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(
+            validate_image_container(
+                &synthetic_png(MAX_SOURCE_IMAGE_DIMENSION as u32 + 1, 1),
+                "image/png"
+            )
+            .expect_err("reject image wider than the source safety limit")
+            .kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn bounds_image_previews_without_rejecting_a_slightly_wide_photo() {
+        let rendered = render_image_document(&synthetic_png(1_201, 2), "image/png", 1)
+            .expect("render an image wider than the output bound");
+        let png = STANDARD
+            .decode(&rendered.png_base64)
+            .expect("decode rendered PNG");
+        let decoder = png::Decoder::new(Cursor::new(png));
+        let reader = decoder.read_info().expect("read rendered PNG info");
+        let info = reader.info();
+
+        assert_eq!(info.width, MAX_RENDER_WIDTH as u32);
+        assert_eq!(info.height, 1);
+        assert!(u64::from(info.width) * u64::from(info.height) <= MAX_RENDER_PIXELS);
     }
 
     #[test]
@@ -469,6 +826,24 @@ pub(crate) mod tests {
         assert!(info.width <= MAX_RENDER_WIDTH as u32);
         assert!(info.height <= MAX_RENDER_HEIGHT as u32);
         assert!(u64::from(info.width) * u64::from(info.height) <= 1_920_000);
+    }
+
+    fn synthetic_png(width: u32, height: u32) -> Vec<u8> {
+        let pixel_count = usize::try_from(width)
+            .ok()
+            .and_then(|value| value.checked_mul(usize::try_from(height).ok()?))
+            .expect("synthetic PNG dimensions fit usize");
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().expect("write synthetic PNG header");
+            writer
+                .write_image_data(&vec![0x7f; pixel_count * 4])
+                .expect("write synthetic PNG pixels");
+        }
+        png
     }
 
     fn synthetic_pdf(page_count: usize) -> Vec<u8> {

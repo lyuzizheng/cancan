@@ -34,6 +34,8 @@ source_document file or canonical message envelope
 
 For PDF input, native text extraction is always attempted because it is local and cheap. The implemented local macOS Vision layer pins `VNRecognizeTextRequest` revision 3 with accurate recognition and runs per page only when native text is empty/whitespace or has a clear broken-text marker: NUL, U+FFFD, or a non-layout control character. Layout controls are tab, LF, vertical tab, form feed, CR, and NEL. It does not infer weak quality from text length or numeric thresholds. It preserves the native observation and appends separate OCR observations; a render or OCR failure, including a missing Vision result collection, rejects the extraction bundle rather than relabeling OCR as native. Broader weak numeric/layout or evidence-grounding input planning remains future accepted work. CSV and other structured exports use deterministic table extraction before AI normalization. A multimodal normalizer may also receive the original PDF or page images.
 
+For host-picked PNG/JPEG input, the host verifies the matching container signature and a real ImageIO decode before Vault registration. ImageIO produces one upright, bounded in-memory PNG for both local Vision and the viewer. Image OCR uses the same local Vision request and emits `ocr_text` observations with engine and confidence only: it deliberately has neither a page nor a bounding box. Image decode or OCR failure rejects the extraction bundle.
+
 ## User-visible normalization modes
 
 Normal settings expose one simple document-analysis configuration. Provider and extraction internals belong behind progressive disclosure.

@@ -146,7 +146,7 @@ describe("Vault API", () => {
       "Preview isn’t available for this evidence.",
     );
     expect(commandErrorMessage('{"code":"document_render_failed"}')).toBe(
-      "CanCan couldn’t render that PDF page.",
+      "CanCan couldn’t render that document.",
     );
     expect(commandErrorMessage('{"code":"delete_source_failed"}')).toBe(
       "CanCan couldn’t finish removing this Vault file. Refresh its status before trying again.",

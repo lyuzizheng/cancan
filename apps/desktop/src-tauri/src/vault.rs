@@ -110,6 +110,17 @@ impl FileVault {
         })
     }
 
+    pub(crate) fn prepare_for_mime(
+        source_path: &Path,
+        mime_type: &str,
+    ) -> io::Result<PreparedSource> {
+        let source = Self::prepare(source_path)?;
+        if matches!(mime_type, "image/png" | "image/jpeg") {
+            crate::viewer::validate_image_container(&source.plaintext, mime_type)?;
+        }
+        Ok(source)
+    }
+
     pub(crate) fn store_prepared(
         &self,
         master_key: &[u8; KEY_LEN],
