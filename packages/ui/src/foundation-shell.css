@@ -540,6 +540,10 @@ input:focus-visible {
   background: var(--signal-amber);
 }
 
+.panel-dot-emerald {
+  background: var(--signal-emerald);
+}
+
 .todo-list {
   margin: 0;
   padding: 0;
@@ -574,18 +578,62 @@ input:focus-visible {
   line-height: 1.5;
 }
 
-.attention-panel {
+.attention-panel,
+.source-panel {
   margin-top: 26px;
   border-top: 1px solid var(--ledger-rule);
   border-bottom: 1px solid var(--ledger-rule);
 }
 
-.attention-panel-heading {
+.attention-panel-heading,
+.source-panel-heading,
+.source-documents-heading {
   display: flex;
   align-items: end;
   justify-content: space-between;
   gap: 16px;
   padding: 14px 0 12px;
+}
+
+.source-count {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: var(--signal-emerald);
+  border: 1px solid var(--signal-emerald);
+  border-radius: 50%;
+  background: var(--ledger-porcelain);
+  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+}
+
+.source-documents {
+  padding: 2px 0 16px;
+  border-top: 1px solid var(--ledger-rule);
+}
+
+.source-documents-heading h3,
+.source-documents-heading p,
+.source-documents-heading > span {
+  margin: 0;
+}
+
+.source-documents-heading h3 {
+  color: var(--ledger-ink);
+  font-size: var(--text-md);
+  font-weight: 650;
+}
+
+.source-documents-heading p,
+.source-documents-heading > span {
+  color: var(--ledger-text-muted);
+  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: var(--text-xs);
+}
+
+.source-documents-heading p {
+  margin-top: 3px;
 }
 
 .attention-count {

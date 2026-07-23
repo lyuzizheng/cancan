@@ -99,6 +99,13 @@ pub struct SourceDocumentFileInput {
     pub plaintext: Zeroizing<Vec<u8>>,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct MoneySourceView {
+    pub(crate) display_name: String,
+    pub(crate) money_source_id: String,
+    pub(crate) source_type: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StatementPasswordStatus {
     PendingDelete,
@@ -359,6 +366,21 @@ impl ManualImportStore {
              ORDER BY received_at DESC, id",
         )?;
         let rows = statement.query_map([], source_document_from_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub(crate) fn list_money_sources(&self) -> StoreResult<Vec<MoneySourceView>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, display_name, source_type FROM money_sources \
+             ORDER BY display_name, id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(MoneySourceView {
+                money_source_id: row.get(0)?,
+                display_name: row.get(1)?,
+                source_type: row.get(2)?,
+            })
+        })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -1145,6 +1167,31 @@ mod tests {
             )
             .expect("seed money source");
         store
+    }
+
+    #[test]
+    fn lists_only_safe_money_source_display_fields_in_stable_order() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let store = open_store(root.path());
+        store
+            .seed_money_source("source-alpha", "alpha", "Alpha Bank", "bank")
+            .expect("seed second source");
+
+        assert_eq!(
+            store.list_money_sources().expect("list Money Sources"),
+            vec![
+                MoneySourceView {
+                    display_name: "Alpha Bank".to_owned(),
+                    money_source_id: "source-alpha".to_owned(),
+                    source_type: "bank".to_owned(),
+                },
+                MoneySourceView {
+                    display_name: "DBS".to_owned(),
+                    money_source_id: "source-dbs".to_owned(),
+                    source_type: "bank".to_owned(),
+                },
+            ]
+        );
     }
 
     fn import<'a>(

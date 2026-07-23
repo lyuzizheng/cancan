@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 
 import type {
   DeleteSourceDocumentArgs,
+  ListSourceDocumentsArgs,
+  MoneySourceSummary,
   NormalizeSourceDocumentArgs,
   PreviewSourceDocumentArgs,
   RemoveStatementPasswordArgs,
@@ -40,6 +42,8 @@ export interface VaultApi {
   deleteSourceDocument(documentId: string): Promise<boolean>;
   forgetVaultOnThisMac(): Promise<void>;
   importSourceDocument(): Promise<SourceDocumentImportOutcome | null>;
+  listMoneySources(): Promise<MoneySourceSummary[]>;
+  listSourceDocuments(moneySourceId: string): Promise<SourceDocumentSummary[]>;
   listStatementPasswordSources(): Promise<StatementPasswordSourceSummary[]>;
   listUnassignedSourceDocuments(): Promise<SourceDocumentSummary[]>;
   lockVault(): Promise<VaultStatus>;
@@ -149,6 +153,14 @@ export function createVaultApi(
     },
     importSourceDocument: () =>
       call<SourceDocumentImportOutcome | null>("import_source_document"),
+    listMoneySources: () => call<MoneySourceSummary[]>("list_money_sources"),
+    listSourceDocuments: (moneySourceId) => {
+      const args: ListSourceDocumentsArgs = { moneySourceId };
+      return call<SourceDocumentSummary[], ListSourceDocumentsArgs>(
+        "list_source_documents",
+        args,
+      );
+    },
     listUnassignedSourceDocuments: () =>
       call<SourceDocumentSummary[]>("list_unassigned_source_documents"),
     normalizeSourceDocument: (documentId) => {

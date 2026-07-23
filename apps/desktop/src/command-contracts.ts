@@ -60,6 +60,14 @@ export interface SourceDocumentSummary {
   receivedAt: string;
 }
 
+export interface MoneySourceSummary {
+  displayName: string;
+  moneySourceId: string;
+  sourceType: string;
+}
+
+export type ListSourceDocumentsArgs = { moneySourceId: string };
+
 export interface StatementPasswordSourceSummary {
   displayName: string;
   hasSavedPassword: boolean;

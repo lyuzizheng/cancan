@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  MoneySourceSummary,
   SourceDocumentImportOutcome,
   RenderedDocumentPage,
   SavedStatementPasswordResult,
@@ -25,6 +26,16 @@ let container: HTMLDivElement;
 let root: Root;
 
 const availableDocument = sourceDocument();
+const moneySource: MoneySourceSummary = {
+  displayName: "Synthetic Bank",
+  moneySourceId: "money-source-1",
+  sourceType: "bank",
+};
+const otherMoneySource: MoneySourceSummary = {
+  displayName: "Another Bank",
+  moneySourceId: "money-source-2",
+  sourceType: "bank",
+};
 
 beforeEach(() => {
   container = document.createElement("div");
@@ -64,6 +75,8 @@ function createApi(overrides: Partial<VaultApi> = {}) {
     importSourceDocument: vi.fn(
       async (): Promise<SourceDocumentImportOutcome | null> => null,
     ),
+    listMoneySources: vi.fn(async (): Promise<MoneySourceSummary[]> => []),
+    listSourceDocuments: vi.fn(async (): Promise<SourceDocumentSummary[]> => []),
     listStatementPasswordSources: vi.fn(async () => []),
     listUnassignedSourceDocuments: vi.fn(
       async (): Promise<SourceDocumentSummary[]> => [],
@@ -206,6 +219,38 @@ describe("App manual import orchestration", () => {
     expect(api.createVault).not.toHaveBeenCalled();
     expect(container.textContent).toContain(availableDocument.originalFilename);
     expect(button("Add file").disabled).toBe(false);
+  });
+
+  it("loads routed documents only for the selected Money Source", async () => {
+    const listSourceDocuments = vi.fn(async (moneySourceId: string) => (
+      moneySourceId === moneySource.moneySourceId ? [availableDocument] : []
+    ));
+    const api = createApi({
+      listMoneySources: vi.fn(async () => [moneySource, otherMoneySource]),
+      listSourceDocuments,
+    });
+
+    await mount(api);
+
+    expect(container.textContent).toContain(moneySource.displayName);
+    expect(container.textContent).toContain(otherMoneySource.displayName);
+    expect(listSourceDocuments).not.toHaveBeenCalled();
+
+    const selectSource = container.querySelector<HTMLButtonElement>(
+      `[aria-label="View documents for ${moneySource.displayName}"]`,
+    );
+    expect(selectSource).not.toBeNull();
+    await act(async () => {
+      selectSource!.click();
+      await settle();
+    });
+
+    expect(listSourceDocuments).toHaveBeenCalledTimes(1);
+    expect(listSourceDocuments).toHaveBeenCalledWith(moneySource.moneySourceId);
+    expect(listSourceDocuments).not.toHaveBeenCalledWith(
+      otherMoneySource.moneySourceId,
+    );
+    expect(container.textContent).toContain(availableDocument.originalFilename);
   });
 
   it("creates a Vault when setup is needed", async () => {
@@ -594,6 +639,7 @@ describe("App manual import orchestration", () => {
       sourceDocument({ documentId: "deleted", fileState: "deleted" }),
       sourceDocument({ documentId: "missing", fileState: "missing" }),
     ];
+    let routedDocuments: SourceDocumentSummary[] = [];
     const routed: SourceDocumentRoutingOutcome = {
       accountIds: ["account-1"],
       documentId: availableDocument.documentId,
@@ -606,10 +652,13 @@ describe("App manual import orchestration", () => {
       const outcome = routingOutcomes.shift()!;
       if (routingOutcomes.length === 0) {
         documents = [];
+        routedDocuments = [availableDocument];
       }
       return outcome.then((result) => ({ ...result, documentId }));
     });
     const api = createApi({
+      listMoneySources: vi.fn(async () => [moneySource]),
+      listSourceDocuments: vi.fn(async () => routedDocuments),
       listUnassignedSourceDocuments: vi.fn(async () => documents),
       normalizeSourceDocument,
     });
@@ -646,11 +695,106 @@ describe("App manual import orchestration", () => {
 
     await click("Check routing");
     expect(container.textContent).toContain("Evidence routed");
+    expect(container.textContent).toContain(
+      "CanCan matched this evidence to Synthetic Bank.",
+    );
+    expect(container.textContent).toContain("Synthetic Bank");
+    expect(container.textContent).toContain(availableDocument.originalFilename);
     expect(container.textContent).toContain("No evidence needs your attention.");
 
     await click("Lock Vault");
     expect(api.lockVault).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("Unlock your Vault");
+  });
+
+  it("does not let an older same-session refresh restore stale unassigned evidence", async () => {
+    const staleUnassigned = deferred<SourceDocumentSummary[]>();
+    const routing = deferred<SourceDocumentRoutingOutcome>();
+    const listUnassignedSourceDocuments = vi
+      .fn<() => Promise<SourceDocumentSummary[]>>()
+      .mockResolvedValueOnce([availableDocument])
+      .mockImplementationOnce(() => staleUnassigned.promise)
+      .mockResolvedValueOnce([]);
+    const listSourceDocuments = vi
+      .fn<() => Promise<SourceDocumentSummary[]>>()
+      .mockResolvedValue([availableDocument]);
+    const api = createApi({
+      listMoneySources: vi.fn(async () => [moneySource]),
+      listSourceDocuments,
+      listUnassignedSourceDocuments,
+      normalizeSourceDocument: vi.fn(() => routing.promise),
+    });
+
+    await mount(api);
+    await click("Check routing");
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await settle();
+    });
+    await act(async () => {
+      routing.resolve({
+        accountIds: ["account-1"],
+        documentId: availableDocument.documentId,
+        moneySourceId: moneySource.moneySourceId,
+        reason: null,
+        status: "routed",
+      });
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Synthetic Bank");
+    expect(container.textContent).toContain("No evidence needs your attention.");
+    expect(buttons("Check routing")).toHaveLength(0);
+
+    await act(async () => {
+      staleUnassigned.resolve([availableDocument]);
+      await settle();
+    });
+
+    expect(container.querySelectorAll(".evidence-row")).toHaveLength(1);
+    expect(container.textContent).toContain("No evidence needs your attention.");
+    expect(buttons("Check routing")).toHaveLength(0);
+  });
+
+  it("does not restore source or document names after refresh confirms the Vault is locked", async () => {
+    const staleSources = deferred<MoneySourceSummary[]>();
+    const staleUnassigned = deferred<SourceDocumentSummary[]>();
+    const vaultAccessStatus = vi
+      .fn<() => Promise<VaultAccessStatus>>()
+      .mockResolvedValueOnce({
+        recoveryConfigured: false,
+        rememberedOnThisMac: false,
+        status: "unlocked",
+      })
+      .mockResolvedValueOnce({
+        recoveryConfigured: false,
+        rememberedOnThisMac: false,
+        status: "locked",
+      });
+    const api = createApi({
+      listMoneySources: vi.fn(() => staleSources.promise),
+      listUnassignedSourceDocuments: vi.fn(() => staleUnassigned.promise),
+      vaultAccessStatus,
+    });
+
+    await mount(api);
+    expect(api.listMoneySources).toHaveBeenCalledTimes(1);
+    expect(api.listUnassignedSourceDocuments).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await settle();
+    });
+    expect(container.textContent).toContain("Unlock your Vault");
+
+    await act(async () => {
+      staleSources.resolve([moneySource]);
+      staleUnassigned.resolve([availableDocument]);
+      await settle();
+    });
+
+    expect(container.textContent).not.toContain(moneySource.displayName);
+    expect(container.textContent).not.toContain(availableDocument.originalFilename);
   });
 
   it("opens rendered PDF pages, navigates them, and clears pixels on close or Vault lock", async () => {

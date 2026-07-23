@@ -2,6 +2,7 @@ import { AppShell } from "@cancan/ui";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
+  MoneySourceSummary,
   RenderedDocumentPage,
   SourceDocumentImportOutcome,
   SourceDocumentPreview,
@@ -46,6 +47,11 @@ export interface DocumentUnlockState {
   sources: StatementPasswordSourceSummary[] | null;
 }
 
+export interface MoneySourceDocuments {
+  documents: SourceDocumentSummary[] | null;
+  source: MoneySourceSummary;
+}
+
 export interface VaultManualImportViewProps {
   busy: boolean;
   deletingDocumentId: string | null;
@@ -66,6 +72,7 @@ export interface VaultManualImportViewProps {
   onPasswordChange: (password: string) => void;
   onRefresh: () => void;
   onRememberedChange: (remembered: boolean) => void;
+  onSelectMoneySource: (moneySourceId: string) => void;
   onSaveRecoveryFile: () => void;
   onSaveSourceCopy: (documentId: string) => void;
   onSubmitPassword: () => void;
@@ -84,6 +91,8 @@ export interface VaultManualImportViewProps {
   recoveryConfigured: boolean;
   savingRecoveryFile: boolean;
   savingCopyDocumentId: string | null;
+  selectedMoneySourceId: string | null;
+  sourceDocuments: MoneySourceDocuments[];
   unassignedDocuments: SourceDocumentSummary[];
   unlockingDocument: DocumentUnlockState | null;
   updatingRemembered: boolean;
@@ -107,6 +116,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [unassignedDocuments, setUnassignedDocuments] = useState<
     SourceDocumentSummary[]
   >([]);
+  const [sourceDocuments, setSourceDocuments] = useState<MoneySourceDocuments[]>([]);
+  const [selectedMoneySourceId, setSelectedMoneySourceId] = useState<string | null>(
+    null,
+  );
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [importing, setImporting] = useState(false);
   const [normalizingDocumentId, setNormalizingDocumentId] = useState<string | null>(
@@ -124,6 +137,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const viewerRequestId = useRef(0);
   const previewRequestId = useRef(0);
   const unlockRequestId = useRef(0);
+  const documentLoadRequestId = useRef(0);
+  const selectedMoneySourceIdRef = useRef<string | null>(null);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
   const documentLoadsAllowed = useRef(false);
   const vaultSessionId = useRef(0);
@@ -132,6 +147,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     vaultSessionId.current += 1;
     unlockRequestId.current += 1;
     previewRequestId.current += 1;
+    documentLoadRequestId.current += 1;
   }, []);
 
   const clearViewer = useCallback((restoreFocus = true) => {
@@ -152,6 +168,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     const nextSessionId = vaultSessionId.current + 1;
     vaultSessionId.current = nextSessionId;
     documentLoadsAllowed.current = false;
+    documentLoadRequestId.current += 1;
     clearViewer(false);
     clearPreview();
     unlockRequestId.current += 1;
@@ -161,6 +178,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setNotice(null);
     setPassword("");
     setUnassignedDocuments([]);
+    setSourceDocuments([]);
+    selectedMoneySourceIdRef.current = null;
+    setSelectedMoneySourceId(null);
     setLoadingDocuments(false);
     setSavingCopyDocumentId(null);
     setBusy(false);
@@ -174,27 +194,101 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   }, [viewer, preview]);
 
-  const loadUnassignedDocuments = useCallback(async () => {
+  const loadDocuments = useCallback(async (requestedSourceId?: string | null) => {
     if (!documentLoadsAllowed.current) {
       return;
     }
     const sessionId = vaultSessionId.current;
+    const requestId = documentLoadRequestId.current + 1;
+    const selectedSourceId = requestedSourceId === undefined
+      ? selectedMoneySourceIdRef.current
+      : requestedSourceId;
+    documentLoadRequestId.current = requestId;
     setLoadingDocuments(true);
     try {
-      const documents = await api.listUnassignedSourceDocuments();
-      if (vaultSessionId.current === sessionId) {
-        setUnassignedDocuments(documents);
+      const [sources, unassigned] = await Promise.all([
+        api.listMoneySources(),
+        api.listUnassignedSourceDocuments(),
+      ]);
+      const selectedSource = selectedSourceId === null
+        ? undefined
+        : sources.find((source) => source.moneySourceId === selectedSourceId);
+      const selectedDocuments = selectedSource
+        ? await api.listSourceDocuments(selectedSource.moneySourceId)
+        : null;
+      if (
+        vaultSessionId.current === sessionId
+        && documentLoadRequestId.current === requestId
+      ) {
+        const nextSelectedSourceId = selectedSource?.moneySourceId ?? null;
+        selectedMoneySourceIdRef.current = nextSelectedSourceId;
+        setSelectedMoneySourceId(nextSelectedSourceId);
+        setSourceDocuments(sources.map((source) => ({
+          documents: source.moneySourceId === nextSelectedSourceId
+            ? selectedDocuments
+            : null,
+          source,
+        })));
+        setUnassignedDocuments(unassigned);
       }
     } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
+      if (
+        vaultSessionId.current === sessionId
+        && documentLoadRequestId.current === requestId
+      ) {
         setError(commandErrorMessage(nextError));
       }
     } finally {
-      if (vaultSessionId.current === sessionId) {
+      if (
+        vaultSessionId.current === sessionId
+        && documentLoadRequestId.current === requestId
+      ) {
         setLoadingDocuments(false);
       }
     }
   }, [api]);
+
+  const selectMoneySource = (moneySourceId: string) => {
+    if (!documentLoadsAllowed.current) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    const requestId = documentLoadRequestId.current + 1;
+    documentLoadRequestId.current = requestId;
+    selectedMoneySourceIdRef.current = moneySourceId;
+    setSelectedMoneySourceId(moneySourceId);
+    setSourceDocuments((current) => current.map((entry) => ({
+      ...entry,
+      documents: null,
+    })));
+    setLoadingDocuments(true);
+    void api.listSourceDocuments(moneySourceId).then((documents) => {
+      if (
+        vaultSessionId.current === sessionId
+        && documentLoadRequestId.current === requestId
+      ) {
+        setSourceDocuments((current) => current.map((entry) => (
+          entry.source.moneySourceId === moneySourceId
+            ? { ...entry, documents }
+            : entry
+        )));
+      }
+    }).catch((nextError) => {
+      if (
+        vaultSessionId.current === sessionId
+        && documentLoadRequestId.current === requestId
+      ) {
+        setError(commandErrorMessage(nextError));
+      }
+    }).finally(() => {
+      if (
+        vaultSessionId.current === sessionId
+        && documentLoadRequestId.current === requestId
+      ) {
+        setLoadingDocuments(false);
+      }
+    });
+  };
 
   const requestVaultLock = useCallback(async () => {
     const sessionId = showVaultGate("loading");
@@ -218,7 +312,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setVaultStatus(nextStatus);
         if (nextStatus === "unlocked") {
           setError(commandErrorMessage(nextError));
-          await loadUnassignedDocuments();
+          await loadDocuments();
           return vaultSessionId.current === sessionId;
         }
       } catch {
@@ -228,7 +322,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       }
     }
     return false;
-  }, [api, loadUnassignedDocuments, showVaultGate]);
+  }, [api, loadDocuments, showVaultGate]);
 
   useEffect(() => {
     if (vaultStatus !== "unlocked") {
@@ -289,9 +383,13 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       setRecoveryConfigured(access.recoveryConfigured);
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
-        await loadUnassignedDocuments();
+        await loadDocuments();
       } else {
+        documentLoadRequestId.current += 1;
         setUnassignedDocuments([]);
+        setSourceDocuments([]);
+        selectedMoneySourceIdRef.current = null;
+        setSelectedMoneySourceId(null);
         clearViewer(false);
         clearPreview();
         unlockRequestId.current += 1;
@@ -306,7 +404,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setBusy(false);
       }
     }
-  }, [clearViewer, clearPreview, loadUnassignedDocuments]);
+  }, [clearViewer, clearPreview, loadDocuments]);
 
   useEffect(() => {
     let active = true;
@@ -379,7 +477,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       documentLoadsAllowed.current = nextStatus === "unlocked";
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
-        await loadUnassignedDocuments();
+        await loadDocuments();
       }
     }, sessionId);
   };
@@ -396,7 +494,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setVaultStatus(nextStatus);
         if (nextStatus === "unlocked") {
           setPassword("");
-          await loadUnassignedDocuments();
+          await loadDocuments();
         }
       } catch (nextError) {
         if (vaultSessionId.current !== sessionId) {
@@ -447,7 +545,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       const outcome = await api.importSourceDocument();
       setNotice(importNotice(outcome?.status ?? "cancelled"));
       if (outcome) {
-        await loadUnassignedDocuments();
+        await loadDocuments();
       }
     }).finally(() => setImporting(false));
   };
@@ -476,8 +574,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const normalizeDocument = (documentId: string) => {
     setNormalizingDocumentId(documentId);
     void run(async () => {
-      setNotice(routingNotice(await api.normalizeSourceDocument(documentId)));
-      await loadUnassignedDocuments();
+      const outcome = await api.normalizeSourceDocument(documentId);
+      const source = sourceDocuments.find(
+        (entry) => entry.source.moneySourceId === outcome.moneySourceId,
+      )?.source;
+      setNotice(routingNotice(outcome, source));
+      await loadDocuments(
+        outcome.status === "routed" ? outcome.moneySourceId : undefined,
+      );
     }).finally(() => setNormalizingDocumentId(null));
   };
 
@@ -493,7 +597,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           });
         }
       } finally {
-        await loadUnassignedDocuments();
+        await loadDocuments();
       }
     }).finally(() => setDeletingDocumentId(null));
   };
@@ -539,7 +643,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           tone: "success",
           title: "Statement unlocked",
         });
-        await loadUnassignedDocuments();
+        await loadDocuments();
         return;
       }
       setUnlockingDocument((current) => current?.documentId === documentId
@@ -646,7 +750,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         tone: "success",
         title: "Statement unlocked",
       });
-      await loadUnassignedDocuments();
+      await loadDocuments();
     }).catch((nextError) => {
       if (unlockRequestId.current === requestId) {
         setUnlockingDocument((latest) => latest?.documentId === current.documentId
@@ -732,6 +836,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       onPasswordChange={setPassword}
       onRefresh={() => void refreshVaultStatus()}
       onRememberedChange={updateRemembered}
+      onSelectMoneySource={selectMoneySource}
       onSaveRecoveryFile={saveRecoveryFile}
       onSaveSourceCopy={saveSourceCopy}
       onSubmitPassword={submitPassword}
@@ -760,6 +865,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       recoveryConfigured={recoveryConfigured}
       savingRecoveryFile={savingRecoveryFile}
       savingCopyDocumentId={savingCopyDocumentId}
+      selectedMoneySourceId={selectedMoneySourceId}
+      sourceDocuments={sourceDocuments}
       unassignedDocuments={unassignedDocuments}
       unlockingDocument={unlockingDocument}
       updatingRemembered={updatingRemembered}
@@ -886,6 +993,53 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
 
             {props.notice ? <Feedback {...props.notice} /> : null}
 
+            <section className="source-panel" aria-labelledby="sources-heading">
+              <div className="source-panel-heading">
+                <h2 id="sources-heading"><span className="panel-dot panel-dot-emerald" aria-hidden="true" />Money Sources</h2>
+                <span className="source-count" aria-label={`${props.sourceDocuments.length} ${props.sourceDocuments.length === 1 ? "source" : "sources"}`}>
+                  {props.sourceDocuments.length}
+                </span>
+              </div>
+              {props.loadingDocuments ? <p className="panel-status" role="status">Refreshing sources…</p> : null}
+              {!props.loadingDocuments && props.sourceDocuments.length === 0 ? (
+                <p className="panel-status">No Money Sources are configured yet.</p>
+              ) : null}
+              {props.sourceDocuments.map(({ documents, source }) => {
+                const selected = props.selectedMoneySourceId === source.moneySourceId;
+                return (
+                  <section className="source-documents" key={source.moneySourceId}>
+                    <div className="source-documents-heading">
+                      <div>
+                        <h3>{source.displayName}</h3>
+                        <p>{sourceTypeLabel(source.sourceType)}</p>
+                      </div>
+                      <button
+                        aria-expanded={selected}
+                        aria-label={`View documents for ${source.displayName}`}
+                        className="button button-quiet"
+                        disabled={props.loadingDocuments}
+                        onClick={() => props.onSelectMoneySource(source.moneySourceId)}
+                        type="button"
+                      >
+                        {selected && documents !== null
+                          ? "Refresh documents"
+                          : "View documents"}
+                      </button>
+                    </div>
+                    {selected && documents === null ? (
+                      <p className="panel-status" role="status">Loading documents…</p>
+                    ) : null}
+                    {selected && documents?.length === 0 ? (
+                      <p className="panel-status">No routed documents yet.</p>
+                    ) : null}
+                    {selected && documents && documents.length > 0 ? (
+                      <EvidenceDocumentGroups documents={documents} props={props} showRouting={false} />
+                    ) : null}
+                  </section>
+                );
+              })}
+            </section>
+
             <section className="attention-panel" aria-labelledby="attention-heading">
               <div className="attention-panel-heading">
                 <h2 id="attention-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />Needs attention</h2>
@@ -894,75 +1048,11 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
                 </span>
               </div>
 
-              {props.loadingDocuments ? <p className="panel-status" role="status">Refreshing evidence…</p> : null}
               {!props.loadingDocuments && props.unassignedDocuments.length === 0 ? (
                 <p className="panel-status">No evidence needs your attention.</p>
               ) : null}
               {props.unassignedDocuments.length > 0 ? (
-                groupEvidenceByMonth(props.unassignedDocuments).map((group) => (
-                  <section className="evidence-group" key={group.key}>
-                    <p className="evidence-group-label">
-                      {group.label}
-                      <span className="evidence-group-count">
-                        {group.documents.length} {group.documents.length === 1 ? "document" : "documents"}
-                      </span>
-                    </p>
-                    <ul className="evidence-list">
-                      {group.documents.map((document) => {
-                        const passwordRequired = document.documentStatus === "password_required";
-                        const protectedUnlocked = document.documentStatus === "protected_unlocked";
-                        const fileAvailable = document.fileState === "available";
-                        const viewingAvailable = fileAvailable
-                          && (document.documentStatus === "ready" || protectedUnlocked);
-                        const routingAvailable = fileAvailable && document.documentStatus === "ready";
-                        const attentionRequired = passwordRequired
-                          || document.documentStatus === "inspection_failed";
-                        const deleting = props.deletingDocumentId === document.documentId;
-                        const normalizing = props.normalizingDocumentId === document.documentId;
-                        const savingCopy = props.savingCopyDocumentId === document.documentId;
-                        return (
-                          <li className="evidence-row" key={document.documentId}>
-                            <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : "CSV"}</span>
-                            <div className="evidence-details">
-                              <p>{document.originalFilename}</p>
-                              <span className="evidence-meta">{evidenceMeta(document)}</span>
-                            </div>
-                            <p className={`doc-status doc-status-${attentionRequired ? "attention" : document.fileState}`}>
-                              <span className="doc-status-dot" aria-hidden="true" />
-                              {documentStatusLabel(document)}
-                            </p>
-                            <div className="evidence-actions">
-                              {passwordRequired ? (
-                                <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onOpenUnlock(document)} type="button">
-                                  Unlock
-                                </button>
-                              ) : (
-                                <button className="button button-quiet" disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
-                                  {!viewingAvailable ? "View unavailable" : "View document"}
-                                </button>
-                              )}
-                              {!passwordRequired && document.documentStatus !== "inspection_failed" ? (
-                                <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
-                                  {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
-                                </button>
-                              ) : null}
-                              {fileAvailable ? (
-                                <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onSaveSourceCopy(document.documentId)} type="button">
-                                  {savingCopy ? "Saving copy…" : "Save a copy"}
-                                </button>
-                              ) : null}
-                              {fileAvailable ? (
-                                <button className="button button-quiet button-danger" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
-                                  {deleting ? "Deleting…" : "Delete source file"}
-                                </button>
-                              ) : null}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </section>
-                ))
+                <EvidenceDocumentGroups documents={props.unassignedDocuments} props={props} showRouting />
               ) : null}
             </section>
           </section>
@@ -994,6 +1084,81 @@ export function VaultManualImportView(props: VaultManualImportViewProps) {
       ) : null}
     </AppShell>
   );
+}
+
+function EvidenceDocumentGroups({
+  documents,
+  props,
+  showRouting,
+}: {
+  documents: SourceDocumentSummary[];
+  props: VaultManualImportViewProps;
+  showRouting: boolean;
+}) {
+  return groupEvidenceByMonth(documents).map((group) => (
+    <section className="evidence-group" key={group.key}>
+      <p className="evidence-group-label">
+        {group.label}
+        <span className="evidence-group-count">
+          {group.documents.length} {group.documents.length === 1 ? "document" : "documents"}
+        </span>
+      </p>
+      <ul className="evidence-list">
+        {group.documents.map((document) => {
+          const passwordRequired = document.documentStatus === "password_required";
+          const protectedUnlocked = document.documentStatus === "protected_unlocked";
+          const fileAvailable = document.fileState === "available";
+          const viewingAvailable = fileAvailable
+            && (document.documentStatus === "ready" || protectedUnlocked);
+          const routingAvailable = fileAvailable && document.documentStatus === "ready";
+          const attentionRequired = passwordRequired
+            || document.documentStatus === "inspection_failed";
+          const deleting = props.deletingDocumentId === document.documentId;
+          const normalizing = props.normalizingDocumentId === document.documentId;
+          const savingCopy = props.savingCopyDocumentId === document.documentId;
+          return (
+            <li className="evidence-row" key={document.documentId}>
+              <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : "CSV"}</span>
+              <div className="evidence-details">
+                <p>{document.originalFilename}</p>
+                <span className="evidence-meta">{evidenceMeta(document)}</span>
+              </div>
+              <p className={`doc-status doc-status-${attentionRequired ? "attention" : document.fileState}`}>
+                <span className="doc-status-dot" aria-hidden="true" />
+                {documentStatusLabel(document)}
+              </p>
+              <div className="evidence-actions">
+                {passwordRequired ? (
+                  <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onOpenUnlock(document)} type="button">
+                    Unlock
+                  </button>
+                ) : (
+                  <button className="button button-quiet" disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
+                    {!viewingAvailable ? "View unavailable" : "View document"}
+                  </button>
+                )}
+                {showRouting && !passwordRequired && document.documentStatus !== "inspection_failed" ? (
+                  <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
+                    {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
+                  </button>
+                ) : null}
+                {fileAvailable ? (
+                  <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onSaveSourceCopy(document.documentId)} type="button">
+                    {savingCopy ? "Saving copy…" : "Save a copy"}
+                  </button>
+                ) : null}
+                {fileAvailable ? (
+                  <button className="button button-quiet button-danger" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
+                    {deleting ? "Deleting…" : "Delete source file"}
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  ));
 }
 
 function DocumentUnlock({
@@ -1316,10 +1481,23 @@ export function importNotice(status: SourceDocumentImportOutcome["status"] | "ca
   return notices[status];
 }
 
-export function routingNotice(outcome: SourceDocumentRoutingOutcome): Notice {
+export function routingNotice(
+  outcome: SourceDocumentRoutingOutcome,
+  source?: MoneySourceSummary,
+): Notice {
   return outcome.status === "routed"
-    ? { tone: "success", title: "Evidence routed", body: "CanCan matched this evidence to one configured source and account." }
+    ? {
+        tone: "success",
+        title: "Evidence routed",
+        body: source
+          ? `CanCan matched this evidence to ${source.displayName}.`
+          : "CanCan matched this evidence to one configured source and account.",
+      }
     : { tone: "attention", title: "Needs attention", body: "CanCan could not match this evidence uniquely, so it was not assigned." };
+}
+
+function sourceTypeLabel(sourceType: string) {
+  return sourceType.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function vaultStatusLabel(status: VaultScreenStatus) {

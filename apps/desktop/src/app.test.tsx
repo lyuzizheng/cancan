@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type {
+  MoneySourceSummary,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
 } from "./command-contracts";
@@ -21,6 +22,12 @@ const document: SourceDocumentSummary = {
   mimeType: "application/pdf",
   originalFilename: "June statement.pdf",
   receivedAt: "2026-07-19T00:00:00Z",
+};
+
+const source: MoneySourceSummary = {
+  displayName: "Synthetic Bank",
+  moneySourceId: "source-synthetic",
+  sourceType: "bank",
 };
 
 const baseProps: VaultManualImportViewProps = {
@@ -43,6 +50,7 @@ const baseProps: VaultManualImportViewProps = {
   onPasswordChange: () => undefined,
   onRefresh: () => undefined,
   onRememberedChange: () => undefined,
+  onSelectMoneySource: () => undefined,
   onSaveRecoveryFile: () => undefined,
   onSaveSourceCopy: () => undefined,
   onSubmitPassword: () => undefined,
@@ -58,6 +66,8 @@ const baseProps: VaultManualImportViewProps = {
   recoveryConfigured: false,
   savingRecoveryFile: false,
   savingCopyDocumentId: null,
+  selectedMoneySourceId: null,
+  sourceDocuments: [],
   unassignedDocuments: [],
   unlockingDocument: null,
   updatingRemembered: false,
@@ -102,6 +112,22 @@ describe("VaultManualImportView", () => {
     expect(markup).toContain("Check routing");
     expect(markup).toContain("Delete source file");
     expect(markup).toContain("Save a copy");
+  });
+
+  it("shows routed documents under their safe Money Source display name", () => {
+    const markup = render({
+      sourceDocuments: [{
+        documents: [{ ...document, documentId: "routed-document" }],
+        source,
+      }],
+      selectedMoneySourceId: source.moneySourceId,
+    });
+
+    expect(markup).toContain("Synthetic Bank");
+    expect(markup).toContain("Bank");
+    expect(markup).toContain("1 document");
+    expect(markup).toContain("June statement.pdf");
+    expect(markup).not.toContain("Check routing");
   });
 
   it("groups unassigned evidence by received month, newest first", () => {
@@ -200,7 +226,11 @@ describe("manual-import feedback", () => {
       status: "needs_attention",
     };
 
-    expect(routingNotice(routed).title).toBe("Evidence routed");
+    expect(routingNotice(routed, source)).toEqual({
+      body: "CanCan matched this evidence to Synthetic Bank.",
+      title: "Evidence routed",
+      tone: "success",
+    });
     expect(routingNotice(attention).title).toBe("Needs attention");
     expect(routingNotice(attention).body).not.toContain(attention.reason!);
   });
