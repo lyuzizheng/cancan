@@ -219,12 +219,6 @@ fn render_pdf_page_pixels(
         CGContextRelease(context);
         CGColorSpaceRelease(color_space);
     }
-    for row in 0..usize::try_from(height).expect("height fits usize") / 2 {
-        let opposite = usize::try_from(height).expect("height fits usize") - row - 1;
-        let (before_opposite, opposite_and_after) = pixels.split_at_mut(opposite * bytes_per_row);
-        before_opposite[row * bytes_per_row..(row + 1) * bytes_per_row]
-            .swap_with_slice(&mut opposite_and_after[..bytes_per_row]);
-    }
 
     Ok(RenderedPixels {
         height,

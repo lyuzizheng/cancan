@@ -677,9 +677,14 @@ mod tests {
         let blocks = engine
             .recognize_page(1, &png)
             .expect("run local Vision on synthetic PNG");
+        let recognized = blocks
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
         assert!(
-            !blocks.is_empty(),
-            "Vision returned no text for the synthetic text page"
+            recognized.contains("TOTAL") && recognized.contains("123.45"),
+            "Vision did not recognize the synthetic statement text: {recognized:?}"
         );
         assert!(
             blocks
