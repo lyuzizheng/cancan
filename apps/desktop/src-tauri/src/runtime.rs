@@ -1,10 +1,10 @@
 use crate::{
     database::{
-        DATABASE_FILE_NAME, ManualImportStore, SourceDocumentFileInput, SourceDocumentImport,
-        SourceDocumentImportOutcome, SourceDocumentImportStatus, SourceDocumentRoutingOutcome,
-        SourceDocumentView, StatementPasswordStatus, TrustedAccountCandidate,
-        TrustedDocumentClassification,
+        DATABASE_FILE_NAME, ManualImportStore, SourceDocumentImport, SourceDocumentImportOutcome,
+        SourceDocumentImportStatus, SourceDocumentRoutingOutcome, SourceDocumentView,
+        StatementPasswordStatus, TrustedAccountCandidate, TrustedDocumentClassification,
     },
+    source_observations::{ExtractionBundle, extract_bundle},
     vault::{
         create_password_wrapper, create_recovery_file, open_password_wrapper,
         password_wrapper_profile, recovery_file_fingerprint,
@@ -163,9 +163,8 @@ struct NormalizerProposal {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NormalizerCommand<'a> {
-    content: &'a str,
     document_id: &'a str,
-    mime_type: &'a str,
+    extraction_bundle: &'a ExtractionBundle,
     request_id: &'a str,
     #[serde(rename = "type")]
     kind: &'static str,
@@ -1127,34 +1126,33 @@ impl VaultRuntime {
         Ok(())
     }
 
-    fn normalization_input(
-        &self,
-        document_id: &str,
-    ) -> Result<SourceDocumentFileInput, RuntimeError> {
+    fn normalization_input(&self, document_id: &str) -> Result<ExtractionBundle, RuntimeError> {
         let store = self.store()?;
         let input = store
             .as_ref()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
             .source_document_input(document_id)
             .map_err(|_| RuntimeError::new("document_unavailable"))?;
-        if input.mime_type == "application/pdf" {
+        let password = if input.mime_type == "application/pdf" {
             let passwords = self.document_passwords()?;
-            let password = passwords.get(document_id).map(|value| value.as_slice());
-            match pdf_access(&input.plaintext, None).map_err(document_render_error)? {
-                PdfAccess::Ready => {}
-                PdfAccess::PasswordRequired => match password {
-                    Some(password)
-                        if pdf_access(&input.plaintext, Some(password))
-                            .map_err(document_render_error)?
-                            == PdfAccess::Ready =>
-                    {
-                        return Err(RuntimeError::new("protected_pdf_normalization_unsupported"));
-                    }
-                    _ => return Err(RuntimeError::new("statement_password_required")),
-                },
+            passwords.get(document_id).cloned()
+        } else {
+            None
+        };
+        extract_bundle(
+            document_id,
+            &input.file_sha256,
+            &input.mime_type,
+            &input.plaintext,
+            password.as_ref().map(|value| value.as_slice()),
+        )
+        .map_err(|error| {
+            if input.mime_type == "application/pdf" {
+                document_render_error(error)
+            } else {
+                RuntimeError::new("normalizer_failed")
             }
-        }
-        Ok(input)
+        })
     }
 
     fn render_source_document_page(
@@ -1206,7 +1204,7 @@ impl VaultRuntime {
     fn apply_normalizer_result(
         &self,
         document_id: &str,
-        input_text: &str,
+        extraction_bundle: &ExtractionBundle,
         result: NormalizerResult,
     ) -> Result<SourceDocumentRoutingOutcome, RuntimeError> {
         let proposal = match result {
@@ -1229,7 +1227,7 @@ impl VaultRuntime {
                 "classification_uncertain",
             ));
         };
-        if !valid_synthetic_fingerprint(input_text, &proposal) {
+        if !valid_synthetic_fingerprint(extraction_bundle, &proposal) {
             return Ok(SourceDocumentRoutingOutcome::needs_attention(
                 document_id,
                 "provider_fingerprint_mismatch",
@@ -1781,12 +1779,11 @@ pub(crate) async fn normalize_source_document(
             .await
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
     };
-    let input_text = Zeroizing::new(String::from_utf8_lossy(&input.plaintext).into_owned());
-    let result = run_normalizer_sidecar(&app, &document_id, &input.mime_type, &input_text)
+    let result = run_normalizer_sidecar(&app, &document_id, &input)
         .await
         .map_err(VaultCommandError::from)?;
     tauri::async_runtime::spawn_blocking(move || {
-        runtime.apply_normalizer_result(&document_id, &input_text, result)
+        runtime.apply_normalizer_result(&document_id, &input, result)
     })
     .await
     .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
@@ -1876,15 +1873,13 @@ fn source_document_metadata(source_path: &Path) -> Result<(String, &'static str)
 async fn run_normalizer_sidecar(
     app: &AppHandle,
     document_id: &str,
-    mime_type: &str,
-    content: &str,
+    extraction_bundle: &ExtractionBundle,
 ) -> Result<NormalizerResult, RuntimeError> {
     let request_id = random_identifier("normalize");
     let command = Zeroizing::new(
         serde_json::to_vec(&NormalizerCommand {
-            content,
             document_id,
-            mime_type,
+            extraction_bundle,
             request_id: &request_id,
             kind: "normalize",
         })
@@ -1974,10 +1969,22 @@ fn valid_normalizer_ready(protocol_version: u8, runtime: &str, environment_clear
     protocol_version == 1 && runtime == "single-pass-mock" && environment_cleared
 }
 
-fn valid_synthetic_fingerprint(content: &str, proposal: &NormalizerProposal) -> bool {
-    content.contains("CANCAN_SYNTHETIC_STATEMENT_V1")
-        && content.contains("provider=synthetic-bank")
-        && content.contains("statement_id=transfer-2026-07")
+fn valid_synthetic_fingerprint(
+    extraction_bundle: &ExtractionBundle,
+    proposal: &NormalizerProposal,
+) -> bool {
+    extraction_bundle
+        .observations
+        .iter()
+        .any(|observation| observation.text.contains("CANCAN_SYNTHETIC_STATEMENT_V1"))
+        && extraction_bundle
+            .observations
+            .iter()
+            .any(|observation| observation.text.contains("provider=synthetic-bank"))
+        && extraction_bundle
+            .observations
+            .iter()
+            .any(|observation| observation.text.contains("statement_id=transfer-2026-07"))
         && proposal.document.provider_key == "synthetic-bank"
         && proposal.document.document_type == "transfer_export"
         && proposal.document.statement_id.as_deref() == Some("transfer-2026-07")
@@ -2271,11 +2278,7 @@ mod tests {
         let runtime =
             statement_password_runtime(&parent.path().join("vault"), statement_passwords.clone());
         let source = parent.path().join("protected-statement.pdf");
-        let mut protected_fixture = protected_pdf_fixture();
-        protected_fixture.extend_from_slice(
-            b"\nCANCAN_SYNTHETIC_STATEMENT_V1\nprovider=synthetic-bank\nstatement_id=transfer-2026-07",
-        );
-        fs::write(&source, protected_fixture).expect("write protected PDF fixture");
+        fs::write(&source, protected_text_pdf()).expect("write protected PDF fixture");
         let outcome = runtime
             .import_selected_document(&source, None)
             .expect("import protected statement");
@@ -2288,8 +2291,7 @@ mod tests {
         assert_eq!(
             runtime
                 .normalization_input(&outcome.document_id)
-                .err()
-                .expect("protected PDF must not normalize before unlock")
+                .expect_err("protected PDF must not normalize before unlock")
                 .code(),
             "statement_password_required"
         );
@@ -2329,13 +2331,20 @@ mod tests {
                 .document_status,
             "protected_unlocked"
         );
+        let bundle = runtime
+            .normalization_input(&outcome.document_id)
+            .expect("extract session-unlocked protected PDF");
+        assert_eq!(bundle.mime_type, "application/pdf");
+        assert_eq!(bundle.observations.len(), 1);
+        assert!(bundle.observations[0].text.contains("synthetic-bank"));
+        assert!(bundle.observations[0].text.contains("transfer-2026-07"));
+        assert!(bundle.observations[0].text.contains("Café"));
         assert_eq!(
-            runtime
-                .normalization_input(&outcome.document_id)
-                .err()
-                .expect("protected PDF extraction is not implemented")
-                .code(),
-            "protected_pdf_normalization_unsupported"
+            bundle.observations[0]
+                .text_span
+                .as_ref()
+                .map(|span| span.end),
+            Some(bundle.observations[0].text.encode_utf16().count() as u64)
         );
         runtime
             .render_source_document_page(&outcome.document_id, 1)
@@ -2413,6 +2422,22 @@ mod tests {
                 .expect("report invalid saved password"),
             SavedStatementPasswordResult::Invalid
         );
+        runtime
+            .seed_money_source(
+                "source-synthetic",
+                "synthetic-bank",
+                "Synthetic Bank",
+                "bank",
+            )
+            .expect("seed routing source");
+        let routed = runtime
+            .apply_normalizer_result(&outcome.document_id, &bundle, synthetic_normalizer_result())
+            .expect("route protected text-layer PDF");
+        assert_eq!(
+            routed.status,
+            crate::database::SourceDocumentRoutingStatus::Routed
+        );
+        assert_eq!(routed.money_source_id.as_deref(), Some("source-synthetic"));
 
         let protected_copy = parent.path().join("protected-copy.pdf");
         let (_, copy_generation) = runtime
@@ -2490,8 +2515,7 @@ mod tests {
         assert_eq!(
             runtime
                 .normalization_input(&outcome.document_id)
-                .err()
-                .expect("corrupt PDF must not reach normalization")
+                .expect_err("corrupt PDF must not reach normalization")
                 .code(),
             "document_render_failed"
         );
@@ -3987,23 +4011,11 @@ mod tests {
         let imported = runtime
             .import_selected_document(&source_path, None)
             .expect("capture statement");
-        let result = NormalizerResult::Classified {
-            proposal: NormalizerProposal {
-                document: NormalizerDocument {
-                    document_type: "transfer_export".to_owned(),
-                    provider_key: "synthetic-bank".to_owned(),
-                    statement_id: Some("transfer-2026-07".to_owned()),
-                },
-                accounts: vec![NormalizerAccount {
-                    account_type: "deposit_account".to_owned(),
-                    currency: Some("SGD".to_owned()),
-                    masked_identifier: Some("••001".to_owned()),
-                    provider_account_id: Some("checking-001".to_owned()),
-                }],
-            },
-        };
+        let input = runtime
+            .normalization_input(&imported.document_id)
+            .expect("extract synthetic CSV observations");
         let routed = runtime
-            .apply_normalizer_result(&imported.document_id, &fixture, result)
+            .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
             .expect("apply trusted routing");
 
         assert_eq!(
@@ -4025,12 +4037,136 @@ mod tests {
         );
     }
 
+    fn synthetic_normalizer_result() -> NormalizerResult {
+        NormalizerResult::Classified {
+            proposal: NormalizerProposal {
+                document: NormalizerDocument {
+                    document_type: "transfer_export".to_owned(),
+                    provider_key: "synthetic-bank".to_owned(),
+                    statement_id: Some("transfer-2026-07".to_owned()),
+                },
+                accounts: vec![NormalizerAccount {
+                    account_type: "deposit_account".to_owned(),
+                    currency: Some("SGD".to_owned()),
+                    masked_identifier: Some("••001".to_owned()),
+                    provider_account_id: Some("checking-001".to_owned()),
+                }],
+            },
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn extracts_native_pdf_and_csv_observations_without_creating_files() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let pdf_path = parent.path().join("statement.pdf");
+        let csv_path = parent.path().join("statement.csv");
+        fs::write(&pdf_path, synthetic_pdf()).expect("write text-layer PDF fixture");
+        fs::write(&csv_path, b"date,memo\n2026-07-23,coffee\n").expect("write CSV fixture");
+        let vault_root = parent.path().join("vault");
+        let runtime = VaultRuntime::new(vault_root.clone());
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        let pdf = runtime
+            .import_selected_document(&pdf_path, None)
+            .expect("import PDF");
+        let csv = runtime
+            .import_selected_document(&csv_path, None)
+            .expect("import CSV");
+        let vault_before = vault_entries(&vault_root);
+        let mut temporary_entries_before = fs::read_dir(parent.path())
+            .expect("read temporary directory")
+            .map(|entry| entry.expect("read temporary entry").path())
+            .collect::<Vec<_>>();
+        temporary_entries_before.sort();
+
+        let pdf_bundle = runtime
+            .normalization_input(&pdf.document_id)
+            .expect("extract native PDF observations");
+        let csv_bundle = runtime
+            .normalization_input(&csv.document_id)
+            .expect("extract CSV observations");
+
+        assert_eq!(pdf_bundle.observations.len(), 1);
+        let pdf_observation = &pdf_bundle.observations[0];
+        assert_eq!(
+            pdf_observation.kind,
+            crate::source_observations::SourceObservationKind::NativeText
+        );
+        assert_eq!(pdf_observation.page, Some(1));
+        assert!(
+            pdf_observation
+                .text
+                .contains("CANCAN_SYNTHETIC_STATEMENT_V1")
+        );
+        assert_eq!(
+            pdf_observation.text_span.as_ref().map(|span| span.start),
+            Some(0)
+        );
+        assert_eq!(
+            pdf_observation.text_span.as_ref().map(|span| span.end),
+            Some(pdf_observation.text.encode_utf16().count() as u64)
+        );
+        assert_eq!(pdf_observation.engine, "pdfkit");
+        assert_eq!(pdf_observation.engine_version, "macos-page-string-v1");
+
+        assert_eq!(csv_bundle.observations.len(), 4);
+        assert_eq!(csv_bundle.observations[0].id, "csv-row-1-column-1");
+        assert_eq!(csv_bundle.observations[3].text, "coffee");
+
+        assert_eq!(vault_entries(&vault_root), vault_before);
+        let mut temporary_entries_after = fs::read_dir(parent.path())
+            .expect("read temporary directory")
+            .map(|entry| entry.expect("read temporary entry").path())
+            .collect::<Vec<_>>();
+        temporary_entries_after.sort();
+        assert_eq!(temporary_entries_after, temporary_entries_before);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn protected_text_pdf() -> Vec<u8> {
+        use objc2::{AllocAnyThread, rc::Retained};
+        use objc2_foundation::{NSData, NSDictionary, NSString};
+        use objc2_pdf_kit::{
+            PDFDocument, PDFDocumentOwnerPasswordOption, PDFDocumentUserPasswordOption,
+        };
+
+        let plaintext = synthetic_pdf_with_stream(
+            "BT /F1 10 Tf 8 72 Td (CANCAN_SYNTHETIC_STATEMENT_V1 provider=synthetic-bank statement_id=transfer-2026-07 Caf\\351) Tj ET",
+        );
+        let data = NSData::with_bytes(&plaintext);
+        let document = unsafe { PDFDocument::initWithData(PDFDocument::alloc(), &data) }
+            .expect("open text-layer PDF fixture");
+        let user_password = NSString::from_str("statement-password");
+        let owner_password = NSString::from_str("owner-password");
+        // PDFKit exports these immutable option-name constants for process lifetime.
+        let option_keys = unsafe {
+            [
+                PDFDocumentUserPasswordOption,
+                PDFDocumentOwnerPasswordOption,
+            ]
+        };
+        let options = NSDictionary::from_slices(&option_keys, &[&*user_password, &*owner_password]);
+        // Objective-C lightweight generics are erased at runtime; PDFKit's generated
+        // signature uses an untyped NSDictionary even though these keys and values are strings.
+        let options: Retained<NSDictionary> = unsafe { Retained::cast_unchecked(options) };
+        unsafe { document.dataRepresentationWithOptions(&options) }
+            .expect("encrypt text-layer PDF fixture")
+            .to_vec()
+    }
+
     fn synthetic_pdf() -> Vec<u8> {
+        synthetic_pdf_with_stream("BT /F1 10 Tf 8 72 Td (CANCAN_SYNTHETIC_STATEMENT_V1) Tj ET")
+    }
+
+    fn synthetic_pdf_with_stream(text: &str) -> Vec<u8> {
         let objects = [
-            "<< /Type /Catalog /Pages 2 0 R >>",
-            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 64 96] /Resources << >> /Contents 4 0 R >>",
-            "<< /Length 23 >>\nstream\n0 0 0 rg 0 0 64 96 re f\nendstream",
+            "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 640 96] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".to_owned(),
+            format!("<< /Length {} >>\nstream\n{text}\nendstream", text.len()),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_owned(),
         ];
         let mut pdf = b"%PDF-1.4\n".to_vec();
         let mut offsets = Vec::with_capacity(objects.len());

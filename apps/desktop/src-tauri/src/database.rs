@@ -95,6 +95,7 @@ pub struct SourceDocumentView {
 }
 
 pub struct SourceDocumentFileInput {
+    pub file_sha256: String,
     pub mime_type: String,
     pub plaintext: Zeroizing<Vec<u8>>,
 }
@@ -388,19 +389,20 @@ impl ManualImportStore {
         let document = self
             .connection
             .query_row(
-                "SELECT mime_type, encrypted_locator, file_state \
+                "SELECT file_sha256, mime_type, encrypted_locator, file_state \
                  FROM source_documents WHERE id = ?1",
                 [document_id],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, String>(3)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((mime_type, encrypted_locator, file_state)) = document else {
+        let Some((file_sha256, mime_type, encrypted_locator, file_state)) = document else {
             return Err(
                 io::Error::new(io::ErrorKind::NotFound, "source document not found").into(),
             );
@@ -422,6 +424,7 @@ impl ManualImportStore {
             .files
             .open_in_memory(&self.master_key, &encrypted_locator)?;
         Ok(SourceDocumentFileInput {
+            file_sha256,
             mime_type,
             plaintext,
         })

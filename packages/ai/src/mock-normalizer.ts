@@ -1,10 +1,6 @@
 import type { DocumentRoutingProposal } from "@cancan/parsers";
 
-export interface NormalizeDocumentInput {
-  documentId: string;
-  mimeType: "application/pdf" | "text/csv";
-  content: string;
-}
+import type { NormalizeDocumentInput } from "./worker-protocol";
 
 export type MockNormalizerResult =
   | { status: "classified"; proposal: DocumentRoutingProposal }
@@ -13,10 +9,12 @@ export type MockNormalizerResult =
 const fixtureMarker = "CANCAN_SYNTHETIC_STATEMENT_V1";
 
 export function normalizeWithMock(input: NormalizeDocumentInput): MockNormalizerResult {
+  const contains = (token: string) =>
+    input.extractionBundle.observations.some((observation) => observation.text.includes(token));
   if (
-    !input.content.includes(fixtureMarker) ||
-    !input.content.includes("provider=synthetic-bank") ||
-    !input.content.includes("statement_id=transfer-2026-07")
+    !contains(fixtureMarker) ||
+    !contains("provider=synthetic-bank") ||
+    !contains("statement_id=transfer-2026-07")
   ) {
     return { status: "needs_attention", reason: "unsupported_document" };
   }

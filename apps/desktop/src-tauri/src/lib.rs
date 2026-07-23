@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 mod database;
 mod runtime;
+mod source_observations;
 mod system_lock;
 #[allow(dead_code)]
 mod vault;
