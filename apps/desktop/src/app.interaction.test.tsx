@@ -276,6 +276,36 @@ describe("App manual import orchestration", () => {
     expect(selectSource!.disabled).toBe(false);
   });
 
+  it("clears a failed Money Source selection error when another selection succeeds", async () => {
+    const listSourceDocuments = vi
+      .fn<(moneySourceId: string) => Promise<SourceDocumentSummary[]>>()
+      .mockRejectedValueOnce(new Error("source documents unavailable"))
+      .mockResolvedValueOnce([availableDocument]);
+    const api = createApi({
+      listMoneySources: vi.fn(async () => [moneySource, otherMoneySource]),
+      listSourceDocuments,
+    });
+
+    await mount(api);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        `[aria-label="View documents for ${moneySource.displayName}"]`,
+      )!.click();
+      await settle();
+    });
+    expect(container.textContent).toContain("Something needs your attention");
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        `[aria-label="View documents for ${otherMoneySource.displayName}"]`,
+      )!.click();
+      await settle();
+    });
+
+    expect(container.textContent).not.toContain("Something needs your attention");
+    expect(container.textContent).toContain(availableDocument.originalFilename);
+  });
+
   it("creates a Vault when setup is needed", async () => {
     const api = createApi({
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({

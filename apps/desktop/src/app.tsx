@@ -261,6 +261,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       ...entry,
       documents: null,
     })));
+    setError(null);
     setLoadingDocuments(true);
     void api.listSourceDocuments(moneySourceId).then((documents) => {
       if (
