@@ -107,6 +107,14 @@ pub(crate) struct SourceDocumentSummary {
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct MoneySourceSummary {
+    display_name: String,
+    money_source_id: String,
+    source_type: String,
+}
+
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct StatementPasswordSourceSummary {
     display_name: String,
     has_saved_password: bool,
@@ -952,6 +960,26 @@ impl VaultRuntime {
             .collect()
     }
 
+    pub(crate) fn list_money_sources(&self) -> Result<Vec<MoneySourceSummary>, RuntimeError> {
+        let store = self.store()?;
+        let store = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
+            .list_money_sources()
+            .map(|sources| {
+                sources
+                    .into_iter()
+                    .map(|source| MoneySourceSummary {
+                        display_name: source.display_name,
+                        money_source_id: source.money_source_id,
+                        source_type: source.source_type,
+                    })
+                    .collect()
+            })
+            .map_err(|_| RuntimeError::new("list_sources_failed"))
+    }
+
     pub(crate) fn list_unassigned_source_documents(
         &self,
     ) -> Result<Vec<SourceDocumentSummary>, RuntimeError> {
@@ -1793,6 +1821,17 @@ pub(crate) async fn render_source_document_page(
     .await
     .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
     .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn list_money_sources(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<MoneySourceSummary>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.list_money_sources())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -3937,6 +3976,14 @@ mod tests {
                 "bank",
             )
             .expect("seed source");
+        assert_eq!(
+            runtime.list_money_sources().expect("list Money Sources"),
+            vec![MoneySourceSummary {
+                display_name: "Synthetic Bank".to_owned(),
+                money_source_id: "source-synthetic".to_owned(),
+                source_type: "bank".to_owned(),
+            }]
+        );
         let imported = runtime
             .import_selected_document(&source_path, None)
             .expect("capture statement");
@@ -3965,6 +4012,11 @@ mod tests {
         );
         assert_eq!(routed.money_source_id.as_deref(), Some("source-synthetic"));
         assert_eq!(routed.account_ids.len(), 1);
+        let routed_documents = runtime
+            .list_source_documents("source-synthetic")
+            .expect("list routed documents");
+        assert_eq!(routed_documents.len(), 1);
+        assert_eq!(routed_documents[0].document_id, imported.document_id);
         assert!(
             runtime
                 .list_unassigned_source_documents()

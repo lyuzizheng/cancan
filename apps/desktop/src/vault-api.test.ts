@@ -29,7 +29,7 @@ describe("Vault API", () => {
     const calls: Array<[string, Record<string, unknown> | undefined]> = [];
     const invoke = (async (command, args) => {
       calls.push([command, args]);
-      return command === "list_unassigned_source_documents" ? [] : null;
+      return command.startsWith("list_") ? [] : null;
     }) as TauriInvoke;
     const listenedEvents: string[] = [];
     const subscribe = (async (event) => {
@@ -59,6 +59,8 @@ describe("Vault API", () => {
     await api.saveSourceDocumentCopy("document-1");
     await api.deleteSourceDocument("document-1");
     await api.importSourceDocument();
+    await api.listMoneySources();
+    await api.listSourceDocuments("source-dbs");
     await api.listUnassignedSourceDocuments();
     const removeVaultLockListener = await api.onVaultLocked(() => undefined);
     removeVaultLockListener();
@@ -94,6 +96,8 @@ describe("Vault API", () => {
       ["save_source_document_copy", { documentId: "document-1" }],
       ["delete_source_document", { documentId: "document-1" }],
       ["import_source_document", undefined],
+      ["list_money_sources", undefined],
+      ["list_source_documents", { moneySourceId: "source-dbs" }],
       ["list_unassigned_source_documents", undefined],
       ["normalize_source_document", { documentId: "document-1" }],
       ["render_source_document_page", { documentId: "document-1", pageNumber: 2 }],
