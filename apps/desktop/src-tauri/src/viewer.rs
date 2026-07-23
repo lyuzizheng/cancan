@@ -4,6 +4,7 @@ use std::{
     ffi::{CString, c_void},
     io,
 };
+use zeroize::{Zeroize, Zeroizing};
 
 // Keep one page at or below 1,920,000 RGBA pixels (7.68 MB raw) before PNG encoding and IPC,
 // while allowing ordinary statement pages to render at up to 2x their PDF point dimensions.
@@ -36,9 +37,27 @@ pub(crate) fn render_pdf_page_with_password(
     password: Option<&[u8]>,
 ) -> io::Result<RenderedDocumentPage> {
     let rendered = render_pdf_page_pixels(pdf, page_number, password)?;
-    let mut png = Vec::new();
+    let png = rendered_png_bytes(&rendered)?;
+    Ok(RenderedDocumentPage {
+        page_count: rendered.page_count,
+        page_number,
+        png_base64: STANDARD.encode(&*png),
+    })
+}
+
+pub(crate) fn render_pdf_page_png_with_password(
+    pdf: &[u8],
+    page_number: u32,
+    password: Option<&[u8]>,
+) -> io::Result<Zeroizing<Vec<u8>>> {
+    let rendered = render_pdf_page_pixels(pdf, page_number, password)?;
+    rendered_png_bytes(&rendered)
+}
+
+fn rendered_png_bytes(rendered: &RenderedPixels) -> io::Result<Zeroizing<Vec<u8>>> {
+    let mut png = Zeroizing::new(Vec::new());
     {
-        let mut encoder = png::Encoder::new(&mut png, rendered.width, rendered.height);
+        let mut encoder = png::Encoder::new(&mut *png, rendered.width, rendered.height);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder
@@ -48,11 +67,7 @@ pub(crate) fn render_pdf_page_with_password(
             .write_image_data(&rendered.pixels)
             .map_err(|_| io::Error::other("PDF page PNG encoding failed"))?;
     }
-    Ok(RenderedDocumentPage {
-        page_count: rendered.page_count,
-        page_number,
-        png_base64: STANDARD.encode(png),
-    })
+    Ok(png)
 }
 
 #[cfg(target_os = "macos")]
@@ -84,6 +99,18 @@ struct RenderedPixels {
     page_count: u32,
     pixels: Vec<u8>,
     width: u32,
+}
+
+impl Zeroize for RenderedPixels {
+    fn zeroize(&mut self) {
+        self.pixels.zeroize();
+    }
+}
+
+impl Drop for RenderedPixels {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -155,6 +182,8 @@ fn render_pdf_page_pixels(
         .ok()
         .and_then(|value| value.checked_mul(bytes_per_row))
         .ok_or_else(|| io::Error::other("PDF render dimensions overflow"))?;
+    let page_count =
+        u32::try_from(page_count).map_err(|_| io::Error::other("PDF has too many pages"))?;
     let color_space = unsafe { CGColorSpaceCreateDeviceRGB() };
     if color_space.is_null() {
         return Err(io::Error::other("Core Graphics color space failed"));
@@ -190,17 +219,10 @@ fn render_pdf_page_pixels(
         CGContextRelease(context);
         CGColorSpaceRelease(color_space);
     }
-    for row in 0..usize::try_from(height).expect("height fits usize") / 2 {
-        let opposite = usize::try_from(height).expect("height fits usize") - row - 1;
-        let (before_opposite, opposite_and_after) = pixels.split_at_mut(opposite * bytes_per_row);
-        before_opposite[row * bytes_per_row..(row + 1) * bytes_per_row]
-            .swap_with_slice(&mut opposite_and_after[..bytes_per_row]);
-    }
 
     Ok(RenderedPixels {
         height,
-        page_count: u32::try_from(page_count)
-            .map_err(|_| io::Error::other("PDF has too many pages"))?,
+        page_count,
         pixels,
         width,
     })
