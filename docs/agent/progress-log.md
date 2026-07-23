@@ -7,10 +7,11 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 ### Completed
 
 - Added production job-scoped extraction bundles for manual PDF/CSV evidence. macOS PDFKit emits one native-text observation per page with one-based pages and zero-based, end-exclusive UTF-16 spans; CSV emits deterministic one-based table cells. The strict sidecar protocol rejects legacy raw-content commands, mismatched bundle metadata, duplicate observations, invalid spans/coordinates/confidence, and document-ID mismatch. Rust-owned observation strings and serialized command bytes are zeroized when their buffers drop; the short-lived sidecar exits after each request, and no extraction bundle is persisted. Verified protected-PDF session passwords now feed the same native extraction/routing path, with a genuinely encrypted text-layer fixture covering unlock, non-ASCII span semantics, and routing.
+- Added conditional local macOS Vision revision 3 accurate OCR for PDF pages. PDFKit native extraction always runs first; only empty/whitespace native text or NUL, U+FFFD, and non-layout control markers render the affected page in memory for Vision. Native observations remain intact and separate OCR observations carry page, confidence, Vision engine/version, and transformed top-left unit-square boxes. OCR page pixels, PNG bytes, and intermediate recognized strings use zeroizing Rust-owned buffers. OCR or rendering failure, including a missing Vision result collection, rejects the extraction bundle rather than relabeling OCR as native. Deterministic fake-engine tests prove native text skips Vision, provenance is retained, a non-symmetric lower-left box transforms correctly, and failures fail closed; a non-sensitive synthetic text image invokes the production Vision adapter.
 
 ### Next
 
-- Continue `vault-manual-import` with conditional local Vision OCR for scanned or broken PDF pages. Reliable native-text PDFs must skip Vision, while native and OCR observations remain separate provenance channels.
+- Continue `vault-manual-import` with host-picked PNG/JPEG capture, local Vision observations, and a bounded in-memory image viewer. Do not claim HEIC or provider support. Keep Money Source creation/editing, source detail, watched folders, Gmail, real providers/AI, backup scheduling, and release work out of this checkpoint.
 
 ## 2026-07-22
 

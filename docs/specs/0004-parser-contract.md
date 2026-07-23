@@ -32,7 +32,7 @@ source_document file or canonical message envelope
 -> reconciliation candidates
 ```
 
-For PDF input, native text extraction is always attempted because it is local and cheap. OCR runs only for scanned or broken pages, weak numeric/layout coverage, or evidence-grounding gaps. CSV and other structured exports use deterministic table extraction before AI normalization. A multimodal normalizer may also receive the original PDF or page images.
+For PDF input, native text extraction is always attempted because it is local and cheap. The implemented local macOS Vision layer pins `VNRecognizeTextRequest` revision 3 with accurate recognition and runs per page only when native text is empty/whitespace or has a clear broken-text marker: NUL, U+FFFD, or a non-layout control character. Layout controls are tab, LF, vertical tab, form feed, CR, and NEL. It does not infer weak quality from text length or numeric thresholds. It preserves the native observation and appends separate OCR observations; a render or OCR failure, including a missing Vision result collection, rejects the extraction bundle rather than relabeling OCR as native. Broader weak numeric/layout or evidence-grounding input planning remains future accepted work. CSV and other structured exports use deterministic table extraction before AI normalization. A multimodal normalizer may also receive the original PDF or page images.
 
 ## User-visible normalization modes
 
