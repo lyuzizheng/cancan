@@ -69,6 +69,20 @@ remaining ambiguity with a multimodal model -> include original page evidence
 
 Native and OCR confidence values are not directly interchangeable. Selection also considers text coverage, numeric-token integrity, row/column continuity, native/OCR agreement, provider anchors, and whether statement totals can close.
 
+### Optional cloud image OCR contract
+
+The only cloud-image OCR contract currently approved for implementation is a mock-only provider adapter for a manually imported image. It does not authorize credential storage, runtime transport, a network request, or a live provider test.
+
+When that later capability is explicitly enabled, its dedicated OCR configuration is one complete OpenAI-compatible Chat Completions triple: full endpoint URL, model, and API key. If no dedicated OCR triple is configured, it reuses the complete AI analyser endpoint/model/key triple; it never combines fields from the two configurations.
+
+The OCR request carries exactly one already-upright, bounded PNG as a base64 data URL and the versioned fixed prompt below. It must not carry an original PDF, filename, Money Source or account metadata, native text, existing observations, or other document context.
+
+```text
+Transcribe every visible text element in natural reading order; preserve language, numbers, punctuation, case, and line breaks; use ? only for unreadable single characters; no summary, translation, correction, explanation, Markdown, JSON, coordinates, boxes, or labels.
+```
+
+Its response is plain transcription text only. It has no coordinate, box, layout, schema, or label output; a later runtime may turn accepted text into the existing coordinate-free image `ocr_text` observation. This adapter must not use provider-specific Qwen fields, the OpenAI Responses API, or an OpenAI SDK.
+
 ## Provider parser skills
 
 Each supported provider/document type is a versioned product parser package and document-agent skill with the same contract. DBS bank statements and DBS credit-card statements are separate document-type configurations under the DBS provider.

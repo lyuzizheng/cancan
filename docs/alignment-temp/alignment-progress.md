@@ -14,7 +14,7 @@ blocked       external evidence, feasibility work, or implementation is required
 
 | Area | Status | Decision still required | Canonical home after decision |
 | --- | --- | --- | --- |
-| Gmail data and cloud AI consent | partial | Validate the project-owned public Desktop OAuth client and Google verification path; decide exact attachment/message-body data sent to AI, separate transaction-notification body consent, provider retention, and Limited Use compatibility. Direct local-client access, explicit user authorization, send-to-self collection through the user's mailbox, and separate development/test credentials are accepted | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md` |
+| Gmail data and cloud AI consent | partial | Validate the project-owned public Desktop OAuth client and Google verification path; decide exact Gmail attachment/message-body data sent to AI, separate transaction-notification body consent, provider retention, and Limited Use compatibility. The manually imported cloud OCR payload/config decision is accepted in `docs/specs/0004-parser-contract.md` for the mock-only provider-contract checkpoint; Gmail attachment/message-body consent remains unresolved. Direct local-client access, explicit user authorization, send-to-self collection through the user's mailbox, and separate development/test credentials are accepted | `docs/specs/0003-gmail-collector.md`, `docs/specs/0004-parser-contract.md`, `docs/specs/0007-first-run-onboarding.md` |
 
 ## P1: required before the affected implementation slice
 
