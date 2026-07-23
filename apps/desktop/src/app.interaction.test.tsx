@@ -565,8 +565,8 @@ describe("App manual import orchestration", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).toContain("Statement unlocked");
     expect(container.textContent).toContain("View document");
-    expect(container.textContent).toContain("Routing unavailable");
-    expect(container.textContent).not.toContain("Check routing");
+    await click("Check routing");
+    expect(api.normalizeSourceDocument).toHaveBeenCalledWith("document-1");
   });
 
   it("maps technical document statuses to the canonical primary row states", async () => {

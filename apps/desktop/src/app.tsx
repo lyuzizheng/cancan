@@ -1111,7 +1111,8 @@ function EvidenceDocumentGroups({
           const fileAvailable = document.fileState === "available";
           const viewingAvailable = fileAvailable
             && (document.documentStatus === "ready" || protectedUnlocked);
-          const routingAvailable = fileAvailable && document.documentStatus === "ready";
+          const routingAvailable = fileAvailable
+            && (document.documentStatus === "ready" || protectedUnlocked);
           const attentionRequired = passwordRequired
             || document.documentStatus === "inspection_failed";
           const deleting = props.deletingDocumentId === document.documentId;
