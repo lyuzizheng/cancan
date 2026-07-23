@@ -212,8 +212,6 @@ export function commandErrorMessage(error: unknown): string {
       return "That password did not unlock this statement.";
     case "statement_password_remove_failed":
       return "CanCan couldn’t remove that statement password from this Mac’s Keychain.";
-    case "protected_pdf_normalization_unsupported":
-      return "Routing isn’t available for protected statements yet.";
     case "vault_locked":
       return "Unlock your Vault to continue.";
     case "vault_not_created":

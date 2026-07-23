@@ -127,7 +127,7 @@ export interface ExtractionBundle {
 }
 ```
 
-Coordinates are normalized to one documented origin and unit. CSV evidence uses stable row/column coordinates. PDF evidence uses page plus native-text span, OCR block, or normalized page region.
+Coordinates are normalized to one documented origin and unit. CSV evidence uses stable one-based row/column coordinates. PDF evidence uses a one-based page plus native-text span, OCR block, or normalized page region. A native `textSpan` is a zero-based, end-exclusive UTF-16 code-unit range into that observation's `text`, so the JSON contract is reproducible by TypeScript consumers. A bounding box uses page-relative unit-square coordinates with the origin at the top-left, `x` increasing rightward, and `y` increasing downward: `x` and `y` are in `[0, 1]`, width and height are positive, and the complete box must remain within the page. Producers such as Apple Vision that report a different origin must transform coordinates at the producer boundary; the local Vision slice must prove that transform with a non-symmetric box fixture.
 
 Canonical email-message evidence uses bounded `message_field` observations from the authenticated connector envelope. It has no invented page, row, or column coordinates.
 

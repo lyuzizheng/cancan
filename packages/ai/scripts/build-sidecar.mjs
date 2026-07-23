@@ -74,14 +74,48 @@ const smoke = spawnSync(binary, [], {
   env: {},
   input: `${JSON.stringify({
     type: "normalize",
+    requestId: "invalid-build-smoke",
+    documentId: "document-smoke",
+    content: "raw statement text",
+  })}\n${JSON.stringify({
+    type: "normalize",
     requestId: "build-smoke",
     documentId: "document-smoke",
-    mimeType: "text/csv",
-    content: [
-      "CANCAN_SYNTHETIC_STATEMENT_V1",
-      "provider=synthetic-bank",
-      "statement_id=transfer-2026-07",
-    ].join("\n"),
+    extractionBundle: {
+      sourceDocumentId: "document-smoke",
+      fileSha256: "a".repeat(64),
+      mimeType: "text/csv",
+      metadata: { extractionVersion: "native-observations-v1", observationCount: 3 },
+      observations: [
+        {
+          id: "csv-row-1-column-1",
+          kind: "table_cell",
+          row: 1,
+          column: 1,
+          text: "CANCAN_SYNTHETIC_STATEMENT_V1",
+          engine: "rust-csv",
+          engineVersion: "1.4.0",
+        },
+        {
+          id: "csv-row-2-column-1",
+          kind: "table_cell",
+          row: 2,
+          column: 1,
+          text: "provider=synthetic-bank",
+          engine: "rust-csv",
+          engineVersion: "1.4.0",
+        },
+        {
+          id: "csv-row-3-column-1",
+          kind: "table_cell",
+          row: 3,
+          column: 1,
+          text: "statement_id=transfer-2026-07",
+          engine: "rust-csv",
+          engineVersion: "1.4.0",
+        },
+      ],
+    },
   })}\n{\"type\":\"shutdown\"}\n`,
 });
 if (smoke.status !== 0) {
@@ -96,9 +130,11 @@ if (
   messages[0]?.protocolVersion !== 1 ||
   messages[0]?.runtime !== "single-pass-mock" ||
   messages[0]?.environmentCleared !== true ||
-  messages[1]?.type !== "result" ||
-  messages[1]?.requestId !== "build-smoke" ||
-  messages[1]?.result?.status !== "classified"
+  messages[1]?.type !== "error" ||
+  messages[1]?.code !== "invalid_command" ||
+  messages[2]?.type !== "result" ||
+  messages[2]?.requestId !== "build-smoke" ||
+  messages[2]?.result?.status !== "classified"
 ) {
   throw new Error("sidecar smoke returned an invalid protocol transcript");
 }

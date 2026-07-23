@@ -1,42 +1,20 @@
 import { createInterface } from "node:readline";
 
-import { normalizeWithMock, type NormalizeDocumentInput } from "./mock-normalizer";
-
-interface NormalizeCommand extends NormalizeDocumentInput {
-  type: "normalize";
-  requestId: string;
-}
+import { normalizeWithMock } from "./mock-normalizer";
+import { parseWorkerCommand } from "./worker-protocol";
 
 function send(message: unknown): void {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
 
-function parseCommand(line: string): NormalizeCommand | { type: "shutdown" } | undefined {
+function parseCommand(line: string) {
   let value: unknown;
   try {
     value = JSON.parse(line);
   } catch {
     return undefined;
   }
-  if (!value || Array.isArray(value) || typeof value !== "object") {
-    return undefined;
-  }
-  const command = value as Record<string, unknown>;
-  if (command.type === "shutdown" && Object.keys(command).length === 1) {
-    return { type: "shutdown" };
-  }
-  const keys = Object.keys(command).sort().join(",");
-  if (
-    command.type !== "normalize" ||
-    keys !== "content,documentId,mimeType,requestId,type" ||
-    typeof command.requestId !== "string" ||
-    typeof command.documentId !== "string" ||
-    (command.mimeType !== "application/pdf" && command.mimeType !== "text/csv") ||
-    typeof command.content !== "string"
-  ) {
-    return undefined;
-  }
-  return command as unknown as NormalizeCommand;
+  return parseWorkerCommand(value);
 }
 
 createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line) => {
