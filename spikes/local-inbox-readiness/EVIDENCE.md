@@ -1,6 +1,6 @@
 # Local Inbox readiness evidence
 
-Status: investigating on 2026-07-24
+Status: investigating on 2026-07-25
 
 This disposable spike tests only the pre-scan / settle / read / post-read
 protocol that a future Rust/Tauri local-folder boundary can use. It does not
@@ -28,13 +28,12 @@ cd spikes/local-inbox-readiness
 scripts/verify.sh
 ```
 
-On the evidence machine, this passed:
+On the evidence machine, this passed without inspecting iCloud Drive:
 
 ```text
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked: 12 passed
-iCloud Drive path is absent or unreadable; live iCloud evidence remains blocked.
+cargo test --locked: 12 protocol tests and 2 runner safety/CLI-contract tests passed
 ```
 
 The run used macOS 26.5.2 (25F84), `arm64`, Rust 1.97.0
@@ -67,13 +66,45 @@ does not model app shutdown, persisted scanner state, or a process restart.
 
 ## iCloud and provider boundary
 
-The expected path
-`$HOME/Library/Mobile Documents/com~apple~CloudDocs` was absent or unreadable
-on the evidence machine. The check is included in `scripts/verify.sh` and does
-not turn that absence into a pass for iCloud behavior.
+The default gate never accesses iCloud Drive. A separate opt-in run used the
+user-created root
+`$HOME/Library/Mobile Documents/com~apple~CloudDocs/Cancan`. It created only a
+unique synthetic child, did not enumerate real files, and printed
+`cleanup=removed` after each run.
 
-The injected read/provider-error test proves only fail-closed control flow. It
-is not actual iCloud Drive, placeholder, sync-delay, offline, or provider-error
-evidence. A readable supported iCloud Drive path and a separate live run remain
-required before this slice can choose a settle interval, remove the `Local
-Inbox filesystem readiness` blocker, or authorize `local-inbox-automation`.
+The repeatable command is:
+
+```text
+cd spikes/local-inbox-readiness
+CANCAN_ICLOUD_EVIDENCE_ROOT="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Cancan" scripts/run-icloud-evidence.sh
+```
+
+The live run established the following limited facts for its synthetic files:
+
+| Gate | Evidence |
+| --- | --- |
+| Separate CLI-process rescan | `snapshot` and `capture` printed distinct process IDs; stable capture returned bytes, preserved the original synthetic bytes, and preserved identity/size/mtime. This is a CLI process boundary, not an app restart lifecycle proof. |
+| Changing source | A synthetic source changed between those processes returned `deferred-changed-before-read` rather than captured bytes. |
+| Upload-ready before eviction | The supported URL resource values reported `uploaded=true` and `uploading=false` within the runner's bounded 15-attempt poll. |
+| Real placeholder request | `/usr/bin/brctl evict` returned exit 0, then `ubiquitousItemDownloadingStatus` was `not-downloaded`; `/usr/bin/brctl download` later returned exit 0. |
+| Actual defer | The snapshot immediately before Rust capture still reported `not-downloaded`. That capture returned `deferred-changed-after-read` and did not return bytes. |
+| Hydration boundary | Immediately after that Rust capture, the supported status was `current`. The run records a status transition during capture; it does not attribute the transition to one exact operation, and it must not assume Rust open/read leaves a placeholder offline. |
+
+The status probe reads `URLResourceValues.ubiquitousItemDownloadingStatus`, not
+the deprecated downloaded boolean. It is a disposable evidence helper, not a
+production Foundation bridge.
+
+The observed defer proves that the handle-bound post-read check can withhold
+bytes in this exercised iCloud path. It does **not** prove a pure Rust
+open/read protocol can defer a placeholder before hydration. The status
+transition leaves the `Local Inbox filesystem readiness` blocker in place: a
+future production design needs a native downloading-status preflight before
+Rust opens/reads a candidate, plus its own deterministic tests. This spike
+does not implement that preflight, a watcher, a Vault capture, a database, a
+job, UI, or provider connector.
+
+No settle interval is selected. The 15-attempt upload poll and 10-second
+`brctl` limits bound this evidence command only; they do not measure or choose
+a production settle delay. The injected read/provider-error test likewise
+remains only fail-closed control-flow evidence, not a general iCloud offline or
+provider-error guarantee.

@@ -123,7 +123,7 @@ One optional statement-PDF password may be saved per Money Source in macOS Keych
 
 ## Backup target
 
-MVP should support generic folder backup first. iCloud Drive is treated as a common folder target, not a hard dependency.
+The initial backup location is the `Backups` child of the user-authorized CanCan iCloud Drive root defined in [0017](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root). Preparing that directory does not enable, schedule, or prove a backup. Backup engine, bundle writing, schedule, and restore implementation remain in the blocked `backup-release` slice.
 
 ## Backup bundle
 
@@ -221,7 +221,7 @@ vault key material
 
 Restore writes and validates a new local Vault path before an atomic switch. It must not mutate the active Vault while integrity, compatibility, or password/recovery validation is incomplete.
 
-After restore on a new device, CanCan opens the restored non-secret data and a resumable Setup Checklist. The checklist includes Gmail reconnect, AI provider key re-entry, statement-PDF password re-entry for each affected Money Source, `Remember on this Mac`, future API connector tokens, and backup-folder selection. Missing secrets block only the jobs or features that depend on them; the user may browse restored records and finish setup later.
+After restore on a new device, CanCan opens the restored non-secret data and a resumable Setup Checklist. The checklist includes Gmail reconnect, AI provider key re-entry, statement-PDF password re-entry for each affected Money Source, `Remember on this Mac`, future API connector tokens, and CanCan-root/`Backups` preparation. Missing secrets block only the jobs or features that depend on them; the user may browse restored records and finish setup later.
 
 ## Acceptance criteria
 

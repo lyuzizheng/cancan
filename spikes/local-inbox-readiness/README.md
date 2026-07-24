@@ -17,8 +17,31 @@ Run the full spike gate with:
 scripts/verify.sh
 ```
 
-The tests create only synthetic files beneath the operating system temporary
-directory and remove their directories afterward. The 20 ms pause in tests
-only forces separate scan operations; it is not a proposed production settle
-interval. See [EVIDENCE.md](./EVIDENCE.md) for what this does and does not
-prove.
+This default gate does not inspect or touch iCloud Drive. Its tests create only
+synthetic files beneath the operating system temporary directory and remove
+their directories afterward. The 20 ms pause in tests only forces separate
+scan operations; it is not a proposed production settle interval.
+
+## Opt-in live iCloud evidence
+
+On the evidence machine only, run:
+
+```text
+CANCAN_ICLOUD_EVIDENCE_ROOT="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Cancan" scripts/run-icloud-evidence.sh
+```
+
+The script rejects every other root. It does not enumerate that root: it asks
+the Rust CLI to create one uniquely named `.cancan-local-inbox-evidence-*`
+directory, writes only synthetic files inside it, and removes only that exact
+directory when its matching run token is present. `snapshot` and `capture` are
+separate CLI processes with a persisted synthetic snapshot state.
+
+The opt-in run checks upload state with the supported
+`URLResourceValues.ubiquitousItemDownloadingStatus` key, then makes bounded
+`/usr/bin/brctl evict` and `download` attempts against only its synthetic file.
+The upload poll (15 attempts) and each `brctl` command limit (10 seconds) are
+liveness bounds, not a selected settle interval. The Swift status probe is
+evidence-only; it does not add a production Foundation bridge.
+
+See [EVIDENCE.md](./EVIDENCE.md) for the observed iCloud result and its
+remaining blocker.

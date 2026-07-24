@@ -8,17 +8,17 @@ use std::{
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct FileIdentity {
-    device: u64,
-    inode: u64,
+pub struct FileIdentity {
+    pub device: u64,
+    pub inode: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FileSnapshot {
-    identity: FileIdentity,
-    size: u64,
-    modified_seconds: i64,
-    modified_nanoseconds: i64,
+    pub identity: FileIdentity,
+    pub size: u64,
+    pub modified_seconds: i64,
+    pub modified_nanoseconds: i64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -2,6 +2,18 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-25
+
+### Completed
+
+- Accepted the initial automatic-folder contract in [0017](../specs/0017-evidence-documents-source-ux.md): the user authorizes one iCloud Drive `Cancan` root, CanCan only owns its `Inbox` and `Backups` child names, and only `Inbox` is a future ingestion source. Preparing `Backups` is not backup enablement or success. The accepted layout does not implement folder-picker authorization/bookmarks, native preflight, watcher UI, backup engine, schedule, bundle writing, restore, migration, or cleanup of old roots.
+- Added an opt-in, synthetic-only `local-inbox-readiness` iCloud runner. The default spike gate never accesses iCloud; the live runner accepts only the exact user-created CanCan iCloud root, creates and token-cleans one exact synthetic child, and bounds upload polling and each `brctl` call.
+- Ran the real iCloud evidence path: upload-ready state was observed; `brctl evict` produced `not-downloaded`; a second CLI-process Rust capture returned `deferred-changed-after-read` without bytes, while the downloading status transitioned to `current` during that capture. `brctl download` also succeeded. Stable and changing synthetic files proved the independent-process capture and early-change rejection paths.
+
+### Next
+
+- Keep `Local Inbox filesystem readiness` blocked. Do not select a settle interval or add watched-folder production behavior. A future native downloading-status preflight before Rust open/read, plus app/process-restart lifecycle evidence, is required before reconsidering the blocker.
+
 ## 2026-07-24
 
 ### Completed
@@ -305,7 +317,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added temporary alignment workspace under `docs/alignment-temp/` to break down full product lifecycle questions and track alignment progress.
 - Added first-run/onboarding spec with product promise, fixed provider policy, bring-your-own AI direction, startup sequence, and interaction/motion requirements.
 - Added design system spec with light-first, modern warm+green, technical/safe/premium direction.
-- Added backup/restore/versioning spec with generic folder backup, manifest, compatibility rules, and restore behavior.
+- Added backup/restore/versioning spec with manifest, compatibility rules, and restore behavior.
 - Added agentic development workflow spec with required tests, DB reset, build/package, UI inspection, and docs update loop.
 - Aligned Gmail integration: Desktop OAuth Authorization Code Flow + PKCE + loopback redirect; local token exchange; Gmail readonly; local Keychain token storage; local encrypted mail cache; polling sync; no CanCan server.
 - Recorded Google restricted scope/OAuth verification risk for public release.

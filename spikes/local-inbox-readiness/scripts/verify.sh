@@ -8,4 +8,3 @@ cd "$ROOT"
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
-scripts/check-icloud-path.sh
