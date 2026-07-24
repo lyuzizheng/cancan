@@ -6,13 +6,14 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Merged the mock-only `cloud-ocr-provider-contract` checkpoint. It now selects only a complete dedicated OCR or analyser configuration, builds the fixed one-bounded-PNG OpenAI-compatible request, parses plain transcription text, and redacts credentials and provider bodies from contract errors.
 - Reconciled the cumulative #32–#35 review with the shipped manual-evidence path. Protected-PDF unlock notices now match available routing, the executable worker rejects unproduced `document_region` observations, and one shared golden command fixture is asserted by Rust serialization, the TypeScript parser, and the packaged-sidecar smoke.
 - Kept OCR fail-closed when a page has no usable native content, while allowing usable non-empty native text to continue through grounding and validation when only supplemental OCR fails. The intended broader OCR-planning contract remains canonical and the current marker-only subset is documented as implementation state.
 - Unified PDF password byte validation across PDFKit extraction and Core Graphics rendering, moved image validation out of the file-vault storage primitive, avoided validation-only PNG encoding, composited transparent image evidence onto opaque white, and removed the duplicate source-document row mapper.
 
 ### Next
 
-- Merge the reviewed mock-only `cloud-ocr-provider-contract` checkpoint; it remains limited to the pure `packages/ai` request/response contract and does not authorize live credential transport, runtime wiring, disclosure UI, or a smoke test. After it lands, the next candidate is the evidence-only `local-inbox-readiness` investigation; broader runtime/UI file splitting and PDF/session performance work remain separate evidence-driven changes.
+- Complete the narrow `cloud-ocr-transport` slice: execute the accepted request through an injected fetch boundary and prove success and redacted transport failures with mocked fetch. Do not add credential storage/loading, app wiring, provider-specific parsing, a live request, or a parallel test-only smoke input path. After it lands, the next candidate is the evidence-only `local-inbox-readiness` investigation; broader runtime/UI file splitting and PDF/session performance work remain separate evidence-driven changes.
 
 ## 2026-07-23
 

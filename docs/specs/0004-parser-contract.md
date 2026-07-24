@@ -71,7 +71,7 @@ Native and OCR confidence values are not directly interchangeable. Selection als
 
 ### Optional cloud image OCR contract
 
-The only cloud-image OCR contract currently approved for implementation is a mock-only provider adapter for a manually imported image. It does not authorize credential storage, runtime transport, a network request, or a live provider test.
+The cloud-image OCR provider adapter and its reusable transport executor are approved for implementation for a manually imported image. The executor sends the adapter-built request through an injected fetch boundary, parses the response through the same adapter, and returns only the transcription. This does not authorize credential storage or loading, app/Tauri/sidecar/UI wiring, request logging, a live provider call, or provider-specific parsing.
 
 When that later capability is explicitly enabled, its dedicated OCR configuration is one complete OpenAI-compatible Chat Completions triple: full endpoint URL, model, and API key. If no dedicated OCR triple is configured, it reuses the complete AI analyser endpoint/model/key triple; it never combines fields from the two configurations.
 
@@ -81,7 +81,7 @@ The OCR request carries exactly one already-upright, bounded PNG as a base64 dat
 Transcribe every visible text element in natural reading order; preserve language, numbers, punctuation, case, and line breaks; use ? only for unreadable single characters; no summary, translation, correction, explanation, Markdown, JSON, coordinates, boxes, or labels.
 ```
 
-Its response is plain transcription text only. It has no coordinate, box, layout, schema, or label output; a later runtime may turn accepted text into the existing coordinate-free image `ocr_text` observation. This adapter must not use provider-specific Qwen fields, the OpenAI Responses API, or an OpenAI SDK.
+Its response is plain transcription text only. It has no coordinate, box, layout, schema, or label output; a later runtime may turn accepted text into the existing coordinate-free image `ocr_text` observation. Transport, HTTP, JSON, and response-contract failures expose only stable CanCan-owned errors and never include the API key or provider response body. The adapter and executor must not use provider-specific Qwen fields, the OpenAI Responses API, or an OpenAI SDK.
 
 ## Provider parser skills
 

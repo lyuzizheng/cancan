@@ -223,7 +223,7 @@ Rules:
 - do not overwrite expected outputs without review;
 - never include secrets or PDF passwords in mocked outputs.
 
-The cloud-image OCR provider-contract checkpoint uses only inline synthetic PNG data URLs and fake OpenAI-compatible Chat Completions JSON. Its deterministic tests assert complete dedicated-versus-analyser configuration selection, the exact fixed prompt/request shape, plain-text content parsing, malformed or empty response rejection, and that an API key appears only in an Authorization header and never in a JSON body or error. It makes no network request. A later single opt-in local smoke test may use environment variables only outside CI; production credential storage belongs to a later Keychain-owned capability and is not part of this adapter contract.
+The cloud-image OCR provider and transport checkpoints use only inline synthetic PNG data URLs, an injected mocked fetch boundary, and fake OpenAI-compatible Chat Completions JSON. Their deterministic tests assert complete dedicated-versus-analyser configuration selection, the exact fixed prompt/request shape, successful request execution and plain-text content parsing, network/non-2xx/malformed-response rejection, and that neither an API key nor provider response body appears in JSON bodies or errors. Default tests make no network request. A later single opt-in local smoke test may use environment variables only outside CI and must exercise this same executor with an app-produced upright bounded PNG; production credential storage belongs to a later Keychain-owned capability.
 
 ## Document-agent harness
 
