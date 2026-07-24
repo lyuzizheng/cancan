@@ -96,6 +96,34 @@ export function parseCloudOcrResponse(response: unknown): string {
   return content;
 }
 
+export async function executeCloudOcr(
+  configuration: CloudOcrProviderConfiguration,
+  boundedPngDataUrl: string,
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<string> {
+  const request = buildCloudOcrRequest(configuration, boundedPngDataUrl);
+
+  let response: Response;
+  try {
+    response = await fetchImpl(request.url, request.init);
+  } catch {
+    throw new CloudOcrContractError("Cloud OCR request failed.");
+  }
+
+  if (!response.ok) {
+    throw new CloudOcrContractError("Cloud OCR provider rejected the request.");
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new CloudOcrContractError("Cloud OCR response was not valid JSON.");
+  }
+
+  return parseCloudOcrResponse(body);
+}
+
 function requireCompleteConfig(value: unknown): OpenAiCompatibleChatCompletionsConfig {
   if (
     !isRecord(value) ||

@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildCloudOcrRequest,
   CLOUD_OCR_PROMPT_VERSION,
   CLOUD_OCR_TRANSCRIPTION_PROMPT,
   CloudOcrContractError,
+  executeCloudOcr,
   parseCloudOcrResponse,
   selectCloudOcrConfig,
 } from "./cloud-ocr-provider";
@@ -112,4 +113,87 @@ describe("cloud OCR provider contract", () => {
       CloudOcrContractError,
     );
   });
+
+  it("executes the accepted request and returns the parsed transcription", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        choices: [{ message: { content: "DBS BANK\nBalance SGD 42.00" } }],
+      }),
+    );
+    const expectedRequest = buildCloudOcrRequest(
+      { analyser: analyzerConfig, dedicatedOcr: dedicatedOcrConfig },
+      pngDataUrl,
+    );
+
+    await expect(
+      executeCloudOcr(
+        { analyser: analyzerConfig, dedicatedOcr: dedicatedOcrConfig },
+        pngDataUrl,
+        fetchImpl,
+      ),
+    ).resolves.toBe("DBS BANK\nBalance SGD 42.00");
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledWith(expectedRequest.url, expectedRequest.init);
+  });
+
+  it("replaces network failures with a stable redacted error", async () => {
+    const providerBody = '{"error":"provider-secret-body"}';
+    const fetchImpl = vi.fn(async () => {
+      throw new Error(`${analyzerConfig.apiKey}: ${providerBody}`);
+    });
+
+    await expectRedactedFailure(
+      executeCloudOcr({ analyser: analyzerConfig }, pngDataUrl, fetchImpl),
+      "Cloud OCR request failed.",
+      providerBody,
+    );
+  });
+
+  it("rejects non-success responses without reading or exposing the provider body", async () => {
+    const providerBody = '{"error":"provider-secret-body"}';
+    const response = new Response(providerBody, { status: 429 });
+    const textSpy = vi.spyOn(response, "text");
+    const jsonSpy = vi.spyOn(response, "json");
+    const fetchImpl = vi.fn(async () => response);
+
+    await expectRedactedFailure(
+      executeCloudOcr({ analyser: analyzerConfig }, pngDataUrl, fetchImpl),
+      "Cloud OCR provider rejected the request.",
+      providerBody,
+    );
+    expect(textSpy).not.toHaveBeenCalled();
+    expect(jsonSpy).not.toHaveBeenCalled();
+  });
+
+  it("replaces malformed JSON with a stable redacted error", async () => {
+    const providerBody = `${analyzerConfig.apiKey}: not-json`;
+    const fetchImpl = vi.fn(async () =>
+      new Response(providerBody, {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expectRedactedFailure(
+      executeCloudOcr({ analyser: analyzerConfig }, pngDataUrl, fetchImpl),
+      "Cloud OCR response was not valid JSON.",
+      providerBody,
+    );
+  });
 });
+
+async function expectRedactedFailure(
+  promise: Promise<string>,
+  expectedMessage: string,
+  providerBody: string,
+): Promise<void> {
+  try {
+    await promise;
+    throw new Error("Expected cloud OCR execution to fail.");
+  } catch (error) {
+    expect(error).toBeInstanceOf(CloudOcrContractError);
+    expect((error as Error).message).toBe(expectedMessage);
+    expect((error as Error).message).not.toContain(analyzerConfig.apiKey);
+    expect((error as Error).message).not.toContain(providerBody);
+  }
+}

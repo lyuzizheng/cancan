@@ -165,7 +165,7 @@ AI structuring: text-only or multimodal normalizer
 
 The app chooses native text, OCR, both, or original page evidence using the accepted parser input-planning rules. The normal onboarding flow does not ask users to choose an OCR provider or a normalizer architecture. Exact cloud-data disclosure and consent text remain blocked by the Gmail/cloud-AI consent decision.
 
-The future dedicated cloud-image OCR capability is separately disclosed and explicitly opt-in. Its manually imported cloud OCR payload/config contract is owned by [`0004-parser-contract.md`](./0004-parser-contract.md). This current provider-contract checkpoint implements none of that user flow: Keychain storage, environment-variable smoke support, Settings, Tauri/sidecar transport, real fetch, disclosure UI, and the opt-in local smoke test remain unimplemented. It does not authorize Gmail attachment or message-body uploads.
+The future dedicated cloud-image OCR capability is separately disclosed and explicitly opt-in. Its manually imported cloud OCR payload/config and transport contract is owned by [`0004-parser-contract.md`](./0004-parser-contract.md). The reusable executor may perform the accepted request through an injected fetch boundary, but none of the user flow exists yet: Keychain or environment loading, Settings, Tauri/sidecar/UI wiring, disclosure UI, and the opt-in local smoke test remain unimplemented. It does not authorize a live provider call during development or Gmail attachment or message-body uploads.
 
 ## Gmail setup decision
 
