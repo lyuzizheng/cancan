@@ -2601,6 +2601,31 @@ mod tests {
     }
 
     #[test]
+    fn rust_normalizer_command_matches_the_worker_golden_fixture() {
+        let extraction_bundle = extract_bundle(
+            "document-smoke",
+            &"a".repeat(64),
+            "text/csv",
+            b"CANCAN_SYNTHETIC_STATEMENT_V1\nprovider=synthetic-bank\nstatement_id=transfer-2026-07\n",
+            None,
+        )
+        .expect("extract fixture observations");
+        let command = NormalizerCommand {
+            document_id: "document-smoke",
+            extraction_bundle: &extraction_bundle,
+            request_id: "build-smoke",
+            kind: "normalize",
+        };
+        let serialized = serde_json::to_value(command).expect("serialize normalizer command");
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../packages/ai/fixtures/normalizer-command-v1.json"
+        ))
+        .expect("parse shared normalizer command fixture");
+
+        assert_eq!(serialized, fixture);
+    }
+
+    #[test]
     fn maps_platform_and_document_render_failures_separately() {
         assert_eq!(
             document_render_error(io::Error::from(io::ErrorKind::Unsupported)).code(),

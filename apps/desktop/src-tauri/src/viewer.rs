@@ -92,7 +92,7 @@ pub(crate) fn render_image_document(
 }
 
 pub(crate) fn validate_image_container(image: &[u8], mime_type: &str) -> io::Result<()> {
-    let _ = render_image_preview_png(image, mime_type)?;
+    let _ = render_image_pixels(image, mime_type)?;
     Ok(())
 }
 
@@ -102,6 +102,22 @@ pub(crate) fn render_image_preview_png(
 ) -> io::Result<Zeroizing<Vec<u8>>> {
     let rendered = render_image_pixels(image, mime_type)?;
     rendered_png_bytes(&rendered)
+}
+
+pub(crate) fn pdf_password_text(password: &[u8]) -> io::Result<&str> {
+    let password = std::str::from_utf8(password).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "PDF password must be valid UTF-8",
+        )
+    })?;
+    if password.contains('\0') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "PDF password contains a null byte",
+        ));
+    }
+    Ok(password)
 }
 
 fn rendered_png_bytes(rendered: &RenderedPixels) -> io::Result<Zeroizing<Vec<u8>>> {
@@ -287,7 +303,9 @@ fn render_image_pixels(image: &[u8], mime_type: &str) -> io::Result<RenderedPixe
     if color_space.is_null() {
         return Err(io::Error::other("Core Graphics color space failed"));
     }
-    let mut pixels = vec![0_u8; pixel_len];
+    // PNG output uses straight alpha. Draw onto opaque white so Core Graphics'
+    // premultiplied bitmap bytes cannot be encoded as darkened straight-alpha colors.
+    let mut pixels = vec![0xff_u8; pixel_len];
     let context = unsafe {
         CGBitmapContextCreate(
             pixels.as_mut_ptr().cast(),
@@ -508,12 +526,8 @@ impl PdfDocument {
     }
 
     fn unlock(&self, password: &[u8]) -> io::Result<bool> {
-        let password = CString::new(password).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "PDF password contains a null byte",
-            )
-        })?;
+        let password = CString::new(pdf_password_text(password)?)
+            .expect("validated PDF password has no null byte");
         Ok(unsafe { CGPDFDocumentUnlockWithPassword(self.document, password.as_ptr()) })
     }
 }
@@ -669,6 +683,32 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn composites_transparent_image_evidence_onto_opaque_white() {
+        let rendered = render_image_document(&synthetic_png_fixture(), "image/png", 1)
+            .expect("render transparent PNG evidence");
+        let png = STANDARD
+            .decode(&rendered.png_base64)
+            .expect("decode rendered image PNG");
+        let decoder = png::Decoder::new(Cursor::new(png));
+        let mut reader = decoder.read_info().expect("read rendered PNG info");
+        let mut pixels = vec![
+            0;
+            reader
+                .output_buffer_size()
+                .expect("rendered PNG buffer size")
+        ];
+        let info = reader.next_frame(&mut pixels).expect("decode rendered PNG");
+        let pixels = &pixels[..info.buffer_size()];
+
+        assert!(
+            pixels.chunks_exact(4).all(|pixel| {
+                pixel[3] == 0xff && pixel[..3].iter().all(|component| *component >= 0xb0)
+            }),
+            "semi-transparent gray must remain light after compositing onto opaque white"
+        );
+    }
+
+    #[test]
     fn accepts_a_jpeg_primary_image_with_trailing_motion_bytes() {
         let mut jpeg = synthetic_jpeg_fixture();
         jpeg.extend_from_slice(b"motion-photo-video");
@@ -773,6 +813,26 @@ pub(crate) mod tests {
             .expect("render unlocked PDF");
         assert_eq!(rendered.page_count, 1);
         assert_eq!(rendered.page_number, 1);
+    }
+
+    #[test]
+    fn applies_one_utf8_without_null_bytes_pdf_password_contract() {
+        assert_eq!(
+            pdf_password_text(b"statement-password").expect("valid PDF password"),
+            "statement-password"
+        );
+        assert_eq!(
+            pdf_password_text(b"bad\0password")
+                .expect_err("reject interior null byte")
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            pdf_password_text(&[0xff])
+                .expect_err("reject non-UTF-8 password bytes")
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
     }
 
     #[test]

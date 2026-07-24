@@ -565,6 +565,37 @@ describe("App manual import orchestration", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).toContain("Statement unlocked");
     expect(container.textContent).toContain("View document");
+    expect(container.textContent).not.toContain("Routing remains unavailable");
+    await click("Check routing");
+    expect(api.normalizeSourceDocument).toHaveBeenCalledWith("document-1");
+  });
+
+  it("reports a saved-password unlock as routeable for the Vault session", async () => {
+    let unlocked = false;
+    const api = createApi({
+      listStatementPasswordSources: vi.fn(async () => [{
+        displayName: "DBS",
+        hasSavedPassword: true,
+        moneySourceId: "source-dbs",
+      }]),
+      listUnassignedSourceDocuments: vi.fn(async () => [
+        sourceDocument({
+          documentStatus: unlocked ? "protected_unlocked" : "password_required",
+        }),
+      ]),
+      trySavedStatementPassword: vi.fn(async () => {
+        unlocked = true;
+        return "unlocked" as const;
+      }),
+    });
+
+    await mount(api);
+    await click("Unlock");
+
+    expect(container.textContent).toContain(
+      "This statement is ready to view and route for this Vault session.",
+    );
+    expect(container.textContent).not.toContain("Routing remains unavailable");
     await click("Check routing");
     expect(api.normalizeSourceDocument).toHaveBeenCalledWith("document-1");
   });

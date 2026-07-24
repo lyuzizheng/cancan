@@ -76,6 +76,10 @@ impl PreparedSource {
     pub(crate) fn file_sha256(&self) -> &str {
         &self.file_sha256
     }
+
+    pub(crate) fn plaintext(&self) -> &[u8] {
+        &self.plaintext
+    }
 }
 
 #[derive(Debug)]
@@ -108,17 +112,6 @@ impl FileVault {
             file_sha256,
             plaintext,
         })
-    }
-
-    pub(crate) fn prepare_for_mime(
-        source_path: &Path,
-        mime_type: &str,
-    ) -> io::Result<PreparedSource> {
-        let source = Self::prepare(source_path)?;
-        if matches!(mime_type, "image/png" | "image/jpeg") {
-            crate::viewer::validate_image_container(&source.plaintext, mime_type)?;
-        }
-        Ok(source)
     }
 
     pub(crate) fn store_prepared(

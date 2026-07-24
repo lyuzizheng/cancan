@@ -1,6 +1,14 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { parseWorkerCommand } from "./worker-protocol";
+
+const rustNormalizerCommandFixture: unknown = JSON.parse(
+  readFileSync(
+    new URL("../fixtures/normalizer-command-v1.json", import.meta.url),
+    "utf8",
+  ),
+);
 
 function validCommand() {
   return {
@@ -36,6 +44,14 @@ describe("normalizer worker protocol", () => {
     });
   });
 
+  it("accepts the exact command fixture serialized by Rust", () => {
+    expect(parseWorkerCommand(rustNormalizerCommandFixture)).toMatchObject({
+      type: "normalize",
+      documentId: "document-smoke",
+      requestId: "build-smoke",
+    });
+  });
+
   it("accepts image OCR text without page or coordinate claims", () => {
     const command = validCommand();
     command.extractionBundle.mimeType = "image/png";
@@ -52,6 +68,21 @@ describe("normalizer worker protocol", () => {
       type: "normalize",
       documentId: "document-fixture",
     });
+  });
+
+  it("rejects observation kinds without a current producer", () => {
+    const command = validCommand();
+    command.extractionBundle.observations[0] = {
+      id: "pdf-page-1-region",
+      kind: "document_region",
+      page: 1,
+      text: "",
+      boundingBox: { x: 0, y: 0, width: 1, height: 1 },
+      engine: "fixture",
+      engineVersion: "1",
+    } as never;
+
+    expect(parseWorkerCommand(command)).toBeUndefined();
   });
 
   it("rejects missing, lossy, and malformed extraction bundles", () => {
@@ -116,34 +147,37 @@ describe("normalizer worker protocol", () => {
       engineVersion: "fixture",
     } as never;
 
-    const negativeRegion = validCommand();
-    negativeRegion.extractionBundle.observations[0] = {
-      id: "pdf-page-1-region",
-      kind: "document_region",
+    const negativeBox = validCommand();
+    negativeBox.extractionBundle.mimeType = "application/pdf";
+    negativeBox.extractionBundle.observations[0] = {
+      id: "pdf-page-1-ocr-text",
+      kind: "ocr_text",
       page: 1,
-      text: "",
+      text: "statement",
       boundingBox: { x: -1, y: 0, width: 1, height: 1 },
       engine: "vision",
       engineVersion: "fixture",
     } as never;
 
-    const zeroSizeRegion = validCommand();
-    zeroSizeRegion.extractionBundle.observations[0] = {
-      id: "pdf-page-1-region",
-      kind: "document_region",
+    const zeroSizeBox = validCommand();
+    zeroSizeBox.extractionBundle.mimeType = "application/pdf";
+    zeroSizeBox.extractionBundle.observations[0] = {
+      id: "pdf-page-1-ocr-text",
+      kind: "ocr_text",
       page: 1,
-      text: "",
+      text: "statement",
       boundingBox: { x: 0, y: 0, width: 0, height: 1 },
       engine: "vision",
       engineVersion: "fixture",
     } as never;
 
-    const oversizedRegion = validCommand();
-    oversizedRegion.extractionBundle.observations[0] = {
-      id: "pdf-page-1-region",
-      kind: "document_region",
+    const oversizedBox = validCommand();
+    oversizedBox.extractionBundle.mimeType = "application/pdf";
+    oversizedBox.extractionBundle.observations[0] = {
+      id: "pdf-page-1-ocr-text",
+      kind: "ocr_text",
       page: 1,
-      text: "",
+      text: "statement",
       boundingBox: { x: 0.75, y: 0, width: 0.5, height: 1 },
       engine: "vision",
       engineVersion: "fixture",
@@ -151,8 +185,8 @@ describe("normalizer worker protocol", () => {
 
     expect(parseWorkerCommand(spanPastText)).toBeUndefined();
     expect(parseWorkerCommand(invalidConfidence)).toBeUndefined();
-    expect(parseWorkerCommand(negativeRegion)).toBeUndefined();
-    expect(parseWorkerCommand(zeroSizeRegion)).toBeUndefined();
-    expect(parseWorkerCommand(oversizedRegion)).toBeUndefined();
+    expect(parseWorkerCommand(negativeBox)).toBeUndefined();
+    expect(parseWorkerCommand(zeroSizeBox)).toBeUndefined();
+    expect(parseWorkerCommand(oversizedBox)).toBeUndefined();
   });
 });

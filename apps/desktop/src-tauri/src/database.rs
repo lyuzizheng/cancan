@@ -1,4 +1,7 @@
-use crate::vault::{FileVault, StoredFile};
+use crate::{
+    vault::{FileVault, StoredFile},
+    viewer::validate_image_container,
+};
 use hkdf::Hkdf;
 use rand::{RngCore, rngs::OsRng};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
@@ -231,7 +234,10 @@ impl ManualImportStore {
         restore_deleted_document_id: Option<&str>,
     ) -> StoreResult<SourceDocumentImportOutcome> {
         validate_import(input)?;
-        let source = FileVault::prepare_for_mime(input.source_path, input.mime_type)?;
+        let source = FileVault::prepare(input.source_path)?;
+        if matches!(input.mime_type, "image/png" | "image/jpeg") {
+            validate_image_container(source.plaintext(), input.mime_type)?;
+        }
         let existing = find_exact_document(&self.connection, source.file_sha256())?;
         match (existing.as_ref(), restore_deleted_document_id) {
             (Some(existing), None) if existing.file_state == "deleted" => {
@@ -334,27 +340,7 @@ impl ManualImportStore {
              WHERE money_source_id = ?1 \
              ORDER BY received_at DESC, id",
         )?;
-        let rows = statement.query_map([money_source_id], |row| {
-            let byte_size: i64 = row.get(6)?;
-            Ok(SourceDocumentView {
-                byte_size: u64::try_from(byte_size).map_err(|error| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Integer,
-                        Box::new(error),
-                    )
-                })?,
-                document_id: row.get(0)?,
-                money_source_id: row.get(1)?,
-                file_sha256: row.get(2)?,
-                semantic_document_key: row.get(3)?,
-                original_filename: row.get(4)?,
-                mime_type: row.get(5)?,
-                encrypted_locator: row.get(7)?,
-                file_state: row.get(8)?,
-                received_at: row.get(9)?,
-            })
-        })?;
+        let rows = statement.query_map([money_source_id], source_document_from_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
