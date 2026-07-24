@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -9,6 +9,9 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(packageRoot, "../..");
 const dist = join(packageRoot, "dist");
 const binaries = join(repoRoot, "apps", "desktop", "src-tauri", "binaries");
+const normalizerCommandFixture = JSON.parse(
+  readFileSync(join(packageRoot, "fixtures", "normalizer-command-v1.json"), "utf8"),
+);
 mkdirSync(dist, { recursive: true });
 mkdirSync(binaries, { recursive: true });
 
@@ -77,46 +80,7 @@ const smoke = spawnSync(binary, [], {
     requestId: "invalid-build-smoke",
     documentId: "document-smoke",
     content: "raw statement text",
-  })}\n${JSON.stringify({
-    type: "normalize",
-    requestId: "build-smoke",
-    documentId: "document-smoke",
-    extractionBundle: {
-      sourceDocumentId: "document-smoke",
-      fileSha256: "a".repeat(64),
-      mimeType: "text/csv",
-      metadata: { extractionVersion: "native-observations-v1", observationCount: 3 },
-      observations: [
-        {
-          id: "csv-row-1-column-1",
-          kind: "table_cell",
-          row: 1,
-          column: 1,
-          text: "CANCAN_SYNTHETIC_STATEMENT_V1",
-          engine: "rust-csv",
-          engineVersion: "1.4.0",
-        },
-        {
-          id: "csv-row-2-column-1",
-          kind: "table_cell",
-          row: 2,
-          column: 1,
-          text: "provider=synthetic-bank",
-          engine: "rust-csv",
-          engineVersion: "1.4.0",
-        },
-        {
-          id: "csv-row-3-column-1",
-          kind: "table_cell",
-          row: 3,
-          column: 1,
-          text: "statement_id=transfer-2026-07",
-          engine: "rust-csv",
-          engineVersion: "1.4.0",
-        },
-      ],
-    },
-  })}\n{\"type\":\"shutdown\"}\n`,
+  })}\n${JSON.stringify(normalizerCommandFixture)}\n{\"type\":\"shutdown\"}\n`,
 });
 if (smoke.status !== 0) {
   throw new Error(`sidecar smoke failed with status ${smoke.status}`);

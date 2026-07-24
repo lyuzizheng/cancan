@@ -149,7 +149,10 @@ export function createSyntheticTransferFixture(): {
       fileSha256: "b".repeat(64),
       mimeType: "text/csv",
       observations,
-      metadata: {},
+      metadata: {
+        extractionVersion: "native-observations-v1",
+        observationCount: observations.length,
+      },
     },
     proposal: {
       document: { providerKey: "synthetic-bank", documentType: "transfer_export" },

@@ -32,7 +32,6 @@ const OBSERVATION_KINDS = new Set([
   "native_text",
   "ocr_text",
   "table_cell",
-  "document_region",
 ]);
 
 export function parseWorkerCommand(value: unknown): WorkerCommand | undefined {
@@ -156,15 +155,6 @@ function isSourceObservation(value: unknown, mimeType: unknown): boolean {
       (mimeType === "image/png" || mimeType === "image/jpeg"
         ? value.page === undefined && value.boundingBox === undefined
         : value.page !== undefined && value.boundingBox !== undefined)
-    );
-  }
-  if (value.kind === "document_region") {
-    return (
-      value.page !== undefined &&
-      value.boundingBox !== undefined &&
-      value.row === undefined &&
-      value.column === undefined &&
-      value.textSpan === undefined
     );
   }
   return false;

@@ -640,7 +640,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       if (result === "unlocked") {
         setUnlockingDocument(null);
         setNotice({
-          body: "The saved password worked. This statement is ready to view for this Vault session. Routing remains unavailable for protected statements.",
+          body: "The saved password worked. This statement is ready to view and route for this Vault session.",
           tone: "success",
           title: "Statement unlocked",
         });
@@ -746,8 +746,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       setUnlockingDocument(null);
       setNotice({
         body: updateSavedPassword
-          ? "The verified password replaced this Money Source’s saved password. This statement is ready to view; routing remains unavailable for protected statements."
-          : "This statement is ready to view until the Vault locks. Routing remains unavailable for protected statements.",
+          ? "The verified password replaced this Money Source’s saved password. This statement is ready to view and route."
+          : "This statement is ready to view and route until the Vault locks.",
         tone: "success",
         title: "Statement unlocked",
       });

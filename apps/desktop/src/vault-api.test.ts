@@ -27,9 +27,15 @@ describe("Vault API", () => {
 
   it("uses only the established command names and safe request fields", async () => {
     const calls: Array<[string, Record<string, unknown> | undefined]> = [];
+    const listCommands = new Set([
+      "list_money_sources",
+      "list_source_documents",
+      "list_statement_password_sources",
+      "list_unassigned_source_documents",
+    ]);
     const invoke = (async (command, args) => {
       calls.push([command, args]);
-      return command.startsWith("list_") ? [] : null;
+      return listCommands.has(command) ? [] : null;
     }) as TauriInvoke;
     const listenedEvents: string[] = [];
     const subscribe = (async (event) => {

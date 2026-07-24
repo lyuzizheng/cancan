@@ -4,7 +4,9 @@ use std::{collections::BTreeMap, io};
 use zeroize::{Zeroize, Zeroizing};
 
 #[cfg(target_os = "macos")]
-use crate::viewer::{render_image_preview_png, render_pdf_page_png_with_password};
+use crate::viewer::{
+    pdf_password_text, render_image_preview_png, render_pdf_page_png_with_password,
+};
 
 const CSV_ENGINE: &str = "rust-csv";
 const CSV_ENGINE_VERSION: &str = "1.4.0";
@@ -13,13 +15,11 @@ const PDF_ENGINE: &str = "pdfkit";
 const PDF_ENGINE_VERSION: &str = "macos-page-string-v1";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[allow(dead_code)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SourceObservationKind {
     NativeText,
     OcrText,
     TableCell,
-    DocumentRegion,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -230,7 +230,8 @@ fn extract_native_pdf_observations(
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid PDF evidence"))?;
     if unsafe { document.isLocked() } {
         let password = password
-            .and_then(|value| std::str::from_utf8(value).ok())
+            .map(pdf_password_text)
+            .transpose()?
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::PermissionDenied, "PDF password required")
             })?;
@@ -288,39 +289,46 @@ where
                 && native_text_needs_ocr(&observation.text)
         })
         .map(|observation| {
-            observation.page.ok_or_else(|| {
+            let page = observation.page.ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
                     "native PDF text observation is missing a page number",
                 )
-            })
+            })?;
+            Ok((page, !native_text_has_usable_content(&observation.text)))
         })
         .collect::<io::Result<Vec<_>>>()?;
 
-    for page in pages_needing_ocr {
-        let rendered_page_png = render_page(page)?;
-        let recognized_text = engine.recognize_page(page, &rendered_page_png)?;
-        let ocr_observations = recognized_text
-            .into_iter()
-            .enumerate()
-            .map(|(index, mut block)| {
-                let bounding_box = vision_bounding_box_to_top_left(block.vision_bounding_box)?;
-                Ok(SourceObservation {
-                    id: format!("pdf-page-{page}-ocr-text-{}", index + 1),
-                    kind: SourceObservationKind::OcrText,
-                    page: Some(page),
-                    row: None,
-                    column: None,
-                    text: std::mem::take(&mut block.text),
-                    text_span: None,
-                    bounding_box: Some(bounding_box),
-                    engine: engine.engine().to_owned(),
-                    engine_version: engine.engine_version().to_owned(),
-                    confidence: Some(block.confidence),
+    for (page, ocr_required) in pages_needing_ocr {
+        let ocr_observations = (|| {
+            let rendered_page_png = render_page(page)?;
+            let recognized_text = engine.recognize_page(page, &rendered_page_png)?;
+            recognized_text
+                .into_iter()
+                .enumerate()
+                .map(|(index, mut block)| {
+                    let bounding_box = vision_bounding_box_to_top_left(block.vision_bounding_box)?;
+                    Ok(SourceObservation {
+                        id: format!("pdf-page-{page}-ocr-text-{}", index + 1),
+                        kind: SourceObservationKind::OcrText,
+                        page: Some(page),
+                        row: None,
+                        column: None,
+                        text: std::mem::take(&mut block.text),
+                        text_span: None,
+                        bounding_box: Some(bounding_box),
+                        engine: engine.engine().to_owned(),
+                        engine_version: engine.engine_version().to_owned(),
+                        confidence: Some(block.confidence),
+                    })
                 })
-            })
-            .collect::<io::Result<Vec<_>>>()?;
-        observations.extend(ocr_observations);
+                .collect::<io::Result<Vec<_>>>()
+        })();
+        match ocr_observations {
+            Ok(ocr_observations) => observations.extend(ocr_observations),
+            Err(error) if ocr_required => return Err(error),
+            Err(_) => {}
+        }
     }
 
     Ok(observations)
@@ -366,15 +374,21 @@ where
 }
 
 fn native_text_needs_ocr(text: &str) -> bool {
-    text.trim().is_empty()
-        || text.chars().any(|character| {
-            matches!(character, '\0' | '\u{fffd}')
-                || (character.is_control()
-                    && !matches!(
-                        character,
-                        '\t' | '\n' | '\u{000b}' | '\u{000c}' | '\r' | '\u{0085}'
-                    ))
-        })
+    text.trim().is_empty() || text.chars().any(is_broken_native_character)
+}
+
+fn native_text_has_usable_content(text: &str) -> bool {
+    text.chars()
+        .any(|character| !character.is_whitespace() && !is_broken_native_character(character))
+}
+
+fn is_broken_native_character(character: char) -> bool {
+    matches!(character, '\0' | '\u{fffd}')
+        || (character.is_control()
+            && !matches!(
+                character,
+                '\t' | '\n' | '\u{000b}' | '\u{000c}' | '\r' | '\u{0085}'
+            ))
 }
 
 fn vision_bounding_box_to_top_left(vision_bounding_box: BoundingBox) -> io::Result<BoundingBox> {
@@ -671,7 +685,29 @@ mod tests {
     }
 
     #[test]
-    fn vision_failure_fails_closed_without_relabeling_native_text() {
+    fn broken_nonempty_native_text_survives_vision_failure() {
+        let native = native_text_observation(1, "Statement total 123.45\u{fffd}");
+        let mut engine = FakeOcrEngine {
+            blocks: Vec::new(),
+            calls: Vec::new(),
+            fails: true,
+        };
+
+        let observations = extract_pdf_observations_with_ocr(
+            vec![native],
+            |_| Ok(Zeroizing::new(vec![0x89, b'P', b'N', b'G'])),
+            &mut engine,
+        )
+        .expect("preserve usable native text when supplemental OCR fails");
+
+        assert_eq!(engine.calls, vec![1]);
+        assert_eq!(observations.len(), 1);
+        assert_eq!(observations[0].kind, SourceObservationKind::NativeText);
+        assert_eq!(observations[0].text, "Statement total 123.45\u{fffd}");
+    }
+
+    #[test]
+    fn unusable_native_text_vision_failure_fails_closed() {
         let native = native_text_observation(1, "\0");
         let mut engine = FakeOcrEngine {
             blocks: Vec::new(),
@@ -684,7 +720,7 @@ mod tests {
             |_| Ok(Zeroizing::new(vec![0x89, b'P', b'N', b'G'])),
             &mut engine,
         )
-        .expect_err("OCR failure must reject the extraction bundle");
+        .expect_err("OCR failure must reject a page without usable native text");
 
         assert_eq!(error.kind(), io::ErrorKind::Other);
         assert_eq!(engine.calls, vec![1]);
@@ -744,6 +780,8 @@ mod tests {
         assert!(native_text_needs_ocr("bad\0text"));
         assert!(native_text_needs_ocr("bad\u{fffd}text"));
         assert!(native_text_needs_ocr("bad\u{001b}text"));
+        assert!(!native_text_has_usable_content("\0\u{fffd}\u{001b}"));
+        assert!(native_text_has_usable_content("good\u{fffd}"));
         assert!(!native_text_needs_ocr(
             "native text\nwith normal line breaks"
         ));
