@@ -7,13 +7,15 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 ### Completed
 
 - Merged the mock-only `cloud-ocr-provider-contract` checkpoint. It now selects only a complete dedicated OCR or analyser configuration, builds the fixed one-bounded-PNG OpenAI-compatible request, parses plain transcription text, and redacts credentials and provider bodies from contract errors.
+- Merged `cloud-ocr-transport`. The completed checkpoint executes the accepted request through an injected fetch boundary and proves deterministic success plus redacted network, non-2xx, and malformed-response failures. It does not add credential storage/loading, app/runtime wiring, provider-specific parsing, a live request, or an opt-in smoke.
 - Reconciled the cumulative #32–#35 review with the shipped manual-evidence path. Protected-PDF unlock notices now match available routing, the executable worker rejects unproduced `document_region` observations, and one shared golden command fixture is asserted by Rust serialization, the TypeScript parser, and the packaged-sidecar smoke.
 - Kept OCR fail-closed when a page has no usable native content, while allowing usable non-empty native text to continue through grounding and validation when only supplemental OCR fails. The intended broader OCR-planning contract remains canonical and the current marker-only subset is documented as implementation state.
 - Unified PDF password byte validation across PDFKit extraction and Core Graphics rendering, moved image validation out of the file-vault storage primitive, avoided validation-only PNG encoding, composited transparent image evidence onto opaque white, and removed the duplicate source-document row mapper.
+- Ran the evidence-only `local-inbox-readiness` Rust spike against synthetic files in an ordinary macOS temporary folder. It passes no-follow handle-bound stable capture, size/mtime/inode mutation rejection, a device-identity comparison boundary, fresh rescan recovery, SHA-256 tombstone suppression, source preservation, and fail-closed local/injected read errors. Fresh rescan recovery does not prove app/process-restart lifecycle. The supported iCloud Drive path is absent or unreadable on this machine, so the result does not choose a settle interval, remove the Local Inbox filesystem-readiness blocker, or authorize production folder behavior.
 
 ### Next
 
-- Complete the narrow `cloud-ocr-transport` slice: execute the accepted request through an injected fetch boundary and prove success and redacted transport failures with mocked fetch. Do not add credential storage/loading, app wiring, provider-specific parsing, a live request, or a parallel test-only smoke input path. After it lands, the next candidate is the evidence-only `local-inbox-readiness` investigation; broader runtime/UI file splitting and PDF/session performance work remain separate evidence-driven changes.
+- Obtain a separate supported-iCloud-Drive run before removing the `local-inbox-readiness` blocker or selecting a settle interval. Do not add watched-folder production behavior, UI, database, jobs, provider-specific cloud wiring, or downstream automation from the ordinary-local result.
 
 ## 2026-07-23
 
