@@ -8,3 +8,9 @@ cd "$ROOT"
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
+
+PREFLIGHT_OUTPUT="$(xcrun swift scripts/icloud-download-status.swift --self-test)"
+printf '%s\n' "$PREFLIGHT_OUTPUT"
+/usr/bin/grep -Fqx 'self-test=passed' <<<"$PREFLIGHT_OUTPUT"
+
+scripts/run-local-evidence.sh

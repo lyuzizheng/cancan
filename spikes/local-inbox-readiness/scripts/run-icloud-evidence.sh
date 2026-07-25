@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECTED_ICLOUD_ROOT="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Cancan"
 BRCTL_TIMEOUT_SECONDS=10
-UPLOAD_READY_POLL_ATTEMPTS=15
+STATUS_POLL_ATTEMPTS=15
 
 : "${CANCAN_ICLOUD_EVIDENCE_ROOT:?Set this to the exact iCloud Drive CanCan root to opt in.}"
 if [[ "$CANCAN_ICLOUD_EVIDENCE_ROOT" != "$EXPECTED_ICLOUD_ROOT" ]]; then
@@ -42,7 +42,7 @@ extract_value() {
       fi
       found="$value"
     fi
-  done <<< "$output"
+  done <<<"$output"
 
   [[ -n "$found" ]] || return 1
   printf '%s\n' "$found"
@@ -51,10 +51,71 @@ extract_value() {
 require_line() {
   local output="$1"
   local expected="$2"
-  if ! /usr/bin/grep -Fqx -- "$expected" <<< "$output"; then
+  if ! /usr/bin/grep -Fqx -- "$expected" <<<"$output"; then
     printf 'Expected runner output %s, got:\n%s\n' "$expected" "$output" >&2
     exit 1
   fi
+}
+
+require_settle_interval() {
+  local output="$1"
+  local milliseconds
+
+  milliseconds="$(extract_value settle-wait-milliseconds "$output")"
+  if (( milliseconds < 2000 )); then
+    printf 'Capture waited only %sms; expected at least 2000ms.\n' "$milliseconds" >&2
+    exit 1
+  fi
+}
+
+read_preflight() {
+  local file="$1"
+
+  if ! command -v xcrun >/dev/null 2>&1; then
+    printf 'xcrun is unavailable; Foundation preflight evidence cannot run.\n' >&2
+    return 1
+  fi
+  xcrun swift scripts/icloud-download-status.swift "$file"
+}
+
+wait_for_preflight() {
+  local file="$1"
+  local expected_status="$2"
+  local expected_decision="$3"
+  local attempt
+
+  for ((attempt = 1; attempt <= STATUS_POLL_ATTEMPTS; attempt += 1)); do
+    PREFLIGHT_OUTPUT="$(read_preflight "$file")"
+    if /usr/bin/grep -Fqx "download-status=$expected_status" <<<"$PREFLIGHT_OUTPUT" \
+      && /usr/bin/grep -Fqx "capture-decision=$expected_decision" <<<"$PREFLIGHT_OUTPUT"; then
+      return 0
+    fi
+    if [[ "$attempt" -lt "$STATUS_POLL_ATTEMPTS" ]]; then
+      sleep 1
+    fi
+  done
+
+  return 1
+}
+
+wait_for_upload_ready() {
+  local file="$1"
+  local attempt
+
+  for ((attempt = 1; attempt <= STATUS_POLL_ATTEMPTS; attempt += 1)); do
+    PREFLIGHT_OUTPUT="$(read_preflight "$file")"
+    if /usr/bin/grep -Fqx 'download-status=current' <<<"$PREFLIGHT_OUTPUT" \
+      && /usr/bin/grep -Fqx 'capture-decision=ready' <<<"$PREFLIGHT_OUTPUT" \
+      && /usr/bin/grep -Fqx 'uploaded=true' <<<"$PREFLIGHT_OUTPUT" \
+      && /usr/bin/grep -Fqx 'uploading=false' <<<"$PREFLIGHT_OUTPUT"; then
+      return 0
+    fi
+    if [[ "$attempt" -lt "$STATUS_POLL_ATTEMPTS" ]]; then
+      sleep 1
+    fi
+  done
+
+  return 1
 }
 
 run_brctl() {
@@ -106,134 +167,82 @@ run_brctl() {
   fi
 }
 
-read_download_status() {
-  local file="$1"
-  local status_output status
-
-  if ! command -v xcrun >/dev/null 2>&1; then
-    printf 'download-status-tool=unavailable\n'
-    return
-  fi
-
-  if status_output="$(xcrun swift scripts/icloud-download-status.swift "$file" 2>&1)"; then
-    printf 'download-status-tool=available\n%s\n' "$status_output"
-  else
-    status=$?
-    printf 'download-status-tool=failed\n'
-    printf 'download-status-tool-exit=%s\n' "$status"
-    printf '%s\n' "$status_output"
-  fi
-}
-
-wait_for_upload_ready() {
-  local file="$1"
-  local attempt
-
-  UPLOAD_READY="unproven"
-  for ((attempt = 1; attempt <= UPLOAD_READY_POLL_ATTEMPTS; attempt += 1)); do
-    UPLOAD_STATUS="$(read_download_status "$file")"
-    if /usr/bin/grep -Fqx 'download-status-tool=available' <<< "$UPLOAD_STATUS" \
-      && /usr/bin/grep -Fqx 'uploaded=true' <<< "$UPLOAD_STATUS" \
-      && /usr/bin/grep -Fqx 'uploading=false' <<< "$UPLOAD_STATUS"; then
-      UPLOAD_READY="observed"
-      return
-    fi
-    if ! /usr/bin/grep -Fqx 'download-status-tool=available' <<< "$UPLOAD_STATUS"; then
-      return
-    fi
-    if [[ "$attempt" -lt "$UPLOAD_READY_POLL_ATTEMPTS" ]]; then
-      sleep 1
-    fi
-  done
-
-  UPLOAD_READY="timed-out"
-}
-
 CREATE_OUTPUT="$(cargo run --quiet --locked --bin icloud-evidence -- create "$CANCAN_ICLOUD_EVIDENCE_ROOT")"
 printf '%s\n' "$CREATE_OUTPUT"
 RUN_DIRECTORY="$(extract_value run-directory "$CREATE_OUTPUT")"
 RUN_TOKEN="$(extract_value run-token "$CREATE_OUTPUT")"
 
-STABLE_FILE="$RUN_DIRECTORY/stable.pdf"
-STABLE_EXPECTED="$RUN_DIRECTORY/stable.expected"
-STABLE_STATE="$RUN_DIRECTORY/stable.snapshot"
-printf '%%PDF-1.7\nsynthetic stable evidence\n' >"$STABLE_FILE"
-printf '%%PDF-1.7\nsynthetic stable evidence\n' >"$STABLE_EXPECTED"
-
-STABLE_FIRST="$(cargo run --quiet --locked --bin icloud-evidence -- snapshot "$STABLE_FILE" "$STABLE_STATE")"
-STABLE_CAPTURE="$(cargo run --quiet --locked --bin icloud-evidence -- capture "$STABLE_FILE" "$STABLE_STATE")"
-printf '%s\n%s\n' "$STABLE_FIRST" "$STABLE_CAPTURE"
-require_line "$STABLE_CAPTURE" "outcome=captured"
-require_line "$STABLE_CAPTURE" "source-snapshot-preserved=true"
-if [[ "$(extract_value process-id "$STABLE_FIRST")" == "$(extract_value process-id "$STABLE_CAPTURE")" ]]; then
-  printf 'Snapshot and capture did not use independent CLI processes.\n' >&2
-  exit 1
-fi
-if ! cmp -s "$STABLE_FILE" "$STABLE_EXPECTED"; then
-  printf 'Stable capture changed synthetic source bytes.\n' >&2
-  exit 1
-fi
-printf 'stable-source-bytes-preserved=true\n'
-printf 'restart-rescan-process-boundary=true\n'
-
-CHANGING_FILE="$RUN_DIRECTORY/changing.pdf"
-CHANGING_STATE="$RUN_DIRECTORY/changing.snapshot"
-printf '%%PDF-1.7\nsynthetic first version\n' >"$CHANGING_FILE"
-CHANGING_FIRST="$(cargo run --quiet --locked --bin icloud-evidence -- snapshot "$CHANGING_FILE" "$CHANGING_STATE")"
-printf '%%PDF-1.7\nsynthetic changed version with more bytes\n' >"$CHANGING_FILE"
-CHANGING_CAPTURE="$(cargo run --quiet --locked --bin icloud-evidence -- capture "$CHANGING_FILE" "$CHANGING_STATE")"
-printf '%s\n%s\n' "$CHANGING_FIRST" "$CHANGING_CAPTURE"
-require_line "$CHANGING_CAPTURE" "outcome=deferred-changed-before-read"
-printf 'changing-source-not-captured-early=true\n'
-
 OFFLINE_FILE="$RUN_DIRECTORY/offline.pdf"
-OFFLINE_STATE="$RUN_DIRECTORY/offline.snapshot"
+OFFLINE_EXPECTED="$RUN_DIRECTORY/offline.expected"
 printf '%%PDF-1.7\nsynthetic iCloud eviction evidence\n' >"$OFFLINE_FILE"
+cp "$OFFLINE_FILE" "$OFFLINE_EXPECTED"
 
 printf 'brctl-timeout-seconds=%s\n' "$BRCTL_TIMEOUT_SECONDS"
-printf 'upload-ready-poll-attempts=%s\n' "$UPLOAD_READY_POLL_ATTEMPTS"
-wait_for_upload_ready "$OFFLINE_FILE"
-printf 'upload-ready=%s\n%s\n' "$UPLOAD_READY" "$UPLOAD_STATUS"
-run_brctl evict "$OFFLINE_FILE"
-EVICT_RESULT="$BRCTL_RESULT"
-STATUS_AFTER_EVICT="$(read_download_status "$OFFLINE_FILE")"
-printf '%s\n' "$STATUS_AFTER_EVICT"
-
-if [[ "$UPLOAD_READY" != "observed" ]]; then
-  printf 'placeholder-observation=evict-not-interpretable-upload-not-ready\n'
-elif [[ "$EVICT_RESULT" != "accepted" ]]; then
-  printf 'placeholder-observation=brctl-evict-%s\n' "$EVICT_RESULT"
-elif EVICT_SNAPSHOT="$(cargo run --quiet --locked --bin icloud-evidence -- snapshot "$OFFLINE_FILE" "$OFFLINE_STATE" 2>&1)"; then
-  STATUS_BEFORE_EVICT_CAPTURE="$(read_download_status "$OFFLINE_FILE")"
-  EVICT_CAPTURE="$(cargo run --quiet --locked --bin icloud-evidence -- capture "$OFFLINE_FILE" "$OFFLINE_STATE")"
-  STATUS_AFTER_EVICT_CAPTURE="$(read_download_status "$OFFLINE_FILE")"
-  printf '%s\n%s\n%s\n%s\n' \
-    "$EVICT_SNAPSHOT" "$STATUS_BEFORE_EVICT_CAPTURE" "$EVICT_CAPTURE" "$STATUS_AFTER_EVICT_CAPTURE"
-  if /usr/bin/grep -Fqx 'download-status=downloaded' <<< "$STATUS_BEFORE_EVICT_CAPTURE" \
-    || /usr/bin/grep -Fqx 'download-status=current' <<< "$STATUS_BEFORE_EVICT_CAPTURE"; then
-    printf 'placeholder-observation=placeholder-not-produced\n'
-  elif /usr/bin/grep -Fqx 'download-status=not-downloaded' <<< "$STATUS_BEFORE_EVICT_CAPTURE" \
-    && /usr/bin/grep -Fq 'outcome=deferred-' <<< "$EVICT_CAPTURE"; then
-    printf 'placeholder-observation=real-defer-observed\n'
-    if /usr/bin/grep -Fqx 'download-status=downloaded' <<< "$STATUS_AFTER_EVICT_CAPTURE" \
-      || /usr/bin/grep -Fqx 'download-status=current' <<< "$STATUS_AFTER_EVICT_CAPTURE"; then
-      printf 'placeholder-conclusion=download-status-transitioned-during-rust-capture-foundation-preflight-required\n'
-    fi
-  elif /usr/bin/grep -Fqx 'outcome=captured' <<< "$EVICT_CAPTURE"; then
-    printf 'placeholder-observation=no-defer-observed-capture-may-have-triggered-download\n'
-    if /usr/bin/grep -Fqx 'download-status=not-downloaded' <<< "$STATUS_BEFORE_EVICT_CAPTURE"; then
-      printf 'placeholder-conclusion=rust-protocol-does-not-guarantee-placeholder-defer-foundation-preflight-required\n'
-    fi
-  else
-    printf 'placeholder-observation=unproven\n'
-  fi
-else
-  printf '%s\n' "$EVICT_SNAPSHOT"
-  printf 'placeholder-observation=not-snapshottable-after-%s\n' "$EVICT_RESULT"
+printf 'status-poll-attempts=%s\n' "$STATUS_POLL_ATTEMPTS"
+if ! wait_for_upload_ready "$OFFLINE_FILE"; then
+  printf 'iCloud synthetic file did not reach uploaded/current readiness:\n%s\n' "$PREFLIGHT_OUTPUT" >&2
+  exit 1
 fi
+printf 'upload-ready=observed\n%s\n' "$PREFLIGHT_OUTPUT"
+
+run_brctl evict "$OFFLINE_FILE"
+if [[ "$BRCTL_RESULT" != "accepted" ]]; then
+  printf 'Could not request synthetic-file eviction: %s\n' "$BRCTL_RESULT" >&2
+  exit 1
+fi
+if ! wait_for_preflight "$OFFLINE_FILE" not-downloaded defer; then
+  printf 'Eviction did not produce an observable not-downloaded placeholder:\n%s\n' "$PREFLIGHT_OUTPUT" >&2
+  exit 1
+fi
+PREFLIGHT_BEFORE_SECOND_CHECK="$PREFLIGHT_OUTPUT"
+printf '%s\n' "$PREFLIGHT_BEFORE_SECOND_CHECK"
+require_line "$PREFLIGHT_BEFORE_SECOND_CHECK" 'capture-reason=not-downloaded'
+
+PREFLIGHT_AFTER_SECOND_CHECK="$(read_preflight "$OFFLINE_FILE")"
+printf '%s\n' "$PREFLIGHT_AFTER_SECOND_CHECK"
+require_line "$PREFLIGHT_AFTER_SECOND_CHECK" 'download-status=not-downloaded'
+require_line "$PREFLIGHT_AFTER_SECOND_CHECK" 'capture-decision=defer'
+require_line "$PREFLIGHT_AFTER_SECOND_CHECK" 'capture-reason=not-downloaded'
+printf 'placeholder-preflight-defer=true\n'
+printf 'placeholder-preflight-did-not-hydrate=true\n'
 
 run_brctl download "$OFFLINE_FILE"
-STATUS_AFTER_DOWNLOAD="$(read_download_status "$OFFLINE_FILE")"
-printf '%s\n' "$STATUS_AFTER_DOWNLOAD"
+if [[ "$BRCTL_RESULT" != "accepted" ]]; then
+  printf 'Could not request synthetic-file download: %s\n' "$BRCTL_RESULT" >&2
+  exit 1
+fi
+if ! wait_for_preflight "$OFFLINE_FILE" current ready; then
+  printf 'Explicit download did not reach current readiness:\n%s\n' "$PREFLIGHT_OUTPUT" >&2
+  exit 1
+fi
+printf 'explicit-download-current=true\n%s\n' "$PREFLIGHT_OUTPUT"
 
-printf 'live-iCloud-evidence-run=completed\n'
+OBSERVE_OUTPUT="$(cargo run --quiet --locked --bin icloud-evidence -- observe "$OFFLINE_FILE")"
+printf '%s\n' "$OBSERVE_OUTPUT"
+require_line "$OBSERVE_OUTPUT" 'phase=observe-only'
+require_line "$OBSERVE_OUTPUT" 'observation-snapshot-persisted=false'
+if find "$RUN_DIRECTORY" -maxdepth 1 -name '*.snapshot' -print -quit | /usr/bin/grep -q .; then
+  printf 'Observe process persisted scan state.\n' >&2
+  exit 1
+fi
+
+CAPTURE_OUTPUT="$(cargo run --quiet --locked --bin icloud-evidence -- restart-capture "$OFFLINE_FILE")"
+printf '%s\n' "$CAPTURE_OUTPUT"
+require_line "$CAPTURE_OUTPUT" 'phase=fresh-first-scan-after-restart'
+require_line "$CAPTURE_OUTPUT" 'restart-snapshot-imported=false'
+require_line "$CAPTURE_OUTPUT" 'settle-seconds=2'
+require_line "$CAPTURE_OUTPUT" 'outcome=captured'
+require_line "$CAPTURE_OUTPUT" 'source-snapshot-preserved=true'
+require_settle_interval "$CAPTURE_OUTPUT"
+if [[ "$(extract_value process-id "$OBSERVE_OUTPUT")" == "$(extract_value process-id "$CAPTURE_OUTPUT")" ]]; then
+  printf 'Observe and restart capture did not use independent processes.\n' >&2
+  exit 1
+fi
+if ! cmp -s "$OFFLINE_FILE" "$OFFLINE_EXPECTED"; then
+  printf 'Explicit-download capture changed source bytes.\n' >&2
+  exit 1
+fi
+printf 'restart-rescan-fresh-process=true\n'
+printf 'restart-snapshot-state-transferred=false\n'
+printf 'iCloud-source-bytes-identity-size-mtime-preserved=true\n'
+printf 'live-iCloud-evidence-run=passed\n'

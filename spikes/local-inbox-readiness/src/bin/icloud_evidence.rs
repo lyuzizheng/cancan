@@ -1,27 +1,23 @@
 use cancan_local_inbox_readiness::{
-    CaptureOutcome, FileIdentity, FileSnapshot, capture_after_second_scan, snapshot,
+    CaptureOutcome, FileSnapshot, capture_after_second_scan, snapshot,
 };
 use std::{
     collections::BTreeSet,
     env, fs,
     io::Write,
     path::{Path, PathBuf},
-    process,
-    time::{SystemTime, UNIX_EPOCH},
+    process, thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const ICLOUD_RELATIVE_ROOT: &str = "Library/Mobile Documents/com~apple~CloudDocs/Cancan";
 const RUN_DIRECTORY_PREFIX: &str = ".cancan-local-inbox-evidence-";
 const OWNER_MARKER: &str = ".cancan-local-inbox-evidence-owner";
+const SETTLE_INTERVAL: Duration = Duration::from_secs(2);
 
 struct CreatedRun {
     path: PathBuf,
     token: String,
-}
-
-struct SavedSnapshot {
-    snapshot: FileSnapshot,
-    first_process_id: u32,
 }
 
 fn main() {
@@ -50,48 +46,35 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), String> {
             println!("run-directory={}", created.path.display());
             println!("run-token={}", created.token);
         }
-        "snapshot" => {
-            let [file, state_file] = arguments else {
+        "observe" => {
+            let [file] = arguments else {
                 return Err(usage());
             };
             let file = Path::new(file);
-            let state_file = Path::new(state_file);
-            let first = snapshot(file)
-                .map_err(|error| format!("snapshot {}: {error:?}", file.display()))?;
-            save_snapshot(state_file, &first)?;
+            snapshot(file).map_err(|error| format!("snapshot {}: {error:?}", file.display()))?;
             println!("process-id={}", process::id());
+            println!("phase=observe-only");
+            println!("observation-snapshot-persisted=false");
         }
-        "capture" => {
-            let [file, state_file] = arguments else {
+        "restart-capture" => {
+            let [file] = arguments else {
                 return Err(usage());
             };
             let file = Path::new(file);
-            let saved = load_snapshot(Path::new(state_file))?;
-            let outcome = capture_after_second_scan(file, saved.snapshot.clone(), &BTreeSet::new());
-            println!("first-process-id={}", saved.first_process_id);
+            let first = snapshot(file)
+                .map_err(|error| format!("fresh first scan {}: {error:?}", file.display()))?;
             println!("process-id={}", process::id());
-            match outcome {
-                CaptureOutcome::Captured(captured) => {
-                    println!("outcome=captured");
-                    println!("captured-sha256={}", captured.sha256);
-                    println!(
-                        "source-snapshot-preserved={}",
-                        snapshot(file).is_ok_and(|after| after == saved.snapshot)
-                    );
-                }
-                CaptureOutcome::Deferred(reason) => {
-                    println!("outcome=deferred-{}", defer_reason_name(reason));
-                    println!("source-snapshot-preserved=false");
-                }
-                CaptureOutcome::Suppressed { sha256 } => {
-                    println!("outcome=suppressed");
-                    println!("captured-sha256={sha256}");
-                    println!(
-                        "source-snapshot-preserved={}",
-                        snapshot(file).is_ok_and(|after| after == saved.snapshot)
-                    );
-                }
-            }
+            println!("phase=fresh-first-scan-after-restart");
+            println!("restart-snapshot-imported=false");
+            println!("settle-seconds={}", SETTLE_INTERVAL.as_secs());
+            let wait_started = Instant::now();
+            thread::sleep(SETTLE_INTERVAL);
+            println!(
+                "settle-wait-milliseconds={}",
+                wait_started.elapsed().as_millis()
+            );
+            let outcome = capture_after_second_scan(file, first.clone(), &BTreeSet::new());
+            print_capture_outcome(file, &first, outcome);
         }
         "cleanup" => {
             let [run_directory, token] = arguments else {
@@ -112,7 +95,32 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "usage: icloud-evidence create <iCloud-root> | snapshot <file> <state-file> | capture <file> <state-file> | cleanup <run-directory> <run-token>".to_owned()
+    "usage: icloud-evidence create <iCloud-root> | observe <file> | restart-capture <file> | cleanup <run-directory> <run-token>".to_owned()
+}
+
+fn print_capture_outcome(file: &Path, first: &FileSnapshot, outcome: CaptureOutcome) {
+    match outcome {
+        CaptureOutcome::Captured(captured) => {
+            println!("outcome=captured");
+            println!("captured-sha256={}", captured.sha256);
+            println!(
+                "source-snapshot-preserved={}",
+                snapshot(file).is_ok_and(|after| after == *first)
+            );
+        }
+        CaptureOutcome::Deferred(reason) => {
+            println!("outcome=deferred-{}", defer_reason_name(reason));
+            println!("source-snapshot-preserved=false");
+        }
+        CaptureOutcome::Suppressed { sha256 } => {
+            println!("outcome=suppressed");
+            println!("captured-sha256={sha256}");
+            println!(
+                "source-snapshot-preserved={}",
+                snapshot(file).is_ok_and(|after| after == *first)
+            );
+        }
+    }
 }
 
 fn expected_icloud_root() -> Result<PathBuf, String> {
@@ -234,58 +242,6 @@ fn cleanup_run_directory(
     })
 }
 
-fn save_snapshot(state_file: &Path, snapshot: &FileSnapshot) -> Result<(), String> {
-    let mut state_file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(state_file)
-        .map_err(|error| format!("create snapshot state {}: {error}", state_file.display()))?;
-    writeln!(
-        state_file,
-        "{} {} {} {} {} {}",
-        snapshot.identity.device,
-        snapshot.identity.inode,
-        snapshot.size,
-        snapshot.modified_seconds,
-        snapshot.modified_nanoseconds,
-        process::id()
-    )
-    .map_err(|error| format!("write snapshot state: {error}"))
-}
-
-fn load_snapshot(state_file: &Path) -> Result<SavedSnapshot, String> {
-    let content = fs::read_to_string(state_file)
-        .map_err(|error| format!("read snapshot state {}: {error}", state_file.display()))?;
-    let mut values = content.split_whitespace();
-
-    Ok(SavedSnapshot {
-        snapshot: FileSnapshot {
-            identity: FileIdentity {
-                device: next_state_value(&mut values, "device")?,
-                inode: next_state_value(&mut values, "inode")?,
-            },
-            size: next_state_value(&mut values, "size")?,
-            modified_seconds: next_state_value(&mut values, "modified-seconds")?,
-            modified_nanoseconds: next_state_value(&mut values, "modified-nanoseconds")?,
-        },
-        first_process_id: next_state_value(&mut values, "first-process-id")?,
-    })
-}
-
-fn next_state_value<'a, T>(
-    values: &mut impl Iterator<Item = &'a str>,
-    key: &str,
-) -> Result<T, String>
-where
-    T: std::str::FromStr,
-{
-    values
-        .next()
-        .ok_or_else(|| format!("snapshot state is missing {key}"))?
-        .parse()
-        .map_err(|_| format!("snapshot state has an invalid {key}"))
-}
-
 fn defer_reason_name(reason: cancan_local_inbox_readiness::DeferReason) -> &'static str {
     match reason {
         cancan_local_inbox_readiness::DeferReason::ChangedBeforeRead => "changed-before-read",
@@ -358,5 +314,11 @@ mod tests {
         cleanup_run_directory(&created.path, &created.token, &authorized_root)
             .expect("cleanup created synthetic directory");
         assert!(!created.path.exists());
+    }
+
+    #[test]
+    fn restart_capture_uses_the_fixed_two_second_settle_interval() {
+        assert_eq!(SETTLE_INTERVAL, Duration::from_secs(2));
+        assert!(!usage().contains("snapshot <file> <state-file>"));
     }
 }

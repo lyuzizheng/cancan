@@ -72,7 +72,7 @@ The user puts supported statements only in `Inbox`. Future local automation obse
 
 The user may later change or disable the root. This contract does not invent migration or cleanup behavior, and CanCan never deletes old roots or their child directories.
 
-The root and its children remain outside the encrypted Vault and follow iCloud Drive's privacy and security model. A production implementation still needs its own folder-picker authorization/bookmark, native preflight, and watcher UI; this spec does not claim those are implemented or ready.
+The root and its children remain outside the encrypted Vault and follow iCloud Drive's privacy and security model. The readiness evidence selects a native preflight-before-Rust-open rule, but does not implement it in production. Production still needs its own folder-picker authorization/bookmark, native integration, and watcher UI.
 
 The root gives a simple phone flow:
 
@@ -91,10 +91,11 @@ observe only the authorized root's Inbox child
 scan on enable, app startup/unlock, manual refresh, and filesystem-change hints while the app runs
 accept only supported regular PDF/CSV/image files that can be opened read-only
 ignore directories, symlinks, hidden/temp/partial-suffix files, and unsupported types
-observe the same file identity, size, and modification time across two scans separated by the owning slice's tested settle interval
+observe the same file identity, size, and modification time across two scans separated by a fixed two-second settle interval
 after reading/hash, re-stat the file; if identity, size, or modification time changed, discard the bytes and retry later
 validate the supported container/header before Vault registration
 defer cloud placeholders, provider/offline errors, changing files, and unreadable files; retry on a later scan
+before Rust opens or reads an iCloud candidate, native preflight allows only `current`; `notDownloaded`, `downloaded` (possibly stale), unknown/nil, downloading, and provider errors defer
 use SHA-256 import idempotency, so rescans and duplicate channels are safe
 skip hashes whose Vault artifact was user-deleted; only an explicit Restore/Add confirmation may restore them
 copy into the encrypted Vault before processing
@@ -105,7 +106,7 @@ show that the selected root remains outside the CanCan Vault and follows iCloud 
 
 Filesystem notifications are a wake-up hint, not the source of truth; deterministic `Inbox` rescans provide recovery after sleep, app exit, or sync delay. Do not watch the whole Downloads folder by default.
 
-The exact settle interval and macOS cloud-placeholder behavior are implementation evidence, not a user setting. Before production folder automation, the owning feasibility gate must prove this protocol against an ordinary local folder and the supported `Cancan/Inbox` iCloud Drive path, including a changing file that never reaches Vault early.
+The two-second settle interval is a capture-protocol constant, not a user setting. The completed [local-inbox readiness evidence](../../spikes/local-inbox-readiness/EVIDENCE.md) proves this protocol against an ordinary local folder and the supported `Cancan/Inbox` iCloud Drive path, including a continuously changing file that never reaches capture early, a native placeholder preflight before Rust access, and a fresh-process restart lifecycle. Production folder automation remains a later slice.
 
 ### Email send-to-self
 

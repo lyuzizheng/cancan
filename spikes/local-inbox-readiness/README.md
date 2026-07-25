@@ -17,10 +17,13 @@ Run the full spike gate with:
 scripts/verify.sh
 ```
 
-This default gate does not inspect or touch iCloud Drive. Its tests create only
-synthetic files beneath the operating system temporary directory and remove
-their directories afterward. The 20 ms pause in tests only forces separate
-scan operations; it is not a proposed production settle interval.
+This default gate does not inspect or touch iCloud Drive. Its Rust tests and
+Foundation mapping self-test use only synthetic files. The local runner proves
+that process A observes without saving a scan snapshot, process B starts from a
+fresh first scan, waits the fixed two-second settle interval, then performs the
+second-scan/capture. A continuous writer remains deferred until it stops, then
+the next fresh two-second capture succeeds. The two-second interval is a
+protocol constant, not a user setting or production watcher implementation.
 
 ## Opt-in live iCloud evidence
 
@@ -33,15 +36,19 @@ CANCAN_ICLOUD_EVIDENCE_ROOT="$HOME/Library/Mobile Documents/com~apple~CloudDocs/
 The script rejects every other root. It does not enumerate that root: it asks
 the Rust CLI to create one uniquely named `.cancan-local-inbox-evidence-*`
 directory, writes only synthetic files inside it, and removes only that exact
-directory when its matching run token is present. `snapshot` and `capture` are
-separate CLI processes with a persisted synthetic snapshot state.
+directory when its matching run token is present. Process A only observes a
+candidate and exits without saving a scan snapshot. Process B starts from a
+fresh first scan, waits two seconds, and then captures.
 
-The opt-in run checks upload state with the supported
-`URLResourceValues.ubiquitousItemDownloadingStatus` key, then makes bounded
-`/usr/bin/brctl evict` and `download` attempts against only its synthetic file.
-The upload poll (15 attempts) and each `brctl` command limit (10 seconds) are
-liveness bounds, not a selected settle interval. The Swift status probe is
-evidence-only; it does not add a production Foundation bridge.
+The opt-in run uses `URLResourceValues.ubiquitousItemDownloadingStatus` before
+any Rust candidate access. Only a regular local file or an iCloud `current`
+candidate is ready; `notDownloaded`, `downloaded`, unknown, downloading, and
+provider-error states defer. It checks `not-downloaded` twice after eviction to
+prove preflight itself did not hydrate the placeholder, then explicitly
+downloads to `current` before the fresh-process two-second capture. The upload
+poll (15 attempts) and each `brctl` command limit (10 seconds) are liveness
+bounds, not the settle interval. The Swift helper remains spike-only; it does
+not add a production Foundation bridge.
 
-See [EVIDENCE.md](./EVIDENCE.md) for the observed iCloud result and its
-remaining blocker.
+See [EVIDENCE.md](./EVIDENCE.md) for the observed iCloud result and remaining
+limits.

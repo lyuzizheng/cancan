@@ -7,12 +7,12 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 ### Completed
 
 - Accepted the initial automatic-folder contract in [0017](../specs/0017-evidence-documents-source-ux.md): the user authorizes one iCloud Drive `Cancan` root, CanCan only owns its `Inbox` and `Backups` child names, and only `Inbox` is a future ingestion source. Preparing `Backups` is not backup enablement or success. The accepted layout does not implement folder-picker authorization/bookmarks, native preflight, watcher UI, backup engine, schedule, bundle writing, restore, migration, or cleanup of old roots.
-- Added an opt-in, synthetic-only `local-inbox-readiness` iCloud runner. The default spike gate never accesses iCloud; the live runner accepts only the exact user-created CanCan iCloud root, creates and token-cleans one exact synthetic child, and bounds upload polling and each `brctl` call.
-- Ran the real iCloud evidence path: upload-ready state was observed; `brctl evict` produced `not-downloaded`; a second CLI-process Rust capture returned `deferred-changed-after-read` without bytes, while the downloading status transitioned to `current` during that capture. `brctl download` also succeeded. Stable and changing synthetic files proved the independent-process capture and early-change rejection paths.
+- Completed `local-inbox-readiness` with a default synthetic gate and one opt-in real iCloud run. The Foundation helper maps only ordinary local files and iCloud `current` to ready; `notDownloaded`, `downloaded`, unknown, downloading, and provider errors defer. The default runner proves no persisted scan snapshot crosses from observe-only process A to fresh-scan process B, fixed two-second settling, continuous-write deferral, post-read re-stat, and source preservation.
+- The live runner accepted only the exact user-created CanCan root and token-cleaned one synthetic child. It observed upload-ready, used `brctl evict` to reach `not-downloaded`, ran two Foundation-only preflights that both deferred while status remained `not-downloaded`, explicitly downloaded to `current`, then captured after a fresh-process two-second settle with source bytes, identity, size, and modification time preserved. This removes only the Local Inbox filesystem-readiness blocker; it does not implement production folder automation.
 
 ### Next
 
-- Keep `Local Inbox filesystem readiness` blocked. Do not select a settle interval or add watched-folder production behavior. A future native downloading-status preflight before Rust open/read, plus app/process-restart lifecycle evidence, is required before reconsidering the blocker.
+- Keep production folder behavior out of this completed evidence slice. `local-inbox-automation` remains blocked by `review-ledger-ui` and must independently implement folder authorization/bookmarks, native integration, watcher/rescan behavior, Vault/job routing, and UI states.
 
 ## 2026-07-24
 

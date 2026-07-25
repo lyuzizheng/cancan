@@ -1,110 +1,102 @@
 # Local Inbox readiness evidence
 
-Status: investigating on 2026-07-25
+Status: completed on 2026-07-25
 
-This disposable spike tests only the pre-scan / settle / read / post-read
-protocol that a future Rust/Tauri local-folder boundary can use. It does not
-authorize production folder observation, Vault capture, a database schema,
-jobs, UI, or a cloud-drive connector.
+This disposable spike selects only the local/iCloud candidate-readiness
+protocol for the future `local-inbox-automation` slice. It does not implement
+folder authorization/bookmarks, a watcher, Vault capture, a database, jobs,
+UI, a cloud-drive connector, or any production Rust/Foundation bridge.
 
-## Candidate under test
+## Selected protocol
 
-- `symlink_metadata` rejects symlinks and non-regular files before capture.
-- A snapshot contains the Unix file identity `(device, inode)`, size, and
-  modification seconds/nanoseconds.
-- A second snapshot must match the first before a read-only handle is opened
-  with `O_NOFOLLOW`; that handle's metadata must also match before reading.
-- The handle is re-statted after reading, then the path is re-snapshotted; a
-  changed identity, size, or modification time discards the bytes and defers
-  the candidate.
-- SHA-256 is computed only after a stable post-read snapshot. A supplied
-  tombstone hash produces a suppressed outcome rather than a capture.
-- Snapshot/read failures return a deferred outcome and do not surface bytes.
+- A regular ordinary-local candidate is ready when Foundation reports
+  `isUbiquitousItem != true` (Foundation returns `nil` for the exercised local
+  file).
+- An iCloud candidate is ready only when
+  `URLResourceValues.ubiquitousItemDownloadingStatus` is `current` and it is
+  not downloading. `notDownloaded`, `downloaded` (which may be stale), nil or
+  unknown status, downloading, and a resource-value/provider error defer
+  before Rust opens or reads the candidate.
+- A candidate needs matching Unix `(device, inode)`, size, and modification
+  seconds/nanoseconds across two scans separated by a fixed two-second settle
+  interval. This is a capture-protocol constant, not a user setting.
+- Rust opens read-only with `O_NOFOLLOW`, validates the opened handle before
+  reading, re-stats it after reading, and re-snapshots the path. Any changed
+  identity, size, or modification time discards bytes and defers.
+- SHA-256 is computed only after the stable post-read check. A tombstoned hash
+  remains suppressed without modifying the source file.
+- Process A may observe a candidate but saves no scan snapshot. A restarted
+  process B starts a fresh first scan, waits two seconds, then runs its second
+  scan/capture.
 
-## Reproducible commands and result
+## Deterministic local gate
 
 ```text
 cd spikes/local-inbox-readiness
 scripts/verify.sh
 ```
 
-On the evidence machine, this passed without inspecting iCloud Drive:
+The default gate never accesses iCloud Drive. On the evidence machine it
+passed `cargo fmt --check`, clippy, 12 Rust capture-protocol tests, three Rust
+CLI/safety tests, the Foundation mapping self-test, and the synthetic local
+runner.
 
-```text
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked: 12 protocol tests and 2 runner safety/CLI-contract tests passed
-```
-
-The run used macOS 26.5.2 (25F84), `arm64`, Rust 1.97.0
-(`aarch64-apple-darwin`), and Cargo 1.97.0. Test files are synthetic and live
-only in a temporary ordinary local directory.
-
-## What the local filesystem run proved
+The runner output established:
 
 | Gate | Evidence |
 | --- | --- |
-| Stable capture | A synthetic regular file has matching first/second/post-read snapshots and returns its bytes and SHA-256. |
-| Source preservation | Stable capture and tombstone suppression leave source bytes and identity/size/mtime unchanged. |
-| Changing size or mtime | A larger write and a same-size modification-time change between the first and second snapshots are each deferred before any read. |
-| File replacement | An atomic same-content replacement has a different `(device, inode)` identity and is deferred before any read. |
-| Symlink swap | A candidate replaced by a symlink before open is rejected with `O_NOFOLLOW`; no target bytes are returned. |
-| Post-read mutation | A controlled local mutation immediately after reading the opened handle discards the previously read bytes. |
-| Fresh rescan recovery | After a stale snapshot is deferred, a fresh independent rescan captures the now-stable local file. The harness deliberately retains no watcher or scan state. |
-| Tombstone suppression | A SHA-256 derived from a real local read is supplied as a tombstone and rescanning returns suppression without restoring/capturing bytes. |
-| Read failure | A source removed after its first snapshot and an injected read/provider error both defer without bytes. |
+| Foundation mapping | A regular local file is `ready`; the deterministic helper maps iCloud `current` to ready and `notDownloaded`, `downloaded`, downloading, nil/unknown status, and provider failure to defer. |
+| Fresh restart lifecycle | Process A printed `phase=observe-only` and `observation-snapshot-persisted=false`; process B had a different PID, printed `restart-snapshot-imported=false`, made its own fresh first scan, waited at least 2,000 ms, and captured. |
+| No snapshot hand-off | The runner verifies no `*.snapshot` exists after process A and the CLI no longer exposes the old persisted-snapshot command path. |
+| Continuous write | While a writer changed the source every 250 ms for four seconds, a two-second candidate attempt returned `deferred-changed-before-read` while the writer was still live. After it stopped, a new fresh attempt waited two seconds and captured. |
+| Read containment | Existing focused tests retain no-follow, identity/size/mtime rejection before read, post-read re-stat rejection, tombstone suppression, deletion/error deferral, and no source mutation. |
 
-The 20 ms pause used between test scans is only a deterministic test ordering
-device. It is not evidence for, or a selection of, a production settle
-interval. The only supported conclusion so far is that the two-snapshot plus
-handle-bound post-read protocol detects the exercised changes on this ordinary
-local filesystem. A forged-device snapshot boundary test covers comparison of
-the device component; it is not live mount/provider-transition evidence.
+## Opt-in live iCloud gate
 
-Fresh rescan recovery is not app/process-restart lifecycle evidence. The spike
-does not model app shutdown, persisted scanner state, or a process restart.
-
-## iCloud and provider boundary
-
-The default gate never accesses iCloud Drive. A separate opt-in run used the
-user-created root
-`$HOME/Library/Mobile Documents/com~apple~CloudDocs/Cancan`. It created only a
-unique synthetic child, did not enumerate real files, and printed
-`cleanup=removed` after each run.
-
-The repeatable command is:
+On the evidence machine only:
 
 ```text
 cd spikes/local-inbox-readiness
 CANCAN_ICLOUD_EVIDENCE_ROOT="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Cancan" scripts/run-icloud-evidence.sh
 ```
 
-The live run established the following limited facts for its synthetic files:
+The script accepts only that exact user-created root. It creates one uniquely
+named `.cancan-local-inbox-evidence-*` child, writes only synthetic PDF bytes
+inside it, and removes only that exact child after its matching token validates.
+Default verification/CI never invokes this command.
 
-| Gate | Evidence |
-| --- | --- |
-| Separate CLI-process rescan | `snapshot` and `capture` printed distinct process IDs; stable capture returned bytes, preserved the original synthetic bytes, and preserved identity/size/mtime. This is a CLI process boundary, not an app restart lifecycle proof. |
-| Changing source | A synthetic source changed between those processes returned `deferred-changed-before-read` rather than captured bytes. |
-| Upload-ready before eviction | The supported URL resource values reported `uploaded=true` and `uploading=false` within the runner's bounded 15-attempt poll. |
-| Real placeholder request | `/usr/bin/brctl evict` returned exit 0, then `ubiquitousItemDownloadingStatus` was `not-downloaded`; `/usr/bin/brctl download` later returned exit 0. |
-| Actual defer | The snapshot immediately before Rust capture still reported `not-downloaded`. That capture returned `deferred-changed-after-read` and did not return bytes. |
-| Hydration boundary | Immediately after that Rust capture, the supported status was `current`. The run records a status transition during capture; it does not attribute the transition to one exact operation, and it must not assume Rust open/read leaves a placeholder offline. |
+The successful 2026-07-25 live output included:
 
-The status probe reads `URLResourceValues.ubiquitousItemDownloadingStatus`, not
-the deprecated downloaded boolean. It is a disposable evidence helper, not a
-production Foundation bridge.
+```text
+upload-ready=observed
+download-status=current
+capture-decision=ready
+brctl-evict-result=accepted
+download-status=not-downloaded
+capture-decision=defer
+capture-reason=not-downloaded
+placeholder-preflight-did-not-hydrate=true
+brctl-download-result=accepted
+explicit-download-current=true
+restart-rescan-fresh-process=true
+restart-snapshot-state-transferred=false
+iCloud-source-bytes-identity-size-mtime-preserved=true
+live-iCloud-evidence-run=passed
+cleanup=removed
+```
 
-The observed defer proves that the handle-bound post-read check can withhold
-bytes in this exercised iCloud path. It does **not** prove a pure Rust
-open/read protocol can defer a placeholder before hydration. The status
-transition leaves the `Local Inbox filesystem readiness` blocker in place: a
-future production design needs a native downloading-status preflight before
-Rust opens/reads a candidate, plus its own deterministic tests. This spike
-does not implement that preflight, a watcher, a Vault capture, a database, a
-job, UI, or provider connector.
+The live runner performed two Foundation-only preflights while the synthetic
+candidate remained `not-downloaded`; both returned `defer`, and the second
+status remained `not-downloaded`. It did not run Rust snapshot/open/read until
+after explicit `brctl download` reached `current`. Then process A observed and
+exited without state, process B had a different PID, waited 2,001 ms, captured,
+and preserved the source's bytes, identity, size, and modification time.
 
-No settle interval is selected. The 15-attempt upload poll and 10-second
-`brctl` limits bound this evidence command only; they do not measure or choose
-a production settle delay. The injected read/provider-error test likewise
-remains only fail-closed control-flow evidence, not a general iCloud offline or
-provider-error guarantee.
+## Remaining limits
+
+This evidence selects the native preflight-before-open rule and two-second
+settle interval. It is not production folder automation. The later
+`local-inbox-automation` slice still owns user authorization/bookmarks, native
+integration, watcher wake-up hints, scheduled rescans, Vault/job routing,
+document handling, duplicate/tombstone integration, source/account resolution,
+coverage prompts, and UI states.
