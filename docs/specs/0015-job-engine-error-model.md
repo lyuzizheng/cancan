@@ -95,7 +95,7 @@ If the PDF is locked and no saved password works, the job becomes `blocked` with
 
 The saved password scope is the related Money Source. A failed saved password never loops blindly: the user chooses a session-only password or replaces that Money Source's saved Keychain secret.
 
-A user-selected Inbox folder does not require a durable job merely to notice directory contents. Startup/unlock/manual scans and filesystem-change hints discover readable candidates; each candidate then enters the existing durable ingest job. A cloud placeholder, partial write, or unreadable file is deferred and retried by a later scan without modifying the source folder. A hash already represented by a user-deleted tombstone is a successful suppressed outcome, not a restore job; only explicit user intent starts restoration.
+The user-authorized CanCan root's `Inbox` child does not require a durable job merely to notice directory contents. Startup/unlock/manual scans and filesystem-change hints discover readable candidates; each candidate then enters the existing durable ingest job. A cloud placeholder, partial write, or unreadable file is deferred and retried by a later scan without modifying the source folder. A hash already represented by a user-deleted tombstone is a successful suppressed outcome, not a restore job; only explicit user intent starts restoration.
 
 ### `delete_source_file`
 

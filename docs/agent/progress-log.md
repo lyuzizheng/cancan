@@ -2,18 +2,32 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-25
+
+### Completed
+
+- Accepted the initial automatic-folder contract in [0017](../specs/0017-evidence-documents-source-ux.md): the user authorizes one iCloud Drive `Cancan` root, CanCan only owns its `Inbox` and `Backups` child names, and only `Inbox` is a future ingestion source. Preparing `Backups` is not backup enablement or success. The accepted layout does not implement folder-picker authorization/bookmarks, native preflight, watcher UI, backup engine, schedule, bundle writing, restore, migration, or cleanup of old roots.
+- Completed `local-inbox-readiness` with a default synthetic gate and one opt-in real iCloud run. The Foundation helper maps only ordinary local files and iCloud `current` to ready; `notDownloaded`, `downloaded`, unknown, downloading, and provider errors defer. The default runner proves no persisted scan snapshot crosses from observe-only process A to fresh-scan process B, fixed two-second settling, continuous-write deferral, post-read re-stat, and source preservation.
+- The live runner accepted only the exact user-created CanCan root and token-cleaned one synthetic child. It observed upload-ready, used `brctl evict` to reach `not-downloaded`, ran two Foundation-only preflights that both deferred while status remained `not-downloaded`, explicitly downloaded to `current`, then captured after a fresh-process two-second settle with source bytes, identity, size, and modification time preserved. This removes only the Local Inbox filesystem-readiness blocker; it does not implement production folder automation.
+
+### Next
+
+- Keep production folder behavior out of this completed evidence slice. `local-inbox-automation` remains blocked by `review-ledger-ui` and must independently implement folder authorization/bookmarks, native integration, watcher/rescan behavior, Vault/job routing, and UI states.
+
 ## 2026-07-24
 
 ### Completed
 
 - Merged the mock-only `cloud-ocr-provider-contract` checkpoint. It now selects only a complete dedicated OCR or analyser configuration, builds the fixed one-bounded-PNG OpenAI-compatible request, parses plain transcription text, and redacts credentials and provider bodies from contract errors.
+- Merged `cloud-ocr-transport`. The completed checkpoint executes the accepted request through an injected fetch boundary and proves deterministic success plus redacted network, non-2xx, and malformed-response failures. It does not add credential storage/loading, app/runtime wiring, provider-specific parsing, a live request, or an opt-in smoke.
 - Reconciled the cumulative #32–#35 review with the shipped manual-evidence path. Protected-PDF unlock notices now match available routing, the executable worker rejects unproduced `document_region` observations, and one shared golden command fixture is asserted by Rust serialization, the TypeScript parser, and the packaged-sidecar smoke.
 - Kept OCR fail-closed when a page has no usable native content, while allowing usable non-empty native text to continue through grounding and validation when only supplemental OCR fails. The intended broader OCR-planning contract remains canonical and the current marker-only subset is documented as implementation state.
 - Unified PDF password byte validation across PDFKit extraction and Core Graphics rendering, moved image validation out of the file-vault storage primitive, avoided validation-only PNG encoding, composited transparent image evidence onto opaque white, and removed the duplicate source-document row mapper.
+- Ran the evidence-only `local-inbox-readiness` Rust spike against synthetic files in an ordinary macOS temporary folder. It passes no-follow handle-bound stable capture, size/mtime/inode mutation rejection, a device-identity comparison boundary, fresh rescan recovery, SHA-256 tombstone suppression, source preservation, and fail-closed local/injected read errors. Fresh rescan recovery does not prove app/process-restart lifecycle. The supported iCloud Drive path is absent or unreadable on this machine, so the result does not choose a settle interval, remove the Local Inbox filesystem-readiness blocker, or authorize production folder behavior.
 
 ### Next
 
-- Complete the narrow `cloud-ocr-transport` slice: execute the accepted request through an injected fetch boundary and prove success and redacted transport failures with mocked fetch. Do not add credential storage/loading, app wiring, provider-specific parsing, a live request, or a parallel test-only smoke input path. After it lands, the next candidate is the evidence-only `local-inbox-readiness` investigation; broader runtime/UI file splitting and PDF/session performance work remain separate evidence-driven changes.
+- Obtain a separate supported-iCloud-Drive run before removing the `local-inbox-readiness` blocker or selecting a settle interval. Do not add watched-folder production behavior, UI, database, jobs, provider-specific cloud wiring, or downstream automation from the ordinary-local result.
 
 ## 2026-07-23
 
@@ -303,7 +317,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added temporary alignment workspace under `docs/alignment-temp/` to break down full product lifecycle questions and track alignment progress.
 - Added first-run/onboarding spec with product promise, fixed provider policy, bring-your-own AI direction, startup sequence, and interaction/motion requirements.
 - Added design system spec with light-first, modern warm+green, technical/safe/premium direction.
-- Added backup/restore/versioning spec with generic folder backup, manifest, compatibility rules, and restore behavior.
+- Added backup/restore/versioning spec with manifest, compatibility rules, and restore behavior.
 - Added agentic development workflow spec with required tests, DB reset, build/package, UI inspection, and docs update loop.
 - Aligned Gmail integration: Desktop OAuth Authorization Code Flow + PKCE + loopback redirect; local token exchange; Gmail readonly; local Keychain token storage; local encrypted mail cache; polling sync; no CanCan server.
 - Recorded Google restricted scope/OAuth verification risk for public release.

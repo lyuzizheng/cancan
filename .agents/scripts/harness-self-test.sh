@@ -24,6 +24,9 @@ cp spikes/document-normalizer-runtime/EVIDENCE.md \
 mkdir -p "$TEST_ROOT/spikes/vault-security-validation"
 cp spikes/vault-security-validation/EVIDENCE.md \
   "$TEST_ROOT/spikes/vault-security-validation/"
+mkdir -p "$TEST_ROOT/spikes/local-inbox-readiness"
+cp spikes/local-inbox-readiness/EVIDENCE.md \
+  "$TEST_ROOT/spikes/local-inbox-readiness/"
 
 (
   cd "$TEST_ROOT"

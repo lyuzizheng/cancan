@@ -20,7 +20,7 @@ Evidence should feel like part of each money source, not a separate corporate do
 - Search starts with local metadata/record search; full-text search can use SQLite FTS when needed.
 - CanCan is inbox-first rather than Gmail-first: every acquisition channel converges on the same encrypted evidence, classification, parsing, and review path.
 - Users may add evidence without choosing a source/account first; trusted classification and account resolution perform routing, with one compact question only when ambiguous.
-- A user-selected folder is the first automatic phone-to-Mac path. CanCan does not silently scan all Downloads or move/delete source files.
+- The initial automatic phone-to-Mac path is a user-authorized iCloud Drive `Cancan` root. CanCan does not scan all of iCloud Drive or Downloads, or move/delete source files.
 - A future iOS Share Extension is a thin intake companion, not a mobile ledger or a prerequisite for MVP.
 
 ## IA placement
@@ -50,21 +50,36 @@ MVP order:
 
 ```text
 1. Add files, drag/drop, and Open With CanCan
-2. optional user-selected CanCan Inbox folder
+2. optional user-authorized CanCan iCloud Drive root, using its `Inbox` child
 3. optional user-authorized Gmail rules, including send-to-self attachments
-4. AirDrop or any cloud-drive app, followed by Add/Open With or the selected folder
+4. AirDrop or any cloud-drive app, followed by Add/Open With or `Cancan/Inbox`
 ```
 
-Do not build separate Dropbox, OneDrive, iCloud Drive, or AirDrop connectors. The user may select a folder inside any filesystem provider visible to macOS, so CanCan only owns local folder observation and Vault capture.
+Do not build separate Dropbox, OneDrive, iCloud Drive, or AirDrop connectors. The initial automatic-folder contract below is only for the user-authorized iCloud Drive `Cancan` root; it is not a whole-iCloud scan or a provider-generic setup surface.
 
-### User-selected CanCan Inbox folder
+### User-authorized CanCan iCloud Drive root
 
-The user chooses one folder and may change or disable it later. A folder such as `iCloud Drive/CanCan Inbox` gives a simple phone flow today:
+Through the system folder picker, the user explicitly authorizes one iCloud Drive `Cancan` root. CanCan's only app-owned child names below that root are:
+
+```text
+Inbox
+Backups
+```
+
+Existing directories with those names are reused; missing directories are created. If either name is occupied by a non-directory, setup fails with an actionable state. CanCan never overwrites, moves, or deletes user data to resolve that conflict.
+
+The user puts supported statements only in `Inbox`. Future local automation observes only that child, never the root itself or `Backups`. `Backups` is reserved for CanCan backup outputs and is never an ingestion source. Creating `Backups` means only that the target is prepared; it does not enable, schedule, or prove a backup. Backup bundle, scheduling, and restore behavior remain owned by [0009](./0009-backup-restore-versioning.md) and the blocked `backup-release` slice.
+
+The user may later change or disable the root. This contract does not invent migration or cleanup behavior, and CanCan never deletes old roots or their child directories.
+
+The root and its children remain outside the encrypted Vault and follow iCloud Drive's privacy and security model. The readiness evidence selects a native preflight-before-Rust-open rule, but does not implement it in production. Production still needs its own folder-picker authorization/bookmark, native integration, and watcher UI.
+
+The root gives a simple phone flow:
 
 ```text
 bank app Share
 -> Save to Files
--> CanCan Inbox
+-> Cancan/Inbox
 -> Mac sync provider makes the file readable
 -> CanCan captures it into the encrypted Vault
 ```
@@ -72,23 +87,26 @@ bank app Share
 Rules:
 
 ```text
+observe only the authorized root's Inbox child
 scan on enable, app startup/unlock, manual refresh, and filesystem-change hints while the app runs
 accept only supported regular PDF/CSV/image files that can be opened read-only
 ignore directories, symlinks, hidden/temp/partial-suffix files, and unsupported types
-observe the same file identity, size, and modification time across two scans separated by the owning slice's tested settle interval
+observe the same file identity, size, and modification time across two scans separated by a fixed two-second settle interval
 after reading/hash, re-stat the file; if identity, size, or modification time changed, discard the bytes and retry later
 validate the supported container/header before Vault registration
 defer cloud placeholders, provider/offline errors, changing files, and unreadable files; retry on a later scan
+before Rust opens or reads an iCloud candidate, native preflight allows only `current`; `notDownloaded`, `downloaded` (possibly stale), unknown/nil, downloading, and provider errors defer
 use SHA-256 import idempotency, so rescans and duplicate channels are safe
 skip hashes whose Vault artifact was user-deleted; only an explicit Restore/Add confirmation may restore them
 copy into the encrypted Vault before processing
 never modify, move, rename, or delete the user's source file in MVP
-show that the selected folder remains outside the CanCan Vault and follows that folder provider's privacy/security
+never observe the root itself, Backups, or any other iCloud Drive location
+show that the selected root remains outside the CanCan Vault and follows iCloud Drive's privacy/security
 ```
 
-Filesystem notifications are a wake-up hint, not the source of truth; deterministic rescans provide recovery after sleep, app exit, or sync delay. Do not watch the whole Downloads folder by default.
+Filesystem notifications are a wake-up hint, not the source of truth; deterministic `Inbox` rescans provide recovery after sleep, app exit, or sync delay. Do not watch the whole Downloads folder by default.
 
-The exact settle interval and macOS cloud-placeholder behavior are implementation evidence, not a user setting. Before production folder automation, the owning feasibility gate must prove this protocol against an ordinary local folder and at least the supported iCloud Drive path, including a changing file that never reaches Vault early. Other filesystem providers remain best-effort until they pass the same evidence.
+The two-second settle interval is a capture-protocol constant, not a user setting. The completed [local-inbox readiness evidence](../../spikes/local-inbox-readiness/EVIDENCE.md) proves this protocol against an ordinary local folder and the supported `Cancan/Inbox` iCloud Drive path, including a continuously changing file that never reaches capture early, a native placeholder preflight before Rust access, and a fresh-process restart lifecycle. Production folder automation remains a later slice.
 
 ### Email send-to-self
 
@@ -298,7 +316,7 @@ After confirmation, CanCan appends the deletion decision/audit event, removes th
 
 Uncommitted linked records become ineligible for automatic commit and remain visibly associated with the deleted source; the user may separately remove those staged records. Committed ledger events and legs remain immutable. Correcting them requires the explicit reversal/replacement flow.
 
-An explicit exact-hash Add/Restore reuses the tombstone and restores its current encrypted artifact after user confirmation. Automatic Inbox-folder and Gmail scans treat the tombstone as a suppression record and do not restore it merely because the external file/message remains present. A byte-different file with the same semantic statement identity remains separate evidence under that statement identity.
+An explicit exact-hash Add/Restore reuses the tombstone and restores its current encrypted artifact after user confirmation. Automatic `Inbox` and Gmail scans treat the tombstone as a suppression record and do not restore it merely because the external file/message remains present. A byte-different file with the same semantic statement identity remains separate evidence under that statement identity.
 
 CanCan guarantees application-level removal of the current Vault file, not forensic erasure from SSD wear-leveling, filesystem snapshots, or old backup media. A storage failure reports `Missing` rather than claiming that the user deleted the file.
 
@@ -379,7 +397,7 @@ Documents subview empty states should be source-specific.
 Examples:
 
 ```text
-No DBS statements yet. Add a file, choose an Inbox folder, or connect Gmail.
+No DBS statements yet. Add a file, set up CanCan Inbox, or connect Gmail.
 No Wise exports yet. Import a CSV/PDF export to start.
 This source has documents, but none match the current filter.
 ```
@@ -416,7 +434,7 @@ Exact duplicates do not create duplicate records. Explicitly adding an exact fil
 - Future full-text search uses local SQLite FTS5, not a remote search service.
 - Import completion identifies which files were new, already present, restored from a tombstone, or probable prior statements.
 - Add, drag/drop, Open With, watched-folder, and Gmail evidence converge on one capture/classification/parser flow.
-- The selected Inbox folder is rescanned deterministically, never modified by CanCan, and clearly remains outside the encrypted Vault.
+- Only the selected root's `Inbox` child is rescanned deterministically, never modified by CanCan, and clearly remains outside the encrypted Vault; `Backups` is never an ingestion source.
 - Automatic rescans respect deleted-evidence tombstones; only explicit user intent restores them.
 - Unassigned evidence is handled through Command Center attention rather than a new top-level library.
 - Transaction email and statement evidence may fold into one Activity item while both source records remain intact.
