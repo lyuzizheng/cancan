@@ -103,7 +103,10 @@ impl FileVault {
     }
 
     pub(crate) fn prepare(source_path: &Path) -> io::Result<PreparedSource> {
-        let plaintext = Zeroizing::new(fs::read(source_path)?);
+        Self::prepare_bytes(Zeroizing::new(fs::read(source_path)?))
+    }
+
+    pub(crate) fn prepare_bytes(plaintext: Zeroizing<Vec<u8>>) -> io::Result<PreparedSource> {
         let byte_size = u64::try_from(plaintext.len())
             .map_err(|_| io::Error::other("source file size does not fit u64"))?;
         let file_sha256 = hex_digest(&plaintext);

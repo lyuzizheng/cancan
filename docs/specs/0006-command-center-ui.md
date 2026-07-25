@@ -111,25 +111,9 @@ excellent empty/loading/error states
 
 ## Component library strategy
 
-Use a modern React component foundation to avoid exploding code volume.
+Kimi Code CLI owns the renderer implementation choice. It may use Hero UI, shadcn/Radix-style primitives, or a lighter code-native approach, but there is no preferred library before a concrete screen needs it.
 
-Recommended direction:
-
-```text
-Base components: Hero UI or shadcn/Radix-style primitives
-Styling: Tailwind-compatible token system
-Charts: Recharts or lightweight visx-style components when needed
-Tables: TanStack Table for complex tables
-Icons: lucide-react
-Motion: motion/react or CSS transitions for meaningful state changes
-```
-
-Preferred default: **Hero UI for application components**, with CanCan-owned design tokens and wrappers so the app does not look like an unmodified library demo.
-
-Rules:
-
-- Do not fork or hand-roll basic controls if a solid component exists.
-- Wrap library components in `packages/ui` CanCan components.
+Choose the smallest pinned dependency set that satisfies the accepted design and accessibility contract. Reuse solid basic controls instead of hand-rolling them, but do not add wrappers, tables, charts, icons, motion libraries, or styling systems speculatively. Shared CanCan components belong in `packages/ui` only after real repeated use exists.
 - Keep theme tokens centralized.
 - Avoid mixing multiple visual systems.
 - DaisyUI can be used for prototyping inspiration, but should not define final brand identity.
@@ -216,7 +200,7 @@ Backend should still model graph relationships so node-edge visualization can be
 
 ## Figma prototype option
 
-A Figma prototype can be generated after visual tokens are accepted. The Figma output should follow this spec and `0011-visual-design-tokens.md`, then any approved Figma decisions should be copied back into docs.
+Kimi may generate a Figma prototype when it materially helps renderer craft, or omit it. Figma is exploratory rather than authoritative: it follows this spec and `0011-visual-design-tokens.md`, and accepted product/design changes must be copied into canonical docs and production code.
 
 ## Acceptance criteria
 

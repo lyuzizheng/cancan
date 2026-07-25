@@ -217,11 +217,12 @@ AI provider keys
 statement PDF passwords
 future read-only API tokens
 vault key material
+device-local CanCan-root security-scoped bookmark and enabled state
 ```
 
 Restore writes and validates a new local Vault path before an atomic switch. It must not mutate the active Vault while integrity, compatibility, or password/recovery validation is incomplete.
 
-After restore on a new device, CanCan opens the restored non-secret data and a resumable Setup Checklist. The checklist includes Gmail reconnect, AI provider key re-entry, statement-PDF password re-entry for each affected Money Source, `Remember on this Mac`, future API connector tokens, and CanCan-root/`Backups` preparation. Missing secrets block only the jobs or features that depend on them; the user may browse restored records and finish setup later.
+After restore on a new device, CanCan opens the restored non-secret data and a resumable Setup Checklist. The checklist includes Gmail reconnect, AI provider key re-entry, statement-PDF password re-entry for each affected Money Source, `Remember on this Mac`, future API connector tokens, and CanCan-root/`Backups` preparation. The device-local root bookmark/enabled state is never restored; local Inbox automation stays disabled until the user authorizes a root on that device. Missing secrets or device capabilities block only the jobs or features that depend on them; the user may browse restored records and finish setup later.
 
 ## Acceptance criteria
 
@@ -234,6 +235,7 @@ After restore on a new device, CanCan opens the restored non-secret data and a r
 - Old app refuses newer vaults with a clear upgrade message.
 - Restore verifies integrity before replacing active data.
 - Secrets are not restored silently.
+- The device-local CanCan-root bookmark/enabled state is excluded and cannot silently reactivate Inbox access after restore.
 - Argon2id parameters are stored as versioned wrapper profiles; new macOS vaults prefer RFC 9106's 64 MiB profile within the unlock budget and may fall back only to the OWASP minimum profile.
 - `Remember on this Mac` uses Keychain to keep the common unlock path fast; Argon2id is not a per-document encryption step.
 - Normal PDF viewing sends only in-memory rendered pixels, and CSV viewing sends only the bounded UTF-8 preview described above; neither creates a plaintext temporary file or sends raw original-file bytes. Only explicit `Save a copy` exports the original source file.

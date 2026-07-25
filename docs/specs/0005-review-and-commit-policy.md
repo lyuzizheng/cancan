@@ -184,6 +184,78 @@ proof/validation = yes
 may affect current displayed asset value
 ```
 
+## Production review and ledger backend boundary
+
+`review-ledger-backend` moves the synthetic review/ledger behavior behind the production SQLite/Tauri boundary. `packages/core` remains the single owner of pure deterministic validation, reconciliation, and event/leg/match/reversal/replacement construction. Tauri invokes that core through the protocol-separated deterministic mode of the bundled Node worker; the mode has no AI/model, filesystem, database, network, secret, or renderer capability. Rust owns privileged commands, durable-job orchestration, protocol validation, SQLCipher transactions, review projection changes, and audit persistence. The renderer receives presentation models and user actions only; it cannot submit ledger IDs, legs, event types, commit idempotency keys, or database-shaped payloads as authority.
+
+### Uncommitted review state and concurrency
+
+An edit creates the next external-record version and supersedes only the previous uncommitted current-state projection. It preserves the parse run, bounded raw source row, prior validation, review decisions, and audit. A committed record/event is never edited in place.
+
+Every edit, remove, relationship, or Add request identifies the review item and expected current record version. The host compares both the version and current review status before writing. A stale request returns a safe conflict with no mutation so the renderer can reload current detail.
+
+`commit_review_batch` is a coarse durable job under `0015-job-engine-error-model.md`. It preflights every selected current record, groups records that form one canonical event, and treats each group as one commit unit:
+
+```text
+valid current group   -> event/legs/matches + review resolution + audit in one transaction
+stale or invalid group -> no financial writes; leave it in Review with a safe reason
+other independent group -> may still commit
+```
+
+The result reports each selected group as committed, already committed, stale, or still needing review. Retrying the job reuses the accepted proposal-version idempotency keys and cannot duplicate ledger events, review decisions, or audit entries.
+
+### Historical relationship discovery
+
+Relationship discovery is an internal indexed SQLite query, not an external API or AI decision. Starting from one current record, search the provider/event-type-owned bounded date window across all imported historical periods in both directions. A statement-month boundary never limits the query.
+
+A relationship recommendation requires compatible native unit, distinct resolved accounts, one unique qualified candidate, and an event-specific signed-effect predicate:
+
+```text
+same-currency transfer -> exact equal magnitude; outgoing account decreases and incoming account increases
+credit-card repayment  -> exact equal magnitude; cash decreases and card liability decreases
+```
+
+These effects come from the canonical signed `accountBalanceDelta`, never directly from a source Debit/Credit label. For the first production rule set, same-currency transfers allow at most three calendar days and credit-card repayments allow at most seven calendar days. The canonical event date is the cash/outgoing account record's `postedOn`. These windows only produce Review recommendations; they never authorize auto-commit. Multiple candidates, partial allocations, unmatched remainders, or a missing qualified rule remain in Review.
+
+This permits an outgoing HSBC payment to find the corresponding DBS credit-card side even when the two rows arrive in different statement months or import order. Two uncommitted sides can form one canonical event before commit. If a candidate is already represented by a committed financial event, the system never inserts or resizes an allocation on that event; an accepted correction appends the event-type-specific reversal and replacement under `0013-ledger-assets-valuation.md`.
+
+### Presentation-safe host contract
+
+Freeze the Rust/TypeScript request and response types before renderer integration. Exact source names follow repository conventions, but the command purposes are:
+
+```text
+read:
+  list review items
+  get review detail
+  list recent activity
+  get money overview
+  list relationship candidates
+
+mutate:
+  edit one current review record
+  remove one current review record
+  accept one relationship with explicit allocations
+  enqueue one selected review batch
+  undo one committed event
+
+job:
+  get safe job status/result
+```
+
+Read models may return stable IDs, consumer labels, native-unit amounts, dates/periods, source/provider/account labels, attention summaries, bounded evidence snippets already allowed by `0017-evidence-documents-source-ux.md`, relationship explanations, and allowed actions. They must not return raw stored JSON, validation internals, audit payloads, paths, hashes, locators, secrets, unrestricted document text, or database authority.
+
+### `review-ledger-backend` implementation checkpoints
+
+1. Add only the migration/indexes exercised by production review, recent-activity, overview, and relationship-candidate repository queries. Freeze presentation-safe TypeScript/Tauri contracts and deterministic Kimi fixtures.
+2. Add version-checked edit/remove/relationship actions plus the minimal persisted `jobs`/lease/recovery path for `commit_review_batch`. Reuse the canonical validator and host-derived identities.
+3. Add historical candidate queries and event-type-specific reversal/replacement. Cover DBS-card/HSBC-bank repayment across statement months and import order, ambiguous/partial review, repayment excluded from spending, balanced legs, and immutable originals.
+
+`review-ledger-backend` completion requires persisted reload/restart tests, locked-Vault behavior, migration-from-prior-schema coverage, and local native/desktop gates.
+
+### `review-ledger-ui` integration checkpoint
+
+Kimi integrates the renderer against the frozen host contracts. Completion requires deterministic host fixtures, browser behavior, accessibility, reduced motion, and final designer-level visual review.
+
 ## Acceptance criteria
 
 - MVP exposes one default-on `Automatically add qualified records` toggle.
@@ -199,6 +271,7 @@ may affect current displayed asset value
 - Exact duplicate handling is auditable.
 - Partial and one-to-many matches remain simple in normal UI and block auto-commit.
 - Two bank-side records can link to one canonical transfer event and be discovered from either side.
+- Historical relationship search crosses statement-month boundaries through a bounded deterministic provider/event-type rule and never guesses between multiple candidates.
 - A transaction email and posted statement row remain separate evidence but can link to one canonical event through deterministic provider ID or one unique qualified fallback match.
 - Late email evidence attaches to a committed event only through an append-only audited corroboration edge; it never changes committed allocations or ledger legs.
 - Transaction notifications never satisfy statement snapshot closure or create duplicate income, spending, or balance impact.
@@ -206,5 +279,6 @@ may affect current displayed asset value
 - Committed events are corrected through reversal/replacement, never mutation or deletion.
 - Removing a staged record is an append-only decision over a mutable projection, while deleting source evidence never implicitly corrects the ledger.
 - Financial mutations and review decisions create atomic append-only audit entries.
+- A manual review batch commits each independent valid canonical event group atomically, leaves stale/invalid groups in Review, and reports every selected outcome.
 - Repeated commit requests are idempotent.
 - Every committed event traces to source evidence and parse run.

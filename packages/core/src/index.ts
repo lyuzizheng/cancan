@@ -12,6 +12,17 @@ export {
   type TransferPreparation,
   type TransferSourceRecord,
 } from "./prepare-transfer";
+export {
+  findHistoricalRelationshipCandidates,
+  prepareReviewRelationship,
+  prepareReviewReversal,
+  relationshipWindowDays,
+  type PreparedReversalEvent,
+  type PreparedReviewEvent,
+  type RelationshipPreparation,
+  type ReviewEventType,
+  type ReviewSourceRecord,
+} from "./review-events";
 
 export type PreparedLedgerEvent =
   | import("./prepare-balance-observation").PreparedBalanceObservationEvent

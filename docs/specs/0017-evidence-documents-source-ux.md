@@ -74,6 +74,8 @@ The user may later change or disable the root. This contract does not invent mig
 
 The root and its children remain outside the encrypted Vault and follow iCloud Drive's privacy and security model. The readiness evidence selects a native preflight-before-Rust-open rule, but does not implement it in production. Production still needs its own folder-picker authorization/bookmark, native integration, and watcher UI.
 
+Production root authorization is host-owned. The system folder picker produces one macOS security-scoped bookmark stored with the enabled state in device-local Keychain storage, outside the Vault database and backup bundle. The renderer cannot submit a path/bookmark or receive the full selected path. On unlock/start the host resolves and starts access; on lock/disable it stops access. A stale or denied bookmark produces an actionable reauthorization state and never falls back to scanning another location. Restore onto any device starts with local Inbox disabled until the user authorizes a root there.
+
 The root gives a simple phone flow:
 
 ```text
@@ -388,7 +390,53 @@ transaction-notification email -> does not satisfy statement coverage
 on-demand export source such as Wise -> no monthly prompt unless its provider configuration declares one
 ```
 
-The first UI is one calm Command Center card such as `DBS June statement may be missing`, with `Add file`, `Not expected`, and `Remind later`. Source detail may show the same coverage timeline. Derive expected periods from existing evidence rather than pre-creating expected-month rows. When these actions ship, persist only the explicit exception/snooze decision in the smallest owning-slice storage; do not build a general reminder engine.
+The first UI is one calm Command Center card such as `DBS June statement may be missing`, with `Add file`, `Not expected`, and `Remind later`. Source detail may show the same coverage timeline. Derive expected periods from existing evidence rather than pre-creating expected-month rows.
+
+Persist only explicit user decisions, keyed by Money Source, child account, statement document type, and period:
+
+```text
+Not expected  -> suppress that exact expected period
+Remind later  -> suppress until the user-selected future date, then derive the prompt again
+```
+
+The host validates a future reminder date and upserts the decision idempotently. Do not pre-create expected months, schedule background notifications, or build a general reminder engine.
+
+## `local-inbox-backend` production boundary
+
+The production backend starts after the review/ledger host boundary is complete and reuses the same Vault/source-document, parse, reconcile, review, job, and audit paths as Add/Open With. It does not wait for renderer craft and does not create a folder-specific ingestion pipeline. The customer-facing local-Inbox slice still completes only after both this backend and `review-ledger-ui` are integrated.
+
+### Presentation-safe host contract
+
+Freeze these command purposes before Kimi integration:
+
+```text
+root/status:
+  choose the local Inbox root through the host picker
+  get sanitized local Inbox status
+  disable local Inbox
+  request a fresh rescan
+
+results/coverage:
+  get the latest safe scan summary
+  list derived statement-coverage prompts
+  record Not expected, or Remind later with a required future date
+```
+
+Status may return configured/enabled/access state, safe child-folder labels, last scan time, counts by outcome, current attention actions, and wording that distinguishes `Backups folder prepared` from `backup configured`. It must not return paths, bookmarks, hashes, source bytes, or sensitive filenames in logs/errors. The explicit import summary may return bounded display filenames through the existing renderer evidence contract.
+
+### `local-inbox-backend` implementation checkpoints
+
+1. Add the smallest device-local Keychain value for the bookmark/enabled state and implement picker, bookmark resolution, child validation/creation, unlock/start, lock/disable, reauthorization, and sanitized status.
+2. Implement one scanner using the accepted native-preflight/two-second protocol above. Reuse the manual-import capture service and extend the minimal durable job service only with `source_document_ingest`, `parse_document`, and `reconcile_document` chaining from `0015-job-engine-error-model.md`.
+3. Persist trusted statement document type/period columns plus the minimal explicit coverage-decision rows. Derive prompts per Money Source/account/document type from accepted records and provider cadence/grace without an expected-month table.
+
+Backend completion requires persisted authorize -> restart -> scan -> job chain -> Review/Activity -> coverage behavior, lock/disable recovery, migration tests, and local native/desktop gates.
+
+### `local-inbox-automation` integration checkpoint
+
+Kimi integrates the authorize/status/refresh/import-summary/attention/coverage renderer against the frozen host contract. Completion requires deterministic host fixtures, browser behavior, accessibility, reduced motion, and final designer-level visual review.
+
+Tests must cover existing/missing/conflicting child names, stale/denied bookmark, no path leakage, ordinary-folder scans with fake native preflight, changing/symlink/placeholder deferral, restart rescan, exact duplicate, tombstone suppression, no source mutation, lock pause/unlock resume, expired-job recovery, and parse-history preservation. Coverage fixtures must include confirmed/likely gaps, first history, multi-account statements, locked/unreadable/parse-failed attention, notification exclusion, on-demand Wise exclusion, persisted Not expected, and reminder-date reappearance. The opt-in real-iCloud run stays local and is not required CI.
 
 ## Empty states
 
@@ -439,4 +487,5 @@ Exact duplicates do not create duplicate records. Explicitly adding an exact fil
 - Unassigned evidence is handled through Command Center attention rather than a new top-level library.
 - Transaction email and statement evidence may fold into one Activity item while both source records remain intact.
 - Missing-period prompts use provider cadence and accepted statement periods; transaction emails and failed/locked files cannot falsely satisfy or erase coverage.
+- Coverage stores only explicit Not expected or user-dated Remind later decisions and derives prompts again when a reminder date passes.
 - A future iOS Share Extension remains a thin native intake target gated by transport, encryption, lifecycle, and release evidence.

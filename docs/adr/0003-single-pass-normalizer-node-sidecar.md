@@ -15,14 +15,20 @@ user-installed runtime or expose privileged capabilities to the renderer.
 ## Decision
 
 Use single-pass structured normalization for the initial production implementation.
-Run it in a trusted Node worker/sidecar bundled and controlled by Tauri. For both
+Run it in a trusted Node worker/sidecar bundled and controlled by Tauri. The same
+binary exposes a protocol-separated deterministic core mode that imports
+`packages/core` for host-requested financial preparation without an AI/model call.
+Core mode has no filesystem, database, network, secret, or renderer capability;
+Rust validates its response and owns all durable financial writes. For both
 Phase 1 macOS targets, `arm64` and `x86_64`, package the pinned Node 24 runtime as
 an architecture-matched single-executable external binary.
 
 The Tauri/Rust host owns user-selected file access and OS-secret retrieval. The
-worker is launched with a cleared inherited environment and limited to the current parse job, runtime configuration, the shared
-proposal schema, and deterministic validators. It has no shell, generic filesystem,
-arbitrary network tool, database, secret tool, or ledger capability. The sidecar is
+worker is launched with a cleared inherited environment. Normalizer mode is limited
+to the current parse job, runtime configuration, the shared proposal schema, and
+deterministic validators. Core mode is limited to one bounded domain command and
+the pure TypeScript core. Neither mode has a shell, generic filesystem, arbitrary
+network tool, database, secret tool, or ledger-write capability. The sidecar is
 process and crash separation, not a permission sandbox.
 
 Do not adopt ToolLoopAgent or Pi Agent Core until the real qualification suite

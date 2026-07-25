@@ -57,6 +57,9 @@ importers:
 
   packages/ai:
     dependencies:
+      '@cancan/core':
+        specifier: workspace:*
+        version: link:../core
       '@cancan/parsers':
         specifier: workspace:*
         version: link:../parsers

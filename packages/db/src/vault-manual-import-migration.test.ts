@@ -15,7 +15,7 @@ function migration(name: string): string {
   return readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8");
 }
 
-function openDatabase(maxVersion = 5): DatabaseSync {
+function openDatabase(maxVersion = 7): DatabaseSync {
   process.env.CANCAN_TEST = "1";
   const directory = mkdtempSync(join(tmpdir(), "cancan-test-vault-manual-import-"));
   testDirectories.push(directory);
@@ -29,6 +29,8 @@ function openDatabase(maxVersion = 5): DatabaseSync {
     { version: 3, name: "0003_source_document_pending_identity.sql" },
     { version: 4, name: "0004_source_document_pending_source.sql" },
     { version: 5, name: "0005_money_source_statement_password.sql" },
+    { version: 6, name: "0006_review_ledger.sql" },
+    { version: 7, name: "0007_local_inbox.sql" },
   ]
     .filter(({ version }) => version <= maxVersion)
     .map(({ version, name }) => ({
@@ -322,5 +324,67 @@ describe("vault manual import migration", () => {
       "created_at",
       "updated_at",
     ]);
+  });
+
+  it("migrates the current production schema to mutable review projections and durable jobs", () => {
+    const database = openDatabase(5);
+    database
+      .prepare(`
+        INSERT INTO source_documents(
+          id, money_source_id, file_sha256, original_filename, mime_type, byte_size,
+          encrypted_locator, file_state
+        ) VALUES ('document-current', 'source-dbs', ?, 'Current.csv', 'text/csv', 1,
+                  'files/current.ccenv', 'available')
+      `)
+      .run("c".repeat(64));
+    database
+      .prepare(`
+        INSERT INTO parse_runs(id, source_document_id, normalization_profile_id, profile_json, status)
+        VALUES ('parse-current', 'document-current', 'profile-v1', '{}', 'validated')
+      `)
+      .run();
+    database
+      .prepare(`
+        INSERT INTO external_records(
+          id, parse_run_id, source_document_id, stable_record_key, version, status,
+          record_type, raw_json, validation_json
+        ) VALUES ('record-current', 'parse-current', 'document-current', 'current:1', 1,
+                  'review', 'transaction', '{}', '{}')
+      `)
+      .run();
+
+    applyMigrations(database, [
+      {
+        version: 6,
+        sql: migration("0006_review_ledger.sql"),
+        foreignKeysOff: true,
+      },
+    ]);
+
+    database
+      .prepare("UPDATE external_records SET status = 'removed' WHERE id = 'record-current'")
+      .run();
+    database
+      .prepare(`
+        INSERT INTO jobs(id, job_type, status, input_json)
+        VALUES ('job-current', 'commit_review_batch', 'queued', '{"reviewItemIds":[]}')
+      `)
+      .run();
+
+    applyMigrations(database, [
+      {
+        version: 7,
+        sql: migration("0007_local_inbox.sql"),
+      },
+    ]);
+
+    expect(
+      database.prepare("SELECT status FROM external_records WHERE id = 'record-current'").get(),
+    ).toEqual({ status: "removed" });
+    expect(database.prepare("SELECT job_type, status FROM jobs WHERE id = 'job-current'").get()).toEqual({
+      job_type: "commit_review_batch",
+      status: "queued",
+    });
+    expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
+    "@cancan/core": "workspace:*",
     "@cancan/parsers": "workspace:*"
   },
   "devDependencies": {

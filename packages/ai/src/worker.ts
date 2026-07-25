@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 
 import { normalizeWithMock } from "./mock-normalizer";
-import { parseWorkerCommand } from "./worker-protocol";
+import { parseWorkerCommand, runCoreCommand } from "./worker-protocol";
 
 function send(message: unknown): void {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -29,7 +29,7 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line)
   send({
     type: "result",
     requestId: command.requestId,
-    result: normalizeWithMock(command),
+    result: command.type === "core" ? runCoreCommand(command) : normalizeWithMock(command),
   });
 });
 

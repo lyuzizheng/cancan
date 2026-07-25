@@ -29,7 +29,11 @@ describe("Vault API", () => {
     const calls: Array<[string, Record<string, unknown> | undefined]> = [];
     const listCommands = new Set([
       "list_money_sources",
+      "list_recent_activity",
+      "list_relationship_candidates",
+      "list_review_items",
       "list_source_documents",
+      "list_statement_coverage_prompts",
       "list_statement_password_sources",
       "list_unassigned_source_documents",
     ]);
@@ -46,7 +50,34 @@ describe("Vault API", () => {
 
     await api.vaultStatus();
     await api.vaultAccessStatus();
+    await api.listReviewItems();
+    await api.getReviewDetail("review-1");
+    await api.listRecentActivity();
+    await api.getMoneyOverview();
+    await api.listRelationshipCandidates("review-1", 3);
+    await api.editReviewRecord("review-1", 3, {
+      amountValue: "750.00",
+    });
+    await api.removeReviewRecord("review-1", 3);
+    await api.acceptReviewRelationship("review-1", 3, "record-2", 1);
+    await api.enqueueCommitReviewBatch(["review-1", "review-2"]);
+    await api.getReviewJob("job-1");
+    await api.undoCommittedEvent("event-1");
     await api.createVault("password");
+    await api.chooseLocalInboxRoot();
+    await api.localInboxStatus();
+    await api.disableLocalInbox();
+    await api.rescanLocalInbox();
+    await api.listStatementCoveragePrompts();
+    await api.recordStatementCoverageDecision({
+      accountId: "account-1",
+      action: "remind_later",
+      documentType: "account_statement",
+      moneySourceId: "source-dbs",
+      remindAfter: "2026-08-01",
+      statementPeriodFrom: "2026-07-01",
+      statementPeriodTo: "2026-07-31",
+    });
     await api.unlockVault("password");
     await api.unlockVaultWithKeychain();
     await api.rememberVaultOnThisMac();
@@ -77,7 +108,61 @@ describe("Vault API", () => {
     expect(calls).toEqual([
       ["vault_status", undefined],
       ["vault_access_status", undefined],
+      ["list_review_items", undefined],
+      ["get_review_detail", { reviewItemId: "review-1" }],
+      ["list_recent_activity", undefined],
+      ["get_money_overview", undefined],
+      [
+        "list_relationship_candidates",
+        { reviewItemId: "review-1", expectedRecordVersion: 3 },
+      ],
+      [
+        "edit_review_record",
+        {
+          reviewItemId: "review-1",
+          expectedRecordVersion: 3,
+          amountValue: "750.00",
+        },
+      ],
+      [
+        "remove_review_record",
+        { reviewItemId: "review-1", expectedRecordVersion: 3 },
+      ],
+      [
+        "accept_review_relationship",
+        {
+          reviewItemId: "review-1",
+          expectedRecordVersion: 3,
+          candidateRecordId: "record-2",
+          expectedCandidateVersion: 1,
+        },
+      ],
+      [
+        "enqueue_commit_review_batch",
+        { reviewItemIds: ["review-1", "review-2"] },
+      ],
+      ["get_review_job", { jobId: "job-1" }],
+      ["undo_committed_event", { eventId: "event-1" }],
       ["create_vault", { password: "password" }],
+      ["choose_local_inbox_root", undefined],
+      ["local_inbox_status", undefined],
+      ["disable_local_inbox", undefined],
+      ["rescan_local_inbox", undefined],
+      ["list_statement_coverage_prompts", undefined],
+      [
+        "record_statement_coverage_decision",
+        {
+          request: {
+            accountId: "account-1",
+            action: "remind_later",
+            documentType: "account_statement",
+            moneySourceId: "source-dbs",
+            remindAfter: "2026-08-01",
+            statementPeriodFrom: "2026-07-01",
+            statementPeriodTo: "2026-07-31",
+          },
+        },
+      ],
       ["unlock_vault", { password: "password" }],
       ["unlock_vault_with_keychain", undefined],
       ["remember_vault_on_this_mac", undefined],
