@@ -23,7 +23,7 @@ const EXEMPTIONS = new Map([
 ]);
 
 const files = execSync(
-  "git ls-files 'apps/*.ts' 'apps/*.tsx' 'apps/*.rs' 'packages/*.ts' 'packages/*.tsx'",
+  "git ls-files --cached --others --exclude-standard 'apps/*.ts' 'apps/*.tsx' 'apps/*.rs' 'packages/*.ts' 'packages/*.tsx'",
   { encoding: "utf8" },
 )
   .split("\n")
