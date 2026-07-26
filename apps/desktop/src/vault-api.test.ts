@@ -29,6 +29,7 @@ describe("Vault API", () => {
     const calls: Array<[string, Record<string, unknown> | undefined]> = [];
     const listCommands = new Set([
       "list_money_sources",
+      "list_account_confirmation_prompts",
       "list_recent_activity",
       "list_relationship_candidates",
       "list_review_items",
@@ -97,6 +98,8 @@ describe("Vault API", () => {
     await api.deleteSourceDocument("document-1");
     await api.importSourceDocument();
     await api.listMoneySources();
+    await api.listAccountConfirmationPrompts();
+    await api.confirmCandidateAccounts("source-dbs", ["account-1", "account-2"]);
     await api.listSourceDocuments("source-dbs");
     await api.listUnassignedSourceDocuments();
     const removeVaultLockListener = await api.onVaultLocked(() => undefined);
@@ -188,6 +191,14 @@ describe("Vault API", () => {
       ["delete_source_document", { documentId: "document-1" }],
       ["import_source_document", undefined],
       ["list_money_sources", undefined],
+      ["list_account_confirmation_prompts", undefined],
+      [
+        "confirm_candidate_accounts",
+        {
+          moneySourceId: "source-dbs",
+          expectedCandidateAccountIds: ["account-1", "account-2"],
+        },
+      ],
       ["list_source_documents", { moneySourceId: "source-dbs" }],
       ["list_unassigned_source_documents", undefined],
       ["normalize_source_document", { documentId: "document-1" }],

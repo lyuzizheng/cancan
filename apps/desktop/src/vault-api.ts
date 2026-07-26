@@ -2,7 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import type {
+  AccountConfirmationOutcome,
+  AccountConfirmationPrompt,
   AcceptReviewRelationshipArgs,
+  ConfirmCandidateAccountsArgs,
   EditReviewRecordArgs,
   EnqueueCommitReviewBatchArgs,
   GetReviewJobArgs,
@@ -64,6 +67,10 @@ export interface VaultApi {
     candidateRecordId: string,
     expectedCandidateVersion: number,
   ): Promise<ReviewMutationOutcome>;
+  confirmCandidateAccounts(
+    moneySourceId: string,
+    expectedCandidateAccountIds: string[],
+  ): Promise<AccountConfirmationOutcome>;
   createVault(password: string): Promise<VaultStatus>;
   chooseLocalInboxRoot(): Promise<LocalInboxStatus | null>;
   deleteSourceDocument(documentId: string): Promise<boolean>;
@@ -80,6 +87,7 @@ export interface VaultApi {
   getReviewJob(jobId: string): Promise<ReviewJobSummary | null>;
   importSourceDocument(): Promise<SourceDocumentImportOutcome | null>;
   listMoneySources(): Promise<MoneySourceSummary[]>;
+  listAccountConfirmationPrompts(): Promise<AccountConfirmationPrompt[]>;
   listStatementCoveragePrompts(): Promise<StatementCoveragePrompt[]>;
   listRecentActivity(): Promise<RecentActivitySummary[]>;
   listRelationshipCandidates(
@@ -194,6 +202,16 @@ export function createVaultApi(
         args,
       );
     },
+    confirmCandidateAccounts: (moneySourceId, expectedCandidateAccountIds) => {
+      const args: ConfirmCandidateAccountsArgs = {
+        moneySourceId,
+        expectedCandidateAccountIds,
+      };
+      return call<AccountConfirmationOutcome, ConfirmCandidateAccountsArgs>(
+        "confirm_candidate_accounts",
+        args,
+      );
+    },
     enqueueCommitReviewBatch: (reviewItemIds) => {
       const args: EnqueueCommitReviewBatchArgs = { reviewItemIds };
       return call<ReviewJobSummary, EnqueueCommitReviewBatchArgs>(
@@ -295,6 +313,8 @@ export function createVaultApi(
     importSourceDocument: () =>
       call<SourceDocumentImportOutcome | null>("import_source_document"),
     listMoneySources: () => call<MoneySourceSummary[]>("list_money_sources"),
+    listAccountConfirmationPrompts: () =>
+      call<AccountConfirmationPrompt[]>("list_account_confirmation_prompts"),
     listSourceDocuments: (moneySourceId) => {
       const args: ListSourceDocumentsArgs = { moneySourceId };
       return call<SourceDocumentSummary[], ListSourceDocumentsArgs>(

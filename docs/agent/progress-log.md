@@ -10,12 +10,13 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Added strict host protocol validation and transactional persistence for the validated parse run and six versioned external records. Repeating the same document/profile is idempotent; a future changed profile versions records without rewriting committed facts.
 - Completed the current `parse_document -> reconcile_document` job handoff. The consumed reconcile job moves the unqualified synthetic profile's staged records into Review, is lease-recoverable and retry-safe, and creates no ledger event or auto-commit eligibility.
 - Kept first-seen account authority fail-closed: candidate accounts may parse and reach Review, but the atomic commit boundary returns `account_confirmation_required` until both relationship accounts are confirmed.
+- Added the host-owned first-account confirmation contract: pending prompts expose only presentation-safe candidate data, and exact-set confirmation is atomic, stale-safe, idempotent after success, and audit-backed.
 - Expanded the one shared Rust/TypeScript/packaged-sidecar golden command to the full 33-observation fixture and serialized worker input so an awaited normalization result cannot be overtaken by shutdown.
 - Kept the checkpoint deterministic and credential-free. It adds no renderer work, real provider claim, live AI/OCR call, API key, account-confirmation UI, or automatic ledger commit.
 
 ### Next
 
-- Add the smallest host-owned first-account confirmation flow, then connect a real supported provider package and prove the complete Local Inbox scan-to-Activity path. Keep UI craft with Kimi and do not add more folder-specific machinery.
+- Connect the compact first-account confirmation prompt to the host contract, then add a real supported provider package and prove the complete Local Inbox scan-to-Activity path. Keep UI craft with Kimi and do not add more folder-specific machinery.
 
 ## 2026-07-25
 

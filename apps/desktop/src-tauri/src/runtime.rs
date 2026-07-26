@@ -1,15 +1,16 @@
 use crate::{
     database::{
-        ClaimedReviewBatch, CommitReviewGroup, CorePreparedReversalEvent, CorePreparedReviewEvent,
-        CoreReviewRecord, DATABASE_FILE_NAME, ManualImportStore, MoneyOverview,
-        RecentActivitySummary, RelationshipCandidateSummary, ReviewBatchGroupOutcome,
-        ReviewBatchGroupStatus, ReviewItemDetail, ReviewItemSummary, ReviewJobSummary,
-        ReviewMutationOutcome, ReviewMutationStatus, ReviewRelationshipCandidateInput,
-        SourceDocumentImport, SourceDocumentImportOutcome, SourceDocumentImportStatus,
-        SourceDocumentRoutingOutcome, SourceDocumentView, StatementCoverageDecision,
-        StatementCoverageDecisionInput, StatementCoveragePolicy, StatementCoveragePrompt,
-        StatementPasswordStatus, TrustedAccountCandidate, TrustedDocumentClassification,
-        UndoOutcome, ValidatedExternalRecordInput, ValidatedStructuredParseInput,
+        AccountConfirmationOutcome, AccountConfirmationPrompt, ClaimedReviewBatch,
+        CommitReviewGroup, CorePreparedReversalEvent, CorePreparedReviewEvent, CoreReviewRecord,
+        DATABASE_FILE_NAME, ManualImportStore, MoneyOverview, RecentActivitySummary,
+        RelationshipCandidateSummary, ReviewBatchGroupOutcome, ReviewBatchGroupStatus,
+        ReviewItemDetail, ReviewItemSummary, ReviewJobSummary, ReviewMutationOutcome,
+        ReviewMutationStatus, ReviewRelationshipCandidateInput, SourceDocumentImport,
+        SourceDocumentImportOutcome, SourceDocumentImportStatus, SourceDocumentRoutingOutcome,
+        SourceDocumentView, StatementCoverageDecision, StatementCoverageDecisionInput,
+        StatementCoveragePolicy, StatementCoveragePrompt, StatementPasswordStatus,
+        TrustedAccountCandidate, TrustedDocumentClassification, UndoOutcome,
+        ValidatedExternalRecordInput, ValidatedStructuredParseInput,
     },
     local_inbox::{
         AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureOutcome,
@@ -1688,6 +1689,44 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("list_sources_failed"))
     }
 
+    pub(crate) fn list_account_confirmation_prompts(
+        &self,
+    ) -> Result<Vec<AccountConfirmationPrompt>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .list_account_confirmation_prompts()
+            .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
+    }
+
+    pub(crate) fn confirm_candidate_accounts(
+        &self,
+        money_source_id: &str,
+        expected_candidate_account_ids: &[String],
+    ) -> Result<AccountConfirmationOutcome, RuntimeError> {
+        if money_source_id.is_empty()
+            || expected_candidate_account_ids.is_empty()
+            || expected_candidate_account_ids
+                .iter()
+                .any(|account_id| account_id.is_empty())
+            || expected_candidate_account_ids
+                .iter()
+                .collect::<HashSet<_>>()
+                .len()
+                != expected_candidate_account_ids.len()
+        {
+            return Err(RuntimeError::new("invalid_account_confirmation_request"));
+        }
+        let audit_id = random_identifier("audit");
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .confirm_candidate_accounts(money_source_id, expected_candidate_account_ids, &audit_id)
+            .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
+    }
+
     pub(crate) fn list_unassigned_source_documents(
         &self,
     ) -> Result<Vec<SourceDocumentSummary>, RuntimeError> {
@@ -3145,6 +3184,32 @@ pub(crate) async fn list_money_sources(
         .await
         .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
         .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn list_account_confirmation_prompts(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<AccountConfirmationPrompt>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.list_account_confirmation_prompts())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn confirm_candidate_accounts(
+    money_source_id: String,
+    expected_candidate_account_ids: Vec<String>,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<AccountConfirmationOutcome, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.confirm_candidate_accounts(&money_source_id, &expected_candidate_account_ids)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -6209,7 +6274,7 @@ balance,2026-07-01,savings-002,350.00,SGD",
     }
 
     #[test]
-    fn review_read_models_reject_a_locked_vault() {
+    fn review_and_account_confirmation_models_reject_a_locked_vault() {
         let parent = tempfile::tempdir().expect("temporary app data");
         let runtime = VaultRuntime::new(parent.path().join("vault"));
 
@@ -6224,6 +6289,20 @@ balance,2026-07-01,savings-002,350.00,SGD",
             runtime
                 .money_overview()
                 .expect_err("reject overview while locked")
+                .code(),
+            "vault_locked"
+        );
+        assert_eq!(
+            runtime
+                .list_account_confirmation_prompts()
+                .expect_err("reject confirmation list while locked")
+                .code(),
+            "vault_locked"
+        );
+        assert_eq!(
+            runtime
+                .confirm_candidate_accounts("source-dbs", &["account-1".to_owned()])
+                .expect_err("reject confirmation while locked")
                 .code(),
             "vault_locked"
         );

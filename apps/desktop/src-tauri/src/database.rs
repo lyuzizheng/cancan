@@ -4,7 +4,9 @@ use crate::{
 };
 use hkdf::Hkdf;
 use rand::{RngCore, rngs::OsRng};
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, Transaction, params};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior, params,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -70,6 +72,7 @@ const MIGRATIONS: &[Migration] = &[
 ];
 
 const REVIEW_POLICY_VERSION: &str = "review-ledger-v1";
+const ACCOUNT_CONFIRMATION_POLICY_VERSION: &str = "account-confirmation-v1";
 const COMMIT_REVIEW_BATCH_JOB_TYPE: &str = "commit_review_batch";
 const PARSE_DOCUMENT_JOB_TYPE: &str = "parse_document";
 const RECONCILE_DOCUMENT_JOB_TYPE: &str = "reconcile_document";
@@ -344,6 +347,38 @@ pub(crate) struct MoneySourceView {
     pub(crate) display_name: String,
     pub(crate) money_source_id: String,
     pub(crate) source_type: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AccountConfirmationCandidate {
+    pub(crate) account_id: String,
+    pub(crate) account_type: String,
+    pub(crate) currency: Option<String>,
+    pub(crate) display_name: String,
+    pub(crate) masked_identifier: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AccountConfirmationPrompt {
+    pub(crate) candidate_accounts: Vec<AccountConfirmationCandidate>,
+    pub(crate) display_name: String,
+    pub(crate) money_source_id: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AccountConfirmationStatus {
+    AlreadyConfirmed,
+    Confirmed,
+    Conflict,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AccountConfirmationOutcome {
+    pub(crate) status: AccountConfirmationStatus,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1493,6 +1528,127 @@ impl ManualImportStore {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub(crate) fn list_account_confirmation_prompts(
+        &self,
+    ) -> StoreResult<Vec<AccountConfirmationPrompt>> {
+        let mut statement = self.connection.prepare(
+            "SELECT money_sources.id, money_sources.display_name, accounts.id, \
+                    accounts.display_name, accounts.account_type, accounts.masked_identifier, \
+                    accounts.currency \
+             FROM accounts \
+             JOIN money_sources ON money_sources.id = accounts.money_source_id \
+             WHERE accounts.status = 'candidate' \
+             ORDER BY money_sources.display_name, money_sources.id, accounts.display_name, accounts.id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                AccountConfirmationCandidate {
+                    account_id: row.get(2)?,
+                    display_name: row.get(3)?,
+                    account_type: row.get(4)?,
+                    masked_identifier: row.get(5)?,
+                    currency: row.get(6)?,
+                },
+            ))
+        })?;
+        let mut prompts: Vec<AccountConfirmationPrompt> = Vec::new();
+        for row in rows {
+            let (money_source_id, display_name, candidate) = row?;
+            match prompts.last_mut() {
+                Some(prompt) if prompt.money_source_id == money_source_id => {
+                    prompt.candidate_accounts.push(candidate);
+                }
+                _ => prompts.push(AccountConfirmationPrompt {
+                    candidate_accounts: vec![candidate],
+                    display_name,
+                    money_source_id,
+                }),
+            }
+        }
+        Ok(prompts)
+    }
+
+    pub(crate) fn confirm_candidate_accounts(
+        &mut self,
+        money_source_id: &str,
+        expected_candidate_account_ids: &[String],
+        audit_id: &str,
+    ) -> StoreResult<AccountConfirmationOutcome> {
+        let expected_ids = expected_candidate_account_ids
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if money_source_id.is_empty()
+            || audit_id.is_empty()
+            || expected_ids.is_empty()
+            || expected_ids.len() != expected_candidate_account_ids.len()
+            || expected_ids.iter().any(|account_id| account_id.is_empty())
+        {
+            return Ok(AccountConfirmationOutcome {
+                status: AccountConfirmationStatus::Conflict,
+            });
+        }
+
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let account_statuses = {
+            let mut statement = transaction.prepare(
+                "SELECT id, status FROM accounts WHERE money_source_id = ?1 ORDER BY id",
+            )?;
+            statement
+                .query_map([money_source_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<BTreeMap<_, _>, _>>()?
+        };
+        let candidate_ids = account_statuses
+            .iter()
+            .filter_map(|(account_id, status)| {
+                (status == "candidate").then_some(account_id.clone())
+            })
+            .collect::<BTreeSet<_>>();
+        if candidate_ids == expected_ids {
+            transaction.execute(
+                "UPDATE accounts SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP \
+                 WHERE money_source_id = ?1 AND status = 'candidate'",
+                [money_source_id],
+            )?;
+            transaction.execute(
+                "INSERT INTO audit_log( \
+                   id, entity_type, entity_id, action, actor, reason, source_ref, policy_version \
+                 ) VALUES (?1, 'money_source', ?2, 'candidate_accounts_confirmed', 'user', \
+                           'candidate_accounts_confirmed', ?3, ?4)",
+                params![
+                    audit_id,
+                    money_source_id,
+                    format!("candidate_accounts={}", expected_ids.len()),
+                    ACCOUNT_CONFIRMATION_POLICY_VERSION,
+                ],
+            )?;
+            transaction.commit()?;
+            return Ok(AccountConfirmationOutcome {
+                status: AccountConfirmationStatus::Confirmed,
+            });
+        }
+        if candidate_ids.is_empty()
+            && expected_ids.iter().all(|account_id| {
+                account_statuses
+                    .get(account_id)
+                    .is_some_and(|status| status == "confirmed")
+            })
+        {
+            return Ok(AccountConfirmationOutcome {
+                status: AccountConfirmationStatus::AlreadyConfirmed,
+            });
+        }
+        Ok(AccountConfirmationOutcome {
+            status: AccountConfirmationStatus::Conflict,
+        })
     }
 
     pub fn source_document_input(&self, document_id: &str) -> StoreResult<SourceDocumentFileInput> {
@@ -4264,6 +4420,259 @@ mod tests {
         );
     }
 
+    fn seed_candidate_account(
+        store: &ManualImportStore,
+        account_id: &str,
+        money_source_id: &str,
+        display_name: &str,
+        account_type: &str,
+        masked_identifier: Option<&str>,
+        currency: Option<&str>,
+    ) {
+        store
+            .connection
+            .execute(
+                "INSERT INTO accounts( \
+                   id, money_source_id, provider_key, provider_account_id, account_type, \
+                   display_name, masked_identifier, currency, status, raw_identity_json \
+                 ) VALUES (?1, ?2, 'synthetic', ?3, ?4, ?5, ?6, ?7, 'candidate', ?8)",
+                params![
+                    account_id,
+                    money_source_id,
+                    format!("private-{account_id}"),
+                    account_type,
+                    display_name,
+                    masked_identifier,
+                    currency,
+                    format!(r#"{{"providerAccountId":"private-{account_id}"}}"#),
+                ],
+            )
+            .expect("seed candidate account");
+    }
+
+    #[test]
+    fn lists_pending_account_confirmations_without_private_identity_fields() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let store = open_store(root.path());
+        store
+            .seed_money_source("source-alpha", "alpha", "Alpha Bank", "bank")
+            .expect("seed source");
+        seed_candidate_account(
+            &store,
+            "candidate-dbs",
+            "source-dbs",
+            "Everyday",
+            "deposit_account",
+            Some("••001"),
+            Some("SGD"),
+        );
+        seed_candidate_account(
+            &store,
+            "candidate-alpha",
+            "source-alpha",
+            "Savings",
+            "deposit_account",
+            None,
+            Some("USD"),
+        );
+        seed_candidate_account(
+            &store,
+            "confirmed-dbs",
+            "source-dbs",
+            "Confirmed",
+            "deposit_account",
+            None,
+            Some("SGD"),
+        );
+        store
+            .connection
+            .execute(
+                "UPDATE accounts SET status = 'confirmed' WHERE id = 'confirmed-dbs'",
+                [],
+            )
+            .expect("confirm fixture account");
+
+        let prompts = store
+            .list_account_confirmation_prompts()
+            .expect("list pending confirmations");
+
+        assert_eq!(
+            prompts,
+            vec![
+                AccountConfirmationPrompt {
+                    candidate_accounts: vec![AccountConfirmationCandidate {
+                        account_id: "candidate-alpha".to_owned(),
+                        account_type: "deposit_account".to_owned(),
+                        currency: Some("USD".to_owned()),
+                        display_name: "Savings".to_owned(),
+                        masked_identifier: None,
+                    }],
+                    display_name: "Alpha Bank".to_owned(),
+                    money_source_id: "source-alpha".to_owned(),
+                },
+                AccountConfirmationPrompt {
+                    candidate_accounts: vec![AccountConfirmationCandidate {
+                        account_id: "candidate-dbs".to_owned(),
+                        account_type: "deposit_account".to_owned(),
+                        currency: Some("SGD".to_owned()),
+                        display_name: "Everyday".to_owned(),
+                        masked_identifier: Some("••001".to_owned()),
+                    }],
+                    display_name: "DBS".to_owned(),
+                    money_source_id: "source-dbs".to_owned(),
+                },
+            ]
+        );
+        let serialized = serde_json::to_string(&prompts).expect("serialize safe prompts");
+        assert!(!serialized.contains("providerAccountId"));
+        assert!(!serialized.contains("providerKey"));
+        assert!(!serialized.contains("rawIdentityJson"));
+        assert!(!serialized.contains("private-candidate-dbs"));
+    }
+
+    #[test]
+    fn confirms_the_exact_candidate_set_once() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let mut store = open_store(root.path());
+        seed_candidate_account(
+            &store,
+            "candidate-one",
+            "source-dbs",
+            "Everyday",
+            "deposit_account",
+            Some("••001"),
+            Some("SGD"),
+        );
+        seed_candidate_account(
+            &store,
+            "candidate-two",
+            "source-dbs",
+            "Savings",
+            "deposit_account",
+            Some("••002"),
+            Some("SGD"),
+        );
+        let expected = vec!["candidate-two".to_owned(), "candidate-one".to_owned()];
+
+        assert_eq!(
+            store
+                .confirm_candidate_accounts("source-dbs", &expected, "audit-confirm-accounts")
+                .expect("confirm exact candidate set"),
+            AccountConfirmationOutcome {
+                status: AccountConfirmationStatus::Confirmed,
+            }
+        );
+        let statuses = store
+            .connection
+            .prepare("SELECT status FROM accounts WHERE id IN (?1, ?2) ORDER BY id")
+            .expect("prepare account status query")
+            .query_map(["candidate-one", "candidate-two"], |row| {
+                row.get::<_, String>(0)
+            })
+            .expect("query account statuses")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect account statuses");
+        assert_eq!(statuses, vec!["confirmed", "confirmed"]);
+        let audit_count: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM audit_log \
+                 WHERE entity_id = 'source-dbs' AND action = 'candidate_accounts_confirmed'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count confirmation audits");
+        assert_eq!(audit_count, 1);
+
+        assert_eq!(
+            store
+                .confirm_candidate_accounts("source-dbs", &expected, "audit-repeat")
+                .expect("repeat confirmation"),
+            AccountConfirmationOutcome {
+                status: AccountConfirmationStatus::AlreadyConfirmed,
+            }
+        );
+        let repeated_audit_count: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM audit_log \
+                 WHERE entity_id = 'source-dbs' AND action = 'candidate_accounts_confirmed'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count repeated confirmation audits");
+        assert_eq!(repeated_audit_count, 1);
+    }
+
+    #[test]
+    fn rejects_a_stale_candidate_confirmation_without_writing() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let mut store = open_store(root.path());
+        seed_candidate_account(
+            &store,
+            "candidate-one",
+            "source-dbs",
+            "Everyday",
+            "deposit_account",
+            Some("••001"),
+            Some("SGD"),
+        );
+        seed_candidate_account(
+            &store,
+            "candidate-two",
+            "source-dbs",
+            "Savings",
+            "deposit_account",
+            Some("••002"),
+            Some("SGD"),
+        );
+        let expected = store
+            .list_account_confirmation_prompts()
+            .expect("list confirmation prompt")[0]
+            .candidate_accounts
+            .iter()
+            .map(|candidate| candidate.account_id.clone())
+            .collect::<Vec<_>>();
+        seed_candidate_account(
+            &store,
+            "candidate-new",
+            "source-dbs",
+            "New account",
+            "deposit_account",
+            Some("••003"),
+            Some("SGD"),
+        );
+
+        assert_eq!(
+            store
+                .confirm_candidate_accounts("source-dbs", &expected, "audit-stale")
+                .expect("reject stale confirmation"),
+            AccountConfirmationOutcome {
+                status: AccountConfirmationStatus::Conflict,
+            }
+        );
+        let candidate_count: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM accounts \
+                 WHERE money_source_id = 'source-dbs' AND status = 'candidate'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count unchanged candidates");
+        let audit_count: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM audit_log \
+                 WHERE entity_id = 'source-dbs' AND action = 'candidate_accounts_confirmed'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count confirmation audits");
+        assert_eq!(candidate_count, 3);
+        assert_eq!(audit_count, 0);
+    }
+
     fn import<'a>(
         source_path: &'a Path,
         document_id: &'a str,
@@ -5954,6 +6363,28 @@ mod tests {
             .query_row("SELECT count(*) FROM ledger_events", [], |row| row.get(0))
             .expect("count ledger events");
         assert_eq!(event_count, 0);
+
+        assert_eq!(
+            store
+                .confirm_candidate_accounts(
+                    "source-dbs",
+                    &["account-dbs-card".to_owned()],
+                    "audit-confirm-card",
+                )
+                .expect("confirm candidate account"),
+            AccountConfirmationOutcome {
+                status: AccountConfirmationStatus::Confirmed,
+            }
+        );
+        let committed = store
+            .commit_prepared_review_group(&claimed, &groups[0], &prepared_repayment())
+            .expect("commit after account confirmation");
+        assert_eq!(committed.status, ReviewBatchGroupStatus::Committed);
+        let committed_event_count: i64 = store
+            .connection
+            .query_row("SELECT count(*) FROM ledger_events", [], |row| row.get(0))
+            .expect("count committed ledger events");
+        assert_eq!(committed_event_count, 1);
     }
 
     #[test]
