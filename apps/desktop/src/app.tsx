@@ -2,7 +2,9 @@ import { AppShell } from "@cancan/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  AccountConfirmationPrompt,
   EditReviewRecordArgs,
+  LocalInboxStatus,
   MoneyOverview,
   MoneySourceSummary,
   RecentActivitySummary,
@@ -14,10 +16,18 @@ import type {
   SourceDocumentPreview,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
+  StatementCoveragePrompt,
   StatementPasswordSourceSummary,
 } from "./command-contracts";
+import { coverageKey, type RemindState } from "./attention";
 import { Feedback, type Notice } from "./feedback";
-import { reviewConflictMessage } from "./format";
+import {
+  formatLedgerDate,
+  localInboxScanSummaryText,
+  localIsoToday,
+  reviewConflictMessage,
+} from "./format";
+import { InboxPanel } from "./inbox";
 import { OverviewView } from "./overview";
 import {
   ReviewView,
@@ -66,11 +76,19 @@ export interface SourcesViewProps {
   busy: boolean;
   deletingDocumentId: string | null;
   importing: boolean;
+  inbox: LocalInboxStatus | null;
+  inboxBusy: boolean;
+  inboxConfirmingDisable: boolean;
   loadingDocuments: boolean;
   normalizingDocumentId: string | null;
   notice: Notice | null;
   onDelete: (documentId: string) => void;
   onImport: () => void;
+  onInboxCancelDisable: () => void;
+  onInboxChoose: () => void;
+  onInboxConfirmDisable: () => void;
+  onInboxRequestDisable: () => void;
+  onInboxRescan: () => void;
   onLock: () => void;
   onNormalize: (documentId: string) => void;
   onOpenUnlock: (document: SourceDocumentSummary) => void;
@@ -145,6 +163,18 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     null,
   );
   const [undoingEventId, setUndoingEventId] = useState<string | null>(null);
+  const [moneySources, setMoneySources] = useState<MoneySourceSummary[]>([]);
+  const [localInbox, setLocalInbox] = useState<LocalInboxStatus | null>(null);
+  const [inboxBusy, setInboxBusy] = useState(false);
+  const [inboxConfirmingDisable, setInboxConfirmingDisable] = useState(false);
+  const [coveragePrompts, setCoveragePrompts] = useState<
+    StatementCoveragePrompt[] | null
+  >(null);
+  const [accountPrompts, setAccountPrompts] = useState<
+    AccountConfirmationPrompt[] | null
+  >(null);
+  const [attentionBusyKey, setAttentionBusyKey] = useState<string | null>(null);
+  const [remind, setRemind] = useState<RemindState | null>(null);
   const viewerRequestId = useRef(0);
   const previewRequestId = useRef(0);
   const unlockRequestId = useRef(0);
@@ -221,6 +251,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setMoneyOverview(null);
     setRecentActivity(null);
     setUndoingEventId(null);
+    setMoneySources([]);
+    setLocalInbox(null);
+    setInboxBusy(false);
+    setInboxConfirmingDisable(false);
+    setCoveragePrompts(null);
+    setAccountPrompts(null);
+    setAttentionBusyKey(null);
+    setRemind(null);
     setBusy(false);
     return nextSessionId;
   }, [clearViewer, clearPreview, stopReviewJobPolling]);
@@ -294,10 +332,22 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     const requestId = financeLoadRequestId.current + 1;
     financeLoadRequestId.current = requestId;
     try {
-      const [items, overview, activity] = await Promise.all([
+      const [
+        items,
+        overview,
+        activity,
+        sources,
+        inbox,
+        coverage,
+        accounts,
+      ] = await Promise.all([
         api.listReviewItems(),
         api.getMoneyOverview(),
         api.listRecentActivity(),
+        api.listMoneySources(),
+        api.localInboxStatus(),
+        api.listStatementCoveragePrompts(),
+        api.listAccountConfirmationPrompts(),
       ]);
       if (
         vaultSessionId.current === sessionId
@@ -306,6 +356,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setReviewItems(items);
         setMoneyOverview(overview);
         setRecentActivity(activity);
+        setMoneySources(sources);
+        setLocalInbox(inbox);
+        setCoveragePrompts(coverage);
+        setAccountPrompts(accounts);
         setSelectedReviewIds((current) => new Set(
           [...current].filter((id) =>
             items.some((item) => item.reviewItemId === id)
@@ -1313,6 +1367,237 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     });
   };
 
+  const chooseInboxFolder = async () => {
+    if (inboxBusy) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setInboxBusy(true);
+    try {
+      const status = await api.chooseLocalInboxRoot();
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      if (status === null) {
+        return;
+      }
+      setLocalInbox(status);
+      setInboxConfirmingDisable(false);
+      setNotice({
+        body: "New statements you save to Inbox are added for you. The folder stays outside your encrypted Vault.",
+        tone: "success",
+        title: "CanCan Inbox is on",
+      });
+      await loadFinanceData();
+    } catch (nextError) {
+      if (vaultSessionId.current === sessionId) {
+        setError(commandErrorMessage(nextError));
+      }
+    } finally {
+      if (vaultSessionId.current === sessionId) {
+        setInboxBusy(false);
+      }
+    }
+  };
+
+  const rescanInbox = async () => {
+    if (inboxBusy) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setInboxBusy(true);
+    try {
+      const summary = await api.rescanLocalInbox();
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      setLocalInbox((current) => current === null
+        ? current
+        : { ...current, lastScan: summary });
+      setNotice({
+        body: localInboxScanSummaryText(summary),
+        tone: "success",
+        title: "Inbox checked",
+      });
+      await loadFinanceData();
+    } catch (nextError) {
+      if (vaultSessionId.current === sessionId) {
+        setError(commandErrorMessage(nextError));
+      }
+    } finally {
+      if (vaultSessionId.current === sessionId) {
+        setInboxBusy(false);
+      }
+    }
+  };
+
+  const disableInbox = async () => {
+    if (inboxBusy) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setInboxBusy(true);
+    try {
+      const status = await api.disableLocalInbox();
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      setLocalInbox(status);
+      setInboxConfirmingDisable(false);
+      setNotice({
+        body: "Your Cancan folder and its files stay untouched. You can choose it again anytime.",
+        tone: "success",
+        title: "CanCan Inbox is off",
+      });
+    } catch (nextError) {
+      if (vaultSessionId.current === sessionId) {
+        setError(commandErrorMessage(nextError));
+      }
+    } finally {
+      if (vaultSessionId.current === sessionId) {
+        setInboxBusy(false);
+      }
+    }
+  };
+
+  const decideCoverage = async (
+    prompt: StatementCoveragePrompt,
+    action: "not_expected" | "remind_later",
+    remindAfter?: string,
+  ) => {
+    if (attentionBusyKey !== null) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setAttentionBusyKey(coverageKey(prompt));
+    try {
+      await api.recordStatementCoverageDecision({
+        accountId: prompt.accountId,
+        action,
+        documentType: prompt.documentType,
+        moneySourceId: prompt.moneySourceId,
+        ...(remindAfter === undefined ? {} : { remindAfter }),
+        statementPeriodFrom: prompt.statementPeriodFrom,
+        statementPeriodTo: prompt.statementPeriodTo,
+      });
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      setRemind(null);
+      setNotice(action === "not_expected"
+        ? {
+            body: "CanCan won’t ask about that period again.",
+            tone: "success",
+            title: "Got it",
+          }
+        : {
+            body: `CanCan will ask again after ${formatLedgerDate(remindAfter ?? "")}.`,
+            tone: "success",
+            title: "Reminder saved",
+          });
+      await loadFinanceData();
+    } catch (nextError) {
+      if (vaultSessionId.current === sessionId) {
+        setRemind((current) => current === null
+          ? current
+          : { ...current, saving: false });
+        setNotice({
+          body: commandErrorMessage(nextError),
+          tone: "attention",
+          title: "Couldn’t save that",
+        });
+        await loadFinanceData();
+      }
+    } finally {
+      if (vaultSessionId.current === sessionId) {
+        setAttentionBusyKey(null);
+      }
+    }
+  };
+
+  const startRemind = (prompt: StatementCoveragePrompt) => {
+    setRemind({ date: "", error: null, key: coverageKey(prompt), saving: false });
+  };
+
+  const saveRemind = () => {
+    const state = remind;
+    if (!state || state.saving || attentionBusyKey !== null) {
+      return;
+    }
+    const prompt = coveragePrompts?.find(
+      (candidate) => coverageKey(candidate) === state.key,
+    );
+    if (!prompt) {
+      setRemind(null);
+      return;
+    }
+    const date = state.date.trim();
+    if (!ISO_DATE.test(date) || !isRealIsoDate(date)) {
+      setRemind((current) => current === null
+        ? current
+        : { ...current, error: "Date must use the YYYY-MM-DD format, such as 2026-09-01." });
+      return;
+    }
+    if (date <= localIsoToday()) {
+      setRemind((current) => current === null
+        ? current
+        : { ...current, error: "Pick a future date." });
+      return;
+    }
+    setRemind({ ...state, date, saving: true });
+    void decideCoverage(prompt, "remind_later", date);
+  };
+
+  const confirmAccounts = async (prompt: AccountConfirmationPrompt) => {
+    if (attentionBusyKey !== null) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setAttentionBusyKey(`account:${prompt.moneySourceId}`);
+    try {
+      const outcome = await api.confirmCandidateAccounts(
+        prompt.moneySourceId,
+        prompt.candidateAccounts.map((account) => account.accountId),
+      );
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      if (outcome.status === "conflict") {
+        setNotice({
+          body: "CanCan reloaded the latest account list. Check it and confirm again.",
+          tone: "attention",
+          title: "That account list changed",
+        });
+      } else {
+        setNotice(outcome.status === "already_confirmed"
+          ? {
+              body: "Those accounts were already confirmed.",
+              tone: "success",
+              title: "Already confirmed",
+            }
+          : {
+              body: "Their records can now be added to your ledger.",
+              tone: "success",
+              title: "Accounts confirmed",
+            });
+      }
+      await loadFinanceData();
+    } catch (nextError) {
+      if (vaultSessionId.current === sessionId) {
+        setNotice({
+          body: commandErrorMessage(nextError),
+          tone: "attention",
+          title: "Couldn’t confirm those accounts",
+        });
+        await loadFinanceData();
+      }
+    } finally {
+      if (vaultSessionId.current === sessionId) {
+        setAttentionBusyKey(null);
+      }
+    }
+  };
+
   const modalOpen = viewer !== null
     || preview !== null
     || unlockingDocument !== null;
@@ -1357,15 +1642,29 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
 
         {unlocked && activeView === "overview" ? (
           <OverviewView
+            accountPrompts={accountPrompts ?? []}
+            attentionBusyKey={attentionBusyKey}
+            coveragePrompts={coveragePrompts ?? []}
             loading={moneyOverview === null && recentActivity === null}
             moneyOverview={moneyOverview}
+            moneySources={moneySources}
             notice={notice}
+            onAddFile={() => navigate("sources")}
+            onCancelRemind={() => setRemind(null)}
+            onChangeRemindDate={(value) => setRemind((current) => current === null
+              ? current
+              : { ...current, date: value, error: null })}
+            onConfirmAccounts={(prompt) => void confirmAccounts(prompt)}
+            onCoverageNotExpected={(prompt) => void decideCoverage(prompt, "not_expected")}
             onLock={() => void requestVaultLock()}
             onOpenReview={() => navigate("review")}
             onOpenSources={() => navigate("sources")}
             onRefresh={() => void refreshVaultStatus()}
+            onSaveRemind={saveRemind}
+            onStartRemind={startRemind}
             onUndo={undoCommittedEvent}
             recentActivity={recentActivity}
+            remind={remind}
             reviewCount={reviewItems?.length ?? null}
             undoingEventId={undoingEventId}
           />
@@ -1405,11 +1704,19 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             busy={busy}
             deletingDocumentId={deletingDocumentId}
             importing={importing}
+            inbox={localInbox}
+            inboxBusy={inboxBusy}
+            inboxConfirmingDisable={inboxConfirmingDisable}
             loadingDocuments={loadingDocuments}
             normalizingDocumentId={normalizingDocumentId}
             notice={notice}
             onDelete={deleteDocument}
             onImport={importDocument}
+            onInboxCancelDisable={() => setInboxConfirmingDisable(false)}
+            onInboxChoose={() => void chooseInboxFolder()}
+            onInboxConfirmDisable={() => void disableInbox()}
+            onInboxRequestDisable={() => setInboxConfirmingDisable(true)}
+            onInboxRescan={() => void rescanInbox()}
             onLock={() => void requestVaultLock()}
             onNormalize={normalizeDocument}
             onOpenUnlock={openDocumentUnlock}
@@ -1537,6 +1844,17 @@ export function SourcesView(props: SourcesViewProps) {
         </section>
 
         {props.notice ? <Feedback {...props.notice} /> : null}
+
+        <InboxPanel
+          busy={props.inboxBusy}
+          confirmingDisable={props.inboxConfirmingDisable}
+          onCancelDisable={props.onInboxCancelDisable}
+          onChoose={props.onInboxChoose}
+          onConfirmDisable={props.onInboxConfirmDisable}
+          onRequestDisable={props.onInboxRequestDisable}
+          onRescan={props.onInboxRescan}
+          status={props.inbox}
+        />
 
         <section className="source-panel" aria-labelledby="sources-heading">
           <div className="source-panel-heading">

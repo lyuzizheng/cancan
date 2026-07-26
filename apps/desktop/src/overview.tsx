@@ -1,8 +1,12 @@
 import type {
+  AccountConfirmationPrompt,
   MoneyOverview,
   MoneyOverviewAmount,
+  MoneySourceSummary,
   RecentActivitySummary,
+  StatementCoveragePrompt,
 } from "./command-contracts";
+import { AttentionSection, type RemindState } from "./attention";
 import { Feedback, type Notice } from "./feedback";
 import {
   eventTypeLabel,
@@ -11,15 +15,27 @@ import {
 } from "./format";
 
 export interface OverviewViewProps {
+  accountPrompts: AccountConfirmationPrompt[];
+  attentionBusyKey: string | null;
+  coveragePrompts: StatementCoveragePrompt[];
   loading: boolean;
   moneyOverview: MoneyOverview | null;
+  moneySources: MoneySourceSummary[];
   notice: Notice | null;
+  onAddFile: () => void;
+  onCancelRemind: () => void;
+  onChangeRemindDate: (value: string) => void;
+  onConfirmAccounts: (prompt: AccountConfirmationPrompt) => void;
+  onCoverageNotExpected: (prompt: StatementCoveragePrompt) => void;
   onLock: () => void;
   onOpenReview: () => void;
   onOpenSources: () => void;
   onRefresh: () => void;
+  onSaveRemind: () => void;
+  onStartRemind: (prompt: StatementCoveragePrompt) => void;
   onUndo: (eventId: string) => void;
   recentActivity: RecentActivitySummary[] | null;
+  remind: RemindState | null;
   reviewCount: number | null;
   undoingEventId: string | null;
 }
@@ -48,6 +64,21 @@ export function OverviewView(props: OverviewViewProps) {
 
       <section className="overview-content" aria-label="Money overview">
         {props.notice ? <Feedback {...props.notice} /> : null}
+
+        <AttentionSection
+          accountPrompts={props.accountPrompts}
+          attentionBusyKey={props.attentionBusyKey}
+          coveragePrompts={props.coveragePrompts}
+          moneySources={props.moneySources}
+          onAddFile={props.onAddFile}
+          onCancelRemind={props.onCancelRemind}
+          onChangeRemindDate={props.onChangeRemindDate}
+          onConfirmAccounts={props.onConfirmAccounts}
+          onNotExpected={props.onCoverageNotExpected}
+          onSaveRemind={props.onSaveRemind}
+          onStartRemind={props.onStartRemind}
+          remind={props.remind}
+        />
 
         <section className="money-panel" aria-labelledby="money-overview-heading">
           <div className="money-panel-heading">

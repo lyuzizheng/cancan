@@ -405,6 +405,27 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t render that document.";
     case "delete_source_failed":
       return "CanCan couldn’t finish removing this Vault file. Refresh its status before trying again.";
+    case "local_inbox_not_configured":
+      return "Set up your CanCan Inbox folder first.";
+    case "local_inbox_setup_required":
+      return "CanCan Inbox needs attention before it can check for new files.";
+    case "local_inbox_setup_failed":
+      return "CanCan couldn’t prepare Inbox and Backups in that folder. CanCan never changes existing files.";
+    case "local_inbox_reauthorization_required":
+      return "Choose your Cancan folder again so CanCan can reach it.";
+    case "local_inbox_storage_failed":
+    case "local_inbox_unavailable":
+      return "CanCan couldn’t reach the local Inbox setup. Try again.";
+    case "file_selection_failed":
+      return "CanCan couldn’t use that folder choice. Try again.";
+    case "coverage_unavailable":
+      return "CanCan couldn’t load statement coverage. Try again.";
+    case "coverage_decision_invalid":
+      return "That prompt changed. CanCan reloaded the latest list.";
+    case "account_confirmation_unavailable":
+      return "CanCan couldn’t confirm those accounts. Try again.";
+    case "invalid_account_confirmation_request":
+      return "That account confirmation isn’t valid.";
     default:
       return "Couldn’t complete that request. Try again.";
   }
