@@ -13,9 +13,10 @@
     "test:rust": "pnpm --filter @cancan/desktop test:rust",
     "build:web": "pnpm --filter @cancan/desktop build:web",
     "build:desktop": "pnpm --filter @cancan/desktop build:desktop",
-    "verify:fast": "pnpm typecheck && pnpm test:unit && pnpm build:web",
+    "check:file-size": "node scripts/check-source-file-size.mjs",
+    "verify:fast": "pnpm check:file-size && pnpm typecheck && pnpm test:unit && pnpm build:web",
     "verify:native": "pnpm --filter @cancan/desktop verify:native",
-    "verify": "pnpm typecheck && pnpm test:unit && pnpm --filter @cancan/desktop verify"
+    "verify": "pnpm check:file-size && pnpm typecheck && pnpm test:unit && pnpm --filter @cancan/desktop verify"
   },
   "devDependencies": {
     "happy-dom": "20.10.6",

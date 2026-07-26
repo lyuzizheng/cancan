@@ -6,15 +6,14 @@ import type {
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
 } from "./command-contracts";
+import { DocumentViewer } from "./document-modals";
+import { importNotice, routingNotice } from "./notices";
 import {
-  DocumentViewer,
   SourcesView,
-  VaultGate,
-  importNotice,
   parseReceivedAt,
-  routingNotice,
   type SourcesViewProps,
-} from "./app";
+} from "./sources-view";
+import { VaultGate } from "./vault-gate";
 
 const document: SourceDocumentSummary = {
   byteSize: 42,

@@ -1,10 +1,8 @@
-#[allow(dead_code)]
 mod database;
 mod local_inbox;
 mod runtime;
 mod source_observations;
 mod system_lock;
-#[allow(dead_code)]
 mod vault;
 mod viewer;
 
