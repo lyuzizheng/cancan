@@ -112,6 +112,8 @@ UOB credit card statement
 Wise PDF/CSV/export
 ```
 
+HSBC bank statements may be used as review-only fixtures for the DBS-card repayment scenario. That fixture work does not add HSBC to the initial MVP supported-provider list.
+
 Additional samples for password-protected PDFs are required once locked-PDF handling is implemented.
 
 ## Auto-commit qualification gate

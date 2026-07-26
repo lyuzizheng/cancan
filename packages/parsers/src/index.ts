@@ -14,3 +14,5 @@ export type {
   ValidatedExternalRecord,
 } from "./contracts";
 export { validateStructuredProposal } from "./validate-structured-proposal";
+export type { ProviderDocumentPackage } from "./provider-document-package";
+export { selectProviderDocumentPackage } from "./provider-document-package";
