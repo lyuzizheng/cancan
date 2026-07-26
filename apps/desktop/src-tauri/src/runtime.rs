@@ -275,6 +275,7 @@ struct NormalizerRecord {
     instrument_symbol: Option<String>,
     posted_at: Option<String>,
     posted_on: Option<String>,
+    posting_status: Option<String>,
     proposal_account_id: Option<String>,
     proposal_record_id: String,
     provider_record_id: Option<String>,
@@ -4019,6 +4020,10 @@ fn valid_normalizer_record(record: &NormalizerRecord) -> bool {
         && optional_normalizer_string(&record.provider_record_id, 256)
         && optional_normalizer_string(&record.event_type, 128)
         && optional_normalizer_string(&record.posted_on, 32)
+        && record
+            .posting_status
+            .as_deref()
+            .is_none_or(|value| matches!(value, "provisional" | "posted"))
         && optional_normalizer_string(&record.transaction_on, 32)
         && optional_normalizer_string(&record.posted_at, 64)
         && optional_normalizer_string(&record.description_raw, 4 * 1024)
@@ -4093,6 +4098,7 @@ fn validated_structured_parse_input(
                 currency: Some(currency),
                 event_type: record.event_type.clone(),
                 posted_on: record.posted_on.clone(),
+                posting_status: record.posting_status.clone(),
                 raw_json: serde_json::to_string(&record.raw).ok()?,
                 record_type: record.record_type.clone(),
                 stable_record_key: record.stable_record_key.clone(),
@@ -6386,8 +6392,13 @@ balance,2026-07-01,savings-002,350.00,SGD",
             .normalization_input(&imported.document_id)
             .expect("extract complete synthetic observations");
 
+        let mut normalizer_result = synthetic_normalizer_result();
+        let NormalizerResult::Classified { proposal } = &mut normalizer_result else {
+            panic!("synthetic result must be classified");
+        };
+        proposal.records[0].posting_status = Some("posted".to_owned());
         let routed = runtime
-            .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
+            .apply_normalizer_result(&imported.document_id, &input, normalizer_result)
             .expect("persist validated proposal");
         assert_eq!(
             routed.status,
@@ -6405,6 +6416,22 @@ balance,2026-07-01,savings-002,350.00,SGD",
                 staged_records: 6,
             }
         );
+        assert_eq!(
+            structured_parse_posting_status(
+                &runtime,
+                &imported.document_id,
+                "synthetic:record-checking-out",
+            ),
+            Some("posted".to_owned())
+        );
+        assert_eq!(
+            structured_parse_posting_status(
+                &runtime,
+                &imported.document_id,
+                "synthetic:record-savings-in",
+            ),
+            None
+        );
 
         assert!(
             runtime
@@ -6421,6 +6448,14 @@ balance,2026-07-01,savings-002,350.00,SGD",
         runtime
             .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
             .expect("repeat same profile");
+        assert_eq!(
+            structured_parse_posting_status(
+                &runtime,
+                &imported.document_id,
+                "synthetic:record-checking-out",
+            ),
+            Some("posted".to_owned())
+        );
         assert_eq!(
             runtime
                 .queued_document_reconciliations()
@@ -6516,6 +6551,49 @@ balance,2026-07-01,savings-002,350.00,SGD",
         );
     }
 
+    #[test]
+    fn rejects_invalid_normalizer_posting_status_without_persisting_records_or_review() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("synthetic.csv");
+        fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source(
+                "source-synthetic",
+                "synthetic-bank",
+                "Synthetic Bank",
+                "bank",
+            )
+            .expect("seed source");
+        let imported = runtime
+            .import_selected_document(&source_path, None)
+            .expect("capture statement");
+        let input = runtime
+            .normalization_input(&imported.document_id)
+            .expect("extract complete synthetic observations");
+        let mut invalid = synthetic_normalizer_result();
+        let NormalizerResult::Classified { proposal } = &mut invalid else {
+            panic!("synthetic result must be classified");
+        };
+        proposal.records[0].posting_status = Some("pending".to_owned());
+
+        let outcome = runtime
+            .apply_normalizer_result(&imported.document_id, &input, invalid)
+            .expect("reject invalid protocol safely");
+        assert_eq!(
+            outcome.status,
+            crate::database::SourceDocumentRoutingStatus::NeedsAttention
+        );
+        let state = structured_parse_test_state(&runtime, &imported.document_id);
+        assert_eq!(
+            (state.parse_runs, state.records, state.open_review_items),
+            (0, 0, 0)
+        );
+    }
+
     fn structured_parse_test_state(
         runtime: &VaultRuntime,
         document_id: &str,
@@ -6526,6 +6604,19 @@ balance,2026-07-01,savings-002,350.00,SGD",
             .expect("unlocked store")
             .structured_parse_test_state(document_id)
             .expect("read structured parse state")
+    }
+
+    fn structured_parse_posting_status(
+        runtime: &VaultRuntime,
+        document_id: &str,
+        stable_record_key: &str,
+    ) -> Option<String> {
+        let store = runtime.store().expect("open store");
+        store
+            .as_ref()
+            .expect("unlocked store")
+            .structured_parse_posting_status(document_id, stable_record_key)
+            .expect("read structured parse posting status")
     }
 
     fn expire_reconcile_lease_for_test(runtime: &VaultRuntime, document_id: &str) {
@@ -6653,6 +6744,7 @@ balance,2026-07-01,savings-002,350.00,SGD",
             instrument_symbol: None,
             posted_at: None,
             posted_on: Some("2026-07-01".to_owned()),
+            posting_status: None,
             proposal_account_id: Some(proposal_account_id.to_owned()),
             proposal_record_id: proposal_record_id.to_owned(),
             provider_record_id: None,

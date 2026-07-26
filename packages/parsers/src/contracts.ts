@@ -31,6 +31,7 @@ export interface CanonicalExternalRecordInput {
   proposalRecordId: string;
   providerRecordId?: string;
   recordType: "transaction" | "balance" | "position" | "trade" | "valuation" | "fee" | "interest";
+  postingStatus?: "provisional" | "posted";
   eventType?: string;
   proposalAccountId?: string;
   instrumentSymbol?: string;

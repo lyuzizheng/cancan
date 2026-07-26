@@ -15,7 +15,7 @@ function migration(name: string): string {
   return readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8");
 }
 
-function openDatabase(maxVersion = 7): DatabaseSync {
+function openDatabase(maxVersion = 8): DatabaseSync {
   process.env.CANCAN_TEST = "1";
   const directory = mkdtempSync(join(tmpdir(), "cancan-test-vault-manual-import-"));
   testDirectories.push(directory);
@@ -31,6 +31,7 @@ function openDatabase(maxVersion = 7): DatabaseSync {
     { version: 5, name: "0005_money_source_statement_password.sql" },
     { version: 6, name: "0006_review_ledger.sql" },
     { version: 7, name: "0007_local_inbox.sql" },
+    { version: 8, name: "0008_external_record_posting_status.sql" },
   ]
     .filter(({ version }) => version <= maxVersion)
     .map(({ version, name }) => ({
@@ -385,6 +386,31 @@ describe("vault manual import migration", () => {
       job_type: "commit_review_batch",
       status: "queued",
     });
+    applyMigrations(database, [
+      {
+        version: 8,
+        sql: migration("0008_external_record_posting_status.sql"),
+      },
+    ]);
+
+    expect(
+      database
+        .prepare("SELECT posting_status FROM external_records WHERE id = 'record-current'")
+        .get(),
+    ).toEqual({ posting_status: null });
+    database
+      .prepare("UPDATE external_records SET posting_status = 'posted' WHERE id = 'record-current'")
+      .run();
+    expect(
+      database
+        .prepare("SELECT posting_status FROM external_records WHERE id = 'record-current'")
+        .get(),
+    ).toEqual({ posting_status: "posted" });
+    expect(() =>
+      database
+        .prepare("UPDATE external_records SET posting_status = 'pending' WHERE id = 'record-current'")
+        .run(),
+    ).toThrow(/CHECK constraint failed/);
     expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
   });
 });

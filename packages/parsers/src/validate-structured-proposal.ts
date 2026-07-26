@@ -159,6 +159,13 @@ function validOffsetTimestamp(value: string): boolean {
 }
 
 function recordSchemaIsValid(record: CanonicalExternalRecordInput): boolean {
+  if (
+    record.postingStatus !== undefined &&
+    record.postingStatus !== "provisional" &&
+    record.postingStatus !== "posted"
+  ) {
+    return false;
+  }
   if (record.postedOn && !validDateOnly(record.postedOn)) {
     return false;
   }

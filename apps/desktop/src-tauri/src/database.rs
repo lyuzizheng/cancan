@@ -69,6 +69,13 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../../../packages/db/migrations/0007_local_inbox.sql"),
         foreign_keys_off: false,
     },
+    Migration {
+        version: 8,
+        sql: include_str!(
+            "../../../../packages/db/migrations/0008_external_record_posting_status.sql"
+        ),
+        foreign_keys_off: false,
+    },
 ];
 
 const REVIEW_POLICY_VERSION: &str = "review-ledger-v1";
@@ -461,6 +468,7 @@ pub(crate) struct ValidatedExternalRecordInput {
     pub(crate) currency: Option<String>,
     pub(crate) event_type: Option<String>,
     pub(crate) posted_on: Option<String>,
+    pub(crate) posting_status: Option<String>,
     pub(crate) raw_json: String,
     pub(crate) record_type: String,
     pub(crate) stable_record_key: String,
@@ -2036,8 +2044,8 @@ impl ManualImportStore {
                 "INSERT INTO external_records( \
                    id, parse_run_id, source_document_id, account_id, stable_record_key, version, \
                    status, record_type, event_type, posted_on, amount_value, currency, \
-                   account_balance_delta, raw_json, validation_json \
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'staged', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                   account_balance_delta, posting_status, raw_json, validation_json \
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'staged', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     new_database_id("record"),
                     parse_run_id,
@@ -2051,6 +2059,7 @@ impl ManualImportStore {
                     record.amount_value,
                     record.currency,
                     record.account_balance_delta,
+                    record.posting_status,
                     record.raw_json,
                     record.validation_json,
                 ],
@@ -2113,6 +2122,22 @@ impl ManualImportStore {
                 |row| row.get(0),
             )?,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn structured_parse_posting_status(
+        &self,
+        document_id: &str,
+        stable_record_key: &str,
+    ) -> StoreResult<Option<String>> {
+        self.connection
+            .query_row(
+                "SELECT posting_status FROM external_records \
+                 WHERE source_document_id = ?1 AND stable_record_key = ?2",
+                params![document_id, stable_record_key],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
     }
 
     #[cfg(test)]
@@ -3443,6 +3468,10 @@ fn validate_structured_parse_input(
                 .posted_on
                 .as_deref()
                 .is_some_and(|value| !valid_iso_date(value))
+            || record
+                .posting_status
+                .as_deref()
+                .is_some_and(|value| !matches!(value, "provisional" | "posted"))
             || record
                 .amount_value
                 .as_deref()

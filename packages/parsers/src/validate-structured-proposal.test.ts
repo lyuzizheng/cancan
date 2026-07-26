@@ -120,6 +120,56 @@ describe("validateStructuredProposal", () => {
     });
   });
 
+  it.each(["pending", "POSTED", ""])(
+    "rejects an invalid postingStatus: %s",
+    async (postingStatus) => {
+      const fixture = createSyntheticTransferFixture();
+      const record = fixture.proposal.records[0];
+      if (!record) {
+        throw new Error("synthetic fixture is missing its first record");
+      }
+      record.postingStatus = postingStatus as "posted";
+
+      const result = await validateStructuredProposal({
+        ...fixture,
+        recordContract: syntheticBankRecordContract,
+      });
+
+      expect(result).toEqual({
+        status: "invalid",
+        errors: [
+          {
+            proposalRecordId: "record-checking-out",
+            code: "schema_invalid",
+          },
+        ],
+      });
+    },
+  );
+
+  it("preserves a valid postingStatus in the normalized proposal", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    if (!record) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    record.postingStatus = "posted";
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") {
+      throw new Error("expected the synthetic proposal to validate");
+    }
+    expect(result.records[0]).toMatchObject({
+      proposalRecordId: "record-checking-out",
+      postingStatus: "posted",
+    });
+  });
+
   it("does not treat a numeric substring as an exact table-cell match", async () => {
     const fixture = createSyntheticTransferFixture();
     const record = fixture.proposal.records[0];

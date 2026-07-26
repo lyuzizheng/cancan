@@ -6,6 +6,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Added nullable `provisional`/`posted` posting-status transport and persistence across the parser, worker, Rust normalizer, and SQLite records; legacy rows remain null. This is provider readiness only: it adds no provider package, eligibility/commit change, UI, or live-AI behavior.
 - Added the deterministic structured-record checkpoint to the shared manual/Local Inbox production boundary. The bundled mock normalizer now validates one coherent six-row synthetic statement through the canonical parser contract and returns the complete structured proposal rather than classification metadata alone.
 - Added strict host protocol validation and transactional persistence for the validated parse run and six versioned external records. Repeating the same document/profile is idempotent; a future changed profile versions records without rewriting committed facts.
 - Completed the current `parse_document -> reconcile_document` job handoff. The consumed reconcile job moves the unqualified synthetic profile's staged records into Review, is lease-recoverable and retry-safe, and creates no ledger event or auto-commit eligibility.
