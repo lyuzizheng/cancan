@@ -2,6 +2,20 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-27
+
+### Completed
+
+- Executed the structural-debt checkpoint with no behavior, schema, or command-contract change. `runtime.rs` became the `runtime/` domain modules (error, keyring, sidecar support, vault lifecycle, inbox, documents, review, tests) and `database.rs` became `database/` with extracted row-mapping, validation, migration, and import-persistence helpers plus its test module; the `ManualImportStore` impl split stayed a registered follow-up. The renderer extracted `SourcesView`, the document modals, `VaultGate`, and notice helpers out of `app.tsx`, and the interaction-test monolith split into per-flow files over one shared `test-support/app-harness`.
+- Routed the uniform Tauri command bodies through one shared blocking-task helper in `runtime/error.rs` that logs the join/source failure before returning the stable `runtime_unavailable` code; renderer-visible error codes did not change.
+- Added the ratchet-only source-file-size guardrail (`pnpm check:file-size`, wired into `verify:fast`/`verify`) with `docs/specs/0001-repo-structure.md` owning the limits and module boundaries.
+- Removed the `#[allow(dead_code)]` shields on `mod database`/`mod vault` and deleted or test-gated what the compiler flagged.
+- Corrected the repository's dead-code picture: `packages/ai` worker/worker-protocol is the production sidecar source consumed at build time by `build:sidecar`, and `packages/core`/`packages/parsers` are production through it; only the TypeScript `packages/db` repository layer remains deliberately test-only for the synthetic core slice.
+
+### Next
+
+- Decide the two new registered rows in `docs/alignment-temp/alignment-progress.md` (generated renderer/host command bindings plus renderer data layer; host error observability plus store-lock granularity) before the next feature slice that touches those surfaces. The per-aggregate `ManualImportStore` impl split and shrinking `app.tsx` below the base guardrail follow those decisions.
+
 ## 2026-07-25
 
 ### Completed

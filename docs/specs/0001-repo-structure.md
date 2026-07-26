@@ -145,6 +145,44 @@ Production packages must not import from `spikes/`. A spike may remain as reprod
 
 Developer setup is a root concern. `scripts/setup-dev.sh` installs only the pinned toolchain and invokes real package/harness commands; it must not duplicate product behavior or hide package-specific build logic.
 
+## Source file size and module boundaries
+
+Source files must stay small enough for one reviewer or agent to hold in context. `pnpm check:file-size` enforces the limits and runs inside `pnpm verify:fast` and `pnpm verify`:
+
+```text
+production .ts/.tsx/.rs    800 lines
+*.test.* / *.spec.*        1200 lines
+Rust tests.rs modules      2500 lines
+```
+
+A file that outgrows its limit is split along the boundaries below (or a newly documented boundary in this spec) before the change merges; the limit is never raised for convenience.
+
+The privileged desktop host keeps domain-directory modules instead of single-file crates:
+
+```text
+apps/desktop/src-tauri/src/runtime/
+  mod.rs             shared types/constants, VaultRuntime state and core accessors, re-exports
+  error.rs           RuntimeError/VaultCommandError codes and the shared blocking-task helper
+  keyring.rs         Keychain-backed remembered-key, statement-password, and bookmark stores
+  sidecar.rs         normalizer/review-core sidecar process control and file-write helpers
+  vault_lifecycle.rs vault create/unlock/lock/recovery methods and their commands
+  inbox.rs           local-inbox methods, job orchestration, and their commands
+  documents.rs       document/statement-password methods and their commands
+  review.rs          review-ledger methods, batch jobs, and their commands
+  tests.rs           runtime test module
+apps/desktop/src-tauri/src/database/
+  mod.rs             record types, ManualImportStore and its impl, re-exports
+  migrations.rs      encrypted open, key derivation, migration application
+  rows.rs            row-to-view mapping and review-record open helpers
+  validation.rs      decimal/date/identifier validation helpers
+  imports.rs         import/deletion persistence and audit helpers
+  tests.rs           database test module
+```
+
+Splitting the `ManualImportStore` impl into per-aggregate modules is a registered follow-up in `docs/alignment-temp/alignment-progress.md`; until then the store impl carries a ratchet-only size exemption.
+
+The renderer keeps `app.tsx` as orchestration state only; presentational views live in sibling modules (`sources-view.tsx`, `document-modals.tsx`, `vault-gate.tsx`, `notices.ts`, `overview.tsx`, `review.tsx`, `vault-spine.tsx`). Interaction tests split per flow with shared fixtures instead of one monolithic file.
+
 ## Implemented workspace and application gates
 
 The production workspace currently contains `apps/desktop`, `packages/core`, `packages/db`, `packages/parsers`, and `packages/ui`. The synthetic core slice implements pure financial preparation rules, the canonical proposal/grounding boundary, and a slice-owned SQLite migration/repository used only by deterministic tests. The desktop shell imports the reusable UI package and still exposes no network, vault, secret, database, or Tauri command capability.
