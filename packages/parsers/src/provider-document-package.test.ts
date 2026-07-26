@@ -1,22 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  CanonicalExternalRecordInput,
-  ExtractionBundle,
-  SourceObservation,
-  StructuredParseProposal,
-} from "./contracts";
 import {
   selectProviderDocumentPackage,
   type ProviderDocumentPackage,
 } from "./provider-document-package";
+import {
+  createSyntheticProviderStatementFixture,
+  type SyntheticProviderStatementPosting,
+} from "./testing";
 
-type Posting = {
-  description: string;
-  side: "debit" | "credit";
-  amount: string;
-  eventType?: "credit_card_repayment";
-};
+type Posting = SyntheticProviderStatementPosting;
 
 function selected(
   providerKey: string,
@@ -58,154 +51,8 @@ function decimal(value: bigint): string {
 function fixture(
   providerPackage: ProviderDocumentPackage,
   postings: readonly Posting[],
-): {
-  semanticDocumentKey: string;
-  extractionBundle: ExtractionBundle;
-  proposal: StructuredParseProposal;
-} {
-  const providerAccountId = `${providerPackage.providerKey.toUpperCase()}-123456789`;
-  const accountId = "statement-account";
-  let running = 10_000n;
-  const rawRows: Record<string, unknown>[] = [
-    {
-      kind: "opening_balance",
-      date: "2026-07-01",
-      balance: "100.00",
-      locator: { row: 1 },
-    },
-  ];
-  const records: CanonicalExternalRecordInput[] = postings.map((posting, index) => {
-    const sign =
-      posting.side === "debit"
-        ? providerPackage.debitBalanceSign
-        : providerPackage.creditBalanceSign;
-    const delta = BigInt(sign) * minorUnits(posting.amount);
-    running += delta;
-    const raw = {
-      kind: "posting",
-      date: `2026-07-${String(index + 2).padStart(2, "0")}`,
-      description: posting.description,
-      ...(posting.side === "debit"
-        ? { debit: posting.amount }
-        : { credit: posting.amount }),
-      balance: decimal(running),
-      locator: { row: index + 2 },
-    };
-    rawRows.push(raw);
-    return {
-      proposalRecordId: `posting-${index + 1}`,
-      recordType: "transaction",
-      postingStatus: "posted",
-      ...(posting.eventType ? { eventType: posting.eventType } : {}),
-      proposalAccountId: accountId,
-      postedOn: raw.date,
-      descriptionRaw: posting.description,
-      amount: { value: posting.amount, currency: "SGD" },
-      statementEntrySide: posting.side,
-      accountBalanceDelta: {
-        value: decimal(delta),
-        currency: "SGD",
-      },
-      balanceAfter: { value: raw.balance, currency: "SGD" },
-      raw,
-    };
-  });
-  const closingDate = `2026-07-${String(postings.length + 2).padStart(2, "0")}`;
-  const closingRaw = {
-    kind: "closing_balance",
-    date: closingDate,
-    balance: decimal(running),
-    locator: { row: postings.length + 2 },
-  };
-  rawRows.push(closingRaw);
-
-  const observations: SourceObservation[] = rawRows.flatMap((raw, rowIndex) =>
-    Object.entries(raw)
-      .filter(
-        (entry): entry is [string, string] =>
-          entry[0] !== "kind" && typeof entry[1] === "string",
-      )
-      .map(([, text], columnIndex) => ({
-        id: `cell-${rowIndex + 1}-${columnIndex + 1}`,
-        kind: "table_cell" as const,
-        row: rowIndex + 1,
-        column: columnIndex + 1,
-        text,
-        engine: "synthetic-provider-fixture",
-        engineVersion: "1",
-      })),
-  );
-  observations.push({
-    id: "fingerprint",
-    kind: "native_text",
-    text: providerPackage.fingerprint.requiredAnchors.join(" "),
-    engine: "synthetic-provider-fixture",
-    engineVersion: "1",
-  });
-  observations.push(
-    {
-      id: "provider-account-id",
-      kind: "native_text",
-      text: `Account number ${providerAccountId}`,
-      engine: "synthetic-provider-fixture",
-      engineVersion: "1",
-    },
-    {
-      id: "statement-currency",
-      kind: "native_text",
-      text: "Statement currency SGD",
-      engine: "synthetic-provider-fixture",
-      engineVersion: "1",
-    },
-  );
-
-  return {
-    semanticDocumentKey: `${providerPackage.packageId}:2026-07`,
-    extractionBundle: {
-      sourceDocumentId: `document-${providerPackage.packageId}`,
-      fileSha256: "c".repeat(64),
-      mimeType: "application/pdf",
-      observations,
-      metadata: {},
-    },
-    proposal: {
-      document: {
-        providerKey: providerPackage.providerKey,
-        documentType: providerPackage.documentType,
-        statementPeriod: { from: "2026-07-01", to: closingDate },
-      },
-      accounts: [
-        {
-          proposalAccountId: accountId,
-          accountType: providerPackage.capabilities.accountType,
-          providerAccountId,
-          maskedIdentifier: "••6789",
-          currency: "SGD",
-        },
-      ],
-      openingSnapshots: [
-        {
-          proposalRecordId: "opening",
-          recordType: "balance",
-          proposalAccountId: accountId,
-          postedOn: "2026-07-01",
-          balanceAfter: { value: "100.00", currency: "SGD" },
-          raw: rawRows[0] as Record<string, unknown>,
-        },
-      ],
-      records,
-      closingSnapshots: [
-        {
-          proposalRecordId: "closing",
-          recordType: "balance",
-          proposalAccountId: accountId,
-          postedOn: closingDate,
-          balanceAfter: { value: closingRaw.balance, currency: "SGD" },
-          raw: closingRaw,
-        },
-      ],
-    },
-  };
+): ReturnType<typeof createSyntheticProviderStatementFixture> {
+  return createSyntheticProviderStatementFixture(providerPackage, postings);
 }
 
 function namedCases(providerPackage: ProviderDocumentPackage) {

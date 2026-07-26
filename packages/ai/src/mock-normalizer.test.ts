@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createSyntheticTransferFixture } from "@cancan/parsers/testing";
+import { selectProviderDocumentPackage } from "@cancan/parsers";
+import {
+  createSyntheticProviderStatementFixture,
+  createSyntheticTransferFixture,
+} from "@cancan/parsers/testing";
 
 import { normalizeWithMock } from "./mock-normalizer";
 
@@ -42,6 +46,39 @@ function fixtureInput() {
   };
 }
 
+function providerFixtureInput(providerKey: string, documentType: string) {
+  const providerPackage = selectProviderDocumentPackage({
+    providerKey,
+    documentType,
+    mimeType: "application/pdf",
+  });
+  if (!providerPackage) {
+    throw new Error(`missing provider fixture package ${providerKey}/${documentType}`);
+  }
+  const fixture = createSyntheticProviderStatementFixture(providerPackage);
+  const documentId = `document-${providerPackage.packageId}`;
+  fixture.extractionBundle.sourceDocumentId = documentId;
+  return { documentId, extractionBundle: fixture.extractionBundle };
+}
+
+function providerPdfFixtureInput(providerKey: string, documentType: string) {
+  const input = providerFixtureInput(providerKey, documentType);
+  const text = input.extractionBundle.observations.map(({ text: value }) => value).join("\n");
+  input.extractionBundle.observations = [
+    {
+      id: "pdf-page-1-native-text",
+      kind: "native_text",
+      page: 1,
+      textSpan: { start: 0, end: text.length },
+      text,
+      engine: "pdfkit",
+      engineVersion: "macos-page-string-v1",
+    },
+  ];
+  input.extractionBundle.metadata.observationCount = input.extractionBundle.observations.length;
+  return input;
+}
+
 describe("mock document normalizer", () => {
   it("returns the validated full synthetic proposal", async () => {
     const result = await normalizeWithMock(fixtureInput());
@@ -55,6 +92,22 @@ describe("mock document normalizer", () => {
     expect(result.proposal.openingSnapshots).toHaveLength(2);
     expect(result.proposal.records).toHaveLength(2);
     expect(result.proposal.closingSnapshots).toHaveLength(2);
+    expect(result.profile).toMatchObject({
+      id: "synthetic-bank-transfer-export-v1",
+      providerKey: "synthetic-bank",
+      documentType: "transfer_export",
+      packageId: "synthetic/bank_transfer_export@1",
+      normalizerRuntime: "single-pass-mock",
+      inputStrategy: "native-observations-v1",
+      modelProvider: "cancan-deterministic-mock",
+      model: "fixture-v1",
+      reviewOnly: true,
+      extractionEngines: expect.arrayContaining([
+        { kind: "table_cell", engine: "rust-csv", version: "1.4.0" },
+        { kind: "table_cell", engine: "synthetic-fixture", version: "1" },
+      ]),
+      ocrEngines: [],
+    });
     expect(
       [
         ...result.proposal.openingSnapshots,
@@ -68,6 +121,110 @@ describe("mock document normalizer", () => {
           record.validation.deterministicValidationPassed,
       ),
     ).toBe(true);
+  });
+
+  it.each([
+    {
+      providerKey: "dbs",
+      documentType: "bank_statement",
+      packageId: "dbs/bank_statement@1",
+      eventType: undefined,
+    },
+    {
+      providerKey: "dbs",
+      documentType: "credit_card_statement",
+      packageId: "dbs/credit_card_statement@1",
+      eventType: "credit_card_repayment",
+    },
+    {
+      providerKey: "hsbc",
+      documentType: "bank_statement",
+      packageId: "hsbc/bank_statement@1",
+      eventType: "credit_card_repayment",
+    },
+  ])(
+    "validates the $packageId synthetic provider fixture through its real package",
+    async ({ providerKey, documentType, packageId, eventType }) => {
+      const result = await normalizeWithMock(providerFixtureInput(providerKey, documentType));
+
+      expect(result.status).toBe("classified");
+      if (result.status !== "classified") {
+        throw new Error("expected the provider fixture to classify");
+      }
+      expect(result.proposal.document).toMatchObject({ providerKey, documentType });
+      expect(result.proposal.records[0]?.eventType).toBe(eventType);
+      expect(result.profile).toMatchObject({
+        providerKey,
+        documentType,
+        packageId,
+        packageVersion: "1.0.0",
+        parserVersion: "1.0.0",
+        skillVersion: "1.0.0",
+        promptVersion: "1.0.0",
+        schemaVersion: "1.0.0",
+        validatorVersion: "1.0.0",
+        normalizerRuntime: "single-pass-mock",
+        toolContractVersion: "1.0.0",
+        inputStrategy: "native-observations-v1",
+        modelProvider: "cancan-deterministic-mock",
+        model: "fixture-v1",
+        reviewOnly: true,
+        extractionEngines: expect.arrayContaining([
+          { kind: "native_text", engine: "synthetic-provider-fixture", version: "1" },
+          { kind: "table_cell", engine: "synthetic-provider-fixture", version: "1" },
+        ]),
+        ocrEngines: [],
+      });
+      expect(result.profile.id).toBe(
+        `mock:${packageId}:native-observations-v1:extract-native_text-synthetic-provider-fixture-1+extract-table_cell-synthetic-provider-fixture-1`,
+      );
+    },
+  );
+
+  it("validates a production-shaped DBS PDF bundle", async () => {
+    const result = await normalizeWithMock(providerPdfFixtureInput("dbs", "bank_statement"));
+
+    expect(result.status).toBe("classified");
+    if (result.status !== "classified") {
+      throw new Error("expected the native PDF fixture to classify");
+    }
+    expect(result.profile).toMatchObject({
+      id: "mock:dbs/bank_statement@1:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1",
+      extractionEngines: [
+        { kind: "native_text", engine: "pdfkit", version: "macos-page-string-v1" },
+      ],
+      ocrEngines: [],
+    });
+  });
+
+  it("returns needs attention when a provider fixture row is mutated", async () => {
+    const input = providerFixtureInput("dbs", "bank_statement");
+    const postingAmount = input.extractionBundle.observations.find(
+      ({ row, text }) => row === 2 && text === "20.00",
+    );
+    if (!postingAmount) {
+      throw new Error("missing synthetic provider posting amount");
+    }
+    postingAmount.text = "21.00";
+
+    expect(await normalizeWithMock(input)).toEqual({
+      status: "needs_attention",
+      reason: "unsupported_document",
+    });
+  });
+
+  it("returns needs attention when a provider marker names an unsupported package", async () => {
+    const input = providerFixtureInput("dbs", "bank_statement");
+    const marker = input.extractionBundle.observations.find(({ id }) => id === "fixture-marker");
+    if (!marker) {
+      throw new Error("missing synthetic provider marker");
+    }
+    marker.text = marker.text.replace("package_id=dbs/bank_statement@1", "package_id=unknown@1");
+
+    expect(await normalizeWithMock(input)).toEqual({
+      status: "needs_attention",
+      reason: "unsupported_document",
+    });
   });
 
   it("does not guess for unsupported evidence", async () => {

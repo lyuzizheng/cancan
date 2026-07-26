@@ -18,7 +18,7 @@ use crate::{
         capture_after_second_scan, ensure_inbox_paths, first_snapshot_after_preflight,
         resolve_root_bookmark,
     },
-    source_observations::{ExtractionBundle, extract_bundle},
+    source_observations::{ExtractionBundle, SourceObservationKind, extract_bundle},
     vault::{
         create_password_wrapper, create_recovery_file, open_password_wrapper,
         password_wrapper_profile, recovery_file_fingerprint,
@@ -76,8 +76,6 @@ const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const NORMALIZER_MAX_MESSAGE_BYTES: usize = 256 * 1024;
-const SYNTHETIC_NORMALIZATION_PROFILE_ID: &str = "synthetic-bank-transfer-export-v1";
-const SYNTHETIC_NORMALIZATION_PROFILE_JSON: &str = r#"{"normalizerRuntime":"single-pass-mock","parserContract":"structured-proposal-v1","validator":"synthetic-bank-v1"}"#;
 // The shipped synthetic normalizer models an on-demand export, so it has no
 // statement cadence. Real provider packages must add an explicit declaration;
 // CanCan never infers cadence from filenames or prior dates.
@@ -233,8 +231,58 @@ struct NormalizerStatementPeriod {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "status", deny_unknown_fields)]
 enum NormalizerResult {
-    Classified { proposal: Box<NormalizerProposal> },
-    NeedsAttention { reason: String },
+    Classified {
+        profile: Box<NormalizerProfile>,
+        proposal: Box<NormalizerProposal>,
+    },
+    NeedsAttention {
+        reason: String,
+    },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerProfile {
+    document_type: String,
+    extraction_engines: Vec<NormalizerProfileExtractionEngine>,
+    id: String,
+    input_strategy: String,
+    model: String,
+    model_provider: String,
+    normalizer_runtime: String,
+    ocr_engines: Vec<NormalizerProfileOcrEngine>,
+    package_id: String,
+    package_version: String,
+    parser_version: String,
+    prompt_version: String,
+    provider_key: String,
+    review_only: bool,
+    schema_version: String,
+    skill_version: String,
+    tool_contract_version: String,
+    validator_version: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerProfileExtractionEngine {
+    engine: String,
+    kind: NormalizerProfileExtractionKind,
+    version: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerProfileOcrEngine {
+    engine: String,
+    version: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum NormalizerProfileExtractionKind {
+    NativeText,
+    TableCell,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2214,8 +2262,8 @@ impl VaultRuntime {
         extraction_bundle: &ExtractionBundle,
         result: NormalizerResult,
     ) -> Result<SourceDocumentRoutingOutcome, RuntimeError> {
-        let proposal = match result {
-            NormalizerResult::Classified { proposal } => proposal,
+        let (profile, proposal) = match result {
+            NormalizerResult::Classified { profile, proposal } => (*profile, proposal),
             NormalizerResult::NeedsAttention { reason } => {
                 let reason = if reason == "unsupported_document" {
                     "unsupported_document"
@@ -2237,12 +2285,21 @@ impl VaultRuntime {
                 ),
             );
         };
-        if !valid_synthetic_fingerprint(extraction_bundle, &proposal) {
+        if !valid_normalization_profile(&profile, &proposal, extraction_bundle) {
             return self.finish_normalizer_outcome(
                 document_id,
                 SourceDocumentRoutingOutcome::needs_attention(
                     document_id,
-                    "provider_fingerprint_mismatch",
+                    "normalization_profile_invalid",
+                ),
+            );
+        }
+        if !valid_profiled_proposal(&proposal) {
+            return self.finish_normalizer_outcome(
+                document_id,
+                SourceDocumentRoutingOutcome::needs_attention(
+                    document_id,
+                    "classification_uncertain",
                 ),
             );
         }
@@ -2299,7 +2356,7 @@ impl VaultRuntime {
                 .map_err(|_| RuntimeError::new("classification_failed"))?;
             return Ok(outcome);
         }
-        let parse = validated_structured_parse_input(&proposal, &outcome.account_ids)
+        let parse = validated_structured_parse_input(&proposal, &profile, &outcome.account_ids)
             .ok_or_else(|| RuntimeError::new("normalizer_failed"))?;
         store
             .persist_validated_structured_parse(document_id, &parse)
@@ -3912,6 +3969,54 @@ fn valid_normalizer_ready(protocol_version: u8, runtime: &str, environment_clear
     protocol_version == 1 && runtime == "single-pass-mock" && environment_cleared
 }
 
+fn valid_normalization_profile(
+    profile: &NormalizerProfile,
+    proposal: &NormalizerProposal,
+    extraction_bundle: &ExtractionBundle,
+) -> bool {
+    profile.normalizer_runtime == "single-pass-mock"
+        && profile.input_strategy == "native-observations-v1"
+        && profile.model_provider == "cancan-deterministic-mock"
+        && profile.model == "fixture-v1"
+        && profile.review_only
+        && profile.id.len() <= 256
+        && profile.provider_key == proposal.document.provider_key
+        && profile.document_type == proposal.document.document_type
+        && valid_profile_engines(profile, extraction_bundle)
+        && match profile.package_id.as_str() {
+            "synthetic/bank_transfer_export@1" => {
+                profile.id == "synthetic-bank-transfer-export-v1"
+                    && matches!(
+                        extraction_bundle.mime_type.as_str(),
+                        "text/csv" | "application/pdf"
+                    )
+                    && profile.provider_key == "synthetic-bank"
+                    && profile.document_type == "transfer_export"
+                    && profile.package_version == "1.0.0"
+                    && profile.parser_version == "synthetic-bank-v1"
+                    && profile.skill_version == "synthetic-bank-v1"
+                    && profile.prompt_version == "synthetic-bank-v1"
+                    && profile.schema_version == "structured-proposal-v1"
+                    && profile.tool_contract_version == "synthetic-bank-v1"
+                    && profile.validator_version == "synthetic-bank-v1"
+                    && valid_synthetic_fingerprint(extraction_bundle, proposal)
+            }
+            "dbs/bank_statement@1" => {
+                valid_provider_package_profile(profile, extraction_bundle, "dbs", "bank_statement")
+            }
+            "dbs/credit_card_statement@1" => valid_provider_package_profile(
+                profile,
+                extraction_bundle,
+                "dbs",
+                "credit_card_statement",
+            ),
+            "hsbc/bank_statement@1" => {
+                valid_provider_package_profile(profile, extraction_bundle, "hsbc", "bank_statement")
+            }
+            _ => false,
+        }
+}
+
 fn valid_synthetic_fingerprint(
     extraction_bundle: &ExtractionBundle,
     proposal: &NormalizerProposal,
@@ -3955,33 +4060,204 @@ fn valid_synthetic_fingerprint(
                 && account.masked_identifier.as_deref() == Some("••002")
                 && account.currency.as_deref() == Some("SGD")
         })
-        && proposal_records(proposal).is_some_and(|records| {
-            let account_ids = proposal
-                .accounts
-                .iter()
-                .map(|account| account.proposal_account_id.as_str())
-                .collect::<HashSet<_>>();
-            !records.is_empty()
-                && records.iter().all(|record| {
-                    valid_normalizer_record(record)
-                        && record
-                            .proposal_account_id
-                            .as_deref()
-                            .is_some_and(|account_id| account_ids.contains(account_id))
-                })
-                && records
-                    .iter()
-                    .map(|record| record.proposal_record_id.as_str())
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == records.len()
-                && records
-                    .iter()
-                    .map(|record| record.stable_record_key.as_str())
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == records.len()
+}
+
+fn valid_provider_package_profile(
+    profile: &NormalizerProfile,
+    extraction_bundle: &ExtractionBundle,
+    provider_key: &str,
+    document_type: &str,
+) -> bool {
+    extraction_bundle.mime_type == "application/pdf"
+        && profile.provider_key == provider_key
+        && profile.document_type == document_type
+        && profile.package_version == "1.0.0"
+        && profile.parser_version == "1.0.0"
+        && profile.skill_version == "1.0.0"
+        && profile.prompt_version == "1.0.0"
+        && profile.schema_version == "1.0.0"
+        && profile.tool_contract_version == "1.0.0"
+        && profile.validator_version == "1.0.0"
+        && profile.id == provider_normalization_profile_id(profile)
+}
+
+fn valid_profile_engines(
+    profile: &NormalizerProfile,
+    extraction_bundle: &ExtractionBundle,
+) -> bool {
+    let profile_extraction = profile
+        .extraction_engines
+        .iter()
+        .map(|engine| {
+            canonical_profile_extraction_engine(engine).then(|| {
+                profile_extraction_engine_key(&engine.kind, &engine.engine, &engine.version)
+            })
         })
+        .collect::<Option<Vec<_>>>();
+    let profile_ocr = profile
+        .ocr_engines
+        .iter()
+        .map(|engine| {
+            canonical_profile_ocr_engine(engine)
+                .then(|| format!("{}\0{}", engine.engine, engine.version))
+        })
+        .collect::<Option<Vec<_>>>();
+    let (Some(profile_extraction), Some(profile_ocr)) = (profile_extraction, profile_ocr) else {
+        return false;
+    };
+    let mut profile_extraction_sorted = profile_extraction.clone();
+    let mut profile_ocr_sorted = profile_ocr.clone();
+    profile_extraction_sorted.sort();
+    profile_ocr_sorted.sort();
+    if profile_extraction != profile_extraction_sorted || profile_ocr != profile_ocr_sorted {
+        return false;
+    }
+
+    let mut extraction_engines = HashSet::new();
+    let mut ocr_engines = HashSet::new();
+    for observation in &extraction_bundle.observations {
+        match &observation.kind {
+            SourceObservationKind::NativeText => {
+                extraction_engines.insert(profile_extraction_engine_key(
+                    &NormalizerProfileExtractionKind::NativeText,
+                    &observation.engine,
+                    &observation.engine_version,
+                ));
+            }
+            SourceObservationKind::TableCell => {
+                extraction_engines.insert(profile_extraction_engine_key(
+                    &NormalizerProfileExtractionKind::TableCell,
+                    &observation.engine,
+                    &observation.engine_version,
+                ));
+            }
+            SourceObservationKind::OcrText => {
+                ocr_engines.insert(format!(
+                    "{}\0{}",
+                    observation.engine, observation.engine_version
+                ));
+            }
+        }
+    }
+    let mut extraction_engines = extraction_engines.into_iter().collect::<Vec<_>>();
+    let mut ocr_engines = ocr_engines.into_iter().collect::<Vec<_>>();
+    extraction_engines.sort();
+    ocr_engines.sort();
+    profile_extraction == extraction_engines && profile_ocr == ocr_engines
+}
+
+fn canonical_profile_extraction_engine(engine: &NormalizerProfileExtractionEngine) -> bool {
+    matches!(
+        (
+            &engine.kind,
+            engine.engine.as_str(),
+            engine.version.as_str()
+        ),
+        (
+            NormalizerProfileExtractionKind::NativeText,
+            "pdfkit",
+            "macos-page-string-v1"
+        ) | (
+            NormalizerProfileExtractionKind::TableCell,
+            "rust-csv",
+            "1.4.0"
+        )
+    )
+}
+
+fn canonical_profile_ocr_engine(engine: &NormalizerProfileOcrEngine) -> bool {
+    engine.engine == "apple-vision"
+        && engine.version == "vnrecognizetextrequest-revision-3-accurate"
+}
+
+fn profile_extraction_engine_key(
+    kind: &NormalizerProfileExtractionKind,
+    engine: &str,
+    version: &str,
+) -> String {
+    let kind = match kind {
+        NormalizerProfileExtractionKind::NativeText => "native_text",
+        NormalizerProfileExtractionKind::TableCell => "table_cell",
+    };
+    format!("{kind}\0{engine}\0{version}")
+}
+
+fn provider_normalization_profile_id(profile: &NormalizerProfile) -> String {
+    let engines = profile
+        .extraction_engines
+        .iter()
+        .map(|engine| {
+            let kind = match &engine.kind {
+                NormalizerProfileExtractionKind::NativeText => "native_text",
+                NormalizerProfileExtractionKind::TableCell => "table_cell",
+            };
+            format!("extract-{kind}-{}-{}", engine.engine, engine.version)
+        })
+        .chain(
+            profile
+                .ocr_engines
+                .iter()
+                .map(|engine| format!("ocr-{}-{}", engine.engine, engine.version)),
+        )
+        .collect::<Vec<_>>()
+        .join("+");
+    format!(
+        "mock:{}:native-observations-v1:{engines}",
+        profile.package_id
+    )
+}
+
+fn valid_profiled_proposal(proposal: &NormalizerProposal) -> bool {
+    if proposal.status != "valid"
+        || proposal.document.provider_key.is_empty()
+        || proposal.document.provider_key.len() > 128
+        || proposal.document.document_type.is_empty()
+        || proposal.document.document_type.len() > 128
+        || proposal.accounts.is_empty()
+        || proposal.accounts.len() > 128
+    {
+        return false;
+    }
+    let account_ids = proposal
+        .accounts
+        .iter()
+        .map(|account| account.proposal_account_id.as_str())
+        .collect::<HashSet<_>>();
+    if account_ids.len() != proposal.accounts.len()
+        || proposal.accounts.iter().any(|account| {
+            account.proposal_account_id.is_empty()
+                || account.proposal_account_id.len() > 256
+                || account.account_type.is_empty()
+                || account.account_type.len() > 128
+                || !optional_normalizer_string(&account.currency, 16)
+                || !optional_normalizer_string(&account.masked_identifier, 256)
+                || !optional_normalizer_string(&account.provider_account_id, 256)
+        })
+    {
+        return false;
+    }
+    proposal_records(proposal).is_some_and(|records| {
+        !records.is_empty()
+            && records.iter().all(|record| {
+                valid_normalizer_record(record)
+                    && record
+                        .proposal_account_id
+                        .as_deref()
+                        .is_some_and(|account_id| account_ids.contains(account_id))
+            })
+            && records
+                .iter()
+                .map(|record| record.proposal_record_id.as_str())
+                .collect::<HashSet<_>>()
+                .len()
+                == records.len()
+            && records
+                .iter()
+                .map(|record| record.stable_record_key.as_str())
+                .collect::<HashSet<_>>()
+                .len()
+                == records.len()
+    })
 }
 
 fn proposal_records(proposal: &NormalizerProposal) -> Option<Vec<&NormalizerRecord>> {
@@ -4057,6 +4333,7 @@ fn valid_normalizer_money(money: &&NormalizerMoney) -> bool {
 
 fn validated_structured_parse_input(
     proposal: &NormalizerProposal,
+    profile: &NormalizerProfile,
     account_ids: &[String],
 ) -> Option<ValidatedStructuredParseInput> {
     if proposal.accounts.len() != account_ids.len() {
@@ -4107,8 +4384,8 @@ fn validated_structured_parse_input(
         })
         .collect::<Option<Vec<_>>>()?;
     Some(ValidatedStructuredParseInput {
-        normalization_profile_id: SYNTHETIC_NORMALIZATION_PROFILE_ID.to_owned(),
-        profile_json: SYNTHETIC_NORMALIZATION_PROFILE_JSON.to_owned(),
+        normalization_profile_id: profile.id.clone(),
+        profile_json: serde_json::to_string(profile).ok()?,
         records,
     })
 }
@@ -4647,7 +4924,11 @@ mod tests {
             )
             .expect("seed routing source");
         let routed = runtime
-            .apply_normalizer_result(&outcome.document_id, &bundle, synthetic_normalizer_result())
+            .apply_normalizer_result(
+                &outcome.document_id,
+                &bundle,
+                synthetic_pdf_normalizer_result(),
+            )
             .expect("route protected text-layer PDF");
         assert_eq!(
             routed.status,
@@ -6393,7 +6674,7 @@ balance,2026-07-01,savings-002,350.00,SGD",
             .expect("extract complete synthetic observations");
 
         let mut normalizer_result = synthetic_normalizer_result();
-        let NormalizerResult::Classified { proposal } = &mut normalizer_result else {
+        let NormalizerResult::Classified { proposal, .. } = &mut normalizer_result else {
             panic!("synthetic result must be classified");
         };
         proposal.records[0].posting_status = Some("posted".to_owned());
@@ -6508,6 +6789,123 @@ balance,2026-07-01,savings-002,350.00,SGD",
         );
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accepts_a_review_only_dbs_profile_and_reconciles_its_records_to_review() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("dbs-statement.pdf");
+        fs::write(&source_path, synthetic_provider_statement_pdf()).expect("write DBS PDF fixture");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source("source-dbs", "dbs", "DBS", "bank")
+            .expect("seed DBS source");
+        let imported = runtime
+            .import_selected_document(&source_path, None)
+            .expect("capture DBS statement");
+        let input = runtime
+            .normalization_input(&imported.document_id)
+            .expect("extract native DBS PDF observation");
+
+        let routed = runtime
+            .apply_normalizer_result(&imported.document_id, &input, dbs_bank_normalizer_result())
+            .expect("apply review-only DBS result");
+
+        assert_eq!(
+            routed.status,
+            crate::database::SourceDocumentRoutingStatus::Routed
+        );
+        let staged = structured_parse_test_state(&runtime, &imported.document_id);
+        assert_eq!(
+            (staged.parse_runs, staged.records, staged.staged_records),
+            (1, 3, 3)
+        );
+        assert_eq!(staged.reconcile_status.as_deref(), Some("queued"));
+        assert!(
+            runtime
+                .start_document_reconciliation(&imported.document_id)
+                .expect("claim DBS reconcile job")
+        );
+        runtime
+            .reconcile_document(&imported.document_id)
+            .expect("move DBS records to Review");
+        let reviewed = structured_parse_test_state(&runtime, &imported.document_id);
+        assert_eq!((reviewed.parse_runs, reviewed.records), (1, 3));
+        assert_eq!(reviewed.open_review_items, 3);
+        assert_eq!(reviewed.ledger_events, 0);
+    }
+
+    #[test]
+    fn rejects_invalid_profiles_or_legacy_fingerprints_without_parse_persistence() {
+        for mismatch in ["unknown_package", "proposal_mismatch", "legacy_fingerprint"] {
+            let parent = tempfile::tempdir().expect("temporary app data");
+            let source_path = parent.path().join("synthetic.csv");
+            fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+            let runtime = VaultRuntime::new(parent.path().join("vault"));
+            runtime
+                .create(b"synthetic-vault-password")
+                .expect("create Vault");
+            runtime
+                .seed_money_source(
+                    "source-synthetic",
+                    "synthetic-bank",
+                    "Synthetic Bank",
+                    "bank",
+                )
+                .expect("seed source");
+            let imported = runtime
+                .import_selected_document(&source_path, None)
+                .expect("capture statement");
+            let mut input = runtime
+                .normalization_input(&imported.document_id)
+                .expect("extract complete synthetic observations");
+            let mut result = synthetic_normalizer_result();
+            let NormalizerResult::Classified { profile, .. } = &mut result else {
+                panic!("synthetic result must be classified");
+            };
+            if mismatch == "unknown_package" {
+                profile.package_id = "unknown/provider@1".to_owned();
+            } else if mismatch == "proposal_mismatch" {
+                profile.document_type = "bank_statement".to_owned();
+            } else if let Some(marker) = input
+                .observations
+                .iter_mut()
+                .find(|observation| observation.text.contains("CANCAN_SYNTHETIC_STATEMENT_V1"))
+            {
+                marker.text = "untrusted synthetic statement".to_owned();
+            } else {
+                panic!("synthetic marker must be present");
+            }
+
+            let outcome = runtime
+                .apply_normalizer_result(&imported.document_id, &input, result)
+                .expect("fail closed for invalid profile");
+            assert_eq!(
+                outcome.status,
+                crate::database::SourceDocumentRoutingStatus::NeedsAttention
+            );
+            let state = structured_parse_test_state(&runtime, &imported.document_id);
+            assert_eq!(
+                (state.parse_runs, state.records, state.open_review_items),
+                (0, 0, 0)
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_fields_in_the_normalization_profile_protocol() {
+        let mut encoded = serde_json::to_value(synthetic_normalization_profile())
+            .expect("serialize normalizer profile");
+        encoded
+            .as_object_mut()
+            .expect("serialized profile")
+            .insert("unexpected".to_owned(), serde_json::Value::Bool(true));
+
+        assert!(serde_json::from_value::<NormalizerProfile>(encoded).is_err());
+    }
+
     #[test]
     fn rejects_invalid_normalizer_protocol_without_persisting_records_or_review() {
         let parent = tempfile::tempdir().expect("temporary app data");
@@ -6532,7 +6930,7 @@ balance,2026-07-01,savings-002,350.00,SGD",
             .normalization_input(&imported.document_id)
             .expect("extract complete synthetic observations");
         let mut invalid = synthetic_normalizer_result();
-        let NormalizerResult::Classified { proposal } = &mut invalid else {
+        let NormalizerResult::Classified { proposal, .. } = &mut invalid else {
             panic!("synthetic result must be classified");
         };
         proposal.records[0].validation.raw_grounded = false;
@@ -6575,7 +6973,7 @@ balance,2026-07-01,savings-002,350.00,SGD",
             .normalization_input(&imported.document_id)
             .expect("extract complete synthetic observations");
         let mut invalid = synthetic_normalizer_result();
-        let NormalizerResult::Classified { proposal } = &mut invalid else {
+        let NormalizerResult::Classified { proposal, .. } = &mut invalid else {
             panic!("synthetic result must be classified");
         };
         proposal.records[0].posting_status = Some("pending".to_owned());
@@ -6630,6 +7028,7 @@ balance,2026-07-01,savings-002,350.00,SGD",
 
     fn synthetic_normalizer_result() -> NormalizerResult {
         NormalizerResult::Classified {
+            profile: Box::new(synthetic_normalization_profile()),
             proposal: Box::new(NormalizerProposal {
                 document: NormalizerDocument {
                     document_type: "transfer_export".to_owned(),
@@ -6718,6 +7117,128 @@ balance,2026-07-01,savings-002,350.00,SGD",
                 ],
                 status: "valid".to_owned(),
             }),
+        }
+    }
+
+    fn synthetic_normalization_profile() -> NormalizerProfile {
+        NormalizerProfile {
+            id: "synthetic-bank-transfer-export-v1".to_owned(),
+            provider_key: "synthetic-bank".to_owned(),
+            document_type: "transfer_export".to_owned(),
+            package_id: "synthetic/bank_transfer_export@1".to_owned(),
+            package_version: "1.0.0".to_owned(),
+            parser_version: "synthetic-bank-v1".to_owned(),
+            skill_version: "synthetic-bank-v1".to_owned(),
+            prompt_version: "synthetic-bank-v1".to_owned(),
+            schema_version: "structured-proposal-v1".to_owned(),
+            validator_version: "synthetic-bank-v1".to_owned(),
+            normalizer_runtime: "single-pass-mock".to_owned(),
+            tool_contract_version: "synthetic-bank-v1".to_owned(),
+            input_strategy: "native-observations-v1".to_owned(),
+            extraction_engines: vec![NormalizerProfileExtractionEngine {
+                kind: NormalizerProfileExtractionKind::TableCell,
+                engine: "rust-csv".to_owned(),
+                version: "1.4.0".to_owned(),
+            }],
+            ocr_engines: Vec::new(),
+            model_provider: "cancan-deterministic-mock".to_owned(),
+            model: "fixture-v1".to_owned(),
+            review_only: true,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn synthetic_pdf_normalizer_result() -> NormalizerResult {
+        let mut result = synthetic_normalizer_result();
+        let NormalizerResult::Classified { profile, .. } = &mut result else {
+            panic!("synthetic result must be classified");
+        };
+        profile.extraction_engines = vec![NormalizerProfileExtractionEngine {
+            kind: NormalizerProfileExtractionKind::NativeText,
+            engine: "pdfkit".to_owned(),
+            version: "macos-page-string-v1".to_owned(),
+        }];
+        result
+    }
+
+    #[cfg(target_os = "macos")]
+    fn dbs_bank_normalizer_result() -> NormalizerResult {
+        NormalizerResult::Classified {
+            profile: Box::new(dbs_bank_normalization_profile()),
+            proposal: Box::new(NormalizerProposal {
+                document: NormalizerDocument {
+                    document_type: "bank_statement".to_owned(),
+                    provider_key: "dbs".to_owned(),
+                    statement_id: Some("dbs-bank_statement-2026-07".to_owned()),
+                    statement_period: Some(NormalizerStatementPeriod {
+                        from: Some("2026-07-01".to_owned()),
+                        to: Some("2026-07-03".to_owned()),
+                    }),
+                },
+                accounts: vec![NormalizerAccount {
+                    account_type: "deposit_account".to_owned(),
+                    currency: Some("SGD".to_owned()),
+                    masked_identifier: Some("••6789".to_owned()),
+                    proposal_account_id: "dbs-account".to_owned(),
+                    provider_account_id: Some("DBS-123456789".to_owned()),
+                }],
+                opening_snapshots: vec![synthetic_normalizer_record(
+                    "dbs-opening",
+                    "dbs-account",
+                    "balance",
+                    "balance_snapshot",
+                    None,
+                    None,
+                    "100.00",
+                )],
+                records: vec![synthetic_normalizer_record(
+                    "dbs-posting",
+                    "dbs-account",
+                    "transaction",
+                    "same_currency_transfer",
+                    Some("20.00"),
+                    Some("-20.00"),
+                    "80.00",
+                )],
+                closing_snapshots: vec![synthetic_normalizer_record(
+                    "dbs-closing",
+                    "dbs-account",
+                    "balance",
+                    "balance_snapshot",
+                    None,
+                    None,
+                    "80.00",
+                )],
+                status: "valid".to_owned(),
+            }),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn dbs_bank_normalization_profile() -> NormalizerProfile {
+        NormalizerProfile {
+            id: "mock:dbs/bank_statement@1:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1".to_owned(),
+            provider_key: "dbs".to_owned(),
+            document_type: "bank_statement".to_owned(),
+            package_id: "dbs/bank_statement@1".to_owned(),
+            package_version: "1.0.0".to_owned(),
+            parser_version: "1.0.0".to_owned(),
+            skill_version: "1.0.0".to_owned(),
+            prompt_version: "1.0.0".to_owned(),
+            schema_version: "1.0.0".to_owned(),
+            validator_version: "1.0.0".to_owned(),
+            normalizer_runtime: "single-pass-mock".to_owned(),
+            tool_contract_version: "1.0.0".to_owned(),
+            input_strategy: "native-observations-v1".to_owned(),
+            extraction_engines: vec![NormalizerProfileExtractionEngine {
+                kind: NormalizerProfileExtractionKind::NativeText,
+                engine: "pdfkit".to_owned(),
+                version: "macos-page-string-v1".to_owned(),
+            }],
+            ocr_engines: Vec::new(),
+            model_provider: "cancan-deterministic-mock".to_owned(),
+            model: "fixture-v1".to_owned(),
+            review_only: true,
         }
     }
 
@@ -6878,6 +7399,13 @@ balance,2026-07-01,savings-002,350.00,SGD",
 
     fn synthetic_pdf() -> Vec<u8> {
         synthetic_pdf_with_stream("BT /F1 10 Tf 8 72 Td (CANCAN_SYNTHETIC_STATEMENT_V1) Tj ET")
+    }
+
+    #[cfg(target_os = "macos")]
+    fn synthetic_provider_statement_pdf() -> Vec<u8> {
+        synthetic_pdf_with_stream(
+            "BT /F1 10 Tf 8 72 Td (CANCAN_SYNTHETIC_PROVIDER_STATEMENT_V1 provider=dbs document_type=bank_statement package_id=dbs/bank_statement@1 statement_id=dbs-bank_statement-2026-07 DBS Statement of Account WITHDRAWAL DEPOSIT BALANCE Account number DBS-123456789 Statement currency SGD opening_balance 2026-07-01 100.00 posting 2026-07-02 GROCERIES 20.00 80.00 closing_balance 2026-07-03 80.00) Tj ET",
+        )
     }
 
     fn synthetic_pdf_with_stream(text: &str) -> Vec<u8> {
