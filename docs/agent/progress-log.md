@@ -13,12 +13,13 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Completed the current `parse_document -> reconcile_document` job handoff. The consumed reconcile job moves the unqualified synthetic profile's staged records into Review, is lease-recoverable and retry-safe, and creates no ledger event or auto-commit eligibility.
 - Kept first-seen account authority fail-closed: candidate accounts may parse and reach Review, but the atomic commit boundary returns `account_confirmation_required` until both relationship accounts are confirmed.
 - Added the host-owned first-account confirmation contract: pending prompts expose only presentation-safe candidate data, and exact-set confirmation is atomic, stale-safe, idempotent after success, and audit-backed.
+- Completed `local-inbox-backend` with a deterministic macOS integration flow that restores the authorized root after restart, scans HSBC bank and DBS card PDFs without source mutation, persists and reconciles both statements, confirms both first-seen accounts, finds the prior-month repayment counterpart, explicitly commits one non-spending repayment to Activity, and proves repeat-scan idempotency. Clean Vaults now create one transactionally guarded fiat instrument per parsed account currency while reusing a single compatible legacy currency row and failing closed on duplicates or deterministic-ID conflicts.
 - Expanded the one shared Rust/TypeScript/packaged-sidecar golden command to the full 33-observation fixture and serialized worker input so an awaited normalization result cannot be overtaken by shutdown.
 - Kept the checkpoint deterministic and credential-free. It adds no renderer work, real provider claim, live AI/OCR call, API key, account-confirmation UI, or automatic ledger commit.
 
 ### Next
 
-- Prove the complete Local Inbox scan-to-Activity backend path. After that gate, Kimi connects the compact first-account confirmation and Local Inbox renderer to the frozen host contracts; do not add more folder-specific machinery.
+- Kimi implements the ready `local-inbox-automation` renderer against the frozen authorize/status/refresh/import-summary/attention/coverage and account-confirmation host contracts. Do not add more folder-specific backend machinery.
 
 ## 2026-07-25
 

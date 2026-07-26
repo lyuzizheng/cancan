@@ -6837,6 +6837,347 @@ balance,2026-07-01,savings-002,350.00,SGD",
         assert_eq!(reviewed.ledger_events, 0);
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let inbox_root = parent.path().join("Cancan");
+        fs::create_dir(&inbox_root).expect("create named CanCan Inbox root");
+        let vault_root = parent.path().join("vault");
+        let bookmarks = Arc::new(MemoryLocalInboxBookmarkStore::default());
+        let runtime = VaultRuntime::with_secret_stores(
+            vault_root.clone(),
+            Arc::new(MemoryRememberedKeyStore::default()),
+            Arc::new(MemoryStatementPasswordStore::default()),
+            bookmarks.clone(),
+        );
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source("source-dbs-card", "dbs", "DBS Card", "credit_card")
+            .expect("seed DBS card source");
+        runtime
+            .seed_money_source("source-hsbc-bank", "hsbc", "HSBC Bank", "bank")
+            .expect("seed HSBC bank source");
+        runtime
+            .configure_local_inbox(&inbox_root)
+            .expect("authorize named CanCan root");
+        assert!(bookmarks.load().expect("load stored bookmark").is_some());
+        assert_eq!(
+            runtime
+                .local_inbox_status()
+                .expect("read configured Inbox status")
+                .access_state,
+            LocalInboxAccessState::Enabled
+        );
+        runtime.lock().expect("lock Vault before restart");
+        drop(runtime);
+
+        let runtime = VaultRuntime::with_secret_stores(
+            vault_root,
+            Arc::new(MemoryRememberedKeyStore::default()),
+            Arc::new(MemoryStatementPasswordStore::default()),
+            bookmarks,
+        );
+        runtime
+            .unlock(b"synthetic-vault-password")
+            .expect("unlock restarted Vault");
+        assert_eq!(
+            runtime
+                .local_inbox_status()
+                .expect("restore Inbox bookmark after restart")
+                .access_state,
+            LocalInboxAccessState::Enabled
+        );
+
+        let inbox = inbox_root.join("Inbox");
+        let hsbc_path = inbox.join("hsbc-repayment-2026-06.pdf");
+        let dbs_path = inbox.join("dbs-card-repayment-2026-07.pdf");
+        let hsbc_bytes = hsbc_repayment_statement_pdf();
+        let dbs_bytes = dbs_card_repayment_statement_pdf();
+        fs::write(&hsbc_path, &hsbc_bytes).expect("write HSBC repayment statement");
+        fs::write(&dbs_path, &dbs_bytes).expect("write DBS card repayment statement");
+
+        assert_eq!(
+            runtime.rescan_local_inbox().expect("scan local Inbox"),
+            LocalInboxScanSummary {
+                already_present: 0,
+                deferred: 0,
+                imported: 2,
+                suppressed: 0,
+            }
+        );
+        assert_eq!(fs::read(&hsbc_path).expect("read HSBC source"), hsbc_bytes);
+        assert_eq!(fs::read(&dbs_path).expect("read DBS source"), dbs_bytes);
+
+        let mut parse_documents = runtime
+            .queued_local_inbox_parse_documents()
+            .expect("queue both imported statements");
+        parse_documents.sort();
+        assert_eq!(parse_documents.len(), 2);
+        let mut hsbc_document_id = None;
+        let mut dbs_document_id = None;
+        for document_id in &parse_documents {
+            assert!(
+                runtime
+                    .start_local_inbox_parse(document_id)
+                    .expect("claim local Inbox parse job")
+            );
+            let input = runtime
+                .normalization_input(document_id)
+                .expect("extract native PDF observation");
+            assert_eq!(input.observations.len(), 1);
+            let observation = &input.observations[0];
+            assert_eq!(observation.kind, SourceObservationKind::NativeText);
+            assert_eq!(observation.engine, "pdfkit");
+            assert_eq!(observation.engine_version, "macos-page-string-v1");
+
+            let routed = if observation.text.contains("provider=hsbc") {
+                hsbc_document_id = Some(document_id.clone());
+                runtime
+                    .apply_normalizer_result(
+                        document_id,
+                        &input,
+                        hsbc_bank_repayment_normalizer_result(),
+                    )
+                    .expect("apply exact HSBC profile and proposal")
+            } else if observation.text.contains("provider=dbs") {
+                dbs_document_id = Some(document_id.clone());
+                runtime
+                    .apply_normalizer_result(
+                        document_id,
+                        &input,
+                        dbs_card_repayment_normalizer_result(),
+                    )
+                    .expect("apply exact DBS card profile and proposal")
+            } else {
+                panic!("unexpected local Inbox PDF package");
+            };
+            assert_eq!(
+                routed.status,
+                crate::database::SourceDocumentRoutingStatus::Routed
+            );
+        }
+        let hsbc_document_id = hsbc_document_id.expect("identify HSBC statement");
+        let dbs_document_id = dbs_document_id.expect("identify DBS statement");
+
+        let mut reconcile_documents = runtime
+            .queued_document_reconciliations()
+            .expect("queue reconciliations after parse");
+        reconcile_documents.sort();
+        let mut expected_reconcile_documents =
+            vec![hsbc_document_id.clone(), dbs_document_id.clone()];
+        expected_reconcile_documents.sort();
+        assert_eq!(reconcile_documents, expected_reconcile_documents);
+        for document_id in &reconcile_documents {
+            assert!(
+                runtime
+                    .start_document_reconciliation(document_id)
+                    .expect("claim document reconciliation")
+            );
+            runtime
+                .reconcile_document(document_id)
+                .expect("move parsed statement records into Review");
+        }
+        assert!(
+            runtime
+                .list_recent_activity()
+                .expect("read pre-commit Activity")
+                .is_empty()
+        );
+
+        let prompts = runtime
+            .list_account_confirmation_prompts()
+            .expect("list exact candidate account prompts");
+        assert_eq!(prompts.len(), 2);
+        let dbs_prompt = prompts
+            .iter()
+            .find(|prompt| prompt.money_source_id == "source-dbs-card")
+            .expect("DBS card confirmation prompt");
+        assert_eq!(dbs_prompt.candidate_accounts.len(), 1);
+        assert_eq!(dbs_prompt.candidate_accounts[0].account_type, "credit_card");
+        assert_eq!(
+            dbs_prompt.candidate_accounts[0].currency.as_deref(),
+            Some("SGD")
+        );
+        let dbs_candidate_ids = dbs_prompt
+            .candidate_accounts
+            .iter()
+            .map(|account| account.account_id.clone())
+            .collect::<Vec<_>>();
+        let hsbc_prompt = prompts
+            .iter()
+            .find(|prompt| prompt.money_source_id == "source-hsbc-bank")
+            .expect("HSBC bank confirmation prompt");
+        assert_eq!(hsbc_prompt.candidate_accounts.len(), 1);
+        assert_eq!(
+            hsbc_prompt.candidate_accounts[0].account_type,
+            "deposit_account"
+        );
+        assert_eq!(
+            hsbc_prompt.candidate_accounts[0].currency.as_deref(),
+            Some("SGD")
+        );
+        let hsbc_candidate_ids = hsbc_prompt
+            .candidate_accounts
+            .iter()
+            .map(|account| account.account_id.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            runtime
+                .confirm_candidate_accounts("source-dbs-card", &dbs_candidate_ids)
+                .expect("confirm exactly DBS card candidates")
+                .status,
+            crate::database::AccountConfirmationStatus::Confirmed
+        );
+        assert_eq!(
+            runtime
+                .confirm_candidate_accounts("source-hsbc-bank", &hsbc_candidate_ids)
+                .expect("confirm exactly HSBC bank candidates")
+                .status,
+            crate::database::AccountConfirmationStatus::Confirmed
+        );
+        assert!(
+            runtime
+                .list_account_confirmation_prompts()
+                .expect("candidate accounts are now confirmed")
+                .is_empty()
+        );
+
+        let review_items = runtime.list_review_items().expect("list Review items");
+        let repayment_items = review_items
+            .iter()
+            .filter(|item| item.event_type.as_deref() == Some("credit_card_repayment"))
+            .collect::<Vec<_>>();
+        assert_eq!(repayment_items.len(), 2);
+        let dbs_repayment = repayment_items
+            .iter()
+            .find(|item| item.posted_on.as_deref() == Some("2026-07-01"))
+            .expect("DBS card repayment review item");
+        let hsbc_repayment = repayment_items
+            .iter()
+            .find(|item| item.posted_on.as_deref() == Some("2026-06-30"))
+            .expect("historical HSBC repayment review item");
+        let candidate_input = runtime
+            .relationship_candidate_input(
+                &dbs_repayment.review_item_id,
+                dbs_repayment.record_version,
+            )
+            .expect("discover historical relationship candidates")
+            .expect("open DBS repayment review item");
+        assert_eq!(candidate_input.event_type, "credit_card_repayment");
+        assert_eq!(candidate_input.primary_record_id, dbs_repayment.record_id);
+        assert_eq!(candidate_input.record.posted_on, "2026-07-01");
+        assert_eq!(
+            candidate_input
+                .candidates
+                .iter()
+                .map(|candidate| candidate.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![hsbc_repayment.record_id.as_str()]
+        );
+        let historical = candidate_input
+            .candidates
+            .first()
+            .expect("HSBC candidate within repayment window");
+        assert_eq!(historical.posted_on, "2026-06-30");
+        let prepared = test_prepared_repayment_event(&candidate_input.record, historical);
+        assert_eq!(prepared.event_type, "credit_card_repayment");
+        assert_eq!(prepared.event_date, "2026-06-30");
+        assert!(!prepared.spending);
+        assert_eq!(
+            runtime
+                .accept_review_relationship(
+                    &dbs_repayment.review_item_id,
+                    dbs_repayment.record_version,
+                    &historical.id,
+                    hsbc_repayment.record_version,
+                    &prepared,
+                )
+                .expect("accept exact cross-month repayment")
+                .status,
+            ReviewMutationStatus::RelationshipAccepted
+        );
+
+        let job = runtime
+            .enqueue_commit_review_batch(&[
+                dbs_repayment.review_item_id.clone(),
+                hsbc_repayment.review_item_id.clone(),
+            ])
+            .expect("enqueue explicit repayment review selection");
+        assert_eq!(
+            runtime
+                .queued_review_job_ids()
+                .expect("list queued Review job"),
+            vec![job.job_id.clone()]
+        );
+        let claimed = runtime
+            .claim_review_batch(&job.job_id, "local-inbox-test")
+            .expect("claim Review batch")
+            .expect("queued Review batch");
+        let (groups, initial_outcomes) = runtime
+            .prepare_commit_review_groups(&claimed)
+            .expect("prepare accepted repayment group");
+        assert!(initial_outcomes.is_empty());
+        assert_eq!(groups.len(), 1);
+        let prepared_commit =
+            test_prepared_repayment_event(&groups[0].records[0], &groups[0].records[1]);
+        let committed = runtime
+            .commit_prepared_review_group(&claimed, &groups[0], &prepared_commit)
+            .expect("commit prepared repayment group");
+        assert_eq!(committed.status, ReviewBatchGroupStatus::Committed);
+        assert_eq!(
+            runtime
+                .finish_review_batch(&claimed, &[committed])
+                .expect("finish Review batch")
+                .status,
+            crate::database::ReviewJobStatus::Succeeded
+        );
+
+        let activity = runtime
+            .list_recent_activity()
+            .expect("list Recent Activity");
+        assert_eq!(activity.len(), 1);
+        assert_eq!(activity[0].event_type, "credit_card_repayment");
+        assert!(!activity[0].spending);
+        assert_eq!(activity[0].source_labels, vec!["DBS Card", "HSBC Bank"]);
+        let remaining_review_items = runtime.list_review_items().expect("list remaining Review");
+        assert_eq!(remaining_review_items.len(), 4);
+        assert!(
+            remaining_review_items
+                .iter()
+                .all(|item| item.event_type.as_deref() != Some("credit_card_repayment"))
+        );
+
+        assert_eq!(
+            runtime
+                .rescan_local_inbox()
+                .expect("repeat local Inbox scan"),
+            LocalInboxScanSummary {
+                already_present: 2,
+                deferred: 0,
+                imported: 0,
+                suppressed: 0,
+            }
+        );
+        assert_eq!(
+            fs::read(&hsbc_path).expect("read unchanged HSBC source"),
+            hsbc_bytes
+        );
+        assert_eq!(
+            fs::read(&dbs_path).expect("read unchanged DBS source"),
+            dbs_bytes
+        );
+        assert_eq!(
+            runtime
+                .list_recent_activity()
+                .expect("Activity remains idempotent")
+                .len(),
+            1
+        );
+    }
+
     #[test]
     fn rejects_invalid_profiles_or_legacy_fingerprints_without_parse_persistence() {
         for mismatch in ["unknown_package", "proposal_mismatch", "legacy_fingerprint"] {
@@ -7216,11 +7557,146 @@ balance,2026-07-01,savings-002,350.00,SGD",
 
     #[cfg(target_os = "macos")]
     fn dbs_bank_normalization_profile() -> NormalizerProfile {
+        provider_pdf_normalization_profile("dbs", "bank_statement", "dbs/bank_statement@1")
+    }
+
+    #[cfg(target_os = "macos")]
+    fn hsbc_bank_repayment_normalizer_result() -> NormalizerResult {
+        NormalizerResult::Classified {
+            profile: Box::new(provider_pdf_normalization_profile(
+                "hsbc",
+                "bank_statement",
+                "hsbc/bank_statement@1",
+            )),
+            proposal: Box::new(NormalizerProposal {
+                document: NormalizerDocument {
+                    document_type: "bank_statement".to_owned(),
+                    provider_key: "hsbc".to_owned(),
+                    statement_id: Some("hsbc-bank_statement-2026-06".to_owned()),
+                    statement_period: Some(NormalizerStatementPeriod {
+                        from: Some("2026-06-29".to_owned()),
+                        to: Some("2026-06-30".to_owned()),
+                    }),
+                },
+                accounts: vec![NormalizerAccount {
+                    account_type: "deposit_account".to_owned(),
+                    currency: Some("SGD".to_owned()),
+                    masked_identifier: Some("••6789".to_owned()),
+                    proposal_account_id: "hsbc-bank-account".to_owned(),
+                    provider_account_id: Some("HSBC-123456789".to_owned()),
+                }],
+                opening_snapshots: vec![provider_balance_normalizer_record(
+                    "hsbc-opening",
+                    "hsbc-bank-account",
+                    "2026-06-29",
+                    "100.00",
+                    "opening_balance",
+                    "hsbc:2026-06:opening",
+                    1,
+                )],
+                records: vec![provider_repayment_normalizer_record(
+                    ProviderRepaymentRecord {
+                        proposal_record_id: "hsbc-dbs-card-payment",
+                        proposal_account_id: "hsbc-bank-account",
+                        posted_on: "2026-06-30",
+                        description: "DBS CARD PAYMENT",
+                        side: "debit",
+                        amount: "20.00",
+                        account_balance_delta: "-20.00",
+                        balance_after: "80.00",
+                        stable_record_key: "hsbc:2026-06:dbs-card-payment",
+                        row: 2,
+                    },
+                )],
+                closing_snapshots: vec![provider_balance_normalizer_record(
+                    "hsbc-closing",
+                    "hsbc-bank-account",
+                    "2026-06-30",
+                    "80.00",
+                    "closing_balance",
+                    "hsbc:2026-06:closing",
+                    3,
+                )],
+                status: "valid".to_owned(),
+            }),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn dbs_card_repayment_normalizer_result() -> NormalizerResult {
+        NormalizerResult::Classified {
+            profile: Box::new(provider_pdf_normalization_profile(
+                "dbs",
+                "credit_card_statement",
+                "dbs/credit_card_statement@1",
+            )),
+            proposal: Box::new(NormalizerProposal {
+                document: NormalizerDocument {
+                    document_type: "credit_card_statement".to_owned(),
+                    provider_key: "dbs".to_owned(),
+                    statement_id: Some("dbs-credit_card_statement-2026-07".to_owned()),
+                    statement_period: Some(NormalizerStatementPeriod {
+                        from: Some("2026-07-01".to_owned()),
+                        to: Some("2026-07-01".to_owned()),
+                    }),
+                },
+                accounts: vec![NormalizerAccount {
+                    account_type: "credit_card".to_owned(),
+                    currency: Some("SGD".to_owned()),
+                    masked_identifier: Some("••6789".to_owned()),
+                    proposal_account_id: "dbs-card-account".to_owned(),
+                    provider_account_id: Some("DBS-123456789".to_owned()),
+                }],
+                opening_snapshots: vec![provider_balance_normalizer_record(
+                    "dbs-card-opening",
+                    "dbs-card-account",
+                    "2026-07-01",
+                    "100.00",
+                    "opening_balance",
+                    "dbs-card:2026-07:opening",
+                    1,
+                )],
+                records: vec![provider_repayment_normalizer_record(
+                    ProviderRepaymentRecord {
+                        proposal_record_id: "dbs-card-payment-thank-you",
+                        proposal_account_id: "dbs-card-account",
+                        posted_on: "2026-07-01",
+                        description: "PAYMENT - THANK YOU",
+                        side: "credit",
+                        amount: "20.00",
+                        account_balance_delta: "-20.00",
+                        balance_after: "80.00",
+                        stable_record_key: "dbs-card:2026-07:payment-thank-you",
+                        row: 2,
+                    },
+                )],
+                closing_snapshots: vec![provider_balance_normalizer_record(
+                    "dbs-card-closing",
+                    "dbs-card-account",
+                    "2026-07-01",
+                    "80.00",
+                    "closing_balance",
+                    "dbs-card:2026-07:closing",
+                    3,
+                )],
+                status: "valid".to_owned(),
+            }),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn provider_pdf_normalization_profile(
+        provider_key: &str,
+        document_type: &str,
+        package_id: &str,
+    ) -> NormalizerProfile {
         NormalizerProfile {
-            id: "mock:dbs/bank_statement@1:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1".to_owned(),
-            provider_key: "dbs".to_owned(),
-            document_type: "bank_statement".to_owned(),
-            package_id: "dbs/bank_statement@1".to_owned(),
+            id: format!(
+                "mock:{package_id}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1"
+            ),
+            provider_key: provider_key.to_owned(),
+            document_type: document_type.to_owned(),
+            package_id: package_id.to_owned(),
             package_version: "1.0.0".to_owned(),
             parser_version: "1.0.0".to_owned(),
             skill_version: "1.0.0".to_owned(),
@@ -7239,6 +7715,154 @@ balance,2026-07-01,savings-002,350.00,SGD",
             model_provider: "cancan-deterministic-mock".to_owned(),
             model: "fixture-v1".to_owned(),
             review_only: true,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn provider_balance_normalizer_record(
+        proposal_record_id: &str,
+        proposal_account_id: &str,
+        posted_on: &str,
+        balance_after: &str,
+        kind: &str,
+        stable_record_key: &str,
+        row: u8,
+    ) -> NormalizerRecord {
+        NormalizerRecord {
+            account_balance_delta: None,
+            amount: None,
+            balance_after: Some(NormalizerMoney {
+                currency: "SGD".to_owned(),
+                value: balance_after.to_owned(),
+            }),
+            description_normalized: None,
+            description_raw: None,
+            event_type: None,
+            instrument_symbol: None,
+            posted_at: None,
+            posted_on: Some(posted_on.to_owned()),
+            posting_status: None,
+            proposal_account_id: Some(proposal_account_id.to_owned()),
+            proposal_record_id: proposal_record_id.to_owned(),
+            provider_record_id: None,
+            quantity: None,
+            raw: serde_json::json!({
+                "kind": kind,
+                "date": posted_on,
+                "balance": balance_after,
+                "locator": { "row": row },
+            }),
+            record_type: "balance".to_owned(),
+            stable_record_key: stable_record_key.to_owned(),
+            statement_entry_side: None,
+            transaction_on: None,
+            validation: NormalizerRecordValidation {
+                deterministic_validation_passed: true,
+                raw_grounded: true,
+                schema_valid: true,
+            },
+            valuation: None,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    struct ProviderRepaymentRecord<'a> {
+        proposal_record_id: &'a str,
+        proposal_account_id: &'a str,
+        posted_on: &'a str,
+        description: &'a str,
+        side: &'a str,
+        amount: &'a str,
+        account_balance_delta: &'a str,
+        balance_after: &'a str,
+        stable_record_key: &'a str,
+        row: u8,
+    }
+
+    #[cfg(target_os = "macos")]
+    fn provider_repayment_normalizer_record(
+        input: ProviderRepaymentRecord<'_>,
+    ) -> NormalizerRecord {
+        let money = |value: &str| NormalizerMoney {
+            currency: "SGD".to_owned(),
+            value: value.to_owned(),
+        };
+        let raw = if input.side == "debit" {
+            serde_json::json!({
+                "kind": "posting",
+                "date": input.posted_on,
+                "description": input.description,
+                "debit": input.amount,
+                "balance": input.balance_after,
+                "locator": { "row": input.row },
+            })
+        } else {
+            serde_json::json!({
+                "kind": "posting",
+                "date": input.posted_on,
+                "description": input.description,
+                "credit": input.amount,
+                "balance": input.balance_after,
+                "locator": { "row": input.row },
+            })
+        };
+        NormalizerRecord {
+            account_balance_delta: Some(money(input.account_balance_delta)),
+            amount: Some(money(input.amount)),
+            balance_after: Some(money(input.balance_after)),
+            description_normalized: Some(input.description.to_owned()),
+            description_raw: Some(input.description.to_owned()),
+            event_type: Some("credit_card_repayment".to_owned()),
+            instrument_symbol: None,
+            posted_at: None,
+            posted_on: Some(input.posted_on.to_owned()),
+            posting_status: Some("posted".to_owned()),
+            proposal_account_id: Some(input.proposal_account_id.to_owned()),
+            proposal_record_id: input.proposal_record_id.to_owned(),
+            provider_record_id: None,
+            quantity: None,
+            raw,
+            record_type: "transaction".to_owned(),
+            stable_record_key: input.stable_record_key.to_owned(),
+            statement_entry_side: Some(input.side.to_owned()),
+            transaction_on: None,
+            validation: NormalizerRecordValidation {
+                deterministic_validation_passed: true,
+                raw_grounded: true,
+                schema_valid: true,
+            },
+            valuation: None,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn test_prepared_repayment_event(
+        first: &CoreReviewRecord,
+        second: &CoreReviewRecord,
+    ) -> CorePreparedReviewEvent {
+        let event_date = [first, second]
+            .into_iter()
+            .find(|record| record.account_type != "credit_card")
+            .expect("repayment has one cash-like record")
+            .posted_on
+            .clone();
+        let mut records = [first, second];
+        records.sort_by(|left, right| left.id.cmp(&right.id));
+        CorePreparedReviewEvent {
+            event_class: "posting".to_owned(),
+            event_date,
+            event_type: "credit_card_repayment".to_owned(),
+            legs: records
+                .iter()
+                .map(|record| crate::database::CoreReviewLeg {
+                    account_id: record.account_id.clone(),
+                    amount_value: record.account_balance_delta.clone(),
+                    currency: record.currency.clone(),
+                    instrument_id: record.instrument_id.clone(),
+                })
+                .collect(),
+            source_record_ids: records.iter().map(|record| record.id.clone()).collect(),
+            spending: false,
         }
     }
 
@@ -7408,11 +8032,25 @@ balance,2026-07-01,savings-002,350.00,SGD",
         )
     }
 
+    #[cfg(target_os = "macos")]
+    fn hsbc_repayment_statement_pdf() -> Vec<u8> {
+        synthetic_pdf_with_stream(
+            "BT /F1 10 Tf 8 72 Td (CANCAN\\137SYNTHETIC\\137PROVIDER\\137STATEMENT\\137V1 provider=hsbc document\\137type=bank\\137statement package\\137id=hsbc/bank\\137statement@1 statement\\137id=hsbc-bank\\137statement-2026-06 HSBC ACCOUNT STATEMENT WITHDRAWAL DEPOSIT BALANCE Account number HSBC-123456789 Statement currency SGD opening\\137balance 2026-06-29 100.00 posting 2026-06-30 DBS CARD PAYMENT debit 20.00 balance 80.00 closing\\137balance 2026-06-30 80.00) Tj ET",
+        )
+    }
+
+    #[cfg(target_os = "macos")]
+    fn dbs_card_repayment_statement_pdf() -> Vec<u8> {
+        synthetic_pdf_with_stream(
+            "BT /F1 10 Tf 8 72 Td (CANCAN\\137SYNTHETIC\\137PROVIDER\\137STATEMENT\\137V1 provider=dbs document\\137type=credit\\137card\\137statement package\\137id=dbs/credit\\137card\\137statement@1 statement\\137id=dbs-credit\\137card\\137statement-2026-07 DBS CREDIT LIMIT PAYMENT DUE DATE PREVIOUS BALANCE Account number DBS-123456789 Statement currency SGD opening\\137balance 2026-07-01 100.00 posting 2026-07-01 PAYMENT - THANK YOU credit 20.00 balance 80.00 closing\\137balance 2026-07-01 80.00) Tj ET",
+        )
+    }
+
     fn synthetic_pdf_with_stream(text: &str) -> Vec<u8> {
         let objects = [
             "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 640 96] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 4096 96] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".to_owned(),
             format!("<< /Length {} >>\nstream\n{text}\nendstream", text.len()),
             "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_owned(),
         ];

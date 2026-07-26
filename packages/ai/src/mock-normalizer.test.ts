@@ -181,21 +181,40 @@ describe("mock document normalizer", () => {
     },
   );
 
-  it("validates a production-shaped DBS PDF bundle", async () => {
-    const result = await normalizeWithMock(providerPdfFixtureInput("dbs", "bank_statement"));
+  it.each([
+    {
+      providerKey: "dbs",
+      documentType: "bank_statement",
+      packageId: "dbs/bank_statement@1",
+    },
+    {
+      providerKey: "dbs",
+      documentType: "credit_card_statement",
+      packageId: "dbs/credit_card_statement@1",
+    },
+    {
+      providerKey: "hsbc",
+      documentType: "bank_statement",
+      packageId: "hsbc/bank_statement@1",
+    },
+  ])(
+    "validates a production-shaped $packageId PDF bundle",
+    async ({ providerKey, documentType, packageId }) => {
+      const result = await normalizeWithMock(providerPdfFixtureInput(providerKey, documentType));
 
-    expect(result.status).toBe("classified");
-    if (result.status !== "classified") {
-      throw new Error("expected the native PDF fixture to classify");
-    }
-    expect(result.profile).toMatchObject({
-      id: "mock:dbs/bank_statement@1:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1",
-      extractionEngines: [
-        { kind: "native_text", engine: "pdfkit", version: "macos-page-string-v1" },
-      ],
-      ocrEngines: [],
-    });
-  });
+      expect(result.status).toBe("classified");
+      if (result.status !== "classified") {
+        throw new Error("expected the native PDF fixture to classify");
+      }
+      expect(result.profile).toMatchObject({
+        id: `mock:${packageId}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1`,
+        extractionEngines: [
+          { kind: "native_text", engine: "pdfkit", version: "macos-page-string-v1" },
+        ],
+        ocrEngines: [],
+      });
+    },
+  );
 
   it("returns needs attention when a provider fixture row is mutated", async () => {
     const input = providerFixtureInput("dbs", "bank_statement");

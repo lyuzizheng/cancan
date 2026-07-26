@@ -1881,6 +1881,8 @@ impl ManualImportStore {
             ));
         }
 
+        ensure_fiat_currency_instruments(&transaction, input.accounts)?;
+
         let mut account_ids = Vec::with_capacity(input.accounts.len());
         for account in input.accounts {
             let Some(provider_account_id) = account.provider_account_id else {
@@ -4336,6 +4338,72 @@ fn validate_captured_container(mime_type: &str, plaintext: &[u8]) -> StoreResult
     }
 }
 
+fn ensure_fiat_currency_instruments(
+    transaction: &Transaction<'_>,
+    accounts: &[TrustedAccountCandidate<'_>],
+) -> StoreResult<()> {
+    let currencies = accounts
+        .iter()
+        .filter_map(|account| account.currency)
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    for currency in currencies {
+        let instrument_id = fiat_currency_instrument_id(&currency);
+        let existing = transaction
+            .query_row(
+                "SELECT instrument_type, symbol, currency FROM instruments WHERE id = ?1",
+                [&instrument_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        if let Some((instrument_type, symbol, stored_currency)) = existing
+            && (instrument_type != "fiat_currency"
+                || symbol != currency
+                || stored_currency.as_deref() != Some(currency.as_str()))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "fiat currency instrument conflicts with its deterministic identity",
+            )
+            .into());
+        }
+        let fiat_currency_instrument_count: i64 = transaction.query_row(
+            "SELECT count(*) FROM instruments \
+             WHERE instrument_type = 'fiat_currency' AND currency = ?1",
+            params![currency],
+            |row| row.get(0),
+        )?;
+        match fiat_currency_instrument_count {
+            0 => {
+                transaction.execute(
+                    "INSERT INTO instruments(id, instrument_type, symbol, currency, display_name) \
+                     VALUES (?1, 'fiat_currency', ?2, ?3, ?4)",
+                    params![instrument_id, currency, currency, currency],
+                )?;
+            }
+            1 => {}
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "multiple fiat currency instruments exist",
+                )
+                .into());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn fiat_currency_instrument_id(currency: &str) -> String {
+    format!("instrument-fiat-{currency}")
+}
+
 fn validate_classification(input: &TrustedDocumentClassification<'_>) -> StoreResult<()> {
     for (name, value) in [
         ("audit_id", input.audit_id),
@@ -5381,6 +5449,30 @@ mod tests {
             documents[0].semantic_document_key.as_deref(),
             Some("dbs:checking:2026-07")
         );
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT instrument_type, symbol, currency, display_name \
+                     FROM instruments WHERE id = 'instrument-fiat-SGD'",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, String>(3)?,
+                        ))
+                    },
+                )
+                .expect("create deterministic SGD fiat instrument"),
+            (
+                "fiat_currency".to_owned(),
+                "SGD".to_owned(),
+                Some("SGD".to_owned()),
+                "SGD".to_owned(),
+            )
+        );
 
         let repeated_accounts = [TrustedAccountCandidate {
             account_id: "account-ignored",
@@ -5403,6 +5495,147 @@ mod tests {
             })
             .expect("repeat classification");
         assert_eq!(repeated.account_ids, vec!["account-candidate"]);
+        let fiat_instrument_count: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM instruments \
+                 WHERE instrument_type = 'fiat_currency' AND symbol = 'SGD' AND currency = 'SGD'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count deterministic fiat instruments after retry");
+        assert_eq!(fiat_instrument_count, 1);
+    }
+
+    #[test]
+    fn reuses_a_legacy_fiat_instrument_for_matching_currency() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let mut store = open_store(root.path());
+        store
+            .connection
+            .execute(
+                "INSERT INTO source_documents( \
+                   id, file_sha256, original_filename, mime_type, byte_size, encrypted_locator, file_state \
+                 ) VALUES ('document-legacy', ?1, 'legacy.pdf', 'application/pdf', 1, \
+                           'files/document-legacy.ccenv', 'available')",
+                ["l".repeat(64)],
+            )
+            .expect("seed unassigned legacy document");
+        store
+            .connection
+            .execute(
+                "INSERT INTO instruments(id, instrument_type, symbol, currency, display_name) \
+                 VALUES ('instrument-sgd', 'fiat_currency', 'S$', 'SGD', 'Singapore Dollar')",
+                [],
+            )
+            .expect("seed legacy SGD instrument with display symbol");
+        let accounts = [TrustedAccountCandidate {
+            account_id: "account-legacy",
+            account_type: "deposit_account",
+            currency: Some("SGD"),
+            display_name: "Legacy checking",
+            masked_identifier: Some("••001"),
+            provider_account_id: Some("checking-legacy"),
+        }];
+
+        let routed = store
+            .apply_trusted_classification(&TrustedDocumentClassification {
+                accounts: &accounts,
+                audit_id: "audit-classify-legacy",
+                document_id: "document-legacy",
+                document_type: Some("account_statement"),
+                provider_key: "dbs",
+                semantic_document_key: "dbs:legacy:2026-07",
+                statement_period_from: Some("2026-07-01"),
+                statement_period_to: Some("2026-07-31"),
+            })
+            .expect("route through legacy currency instrument");
+
+        assert_eq!(routed.status, SourceDocumentRoutingStatus::Routed);
+        let instruments = store
+            .connection
+            .prepare(
+                "SELECT id FROM instruments \
+                 WHERE instrument_type = 'fiat_currency' AND currency = 'SGD' \
+                 ORDER BY id",
+            )
+            .expect("prepare fiat instrument query")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query fiat instruments")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect fiat instruments");
+        assert_eq!(instruments, vec!["instrument-sgd"]);
+    }
+
+    #[test]
+    fn rejects_multiple_legacy_fiat_instruments_for_one_currency() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let mut store = open_store(root.path());
+        store
+            .connection
+            .execute_batch(
+                "INSERT INTO instruments(id, instrument_type, symbol, currency, display_name) \
+                 VALUES ('instrument-sgd-one', 'fiat_currency', 'S$', 'SGD', 'Singapore Dollar'); \
+                 INSERT INTO instruments(id, instrument_type, symbol, currency, display_name) \
+                 VALUES ('instrument-sgd-two', 'fiat_currency', 'SG$', 'SGD', 'Singapore Dollar');",
+            )
+            .expect("seed duplicate legacy SGD instruments");
+        let accounts = [TrustedAccountCandidate {
+            account_id: "account-duplicate",
+            account_type: "deposit_account",
+            currency: Some("SGD"),
+            display_name: "Duplicate checking",
+            masked_identifier: Some("••001"),
+            provider_account_id: Some("checking-duplicate"),
+        }];
+        let transaction = store
+            .connection
+            .transaction()
+            .expect("start fiat instrument transaction");
+
+        let error = ensure_fiat_currency_instruments(&transaction, &accounts)
+            .expect_err("reject duplicate fiat instruments for one currency");
+
+        assert!(
+            error
+                .to_string()
+                .contains("multiple fiat currency instruments exist")
+        );
+    }
+
+    #[test]
+    fn rejects_a_conflicting_deterministic_fiat_instrument() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let mut store = open_store(root.path());
+        store
+            .connection
+            .execute(
+                "INSERT INTO instruments(id, instrument_type, symbol, currency, display_name) \
+                 VALUES ('instrument-fiat-SGD', 'stock', 'SGD', 'SGD', 'Conflicting SGD')",
+                [],
+            )
+            .expect("seed conflicting deterministic instrument");
+        let accounts = [TrustedAccountCandidate {
+            account_id: "account-conflict",
+            account_type: "deposit_account",
+            currency: Some("SGD"),
+            display_name: "Conflicting checking",
+            masked_identifier: Some("••001"),
+            provider_account_id: Some("checking-conflict"),
+        }];
+        let transaction = store
+            .connection
+            .transaction()
+            .expect("start fiat instrument transaction");
+
+        let error = ensure_fiat_currency_instruments(&transaction, &accounts)
+            .expect_err("reject conflicting deterministic instrument");
+
+        assert!(
+            error
+                .to_string()
+                .contains("fiat currency instrument conflicts with its deterministic identity")
+        );
     }
 
     #[test]
