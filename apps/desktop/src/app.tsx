@@ -462,24 +462,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         await loadDocuments();
         await loadFinanceData();
       } else {
-        documentLoadRequestId.current += 1;
-        financeLoadRequestId.current += 1;
-        reviewDetailRequestId.current += 1;
-        stopReviewJobPolling();
-        setUnassignedDocuments([]);
-        setSourceDocuments([]);
-        selectedMoneySourceIdRef.current = null;
-        setSelectedMoneySourceId(null);
-        setReviewItems(null);
-        setSelectedReviewIds(new Set());
-        setReviewDetail(null);
-        setReviewJob(null);
-        setMoneyOverview(null);
-        setRecentActivity(null);
-        clearViewer(false);
-        clearPreview();
-        unlockRequestId.current += 1;
-        setUnlockingDocument(null);
+        showVaultGate(nextStatus);
       }
     } catch (nextError) {
       if (vaultSessionId.current === sessionId) {
@@ -490,7 +473,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setBusy(false);
       }
     }
-  }, [clearViewer, clearPreview, loadDocuments, loadFinanceData, stopReviewJobPolling]);
+  }, [api, loadDocuments, loadFinanceData, showVaultGate]);
 
   useEffect(() => {
     let active = true;

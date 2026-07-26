@@ -117,6 +117,7 @@ const BATCH_GROUP_REASON_LABELS: Record<string, string> = {
   job_lease_changed: "it changed while adding",
   relationship_changed: "its link changed while adding",
   relationship_not_confirmed: "its link isn’t confirmed yet",
+  relationship_not_selected: "select both linked records before adding",
   stale_record: "it changed while adding",
   stale_relationship: "its link changed while adding",
   stale_review_item: "it changed while adding",

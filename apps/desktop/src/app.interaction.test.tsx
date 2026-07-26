@@ -2122,4 +2122,60 @@ describe("App review and overview orchestration", () => {
     expect(container.textContent).toContain("2 records need your check.");
     expect(listReviewItems).toHaveBeenCalled();
   });
+
+  it("invalidates an in-flight review edit when focus reconciliation finds the Vault locked", async () => {
+    const edit = deferred<ReviewMutationOutcome>();
+    const api = createApi({
+      editReviewRecord: vi.fn(() => edit.promise),
+      listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => [
+        reviewItem,
+        linkedReviewItem,
+      ]),
+      vaultAccessStatus: vi.fn()
+        .mockResolvedValueOnce({
+          recoveryConfigured: false,
+          rememberedOnThisMac: false,
+          status: "unlocked",
+        })
+        .mockResolvedValueOnce({
+          recoveryConfigured: false,
+          rememberedOnThisMac: false,
+          status: "locked",
+        }),
+    });
+    await mount(api, "review");
+
+    await act(async () => {
+      buttons("Review details")[0]!.click();
+      await settle();
+    });
+    await click("Edit record");
+    await enterField("Amount", "600.00");
+    await click("Save edit");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await settle();
+    });
+    expect(container.textContent).toContain("Unlock your Vault");
+
+    await act(async () => {
+      edit.resolve({
+        reason: null,
+        recordVersion: 2,
+        reviewItemId: null,
+        status: "updated",
+      });
+      await settle();
+    });
+    await enterPassword("vault-password");
+    await click("Unlock Vault");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Your money, organized");
+    expect(container.textContent).not.toContain("Edit saved");
+  });
 });

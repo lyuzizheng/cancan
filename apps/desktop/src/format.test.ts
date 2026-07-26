@@ -127,6 +127,9 @@ describe("batch outcome labels", () => {
     expect(batchGroupReasonLabel("ambiguous_relationship")).toBe(
       "it has more than one possible link",
     );
+    expect(batchGroupReasonLabel("relationship_not_selected")).toBe(
+      "select both linked records before adding",
+    );
     expect(batchGroupReasonLabel("core_preflight_failed")).toBe(
       "its details aren’t complete",
     );

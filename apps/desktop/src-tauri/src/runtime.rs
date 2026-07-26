@@ -1976,6 +1976,15 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("review_unavailable"))
     }
 
+    fn queued_review_job_ids(&self) -> Result<Vec<String>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .queued_review_job_ids()
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
     fn claim_review_batch(
         &self,
         job_id: &str,
@@ -2451,6 +2460,30 @@ async fn resume_local_inbox_after_unlock(app: &AppHandle, runtime: VaultRuntime)
     }
 }
 
+async fn resume_review_jobs_after_unlock(app: &AppHandle, runtime: VaultRuntime) {
+    let job_ids = tauri::async_runtime::spawn_blocking({
+        let runtime = runtime.clone();
+        move || runtime.queued_review_job_ids()
+    })
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .unwrap_or_default();
+    for job_id in job_ids {
+        let job = tauri::async_runtime::spawn_blocking({
+            let runtime = runtime.clone();
+            move || runtime.review_job(&job_id)
+        })
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .flatten();
+        if let Some(job) = job {
+            let _ = process_review_batch_job(app, runtime.clone(), job).await;
+        }
+    }
+}
+
 #[tauri::command]
 pub(crate) async fn vault_status(
     runtime: State<'_, VaultRuntime>,
@@ -2593,6 +2626,7 @@ pub(crate) async fn unlock_vault(
             .await
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
             .map_err(VaultCommandError::from)?;
+    resume_review_jobs_after_unlock(&app, runtime.clone()).await;
     resume_local_inbox_after_unlock(&app, runtime).await;
     Ok(status)
 }
@@ -2609,6 +2643,7 @@ pub(crate) async fn unlock_vault_with_keychain(
             .await
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
             .map_err(VaultCommandError::from)?;
+    resume_review_jobs_after_unlock(&app, runtime.clone()).await;
     resume_local_inbox_after_unlock(&app, runtime).await;
     Ok(status)
 }
@@ -3249,6 +3284,14 @@ pub(crate) async fn enqueue_commit_review_batch(
         .await
         .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
     };
+    process_review_batch_job(&app, runtime, job).await
+}
+
+async fn process_review_batch_job(
+    app: &AppHandle,
+    runtime: VaultRuntime,
+    job: ReviewJobSummary,
+) -> Result<ReviewJobSummary, VaultCommandError> {
     let job_id = job.job_id.clone();
     let lease_owner = random_identifier("review-worker");
     let claimed = {
@@ -3273,7 +3316,7 @@ pub(crate) async fn enqueue_commit_review_batch(
     };
     for group in groups {
         let result = run_review_core_sidecar(
-            &app,
+            app,
             "prepare_review_relationship",
             &RelationshipPreparationInput {
                 event_type: &group.event_type,

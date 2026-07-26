@@ -72,7 +72,7 @@ The user puts supported statements only in `Inbox`. Future local automation obse
 
 The user may later change or disable the root. This contract does not invent migration or cleanup behavior, and CanCan never deletes old roots or their child directories.
 
-The root and its children remain outside the encrypted Vault and follow iCloud Drive's privacy and security model. The readiness evidence selects a native preflight-before-Rust-open rule, but does not implement it in production. Production still needs its own folder-picker authorization/bookmark, native integration, and watcher UI.
+The root and its children remain outside the encrypted Vault and follow iCloud Drive's privacy and security model. The readiness evidence selected the native preflight-before-Rust-open rule used by the production host boundary below. Customer-facing folder status, watcher feedback, and setup controls remain renderer work.
 
 Production root authorization is host-owned. The system folder picker produces one macOS security-scoped bookmark stored with the enabled state in device-local Keychain storage, outside the Vault database and backup bundle. The renderer cannot submit a path/bookmark or receive the full selected path. On unlock/start the host resolves and starts access; on lock/disable it stops access. A stale or denied bookmark produces an actionable reauthorization state and never falls back to scanning another location. Restore onto any device starts with local Inbox disabled until the user authorizes a root there.
 

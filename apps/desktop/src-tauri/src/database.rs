@@ -1858,21 +1858,50 @@ impl ManualImportStore {
             }));
         };
         let mut statement = self.connection.prepare(
-            "SELECT external_records.id, external_records.account_id, accounts.account_type, \
-                    external_records.currency, external_records.posted_on, \
-                    external_records.account_balance_delta, instruments.id \
-             FROM external_records \
-             JOIN accounts ON accounts.id = external_records.account_id \
-             JOIN instruments ON instruments.currency = external_records.currency \
-                AND instruments.instrument_type = 'fiat_currency' \
-             WHERE external_records.id <> ?1 \
-               AND external_records.status IN ('staged', 'review') \
-               AND external_records.event_type = ?2 \
-               AND external_records.currency = ?3 \
-               AND julianday(external_records.posted_on) BETWEEN julianday(?4) - ?5 \
-                   AND julianday(?4) + ?5 \
-             ORDER BY ABS(julianday(external_records.posted_on) - julianday(?4)), \
-                      external_records.posted_on, external_records.id \
+            "WITH candidate_records AS ( \
+               SELECT external_records.id, external_records.account_id, accounts.account_type, \
+                      external_records.currency, external_records.posted_on, \
+                      external_records.account_balance_delta, instruments.id AS instrument_id, \
+                      CASE \
+                        WHEN instr(ltrim(external_records.account_balance_delta, '-'), '.') = 0 \
+                          THEN ltrim(external_records.account_balance_delta, '-') \
+                        ELSE rtrim(rtrim(ltrim(external_records.account_balance_delta, '-'), '0'), '.') \
+                      END AS delta_magnitude \
+               FROM external_records \
+               JOIN accounts ON accounts.id = external_records.account_id \
+               JOIN instruments ON instruments.currency = external_records.currency \
+                  AND instruments.instrument_type = 'fiat_currency' \
+               WHERE external_records.id <> ?1 \
+                 AND external_records.status IN ('staged', 'review') \
+                 AND external_records.event_type = ?2 \
+                 AND external_records.currency = ?3 \
+                 AND julianday(external_records.posted_on) BETWEEN julianday(?4) - ?5 \
+                     AND julianday(?4) + ?5 \
+             ) \
+             SELECT id, account_id, account_type, currency, posted_on, \
+                    account_balance_delta, instrument_id \
+             FROM candidate_records \
+             WHERE account_id <> ?6 \
+               AND delta_magnitude <> '0' \
+               AND delta_magnitude = CASE \
+                 WHEN instr(ltrim(?8, '-'), '.') = 0 THEN ltrim(?8, '-') \
+                 ELSE rtrim(rtrim(ltrim(?8, '-'), '0'), '.') \
+               END \
+               AND ( \
+                 (?2 = 'same_currency_transfer' AND ( \
+                   (?8 GLOB '-*' AND account_balance_delta NOT GLOB '-*') \
+                   OR (?8 NOT GLOB '-*' AND account_balance_delta GLOB '-*') \
+                 )) \
+                 OR (?2 = 'credit_card_repayment' \
+                   AND ?8 GLOB '-*' AND account_balance_delta GLOB '-*' \
+                   AND ( \
+                     (?7 = 'credit_card' \
+                       AND account_type IN ('deposit_account', 'currency_balance', 'cash_balance')) \
+                     OR (?7 IN ('deposit_account', 'currency_balance', 'cash_balance') \
+                       AND account_type = 'credit_card') \
+                   )) \
+               ) \
+             ORDER BY ABS(julianday(posted_on) - julianday(?4)), posted_on, id \
              LIMIT 100",
         )?;
         let candidates = statement
@@ -1883,6 +1912,9 @@ impl ManualImportStore {
                     record.currency,
                     record.posted_on,
                     MAX_SUPPORTED_RELATIONSHIP_WINDOW_DAYS,
+                    record.account_id,
+                    record.account_type,
+                    record.account_balance_delta,
                 ],
                 core_review_record_from_row,
             )?
@@ -2078,6 +2110,18 @@ impl ManualImportStore {
         Ok(row)
     }
 
+    pub(crate) fn queued_review_job_ids(&self) -> StoreResult<Vec<String>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id FROM jobs \
+             WHERE job_type = ?1 AND status = 'queued' \
+             ORDER BY created_at, id",
+        )?;
+        statement
+            .query_map([COMMIT_REVIEW_BATCH_JOB_TYPE], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
     pub(crate) fn recover_expired_review_jobs(&mut self) -> StoreResult<()> {
         self.connection.execute(
             "UPDATE jobs \
@@ -2158,6 +2202,11 @@ impl ManualImportStore {
         let mut groups = Vec::new();
         let mut outcomes = Vec::new();
         let mut seen_relationships = HashSet::new();
+        let selected_review_items = claimed
+            .review_item_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
         for review_item_id in &claimed.review_item_ids {
             let record_id = self.review_item_record_id(review_item_id)?;
             let Some(record_id) = record_id else {
@@ -2203,6 +2252,18 @@ impl ManualImportStore {
                 });
                 continue;
             };
+            if !selected_review_items.contains(relationship.first_review_item_id.as_str())
+                || !selected_review_items.contains(relationship.second_review_item_id.as_str())
+            {
+                if seen_relationships.insert(relationship.id.clone()) {
+                    outcomes.push(ReviewBatchGroupOutcome {
+                        reason: Some("relationship_not_selected".to_owned()),
+                        record_ids: vec![record_id],
+                        status: ReviewBatchGroupStatus::StillNeedsReview,
+                    });
+                }
+                continue;
+            }
             if !seen_relationships.insert(relationship.id.clone()) {
                 continue;
             }
@@ -2243,6 +2304,10 @@ impl ManualImportStore {
         if !valid_core_review_event(event)
             || event.event_type != group.event_type
             || !event_matches_group(event, group)
+            || group
+                .review_item_ids
+                .iter()
+                .any(|review_item_id| !claimed.review_item_ids.contains(review_item_id))
         {
             return Ok(ReviewBatchGroupOutcome {
                 reason: Some("core_preflight_failed".to_owned()),
@@ -5280,6 +5345,58 @@ mod tests {
     }
 
     #[test]
+    fn qualifies_relationship_candidates_before_capping_results() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let mut store = open_store(root.path());
+        seed_review_repayment(&mut store, false);
+
+        for index in 0..101 {
+            let id = format!("record-mismatch-{index:03}");
+            store
+                .connection
+                .execute(
+                    "INSERT INTO external_records( \
+                       id, parse_run_id, source_document_id, account_id, stable_record_key, version, \
+                       status, record_type, event_type, posted_on, amount_value, currency, \
+                       account_balance_delta, raw_json, validation_json \
+                     ) VALUES (?1, 'parse-document-dbs-july', 'document-dbs-july', \
+                               'account-dbs-card', ?2, 1, 'review', 'transaction', \
+                               'credit_card_repayment', '2026-06-30', '1.00', 'SGD', '-1.00', \
+                               '{}', '{}')",
+                    params![id, format!("mismatched-repayment-{index}")],
+                )
+                .expect("seed magnitude-mismatched candidate");
+        }
+        store
+            .connection
+            .execute(
+                "INSERT INTO external_records( \
+                   id, parse_run_id, source_document_id, account_id, stable_record_key, version, \
+                   status, record_type, event_type, posted_on, amount_value, currency, \
+                   account_balance_delta, raw_json, validation_json \
+                 ) VALUES ('record-dbs-card-second', 'parse-document-dbs-july', \
+                           'document-dbs-july', 'account-dbs-card', 'dbs-card-repayment-second', \
+                           1, 'review', 'transaction', 'credit_card_repayment', '2026-07-02', \
+                           '750.00', 'SGD', '-750.0', '{}', '{}')",
+                [],
+            )
+            .expect("seed second qualified candidate");
+
+        let candidate_input = store
+            .relationship_candidate_input("review-record-hsbc-cash", 1)
+            .expect("load candidate input")
+            .expect("current review record");
+        assert_eq!(
+            candidate_input
+                .candidates
+                .iter()
+                .map(|candidate| candidate.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["record-dbs-card", "record-dbs-card-second"]
+        );
+    }
+
+    #[test]
     fn advertises_undo_only_for_supported_review_event_types() {
         let root = tempfile::tempdir().expect("temporary Vault");
         let store = open_store(root.path());
@@ -5332,6 +5449,44 @@ mod tests {
     }
 
     #[test]
+    fn keeps_an_accepted_relationship_in_review_until_both_sides_are_selected() {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let mut store = open_store(root.path());
+        seed_review_repayment(&mut store, false);
+        store
+            .accept_review_relationship(
+                "review-record-hsbc-cash",
+                1,
+                "record-dbs-card",
+                1,
+                &prepared_repayment(),
+            )
+            .expect("accept exact repayment relationship");
+        let job = store
+            .enqueue_commit_review_batch(&["review-record-hsbc-cash".to_owned()])
+            .expect("enqueue one selected side");
+        let claimed = store
+            .claim_review_batch(&job.job_id, "test-worker")
+            .expect("claim batch")
+            .expect("queued job");
+
+        let (groups, outcomes) = store
+            .prepare_commit_review_groups(&claimed)
+            .expect("prepare selected review items");
+
+        assert!(groups.is_empty());
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(
+            outcomes[0],
+            ReviewBatchGroupOutcome {
+                reason: Some("relationship_not_selected".to_owned()),
+                record_ids: vec!["record-hsbc-cash".to_owned()],
+                status: ReviewBatchGroupStatus::StillNeedsReview,
+            }
+        );
+    }
+
+    #[test]
     fn persists_cross_month_repayment_review_commit_undo_and_restart_recovery() {
         for card_first in [false, true] {
             let root = tempfile::tempdir().expect("temporary Vault");
@@ -5374,7 +5529,10 @@ mod tests {
             assert!(!serialized.contains("locator"));
 
             let job = store
-                .enqueue_commit_review_batch(&["review-record-hsbc-cash".to_owned()])
+                .enqueue_commit_review_batch(&[
+                    "review-record-hsbc-cash".to_owned(),
+                    "review-record-dbs-card".to_owned(),
+                ])
                 .expect("enqueue batch");
             let claimed = store
                 .claim_review_batch(&job.job_id, "test-worker")
@@ -5404,6 +5562,12 @@ mod tests {
                 .expect("read recovered job")
                 .expect("job");
             assert_eq!(recovered.status, ReviewJobStatus::Queued);
+            assert_eq!(
+                reopened
+                    .queued_review_job_ids()
+                    .expect("list recovered review jobs"),
+                vec![job.job_id.clone()]
+            );
             let retry = reopened
                 .claim_review_batch(&job.job_id, "retry-worker")
                 .expect("claim recovered job")
