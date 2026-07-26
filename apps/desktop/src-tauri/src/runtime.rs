@@ -9,7 +9,7 @@ use crate::{
         SourceDocumentRoutingOutcome, SourceDocumentView, StatementCoverageDecision,
         StatementCoverageDecisionInput, StatementCoveragePolicy, StatementCoveragePrompt,
         StatementPasswordStatus, TrustedAccountCandidate, TrustedDocumentClassification,
-        UndoOutcome,
+        UndoOutcome, ValidatedExternalRecordInput, ValidatedStructuredParseInput,
     },
     local_inbox::{
         AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureOutcome,
@@ -42,7 +42,7 @@ use std::os::unix::fs::OpenOptionsExt;
 #[cfg(all(test, unix))]
 use std::os::unix::fs::PermissionsExt;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -74,6 +74,9 @@ const LOCAL_INBOX_BOOKMARK_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.local-in
 const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+const NORMALIZER_MAX_MESSAGE_BYTES: usize = 256 * 1024;
+const SYNTHETIC_NORMALIZATION_PROFILE_ID: &str = "synthetic-bank-transfer-export-v1";
+const SYNTHETIC_NORMALIZATION_PROFILE_JSON: &str = r#"{"normalizerRuntime":"single-pass-mock","parserContract":"structured-proposal-v1","validator":"synthetic-bank-v1"}"#;
 // The shipped synthetic normalizer models an on-demand export, so it has no
 // statement cadence. Real provider packages must add an explicit declaration;
 // CanCan never infers cadence from filenames or prior dates.
@@ -201,16 +204,17 @@ pub(crate) struct SourceDocumentPreview {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerAccount {
     account_type: String,
     currency: Option<String>,
     masked_identifier: Option<String>,
+    proposal_account_id: String,
     provider_account_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerDocument {
     document_type: String,
     provider_key: String,
@@ -219,23 +223,68 @@ struct NormalizerDocument {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerStatementPeriod {
     from: Option<String>,
     to: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(rename_all = "snake_case", tag = "status", deny_unknown_fields)]
 enum NormalizerResult {
-    Classified { proposal: NormalizerProposal },
+    Classified { proposal: Box<NormalizerProposal> },
     NeedsAttention { reason: String },
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerProposal {
     accounts: Vec<NormalizerAccount>,
+    closing_snapshots: Vec<NormalizerRecord>,
     document: NormalizerDocument,
+    opening_snapshots: Vec<NormalizerRecord>,
+    records: Vec<NormalizerRecord>,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerMoney {
+    currency: String,
+    value: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerRecordValidation {
+    deterministic_validation_passed: bool,
+    raw_grounded: bool,
+    schema_valid: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerRecord {
+    account_balance_delta: Option<NormalizerMoney>,
+    amount: Option<NormalizerMoney>,
+    balance_after: Option<NormalizerMoney>,
+    description_normalized: Option<String>,
+    description_raw: Option<String>,
+    event_type: Option<String>,
+    instrument_symbol: Option<String>,
+    posted_at: Option<String>,
+    posted_on: Option<String>,
+    proposal_account_id: Option<String>,
+    proposal_record_id: String,
+    provider_record_id: Option<String>,
+    quantity: Option<String>,
+    raw: serde_json::Value,
+    record_type: String,
+    stable_record_key: String,
+    statement_entry_side: Option<String>,
+    transaction_on: Option<String>,
+    validation: NormalizerRecordValidation,
+    valuation: Option<NormalizerMoney>,
 }
 
 #[derive(Serialize)]
@@ -249,7 +298,7 @@ struct NormalizerCommand<'a> {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum NormalizerMessage {
     Ready {
         #[serde(rename = "protocolVersion")]
@@ -263,7 +312,9 @@ enum NormalizerMessage {
         request_id: String,
         result: NormalizerResult,
     },
-    Error,
+    Error {
+        code: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -1253,6 +1304,46 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
     }
 
+    fn queued_document_reconciliations(&self) -> Result<Vec<String>, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .queued_reconcile_document_ids()
+            .map_err(|_| RuntimeError::new("reconcile_failed"))
+    }
+
+    fn start_document_reconciliation(&self, document_id: &str) -> Result<bool, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .start_reconcile_document(document_id)
+            .map_err(|_| RuntimeError::new("reconcile_failed"))
+    }
+
+    fn reconcile_document(&self, document_id: &str) -> Result<(), RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .reconcile_document(document_id)
+            .map_err(|_| RuntimeError::new("reconcile_failed"))
+    }
+
+    fn fail_document_reconciliation(
+        &self,
+        document_id: &str,
+        reason: &'static str,
+    ) -> Result<(), RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .fail_reconcile_document(document_id, reason)
+            .map_err(|_| RuntimeError::new("reconcile_failed"))
+    }
+
     fn activate_local_inbox_from_bookmark(&self) -> Result<bool, RuntimeError> {
         if self
             .inner
@@ -2162,6 +2253,17 @@ impl VaultRuntime {
         let outcome = store
             .apply_trusted_classification(&classification)
             .map_err(|_| RuntimeError::new("classification_failed"))?;
+        if outcome.status != crate::database::SourceDocumentRoutingStatus::Routed {
+            store
+                .finish_parse_document(document_id, &outcome)
+                .map_err(|_| RuntimeError::new("classification_failed"))?;
+            return Ok(outcome);
+        }
+        let parse = validated_structured_parse_input(&proposal, &outcome.account_ids)
+            .ok_or_else(|| RuntimeError::new("normalizer_failed"))?;
+        store
+            .persist_validated_structured_parse(document_id, &parse)
+            .map_err(|_| RuntimeError::new("classification_failed"))?;
         store
             .finish_parse_document(document_id, &outcome)
             .map_err(|_| RuntimeError::new("classification_failed"))?;
@@ -2444,6 +2546,48 @@ async fn process_queued_local_inbox_parses(
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
         }
     }
+    process_queued_document_reconciliations(runtime).await?;
+    Ok(())
+}
+
+async fn process_queued_document_reconciliations(
+    runtime: VaultRuntime,
+) -> Result<(), VaultCommandError> {
+    let document_ids = {
+        let runtime = runtime.clone();
+        tauri::async_runtime::spawn_blocking(move || runtime.queued_document_reconciliations())
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    for document_id in document_ids {
+        let started = {
+            let runtime = runtime.clone();
+            let document_id = document_id.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                runtime.start_document_reconciliation(&document_id)
+            })
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+        };
+        if !started {
+            continue;
+        }
+        let reconciled = {
+            let runtime = runtime.clone();
+            let document_id = document_id.clone();
+            tauri::async_runtime::spawn_blocking(move || runtime.reconcile_document(&document_id))
+                .await
+                .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        };
+        if reconciled.is_err() {
+            let runtime = runtime.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                runtime.fail_document_reconciliation(&document_id, "reconcile_failed")
+            })
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
+        }
+    }
     Ok(())
 }
 
@@ -2458,6 +2602,10 @@ async fn resume_local_inbox_after_unlock(app: &AppHandle, runtime: VaultRuntime)
     if status.is_some_and(|status| status.access_state == LocalInboxAccessState::Enabled) {
         let _ = rescan_and_process_local_inbox(app, runtime).await;
     }
+}
+
+async fn resume_document_reconciliations_after_unlock(runtime: VaultRuntime) {
+    let _ = process_queued_document_reconciliations(runtime).await;
 }
 
 async fn resume_review_jobs_after_unlock(app: &AppHandle, runtime: VaultRuntime) {
@@ -2627,6 +2775,7 @@ pub(crate) async fn unlock_vault(
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
             .map_err(VaultCommandError::from)?;
     resume_review_jobs_after_unlock(&app, runtime.clone()).await;
+    resume_document_reconciliations_after_unlock(runtime.clone()).await;
     resume_local_inbox_after_unlock(&app, runtime).await;
     Ok(status)
 }
@@ -2644,6 +2793,7 @@ pub(crate) async fn unlock_vault_with_keychain(
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
             .map_err(VaultCommandError::from)?;
     resume_review_jobs_after_unlock(&app, runtime.clone()).await;
+    resume_document_reconciliations_after_unlock(runtime.clone()).await;
     resume_local_inbox_after_unlock(&app, runtime).await;
     Ok(status)
 }
@@ -2945,12 +3095,15 @@ pub(crate) async fn normalize_source_document(
     let result = run_normalizer_sidecar(&app, &document_id, &input)
         .await
         .map_err(VaultCommandError::from)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        runtime.apply_normalizer_result(&document_id, &input, result)
+    let apply_runtime = runtime.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        apply_runtime.apply_normalizer_result(&document_id, &input, result)
     })
     .await
     .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-    .map_err(Into::into)
+    .map_err(VaultCommandError::from)?;
+    process_queued_document_reconciliations(runtime).await?;
+    Ok(outcome)
 }
 
 #[tauri::command]
@@ -3512,6 +3665,9 @@ async fn run_normalizer_sidecar(
         };
         match event {
             CommandEvent::Stdout(bytes) => {
+                if bytes.len() > NORMALIZER_MAX_MESSAGE_BYTES {
+                    return fail_normalizer(child);
+                }
                 let message = match serde_json::from_slice::<NormalizerMessage>(&bytes) {
                     Ok(message) => message,
                     Err(_) => return fail_normalizer(child),
@@ -3539,9 +3695,13 @@ async fn run_normalizer_sidecar(
                         request_id: response_id,
                         result,
                     } if ready && response_id == request_id => break result,
-                    NormalizerMessage::Ready { .. }
-                    | NormalizerMessage::Result { .. }
-                    | NormalizerMessage::Error => return fail_normalizer(child),
+                    NormalizerMessage::Error { code } => {
+                        let _ = code;
+                        return fail_normalizer(child);
+                    }
+                    NormalizerMessage::Ready { .. } | NormalizerMessage::Result { .. } => {
+                        return fail_normalizer(child);
+                    }
                 }
             }
             CommandEvent::Terminated(_) => {
@@ -3705,21 +3865,181 @@ fn valid_synthetic_fingerprint(
         && proposal.document.provider_key == "synthetic-bank"
         && proposal.document.document_type == "transfer_export"
         && proposal.document.statement_id.as_deref() == Some("transfer-2026-07")
-        && !proposal.accounts.is_empty()
-        && proposal.accounts.iter().all(|account| {
-            matches!(
-                account.account_type.as_str(),
-                "deposit_account"
-                    | "credit_card"
-                    | "currency_balance"
-                    | "brokerage_account"
-                    | "cash_balance"
-                    | "position_group"
-                    | "insurance_policy"
-                    | "manual_asset"
-                    | "manual_liability"
-            )
+        && proposal.status == "valid"
+        && proposal
+            .document
+            .statement_period
+            .as_ref()
+            .is_some_and(|period| {
+                period.from.as_deref() == Some("2026-07-01")
+                    && period.to.as_deref() == Some("2026-07-31")
+            })
+        && proposal.accounts.len() == 2
+        && proposal.accounts.iter().any(|account| {
+            account.proposal_account_id == "account-checking"
+                && account.account_type == "deposit_account"
+                && account.provider_account_id.as_deref() == Some("checking-001")
+                && account.masked_identifier.as_deref() == Some("••001")
+                && account.currency.as_deref() == Some("SGD")
         })
+        && proposal.accounts.iter().any(|account| {
+            account.proposal_account_id == "account-savings"
+                && account.account_type == "deposit_account"
+                && account.provider_account_id.as_deref() == Some("savings-002")
+                && account.masked_identifier.as_deref() == Some("••002")
+                && account.currency.as_deref() == Some("SGD")
+        })
+        && proposal_records(proposal).is_some_and(|records| {
+            let account_ids = proposal
+                .accounts
+                .iter()
+                .map(|account| account.proposal_account_id.as_str())
+                .collect::<HashSet<_>>();
+            !records.is_empty()
+                && records.iter().all(|record| {
+                    valid_normalizer_record(record)
+                        && record
+                            .proposal_account_id
+                            .as_deref()
+                            .is_some_and(|account_id| account_ids.contains(account_id))
+                })
+                && records
+                    .iter()
+                    .map(|record| record.proposal_record_id.as_str())
+                    .collect::<HashSet<_>>()
+                    .len()
+                    == records.len()
+                && records
+                    .iter()
+                    .map(|record| record.stable_record_key.as_str())
+                    .collect::<HashSet<_>>()
+                    .len()
+                    == records.len()
+        })
+}
+
+fn proposal_records(proposal: &NormalizerProposal) -> Option<Vec<&NormalizerRecord>> {
+    let count = proposal.opening_snapshots.len()
+        + proposal.records.len()
+        + proposal.closing_snapshots.len();
+    if count == 0 || count > 1_000 {
+        return None;
+    }
+    Some(
+        proposal
+            .opening_snapshots
+            .iter()
+            .chain(&proposal.records)
+            .chain(&proposal.closing_snapshots)
+            .collect(),
+    )
+}
+
+fn valid_normalizer_record(record: &NormalizerRecord) -> bool {
+    let validation = &record.validation;
+    validation.schema_valid
+        && validation.raw_grounded
+        && validation.deterministic_validation_passed
+        && !record.proposal_record_id.is_empty()
+        && record.proposal_record_id.len() <= 256
+        && !record.stable_record_key.is_empty()
+        && record.stable_record_key.len() <= 256
+        && matches!(
+            record.record_type.as_str(),
+            "transaction" | "balance" | "position" | "trade" | "valuation" | "fee" | "interest"
+        )
+        && record.raw.is_object()
+        && serde_json::to_vec(&record.raw).is_ok_and(|raw| raw.len() <= 16 * 1024)
+        && optional_normalizer_string(&record.proposal_account_id, 256)
+        && optional_normalizer_string(&record.provider_record_id, 256)
+        && optional_normalizer_string(&record.event_type, 128)
+        && optional_normalizer_string(&record.posted_on, 32)
+        && optional_normalizer_string(&record.transaction_on, 32)
+        && optional_normalizer_string(&record.posted_at, 64)
+        && optional_normalizer_string(&record.description_raw, 4 * 1024)
+        && optional_normalizer_string(&record.description_normalized, 4 * 1024)
+        && optional_normalizer_string(&record.instrument_symbol, 256)
+        && optional_normalizer_string(&record.quantity, 128)
+        && optional_normalizer_string(&record.statement_entry_side, 16)
+        && [
+            record.amount.as_ref(),
+            record.account_balance_delta.as_ref(),
+            record.balance_after.as_ref(),
+            record.valuation.as_ref(),
+        ]
+        .iter()
+        .flatten()
+        .all(valid_normalizer_money)
+}
+
+fn optional_normalizer_string(value: &Option<String>, max_bytes: usize) -> bool {
+    value
+        .as_deref()
+        .is_none_or(|value| !value.is_empty() && value.len() <= max_bytes)
+}
+
+fn valid_normalizer_money(money: &&NormalizerMoney) -> bool {
+    !money.value.is_empty()
+        && money.value.len() <= 128
+        && money.currency.len() == 3
+        && money.currency.bytes().all(|byte| byte.is_ascii_uppercase())
+}
+
+fn validated_structured_parse_input(
+    proposal: &NormalizerProposal,
+    account_ids: &[String],
+) -> Option<ValidatedStructuredParseInput> {
+    if proposal.accounts.len() != account_ids.len() {
+        return None;
+    }
+    let account_ids = proposal
+        .accounts
+        .iter()
+        .zip(account_ids)
+        .map(|(account, account_id)| (account.proposal_account_id.as_str(), account_id.as_str()))
+        .collect::<HashMap<_, _>>();
+    let records = proposal_records(proposal)?
+        .into_iter()
+        .map(|record| {
+            let account_id = account_ids
+                .get(record.proposal_account_id.as_deref()?)?
+                .to_string();
+            let money = [
+                record.amount.as_ref(),
+                record.account_balance_delta.as_ref(),
+                record.balance_after.as_ref(),
+                record.valuation.as_ref(),
+            ];
+            let currency = money.iter().flatten().next()?.currency.clone();
+            if money
+                .iter()
+                .flatten()
+                .any(|money| money.currency != currency)
+            {
+                return None;
+            }
+            Some(ValidatedExternalRecordInput {
+                account_id,
+                account_balance_delta: record
+                    .account_balance_delta
+                    .as_ref()
+                    .map(|money| money.value.clone()),
+                amount_value: record.amount.as_ref().map(|money| money.value.clone()),
+                currency: Some(currency),
+                event_type: record.event_type.clone(),
+                posted_on: record.posted_on.clone(),
+                raw_json: serde_json::to_string(&record.raw).ok()?,
+                record_type: record.record_type.clone(),
+                stable_record_key: record.stable_record_key.clone(),
+                validation_json: serde_json::to_string(&record.validation).ok()?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(ValidatedStructuredParseInput {
+        normalization_profile_id: SYNTHETIC_NORMALIZATION_PROFILE_ID.to_owned(),
+        profile_json: SYNTHETIC_NORMALIZATION_PROFILE_JSON.to_owned(),
+        records,
+    })
 }
 
 fn random_identifier(prefix: &str) -> String {
@@ -4418,7 +4738,12 @@ mod tests {
             "document-smoke",
             &"a".repeat(64),
             "text/csv",
-            b"CANCAN_SYNTHETIC_STATEMENT_V1\nprovider=synthetic-bank\nstatement_id=transfer-2026-07\n",
+            b"balance,2026-06-30,checking-001,1000.00,SGD,CANCAN_SYNTHETIC_STATEMENT_V1\n\
+2026-07-01,Transfer to savings,250.00,SGD,750.00,provider=synthetic-bank\n\
+balance,2026-07-01,checking-001,750.00,SGD,statement_id=transfer-2026-07\n\
+balance,2026-06-30,savings-002,100.00,SGD\n\
+2026-07-01,Transfer from checking,250.00,SGD,350.00\n\
+balance,2026-07-01,savings-002,350.00,SGD",
             None,
         )
         .expect("extract fixture observations");
@@ -5908,13 +6233,7 @@ mod tests {
     fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
         let parent = tempfile::tempdir().expect("temporary app data");
         let source_path = parent.path().join("synthetic.csv");
-        let fixture = [
-            "CANCAN_SYNTHETIC_STATEMENT_V1",
-            "provider=synthetic-bank",
-            "statement_id=transfer-2026-07",
-        ]
-        .join("\n");
-        fs::write(&source_path, &fixture).expect("write statement fixture");
+        fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
         let runtime = VaultRuntime::new(parent.path().join("vault"));
         runtime
             .create(b"synthetic-vault-password")
@@ -5950,7 +6269,7 @@ mod tests {
             crate::database::SourceDocumentRoutingStatus::Routed
         );
         assert_eq!(routed.money_source_id.as_deref(), Some("source-synthetic"));
-        assert_eq!(routed.account_ids.len(), 1);
+        assert_eq!(routed.account_ids.len(), 2);
         let routed_documents = runtime
             .list_source_documents("source-synthetic")
             .expect("list routed documents");
@@ -5964,9 +6283,184 @@ mod tests {
         );
     }
 
+    #[test]
+    fn persists_validated_records_and_reconciles_them_to_review_idempotently() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("synthetic.csv");
+        fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source(
+                "source-synthetic",
+                "synthetic-bank",
+                "Synthetic Bank",
+                "bank",
+            )
+            .expect("seed source");
+        let imported = runtime
+            .import_selected_document(&source_path, None)
+            .expect("capture statement");
+        let input = runtime
+            .normalization_input(&imported.document_id)
+            .expect("extract complete synthetic observations");
+
+        let routed = runtime
+            .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
+            .expect("persist validated proposal");
+        assert_eq!(
+            routed.status,
+            crate::database::SourceDocumentRoutingStatus::Routed
+        );
+        assert_eq!(
+            structured_parse_test_state(&runtime, &imported.document_id),
+            crate::database::StructuredParseTestState {
+                balance_snapshots_without_amount: 4,
+                ledger_events: 0,
+                open_review_items: 0,
+                parse_runs: 1,
+                reconcile_status: Some("queued".to_owned()),
+                records: 6,
+                staged_records: 6,
+            }
+        );
+
+        assert!(
+            runtime
+                .start_document_reconciliation(&imported.document_id)
+                .expect("claim reconcile job")
+        );
+        runtime
+            .fail_document_reconciliation(&imported.document_id, "reconcile_failed")
+            .expect("record safe reconcile failure");
+        let failed = structured_parse_test_state(&runtime, &imported.document_id);
+        assert_eq!((failed.staged_records, failed.open_review_items), (6, 0));
+        assert_eq!(failed.reconcile_status.as_deref(), Some("failed"));
+
+        runtime
+            .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
+            .expect("repeat same profile");
+        assert_eq!(
+            runtime
+                .queued_document_reconciliations()
+                .expect("requeue failed reconcile"),
+            vec![imported.document_id.clone()]
+        );
+        assert!(
+            runtime
+                .start_document_reconciliation(&imported.document_id)
+                .expect("claim recovery candidate")
+        );
+        expire_reconcile_lease_for_test(&runtime, &imported.document_id);
+        assert_eq!(
+            runtime
+                .queued_document_reconciliations()
+                .expect("recover expired reconcile job"),
+            vec![imported.document_id.clone()]
+        );
+        assert!(
+            runtime
+                .start_document_reconciliation(&imported.document_id)
+                .expect("claim recovered reconcile job")
+        );
+        runtime
+            .reconcile_document(&imported.document_id)
+            .expect("move staged records to review");
+
+        runtime
+            .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
+            .expect("repeat after reconciliation");
+        assert!(
+            runtime
+                .start_document_reconciliation(&imported.document_id)
+                .expect("claim idempotent reconcile job")
+        );
+        runtime
+            .reconcile_document(&imported.document_id)
+            .expect("idempotent reconcile");
+        assert_eq!(
+            structured_parse_test_state(&runtime, &imported.document_id),
+            crate::database::StructuredParseTestState {
+                balance_snapshots_without_amount: 4,
+                ledger_events: 0,
+                open_review_items: 6,
+                parse_runs: 1,
+                reconcile_status: Some("succeeded".to_owned()),
+                records: 6,
+                staged_records: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_normalizer_protocol_without_persisting_records_or_review() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("synthetic.csv");
+        fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source(
+                "source-synthetic",
+                "synthetic-bank",
+                "Synthetic Bank",
+                "bank",
+            )
+            .expect("seed source");
+        let imported = runtime
+            .import_selected_document(&source_path, None)
+            .expect("capture statement");
+        let input = runtime
+            .normalization_input(&imported.document_id)
+            .expect("extract complete synthetic observations");
+        let mut invalid = synthetic_normalizer_result();
+        let NormalizerResult::Classified { proposal } = &mut invalid else {
+            panic!("synthetic result must be classified");
+        };
+        proposal.records[0].validation.raw_grounded = false;
+
+        let outcome = runtime
+            .apply_normalizer_result(&imported.document_id, &input, invalid)
+            .expect("reject invalid protocol safely");
+        assert_eq!(
+            outcome.status,
+            crate::database::SourceDocumentRoutingStatus::NeedsAttention
+        );
+        let state = structured_parse_test_state(&runtime, &imported.document_id);
+        assert_eq!(
+            (state.parse_runs, state.records, state.open_review_items),
+            (0, 0, 0)
+        );
+    }
+
+    fn structured_parse_test_state(
+        runtime: &VaultRuntime,
+        document_id: &str,
+    ) -> crate::database::StructuredParseTestState {
+        let store = runtime.store().expect("open store");
+        store
+            .as_ref()
+            .expect("unlocked store")
+            .structured_parse_test_state(document_id)
+            .expect("read structured parse state")
+    }
+
+    fn expire_reconcile_lease_for_test(runtime: &VaultRuntime, document_id: &str) {
+        let store = runtime.store().expect("open store");
+        store
+            .as_ref()
+            .expect("unlocked store")
+            .expire_reconcile_lease_for_test(document_id)
+            .expect("expire reconcile lease");
+    }
+
     fn synthetic_normalizer_result() -> NormalizerResult {
         NormalizerResult::Classified {
-            proposal: NormalizerProposal {
+            proposal: Box::new(NormalizerProposal {
                 document: NormalizerDocument {
                     document_type: "transfer_export".to_owned(),
                     provider_key: "synthetic-bank".to_owned(),
@@ -5976,14 +6470,138 @@ mod tests {
                         to: Some("2026-07-31".to_owned()),
                     }),
                 },
-                accounts: vec![NormalizerAccount {
-                    account_type: "deposit_account".to_owned(),
-                    currency: Some("SGD".to_owned()),
-                    masked_identifier: Some("••001".to_owned()),
-                    provider_account_id: Some("checking-001".to_owned()),
-                }],
-            },
+                accounts: vec![
+                    NormalizerAccount {
+                        account_type: "deposit_account".to_owned(),
+                        currency: Some("SGD".to_owned()),
+                        masked_identifier: Some("••001".to_owned()),
+                        proposal_account_id: "account-checking".to_owned(),
+                        provider_account_id: Some("checking-001".to_owned()),
+                    },
+                    NormalizerAccount {
+                        account_type: "deposit_account".to_owned(),
+                        currency: Some("SGD".to_owned()),
+                        masked_identifier: Some("••002".to_owned()),
+                        proposal_account_id: "account-savings".to_owned(),
+                        provider_account_id: Some("savings-002".to_owned()),
+                    },
+                ],
+                opening_snapshots: vec![
+                    synthetic_normalizer_record(
+                        "record-checking-opening",
+                        "account-checking",
+                        "balance",
+                        "balance_snapshot",
+                        None,
+                        None,
+                        "1000.00",
+                    ),
+                    synthetic_normalizer_record(
+                        "record-savings-opening",
+                        "account-savings",
+                        "balance",
+                        "balance_snapshot",
+                        None,
+                        None,
+                        "100.00",
+                    ),
+                ],
+                records: vec![
+                    synthetic_normalizer_record(
+                        "record-checking-out",
+                        "account-checking",
+                        "transaction",
+                        "same_currency_transfer",
+                        Some("250.00"),
+                        Some("-250.00"),
+                        "750.00",
+                    ),
+                    synthetic_normalizer_record(
+                        "record-savings-in",
+                        "account-savings",
+                        "transaction",
+                        "same_currency_transfer",
+                        Some("250.00"),
+                        Some("250.00"),
+                        "350.00",
+                    ),
+                ],
+                closing_snapshots: vec![
+                    synthetic_normalizer_record(
+                        "record-checking-closing",
+                        "account-checking",
+                        "balance",
+                        "balance_snapshot",
+                        None,
+                        None,
+                        "750.00",
+                    ),
+                    synthetic_normalizer_record(
+                        "record-savings-closing",
+                        "account-savings",
+                        "balance",
+                        "balance_snapshot",
+                        None,
+                        None,
+                        "350.00",
+                    ),
+                ],
+                status: "valid".to_owned(),
+            }),
         }
+    }
+
+    fn synthetic_normalizer_record(
+        proposal_record_id: &str,
+        proposal_account_id: &str,
+        record_type: &str,
+        event_type: &str,
+        amount: Option<&str>,
+        account_balance_delta: Option<&str>,
+        balance_after: &str,
+    ) -> NormalizerRecord {
+        let money = |value: &str| NormalizerMoney {
+            currency: "SGD".to_owned(),
+            value: value.to_owned(),
+        };
+        NormalizerRecord {
+            account_balance_delta: account_balance_delta.map(money),
+            amount: amount.map(money),
+            balance_after: Some(money(balance_after)),
+            description_normalized: None,
+            description_raw: None,
+            event_type: Some(event_type.to_owned()),
+            instrument_symbol: None,
+            posted_at: None,
+            posted_on: Some("2026-07-01".to_owned()),
+            proposal_account_id: Some(proposal_account_id.to_owned()),
+            proposal_record_id: proposal_record_id.to_owned(),
+            provider_record_id: None,
+            quantity: None,
+            raw: serde_json::json!({ "proposalRecordId": proposal_record_id }),
+            record_type: record_type.to_owned(),
+            stable_record_key: format!("synthetic:{proposal_record_id}"),
+            statement_entry_side: None,
+            transaction_on: None,
+            validation: NormalizerRecordValidation {
+                deterministic_validation_passed: true,
+                raw_grounded: true,
+                schema_valid: true,
+            },
+            valuation: None,
+        }
+    }
+
+    fn synthetic_statement_csv() -> String {
+        [
+            "balance,2026-06-30,checking-001,1000.00,SGD,CANCAN_SYNTHETIC_STATEMENT_V1",
+            "2026-07-01,Transfer to savings,250.00,SGD,750.00,provider=synthetic-bank",
+            "balance,2026-07-01,checking-001,750.00,SGD,statement_id=transfer-2026-07",
+            "balance,2026-06-30,savings-002,100.00,SGD",
+            "2026-07-01,Transfer from checking,250.00,SGD,350.00",
+            "balance,2026-07-01,savings-002,350.00,SGD",
+        ]
+        .join("\n")
     }
 
     #[cfg(target_os = "macos")]

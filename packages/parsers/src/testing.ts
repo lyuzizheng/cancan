@@ -210,7 +210,7 @@ export function createSyntheticTransferFixture(): {
         {
           proposalRecordId: "record-checking-out",
           recordType: "transaction",
-          eventType: "transfer",
+          eventType: "same_currency_transfer",
           proposalAccountId: "account-checking",
           postedOn: "2026-07-01",
           descriptionRaw: "Transfer to savings",
@@ -230,7 +230,7 @@ export function createSyntheticTransferFixture(): {
         {
           proposalRecordId: "record-savings-in",
           recordType: "transaction",
-          eventType: "transfer",
+          eventType: "same_currency_transfer",
           proposalAccountId: "account-savings",
           postedOn: "2026-07-01",
           descriptionRaw: "Transfer from checking",

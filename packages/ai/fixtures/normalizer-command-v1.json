@@ -8,36 +8,42 @@
     "mimeType": "text/csv",
     "metadata": {
       "extractionVersion": "native-observations-v1",
-      "observationCount": 3
+      "observationCount": 33
     },
     "observations": [
-      {
-        "id": "csv-row-1-column-1",
-        "kind": "table_cell",
-        "row": 1,
-        "column": 1,
-        "text": "CANCAN_SYNTHETIC_STATEMENT_V1",
-        "engine": "rust-csv",
-        "engineVersion": "1.4.0"
-      },
-      {
-        "id": "csv-row-2-column-1",
-        "kind": "table_cell",
-        "row": 2,
-        "column": 1,
-        "text": "provider=synthetic-bank",
-        "engine": "rust-csv",
-        "engineVersion": "1.4.0"
-      },
-      {
-        "id": "csv-row-3-column-1",
-        "kind": "table_cell",
-        "row": 3,
-        "column": 1,
-        "text": "statement_id=transfer-2026-07",
-        "engine": "rust-csv",
-        "engineVersion": "1.4.0"
-      }
+      { "id": "csv-row-1-column-1", "kind": "table_cell", "row": 1, "column": 1, "text": "balance", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-1-column-2", "kind": "table_cell", "row": 1, "column": 2, "text": "2026-06-30", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-1-column-3", "kind": "table_cell", "row": 1, "column": 3, "text": "checking-001", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-1-column-4", "kind": "table_cell", "row": 1, "column": 4, "text": "1000.00", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-1-column-5", "kind": "table_cell", "row": 1, "column": 5, "text": "SGD", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-1-column-6", "kind": "table_cell", "row": 1, "column": 6, "text": "CANCAN_SYNTHETIC_STATEMENT_V1", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-2-column-1", "kind": "table_cell", "row": 2, "column": 1, "text": "2026-07-01", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-2-column-2", "kind": "table_cell", "row": 2, "column": 2, "text": "Transfer to savings", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-2-column-3", "kind": "table_cell", "row": 2, "column": 3, "text": "250.00", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-2-column-4", "kind": "table_cell", "row": 2, "column": 4, "text": "SGD", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-2-column-5", "kind": "table_cell", "row": 2, "column": 5, "text": "750.00", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-2-column-6", "kind": "table_cell", "row": 2, "column": 6, "text": "provider=synthetic-bank", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-3-column-1", "kind": "table_cell", "row": 3, "column": 1, "text": "balance", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-3-column-2", "kind": "table_cell", "row": 3, "column": 2, "text": "2026-07-01", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-3-column-3", "kind": "table_cell", "row": 3, "column": 3, "text": "checking-001", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-3-column-4", "kind": "table_cell", "row": 3, "column": 4, "text": "750.00", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-3-column-5", "kind": "table_cell", "row": 3, "column": 5, "text": "SGD", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-3-column-6", "kind": "table_cell", "row": 3, "column": 6, "text": "statement_id=transfer-2026-07", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-4-column-1", "kind": "table_cell", "row": 4, "column": 1, "text": "balance", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-4-column-2", "kind": "table_cell", "row": 4, "column": 2, "text": "2026-06-30", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-4-column-3", "kind": "table_cell", "row": 4, "column": 3, "text": "savings-002", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-4-column-4", "kind": "table_cell", "row": 4, "column": 4, "text": "100.00", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-4-column-5", "kind": "table_cell", "row": 4, "column": 5, "text": "SGD", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-5-column-1", "kind": "table_cell", "row": 5, "column": 1, "text": "2026-07-01", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-5-column-2", "kind": "table_cell", "row": 5, "column": 2, "text": "Transfer from checking", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-5-column-3", "kind": "table_cell", "row": 5, "column": 3, "text": "250.00", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-5-column-4", "kind": "table_cell", "row": 5, "column": 4, "text": "SGD", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-5-column-5", "kind": "table_cell", "row": 5, "column": 5, "text": "350.00", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-6-column-1", "kind": "table_cell", "row": 6, "column": 1, "text": "balance", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-6-column-2", "kind": "table_cell", "row": 6, "column": 2, "text": "2026-07-01", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-6-column-3", "kind": "table_cell", "row": 6, "column": 3, "text": "savings-002", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-6-column-4", "kind": "table_cell", "row": 6, "column": 4, "text": "350.00", "engine": "rust-csv", "engineVersion": "1.4.0" },
+      { "id": "csv-row-6-column-5", "kind": "table_cell", "row": 6, "column": 5, "text": "SGD", "engine": "rust-csv", "engineVersion": "1.4.0" }
     ]
   }
 }
