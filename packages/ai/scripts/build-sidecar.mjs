@@ -12,6 +12,48 @@ const binaries = join(repoRoot, "apps", "desktop", "src-tauri", "binaries");
 const normalizerCommandFixture = JSON.parse(
   readFileSync(join(packageRoot, "fixtures", "normalizer-command-v1.json"), "utf8"),
 );
+
+function providerNormalizerCommandFixture() {
+  const text = [
+    "CANCAN_SYNTHETIC_PROVIDER_STATEMENT_V1",
+    "provider=dbs",
+    "document_type=bank_statement",
+    "package_id=dbs/bank_statement@1",
+    "statement_id=dbs-bank_statement-2026-07",
+    "DBS Statement of Account WITHDRAWAL DEPOSIT BALANCE",
+    "Account number DBS-123456789",
+    "Statement currency SGD",
+    "opening_balance 2026-07-01 100.00",
+    "posting 2026-07-02 GROCERIES 20.00 80.00",
+    "closing_balance 2026-07-03 80.00",
+  ].join("\n");
+  const observations = [
+    {
+      id: "pdf-page-1-native-text",
+      kind: "native_text",
+      page: 1,
+      textSpan: { start: 0, end: text.length },
+      text,
+      engine: "pdfkit",
+      engineVersion: "macos-page-string-v1",
+    },
+  ];
+  return {
+    type: "normalize",
+    requestId: "build-provider-smoke",
+    documentId: "provider-document-smoke",
+    extractionBundle: {
+      sourceDocumentId: "provider-document-smoke",
+      fileSha256: "d".repeat(64),
+      mimeType: "application/pdf",
+      metadata: {
+        extractionVersion: "native-observations-v1",
+        observationCount: observations.length,
+      },
+      observations,
+    },
+  };
+}
 mkdirSync(dist, { recursive: true });
 mkdirSync(binaries, { recursive: true });
 
@@ -80,7 +122,7 @@ const smoke = spawnSync(binary, [], {
     requestId: "invalid-build-smoke",
     documentId: "document-smoke",
     content: "raw statement text",
-  })}\n${JSON.stringify(normalizerCommandFixture)}\n{\"type\":\"shutdown\"}\n`,
+  })}\n${JSON.stringify(normalizerCommandFixture)}\n${JSON.stringify(providerNormalizerCommandFixture())}\n{\"type\":\"shutdown\"}\n`,
 });
 if (smoke.status !== 0) {
   throw new Error(`sidecar smoke failed with status ${smoke.status}`);
@@ -98,7 +140,13 @@ if (
   messages[1]?.code !== "invalid_command" ||
   messages[2]?.type !== "result" ||
   messages[2]?.requestId !== "build-smoke" ||
-  messages[2]?.result?.status !== "classified"
+  messages[2]?.result?.status !== "classified" ||
+  messages[3]?.type !== "result" ||
+  messages[3]?.requestId !== "build-provider-smoke" ||
+  messages[3]?.result?.status !== "classified" ||
+  messages[3]?.result?.profile?.packageId !== "dbs/bank_statement@1" ||
+  messages[3]?.result?.profile?.id !==
+    "mock:dbs/bank_statement@1:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1"
 ) {
   throw new Error("sidecar smoke returned an invalid protocol transcript");
 }

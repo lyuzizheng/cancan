@@ -17,21 +17,26 @@ function parseCommand(line: string) {
   return parseWorkerCommand(value);
 }
 
-createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line) => {
-  const command = parseCommand(line);
-  if (!command) {
-    send({ type: "error", code: "invalid_command" });
-    return;
+async function run(): Promise<void> {
+  for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
+    const command = parseCommand(line);
+    if (!command) {
+      send({ type: "error", code: "invalid_command" });
+      continue;
+    }
+    if (command.type === "shutdown") {
+      return;
+    }
+    send({
+      type: "result",
+      requestId: command.requestId,
+      result:
+        command.type === "core" ? runCoreCommand(command) : await normalizeWithMock(command),
+    });
   }
-  if (command.type === "shutdown") {
-    process.exit(0);
-  }
-  send({
-    type: "result",
-    requestId: command.requestId,
-    result: command.type === "core" ? runCoreCommand(command) : normalizeWithMock(command),
-  });
-});
+}
+
+void run();
 
 send({
   type: "ready",

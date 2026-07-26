@@ -262,8 +262,8 @@ impl VaultRuntime {
         extraction_bundle: &ExtractionBundle,
         result: NormalizerResult,
     ) -> Result<SourceDocumentRoutingOutcome, RuntimeError> {
-        let proposal = match result {
-            NormalizerResult::Classified { proposal } => proposal,
+        let (profile, proposal) = match result {
+            NormalizerResult::Classified { profile, proposal } => (*profile, proposal),
             NormalizerResult::NeedsAttention { reason } => {
                 let reason = if reason == "unsupported_document" {
                     "unsupported_document"
@@ -285,12 +285,21 @@ impl VaultRuntime {
                 ),
             );
         };
-        if !valid_synthetic_fingerprint(extraction_bundle, &proposal) {
+        if !valid_normalization_profile(&profile, &proposal, extraction_bundle) {
             return self.finish_normalizer_outcome(
                 document_id,
                 SourceDocumentRoutingOutcome::needs_attention(
                     document_id,
-                    "provider_fingerprint_mismatch",
+                    "normalization_profile_invalid",
+                ),
+            );
+        }
+        if !valid_profiled_proposal(&proposal) {
+            return self.finish_normalizer_outcome(
+                document_id,
+                SourceDocumentRoutingOutcome::needs_attention(
+                    document_id,
+                    "classification_uncertain",
                 ),
             );
         }
@@ -340,6 +349,17 @@ impl VaultRuntime {
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
         let outcome = store
             .apply_trusted_classification(&classification)
+            .map_err(|_| RuntimeError::new("classification_failed"))?;
+        if outcome.status != crate::database::SourceDocumentRoutingStatus::Routed {
+            store
+                .finish_parse_document(document_id, &outcome)
+                .map_err(|_| RuntimeError::new("classification_failed"))?;
+            return Ok(outcome);
+        }
+        let parse = validated_structured_parse_input(&proposal, &profile, &outcome.account_ids)
+            .ok_or_else(|| RuntimeError::new("normalizer_failed"))?;
+        store
+            .persist_validated_structured_parse(document_id, &parse)
             .map_err(|_| RuntimeError::new("classification_failed"))?;
         store
             .finish_parse_document(document_id, &outcome)

@@ -1,15 +1,16 @@
 use crate::{
     database::{
-        ClaimedReviewBatch, CommitReviewGroup, CorePreparedReversalEvent, CorePreparedReviewEvent,
-        CoreReviewRecord, DATABASE_FILE_NAME, ManualImportStore, MoneyOverview,
-        RecentActivitySummary, RelationshipCandidateSummary, ReviewBatchGroupOutcome,
-        ReviewBatchGroupStatus, ReviewItemDetail, ReviewItemSummary, ReviewJobSummary,
-        ReviewMutationOutcome, ReviewMutationStatus, ReviewRelationshipCandidateInput,
-        SourceDocumentImport, SourceDocumentImportOutcome, SourceDocumentImportStatus,
-        SourceDocumentRoutingOutcome, SourceDocumentView, StatementCoverageDecision,
-        StatementCoverageDecisionInput, StatementCoveragePolicy, StatementCoveragePrompt,
-        StatementPasswordStatus, TrustedAccountCandidate, TrustedDocumentClassification,
-        UndoOutcome,
+        AccountConfirmationOutcome, AccountConfirmationPrompt, ClaimedReviewBatch,
+        CommitReviewGroup, CorePreparedReversalEvent, CorePreparedReviewEvent, CoreReviewRecord,
+        DATABASE_FILE_NAME, ManualImportStore, MoneyOverview, RecentActivitySummary,
+        RelationshipCandidateSummary, ReviewBatchGroupOutcome, ReviewBatchGroupStatus,
+        ReviewItemDetail, ReviewItemSummary, ReviewJobSummary, ReviewMutationOutcome,
+        ReviewMutationStatus, ReviewRelationshipCandidateInput, SourceDocumentImport,
+        SourceDocumentImportOutcome, SourceDocumentImportStatus, SourceDocumentRoutingOutcome,
+        SourceDocumentView, StatementCoverageDecision, StatementCoverageDecisionInput,
+        StatementCoveragePolicy, StatementCoveragePrompt, StatementPasswordStatus,
+        TrustedAccountCandidate, TrustedDocumentClassification, UndoOutcome,
+        ValidatedExternalRecordInput, ValidatedStructuredParseInput,
     },
     local_inbox::{
         AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureOutcome,
@@ -17,7 +18,7 @@ use crate::{
         capture_after_second_scan, ensure_inbox_paths, first_snapshot_after_preflight,
         resolve_root_bookmark,
     },
-    source_observations::{ExtractionBundle, extract_bundle},
+    source_observations::{ExtractionBundle, SourceObservationKind, extract_bundle},
     vault::{
         create_password_wrapper, create_recovery_file, open_password_wrapper,
         password_wrapper_profile, recovery_file_fingerprint,
@@ -42,7 +43,7 @@ use std::os::unix::fs::OpenOptionsExt;
 #[cfg(all(test, unix))]
 use std::os::unix::fs::PermissionsExt;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -74,6 +75,7 @@ const LOCAL_INBOX_BOOKMARK_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.local-in
 const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+const NORMALIZER_MAX_MESSAGE_BYTES: usize = 256 * 1024;
 // The shipped synthetic normalizer models an on-demand export, so it has no
 // statement cadence. Real provider packages must add an explicit declaration;
 // CanCan never infers cadence from filenames or prior dates.
@@ -196,16 +198,17 @@ pub(crate) struct SourceDocumentPreview {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerAccount {
     account_type: String,
     currency: Option<String>,
     masked_identifier: Option<String>,
+    proposal_account_id: String,
     provider_account_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerDocument {
     document_type: String,
     provider_key: String,
@@ -214,23 +217,119 @@ struct NormalizerDocument {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerStatementPeriod {
     from: Option<String>,
     to: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(rename_all = "snake_case", tag = "status", deny_unknown_fields)]
 enum NormalizerResult {
-    Classified { proposal: NormalizerProposal },
-    NeedsAttention { reason: String },
+    Classified {
+        profile: Box<NormalizerProfile>,
+        proposal: Box<NormalizerProposal>,
+    },
+    NeedsAttention {
+        reason: String,
+    },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerProfile {
+    document_type: String,
+    extraction_engines: Vec<NormalizerProfileExtractionEngine>,
+    id: String,
+    input_strategy: String,
+    model: String,
+    model_provider: String,
+    normalizer_runtime: String,
+    ocr_engines: Vec<NormalizerProfileOcrEngine>,
+    package_id: String,
+    package_version: String,
+    parser_version: String,
+    prompt_version: String,
+    provider_key: String,
+    review_only: bool,
+    schema_version: String,
+    skill_version: String,
+    tool_contract_version: String,
+    validator_version: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerProfileExtractionEngine {
+    engine: String,
+    kind: NormalizerProfileExtractionKind,
+    version: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerProfileOcrEngine {
+    engine: String,
+    version: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum NormalizerProfileExtractionKind {
+    NativeText,
+    TableCell,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerProposal {
     accounts: Vec<NormalizerAccount>,
+    closing_snapshots: Vec<NormalizerRecord>,
     document: NormalizerDocument,
+    opening_snapshots: Vec<NormalizerRecord>,
+    records: Vec<NormalizerRecord>,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerMoney {
+    currency: String,
+    value: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerRecordValidation {
+    deterministic_validation_passed: bool,
+    raw_grounded: bool,
+    schema_valid: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NormalizerRecord {
+    account_balance_delta: Option<NormalizerMoney>,
+    amount: Option<NormalizerMoney>,
+    balance_after: Option<NormalizerMoney>,
+    description_normalized: Option<String>,
+    description_raw: Option<String>,
+    event_type: Option<String>,
+    instrument_symbol: Option<String>,
+    posted_at: Option<String>,
+    posted_on: Option<String>,
+    posting_status: Option<String>,
+    proposal_account_id: Option<String>,
+    proposal_record_id: String,
+    provider_record_id: Option<String>,
+    quantity: Option<String>,
+    raw: serde_json::Value,
+    record_type: String,
+    stable_record_key: String,
+    statement_entry_side: Option<String>,
+    transaction_on: Option<String>,
+    validation: NormalizerRecordValidation,
+    valuation: Option<NormalizerMoney>,
 }
 
 #[derive(Serialize)]
@@ -244,7 +343,7 @@ struct NormalizerCommand<'a> {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum NormalizerMessage {
     Ready {
         #[serde(rename = "protocolVersion")]
@@ -258,7 +357,9 @@ enum NormalizerMessage {
         request_id: String,
         result: NormalizerResult,
     },
-    Error,
+    Error {
+        code: String,
+    },
 }
 
 #[derive(Serialize)]

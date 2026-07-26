@@ -55,15 +55,27 @@ const activity: RecentActivitySummary[] = [
 ];
 
 const baseProps: OverviewViewProps = {
+  accountPrompts: [],
+  attentionBusyKey: null,
+  coveragePrompts: [],
   loading: false,
   moneyOverview: overview,
+  moneySources: [],
   notice: null,
+  onAddFile: () => undefined,
+  onCancelRemind: () => undefined,
+  onChangeRemindDate: () => undefined,
+  onConfirmAccounts: () => undefined,
+  onCoverageNotExpected: () => undefined,
   onLock: () => undefined,
   onOpenReview: () => undefined,
   onOpenSources: () => undefined,
   onRefresh: () => undefined,
+  onSaveRemind: () => undefined,
+  onStartRemind: () => undefined,
   onUndo: () => undefined,
   recentActivity: activity,
+  remind: null,
   reviewCount: 0,
   undoingEventId: null,
 };

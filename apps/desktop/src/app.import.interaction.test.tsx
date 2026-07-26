@@ -34,7 +34,6 @@ import {
 } from "./test-support/app-harness";
 
 installAppHarness();
-
 describe("App manual import orchestration", () => {
   it("unlocks the Vault and loads unassigned documents through the injected API", async () => {
     const api = createApi({

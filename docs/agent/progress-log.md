@@ -16,6 +16,25 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 - Decide the two new registered rows in `docs/alignment-temp/alignment-progress.md` (generated renderer/host command bindings plus renderer data layer; host error observability plus store-lock granularity) before the next feature slice that touches those surfaces. The per-aggregate `ManualImportStore` impl split and shrinking `app.tsx` below the base guardrail follow those decisions.
 
+## 2026-07-26
+
+### Completed
+
+- Added nullable `provisional`/`posted` posting-status transport and persistence across the parser, worker, Rust normalizer, and SQLite records; legacy rows remain null. This is provider readiness only: it adds no provider package, eligibility/commit change, UI, or live-AI behavior.
+- Added versioned packages for DBS bank statements, DBS credit-card statements, and HSBC bank statements. Synthetic fixtures cover fingerprint discrimination, coherent grounding, full account identity, SGD/posted-row constraints, bank/card sign mapping, exact reconciliation, and the explicit DBS-card/HSBC-bank repayment case. Deterministic PDF-shaped fixtures now run through the bundled single-pass mock normalizer, carry complete review-only profiles through the strict Rust host allowlist, persist versioned records, and reach Review without ledger writes. All three packages remain unqualified and add no live AI, real-provider support claim, auto-commit eligibility, or full scan-to-Activity behavior.
+- Added the deterministic structured-record checkpoint to the shared manual/Local Inbox production boundary. The bundled mock normalizer now validates one coherent six-row synthetic statement through the canonical parser contract and returns the complete structured proposal rather than classification metadata alone.
+- Added strict host protocol validation and transactional persistence for the validated parse run and six versioned external records. Repeating the same document/profile is idempotent; a future changed profile versions records without rewriting committed facts.
+- Completed the current `parse_document -> reconcile_document` job handoff. The consumed reconcile job moves the unqualified synthetic profile's staged records into Review, is lease-recoverable and retry-safe, and creates no ledger event or auto-commit eligibility.
+- Kept first-seen account authority fail-closed: candidate accounts may parse and reach Review, but the atomic commit boundary returns `account_confirmation_required` until both relationship accounts are confirmed.
+- Added the host-owned first-account confirmation contract: pending prompts expose only presentation-safe candidate data, and exact-set confirmation is atomic, stale-safe, idempotent after success, and audit-backed.
+- Completed `local-inbox-backend` with a deterministic macOS integration flow that restores the authorized root after restart, scans HSBC bank and DBS card PDFs without source mutation, persists and reconciles both statements, confirms both first-seen accounts, finds the prior-month repayment counterpart, explicitly commits one non-spending repayment to Activity, and proves repeat-scan idempotency. Clean Vaults now create one transactionally guarded fiat instrument per parsed account currency while reusing a single compatible legacy currency row and failing closed on duplicates or deterministic-ID conflicts.
+- Expanded the one shared Rust/TypeScript/packaged-sidecar golden command to the full 33-observation fixture and serialized worker input so an awaited normalization result cannot be overtaken by shutdown.
+- Kept the checkpoint deterministic and credential-free. It adds no renderer work, real provider claim, live AI/OCR call, API key, account-confirmation UI, or automatic ledger commit.
+- Implemented `local-inbox-automation`: the Command Center renderer now covers the frozen Local Inbox host contracts. Sources carries the CanCan Inbox panel — folder-picker authorization, sanitized status with a plain-language last-scan summary, manual rescan, two-step turn-off, and reauthorization/needs-attention states. Overview opens with a Needs attention section holding missing-statement coverage cards (add file, not expected, remind later with an inline future-date check) and first-seen account confirmation cards. Every decision, confirmation, rescan, and conflict reloads through the one finance-data path, and every Vault lock clears inbox and attention state. Deterministic unit/interaction tests use injected host fixtures only, and the dev-only preview harness drove desktop, narrow, and reduced-motion browser inspection. The change is renderer-only: no host command, schema, job, or coverage policy changed, and `Backups` is never an ingestion source.
+
+### Next
+
+- With `local-inbox-automation` complete, the named `gmail-onboarding` blockers (Gmail data and cloud AI consent, first-run optionality, security observability and sensitive-data lifecycle) decide the next slice. Run the second public-launch design grill before public OAuth/release work.
 ## 2026-07-25
 
 ### Completed

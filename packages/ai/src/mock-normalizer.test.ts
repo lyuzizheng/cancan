@@ -1,77 +1,254 @@
 import { describe, expect, it } from "vitest";
+import { selectProviderDocumentPackage } from "@cancan/parsers";
+import {
+  createSyntheticProviderStatementFixture,
+  createSyntheticTransferFixture,
+} from "@cancan/parsers/testing";
 
 import { normalizeWithMock } from "./mock-normalizer";
 
 function fixtureInput() {
+  const fixture = createSyntheticTransferFixture();
+  fixture.extractionBundle.sourceDocumentId = "document-fixture";
+  fixture.extractionBundle.observations.push(
+    {
+      id: "csv-row-1-column-6",
+      kind: "table_cell",
+      row: 1,
+      column: 6,
+      text: "CANCAN_SYNTHETIC_STATEMENT_V1",
+      engine: "rust-csv",
+      engineVersion: "1.4.0",
+    },
+    {
+      id: "csv-row-2-column-6",
+      kind: "table_cell",
+      row: 2,
+      column: 6,
+      text: "provider=synthetic-bank",
+      engine: "rust-csv",
+      engineVersion: "1.4.0",
+    },
+    {
+      id: "csv-row-3-column-6",
+      kind: "table_cell",
+      row: 3,
+      column: 6,
+      text: "statement_id=transfer-2026-07",
+      engine: "rust-csv",
+      engineVersion: "1.4.0",
+    },
+  );
+  fixture.extractionBundle.metadata.observationCount = fixture.extractionBundle.observations.length;
   return {
     documentId: "document-fixture",
-    extractionBundle: {
-      sourceDocumentId: "document-fixture",
-      fileSha256: "a".repeat(64),
-      mimeType: "text/csv" as const,
-      metadata: { extractionVersion: "native-observations-v1", observationCount: 3 },
-      observations: [
-        {
-          id: "csv-row-1-column-1",
-          kind: "table_cell" as const,
-          row: 1,
-          column: 1,
-          text: "CANCAN_SYNTHETIC_STATEMENT_V1",
-          engine: "rust-csv",
-          engineVersion: "1.4.0",
-        },
-        {
-          id: "csv-row-2-column-1",
-          kind: "table_cell" as const,
-          row: 2,
-          column: 1,
-          text: "provider=synthetic-bank",
-          engine: "rust-csv",
-          engineVersion: "1.4.0",
-        },
-        {
-          id: "csv-row-3-column-1",
-          kind: "table_cell" as const,
-          row: 3,
-          column: 1,
-          text: "statement_id=transfer-2026-07",
-          engine: "rust-csv",
-          engineVersion: "1.4.0",
-        },
-      ],
-    },
+    extractionBundle: fixture.extractionBundle,
   };
 }
 
-describe("mock document normalizer", () => {
-  it("classifies only the synthetic fixture and returns provider/account evidence", () => {
-    const result = normalizeWithMock(fixtureInput());
+function providerFixtureInput(providerKey: string, documentType: string) {
+  const providerPackage = selectProviderDocumentPackage({
+    providerKey,
+    documentType,
+    mimeType: "application/pdf",
+  });
+  if (!providerPackage) {
+    throw new Error(`missing provider fixture package ${providerKey}/${documentType}`);
+  }
+  const fixture = createSyntheticProviderStatementFixture(providerPackage);
+  const documentId = `document-${providerPackage.packageId}`;
+  fixture.extractionBundle.sourceDocumentId = documentId;
+  return { documentId, extractionBundle: fixture.extractionBundle };
+}
 
-    expect(result).toEqual({
-      status: "classified",
-      proposal: {
-        document: {
-          providerKey: "synthetic-bank",
-          documentType: "transfer_export",
-          statementId: "transfer-2026-07",
-          statementPeriod: { from: "2026-07-01", to: "2026-07-31" },
-        },
-        accounts: [
-          {
-            proposalAccountId: "account-checking",
-            accountType: "deposit_account",
-            providerAccountId: "checking-001",
-            maskedIdentifier: "••001",
-            currency: "SGD",
-          },
+function providerPdfFixtureInput(providerKey: string, documentType: string) {
+  const input = providerFixtureInput(providerKey, documentType);
+  const text = input.extractionBundle.observations.map(({ text: value }) => value).join("\n");
+  input.extractionBundle.observations = [
+    {
+      id: "pdf-page-1-native-text",
+      kind: "native_text",
+      page: 1,
+      textSpan: { start: 0, end: text.length },
+      text,
+      engine: "pdfkit",
+      engineVersion: "macos-page-string-v1",
+    },
+  ];
+  input.extractionBundle.metadata.observationCount = input.extractionBundle.observations.length;
+  return input;
+}
+
+describe("mock document normalizer", () => {
+  it("returns the validated full synthetic proposal", async () => {
+    const result = await normalizeWithMock(fixtureInput());
+
+    expect(result.status).toBe("classified");
+    if (result.status !== "classified") {
+      throw new Error("expected the validated synthetic proposal");
+    }
+    expect(result.proposal.status).toBe("valid");
+    expect(result.proposal.accounts).toHaveLength(2);
+    expect(result.proposal.openingSnapshots).toHaveLength(2);
+    expect(result.proposal.records).toHaveLength(2);
+    expect(result.proposal.closingSnapshots).toHaveLength(2);
+    expect(result.profile).toMatchObject({
+      id: "synthetic-bank-transfer-export-v1",
+      providerKey: "synthetic-bank",
+      documentType: "transfer_export",
+      packageId: "synthetic/bank_transfer_export@1",
+      normalizerRuntime: "single-pass-mock",
+      inputStrategy: "native-observations-v1",
+      modelProvider: "cancan-deterministic-mock",
+      model: "fixture-v1",
+      reviewOnly: true,
+      extractionEngines: expect.arrayContaining([
+        { kind: "table_cell", engine: "rust-csv", version: "1.4.0" },
+        { kind: "table_cell", engine: "synthetic-fixture", version: "1" },
+      ]),
+      ocrEngines: [],
+    });
+    expect(
+      [
+        ...result.proposal.openingSnapshots,
+        ...result.proposal.records,
+        ...result.proposal.closingSnapshots,
+      ].every(
+        (record) =>
+          record.stableRecordKey.length > 0 &&
+          record.validation.schemaValid &&
+          record.validation.rawGrounded &&
+          record.validation.deterministicValidationPassed,
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    {
+      providerKey: "dbs",
+      documentType: "bank_statement",
+      packageId: "dbs/bank_statement@1",
+      eventType: undefined,
+    },
+    {
+      providerKey: "dbs",
+      documentType: "credit_card_statement",
+      packageId: "dbs/credit_card_statement@1",
+      eventType: "credit_card_repayment",
+    },
+    {
+      providerKey: "hsbc",
+      documentType: "bank_statement",
+      packageId: "hsbc/bank_statement@1",
+      eventType: "credit_card_repayment",
+    },
+  ])(
+    "validates the $packageId synthetic provider fixture through its real package",
+    async ({ providerKey, documentType, packageId, eventType }) => {
+      const result = await normalizeWithMock(providerFixtureInput(providerKey, documentType));
+
+      expect(result.status).toBe("classified");
+      if (result.status !== "classified") {
+        throw new Error("expected the provider fixture to classify");
+      }
+      expect(result.proposal.document).toMatchObject({ providerKey, documentType });
+      expect(result.proposal.records[0]?.eventType).toBe(eventType);
+      expect(result.profile).toMatchObject({
+        providerKey,
+        documentType,
+        packageId,
+        packageVersion: "1.0.0",
+        parserVersion: "1.0.0",
+        skillVersion: "1.0.0",
+        promptVersion: "1.0.0",
+        schemaVersion: "1.0.0",
+        validatorVersion: "1.0.0",
+        normalizerRuntime: "single-pass-mock",
+        toolContractVersion: "1.0.0",
+        inputStrategy: "native-observations-v1",
+        modelProvider: "cancan-deterministic-mock",
+        model: "fixture-v1",
+        reviewOnly: true,
+        extractionEngines: expect.arrayContaining([
+          { kind: "native_text", engine: "synthetic-provider-fixture", version: "1" },
+          { kind: "table_cell", engine: "synthetic-provider-fixture", version: "1" },
+        ]),
+        ocrEngines: [],
+      });
+      expect(result.profile.id).toBe(
+        `mock:${packageId}:native-observations-v1:extract-native_text-synthetic-provider-fixture-1+extract-table_cell-synthetic-provider-fixture-1`,
+      );
+    },
+  );
+
+  it.each([
+    {
+      providerKey: "dbs",
+      documentType: "bank_statement",
+      packageId: "dbs/bank_statement@1",
+    },
+    {
+      providerKey: "dbs",
+      documentType: "credit_card_statement",
+      packageId: "dbs/credit_card_statement@1",
+    },
+    {
+      providerKey: "hsbc",
+      documentType: "bank_statement",
+      packageId: "hsbc/bank_statement@1",
+    },
+  ])(
+    "validates a production-shaped $packageId PDF bundle",
+    async ({ providerKey, documentType, packageId }) => {
+      const result = await normalizeWithMock(providerPdfFixtureInput(providerKey, documentType));
+
+      expect(result.status).toBe("classified");
+      if (result.status !== "classified") {
+        throw new Error("expected the native PDF fixture to classify");
+      }
+      expect(result.profile).toMatchObject({
+        id: `mock:${packageId}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1`,
+        extractionEngines: [
+          { kind: "native_text", engine: "pdfkit", version: "macos-page-string-v1" },
         ],
-      },
+        ocrEngines: [],
+      });
+    },
+  );
+
+  it("returns needs attention when a provider fixture row is mutated", async () => {
+    const input = providerFixtureInput("dbs", "bank_statement");
+    const postingAmount = input.extractionBundle.observations.find(
+      ({ row, text }) => row === 2 && text === "20.00",
+    );
+    if (!postingAmount) {
+      throw new Error("missing synthetic provider posting amount");
+    }
+    postingAmount.text = "21.00";
+
+    expect(await normalizeWithMock(input)).toEqual({
+      status: "needs_attention",
+      reason: "unsupported_document",
     });
   });
 
-  it("does not guess for unsupported evidence", () => {
+  it("returns needs attention when a provider marker names an unsupported package", async () => {
+    const input = providerFixtureInput("dbs", "bank_statement");
+    const marker = input.extractionBundle.observations.find(({ id }) => id === "fixture-marker");
+    if (!marker) {
+      throw new Error("missing synthetic provider marker");
+    }
+    marker.text = marker.text.replace("package_id=dbs/bank_statement@1", "package_id=unknown@1");
+
+    expect(await normalizeWithMock(input)).toEqual({
+      status: "needs_attention",
+      reason: "unsupported_document",
+    });
+  });
+
+  it("does not guess for unsupported evidence", async () => {
     expect(
-      normalizeWithMock({
+      await normalizeWithMock({
         documentId: "document-unknown",
         extractionBundle: {
           sourceDocumentId: "document-unknown",

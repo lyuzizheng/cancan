@@ -1,8 +1,11 @@
 import type {
+  CanonicalExternalRecordInput,
   ExtractionBundle,
   ProviderRecordContract,
+  SourceObservation,
   StructuredParseProposal,
 } from "./contracts";
+import type { ProviderDocumentPackage } from "./provider-document-package";
 
 const syntheticRawKeys = new Set([
   "type",
@@ -210,7 +213,7 @@ export function createSyntheticTransferFixture(): {
         {
           proposalRecordId: "record-checking-out",
           recordType: "transaction",
-          eventType: "transfer",
+          eventType: "same_currency_transfer",
           proposalAccountId: "account-checking",
           postedOn: "2026-07-01",
           descriptionRaw: "Transfer to savings",
@@ -230,7 +233,7 @@ export function createSyntheticTransferFixture(): {
         {
           proposalRecordId: "record-savings-in",
           recordType: "transaction",
-          eventType: "transfer",
+          eventType: "same_currency_transfer",
           proposalAccountId: "account-savings",
           postedOn: "2026-07-01",
           descriptionRaw: "Transfer from checking",
@@ -280,6 +283,202 @@ export function createSyntheticTransferFixture(): {
             currency: "SGD",
             locator: { row: 6 },
           },
+        },
+      ],
+    },
+  };
+}
+
+export type SyntheticProviderStatementPosting = {
+  amount: string;
+  description: string;
+  eventType?: "credit_card_repayment";
+  side: "debit" | "credit";
+};
+
+function providerMinorUnits(value: string): bigint {
+  const match = /^(-?)(\d+)\.(\d{2})$/.exec(value);
+  if (!match) {
+    throw new Error(`invalid synthetic provider amount ${value}`);
+  }
+  const [, sign, whole, fraction] = match;
+  const valueInMinorUnits = BigInt(`${whole}${fraction}`);
+  return sign === "-" ? -valueInMinorUnits : valueInMinorUnits;
+}
+
+function providerDecimal(value: bigint): string {
+  const sign = value < 0n ? "-" : "";
+  const absolute = value < 0n ? -value : value;
+  return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, "0")}`;
+}
+
+function nativeFixtureObservation(id: string, text: string): SourceObservation {
+  return {
+    id,
+    kind: "native_text",
+    page: 1,
+    textSpan: { start: 0, end: text.length },
+    text,
+    engine: "synthetic-provider-fixture",
+    engineVersion: "1",
+  };
+}
+
+function defaultProviderStatementPostings(
+  providerPackage: ProviderDocumentPackage,
+): readonly SyntheticProviderStatementPosting[] {
+  const repayment = providerPackage.repaymentMappings[0];
+  return repayment
+    ? [{ ...repayment, amount: "20.00" }]
+    : [{ description: "GROCERIES", side: "debit", amount: "20.00" }];
+}
+
+export function createSyntheticProviderStatementFixture(
+  providerPackage: ProviderDocumentPackage,
+  postings: readonly SyntheticProviderStatementPosting[] = defaultProviderStatementPostings(
+    providerPackage,
+  ),
+): {
+  semanticDocumentKey: string;
+  extractionBundle: ExtractionBundle;
+  proposal: StructuredParseProposal;
+} {
+  const providerAccountId = `${providerPackage.providerKey.toUpperCase()}-123456789`;
+  const accountId = "statement-account";
+  const statementId = `${providerPackage.providerKey}-${providerPackage.documentType}-2026-07`;
+  let running = 10_000n;
+  const rawRows: Record<string, unknown>[] = [
+    {
+      kind: "opening_balance",
+      date: "2026-07-01",
+      balance: "100.00",
+      locator: { row: 1 },
+    },
+  ];
+  const records: CanonicalExternalRecordInput[] = postings.map((posting, index) => {
+    const sign =
+      posting.side === "debit"
+        ? providerPackage.debitBalanceSign
+        : providerPackage.creditBalanceSign;
+    const delta = BigInt(sign) * providerMinorUnits(posting.amount);
+    running += delta;
+    const raw = {
+      kind: "posting",
+      date: `2026-07-${String(index + 2).padStart(2, "0")}`,
+      description: posting.description,
+      ...(posting.side === "debit"
+        ? { debit: posting.amount }
+        : { credit: posting.amount }),
+      balance: providerDecimal(running),
+      locator: { row: index + 2 },
+    };
+    rawRows.push(raw);
+    return {
+      proposalRecordId: `posting-${index + 1}`,
+      recordType: "transaction",
+      postingStatus: "posted",
+      ...(posting.eventType ? { eventType: posting.eventType } : {}),
+      proposalAccountId: accountId,
+      postedOn: raw.date,
+      descriptionRaw: posting.description,
+      amount: { value: posting.amount, currency: "SGD" },
+      statementEntrySide: posting.side,
+      accountBalanceDelta: {
+        value: providerDecimal(delta),
+        currency: "SGD",
+      },
+      balanceAfter: { value: raw.balance, currency: "SGD" },
+      raw,
+    };
+  });
+  const closingDate = `2026-07-${String(postings.length + 2).padStart(2, "0")}`;
+  const closingRaw = {
+    kind: "closing_balance",
+    date: closingDate,
+    balance: providerDecimal(running),
+    locator: { row: postings.length + 2 },
+  };
+  rawRows.push(closingRaw);
+
+  const observations: SourceObservation[] = rawRows.flatMap((raw, rowIndex) =>
+    Object.entries(raw)
+      .filter(
+        (entry): entry is [string, string] =>
+          entry[0] !== "kind" && typeof entry[1] === "string",
+      )
+      .map(([, text], columnIndex) => ({
+        id: `cell-${rowIndex + 1}-${columnIndex + 1}`,
+        kind: "table_cell" as const,
+        row: rowIndex + 1,
+        column: columnIndex + 1,
+        text,
+        engine: "synthetic-provider-fixture",
+        engineVersion: "1",
+      })),
+  );
+  observations.push(
+    nativeFixtureObservation(
+      "fixture-marker",
+      [
+        "CANCAN_SYNTHETIC_PROVIDER_STATEMENT_V1",
+        `provider=${providerPackage.providerKey}`,
+        `document_type=${providerPackage.documentType}`,
+        `package_id=${providerPackage.packageId}`,
+        `statement_id=${statementId}`,
+      ].join("\n"),
+    ),
+    nativeFixtureObservation("fingerprint", providerPackage.fingerprint.requiredAnchors.join(" ")),
+    nativeFixtureObservation("provider-account-id", `Account number ${providerAccountId}`),
+    nativeFixtureObservation("statement-currency", "Statement currency SGD"),
+  );
+
+  return {
+    semanticDocumentKey: `${providerPackage.packageId}:2026-07`,
+    extractionBundle: {
+      sourceDocumentId: `document-${providerPackage.packageId}`,
+      fileSha256: "c".repeat(64),
+      mimeType: "application/pdf",
+      observations,
+      metadata: {
+        extractionVersion: "native-observations-v1",
+        observationCount: observations.length,
+      },
+    },
+    proposal: {
+      document: {
+        providerKey: providerPackage.providerKey,
+        documentType: providerPackage.documentType,
+        statementId,
+        statementPeriod: { from: "2026-07-01", to: closingDate },
+      },
+      accounts: [
+        {
+          proposalAccountId: accountId,
+          accountType: providerPackage.capabilities.accountType,
+          providerAccountId,
+          maskedIdentifier: "••6789",
+          currency: "SGD",
+        },
+      ],
+      openingSnapshots: [
+        {
+          proposalRecordId: "opening",
+          recordType: "balance",
+          proposalAccountId: accountId,
+          postedOn: "2026-07-01",
+          balanceAfter: { value: "100.00", currency: "SGD" },
+          raw: rawRows[0] as Record<string, unknown>,
+        },
+      ],
+      records,
+      closingSnapshots: [
+        {
+          proposalRecordId: "closing",
+          recordType: "balance",
+          proposalAccountId: accountId,
+          postedOn: closingDate,
+          balanceAfter: { value: closingRaw.balance, currency: "SGD" },
+          raw: closingRaw,
         },
       ],
     },

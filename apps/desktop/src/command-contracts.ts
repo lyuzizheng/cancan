@@ -111,6 +111,34 @@ export interface MoneySourceSummary {
   sourceType: string;
 }
 
+export interface AccountConfirmationCandidate {
+  accountId: string;
+  accountType: string;
+  currency: string | null;
+  displayName: string;
+  maskedIdentifier: string | null;
+}
+
+export interface AccountConfirmationPrompt {
+  candidateAccounts: AccountConfirmationCandidate[];
+  displayName: string;
+  moneySourceId: string;
+}
+
+export type AccountConfirmationStatus =
+  | "already_confirmed"
+  | "confirmed"
+  | "conflict";
+
+export interface AccountConfirmationOutcome {
+  status: AccountConfirmationStatus;
+}
+
+export type ConfirmCandidateAccountsArgs = {
+  expectedCandidateAccountIds: string[];
+  moneySourceId: string;
+};
+
 export type ListSourceDocumentsArgs = { moneySourceId: string };
 
 export interface StatementPasswordSourceSummary {

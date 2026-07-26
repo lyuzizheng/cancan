@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  accountTypeLabel,
   batchGroupReasonLabel,
   batchGroupStatusLabel,
+  coverageDocumentTypeLabel,
+  coveragePromptTitle,
   eventTypeLabel,
   formatCurrencyAmount,
   formatLedgerDate,
+  formatLedgerMonth,
   formatNativeAmount,
+  localInboxScanSummaryText,
+  localIsoToday,
   reviewConflictMessage,
   reviewReasonLabel,
 } from "./format";
@@ -134,5 +140,107 @@ describe("batch outcome labels", () => {
       "its details aren’t complete",
     );
     expect(batchGroupReasonLabel(null)).toBe("check its details");
+  });
+});
+
+describe("formatLedgerMonth", () => {
+  it("renders ISO dates and months as a full month name", () => {
+    expect(formatLedgerMonth("2026-06-30")).toBe("June 2026");
+    expect(formatLedgerMonth("2026-06")).toBe("June 2026");
+    expect(formatLedgerMonth("2026-01-01")).toBe("January 2026");
+  });
+
+  it("passes through values that are not ISO months", () => {
+    expect(formatLedgerMonth("2026-13-01")).toBe("2026-13-01");
+    expect(formatLedgerMonth("last month")).toBe("last month");
+  });
+});
+
+describe("localIsoToday", () => {
+  it("pads month and day without timezone conversion", () => {
+    expect(localIsoToday(new Date(2026, 6, 19))).toBe("2026-07-19");
+    expect(localIsoToday(new Date(2026, 0, 5))).toBe("2026-01-05");
+  });
+});
+
+describe("coverageDocumentTypeLabel", () => {
+  it("maps known document types and falls back to humanized words", () => {
+    expect(coverageDocumentTypeLabel("bank_statement")).toBe("bank statement");
+    expect(coverageDocumentTypeLabel("credit_card_statement")).toBe(
+      "card statement",
+    );
+    expect(coverageDocumentTypeLabel("account_statement")).toBe("statement");
+    expect(coverageDocumentTypeLabel("tax_form")).toBe("tax form");
+    expect(coverageDocumentTypeLabel("")).toBe("statement");
+  });
+});
+
+describe("accountTypeLabel", () => {
+  it("maps known account types and capitalizes unknown ones", () => {
+    expect(accountTypeLabel("deposit_account")).toBe("Bank account");
+    expect(accountTypeLabel("credit_card")).toBe("Credit card");
+    expect(accountTypeLabel("manual_liability")).toBe("Liability");
+    expect(accountTypeLabel("money_market")).toBe("Money market");
+    expect(accountTypeLabel("")).toBe("Account");
+  });
+});
+
+describe("coveragePromptTitle", () => {
+  it("marks confirmed gaps as missing and likely gaps as maybe missing", () => {
+    expect(
+      coveragePromptTitle(
+        {
+          documentType: "bank_statement",
+          statementPeriodTo: "2026-06-30",
+          status: "confirmed_missing",
+        },
+        "DBS",
+      ),
+    ).toBe("DBS June 2026 bank statement is missing");
+    expect(
+      coveragePromptTitle(
+        {
+          documentType: "credit_card_statement",
+          statementPeriodTo: "2026-05-31",
+          status: "likely_missing",
+        },
+        "DBS",
+      ),
+    ).toBe("DBS May 2026 card statement may be missing");
+  });
+});
+
+describe("localInboxScanSummaryText", () => {
+  it("summarizes a scan in plain language", () => {
+    expect(
+      localInboxScanSummaryText({
+        alreadyPresent: 12,
+        deferred: 1,
+        imported: 3,
+        suppressed: 2,
+      }),
+    ).toBe("3 added; 12 already in CanCan; 1 to try again later; 2 kept deleted.");
+  });
+
+  it("says nothing new when every bucket is zero", () => {
+    expect(
+      localInboxScanSummaryText({
+        alreadyPresent: 0,
+        deferred: 0,
+        imported: 0,
+        suppressed: 0,
+      }),
+    ).toBe("Nothing new to add.");
+  });
+
+  it("omits empty buckets", () => {
+    expect(
+      localInboxScanSummaryText({
+        alreadyPresent: 0,
+        deferred: 0,
+        imported: 1,
+        suppressed: 0,
+      }),
+    ).toBe("1 added.");
   });
 });

@@ -1,8 +1,9 @@
 /**
  * Dev-only visual inspection harness. Renders the Command Center views with
- * deterministic fixtures, selected via `?state=` (overview, overview-empty,
- * review, review-empty, review-detail, review-job). Not part of the shipped
- * bundle: `vite build` only bundles index.html.
+ * deterministic fixtures, selected via `?state=` (overview, overview-attention,
+ * overview-empty, review, review-empty, review-detail, review-job,
+ * sources-inbox-disabled, sources-inbox-enabled, sources-inbox-reauth).
+ * Not part of the shipped bundle: `vite build` only bundles index.html.
  */
 import { AppShell } from "@cancan/ui";
 import { StrictMode } from "react";
@@ -10,12 +11,18 @@ import { createRoot } from "react-dom/client";
 import "@cancan/ui/foundation.css";
 
 import type {
+  AccountConfirmationPrompt,
+  LocalInboxStatus,
   MoneyOverview,
+  MoneySourceSummary,
   RecentActivitySummary,
   RelationshipCandidateSummary,
   ReviewItemDetail,
   ReviewItemSummary,
+  StatementCoveragePrompt,
 } from "./command-contracts";
+import { coverageKey } from "./attention";
+import { InboxPanel } from "./inbox";
 import { OverviewView } from "./overview";
 import { ReviewView, type ReviewDetailState, type ReviewJobPanelState } from "./review";
 import { VaultSpine, type AppView } from "./vault-spine";
@@ -139,6 +146,81 @@ const finishedJob: ReviewJobPanelState = {
   status: "done",
 };
 
+const moneySources: MoneySourceSummary[] = [
+  { displayName: "DBS", moneySourceId: "source-dbs", sourceType: "bank" },
+];
+
+const coveragePrompts: StatementCoveragePrompt[] = [
+  {
+    accountId: "account-dbs",
+    documentType: "bank_statement",
+    moneySourceId: "source-dbs",
+    statementPeriodFrom: "2026-06-01",
+    statementPeriodTo: "2026-06-30",
+    status: "confirmed_missing",
+  },
+  {
+    accountId: "account-card",
+    documentType: "credit_card_statement",
+    moneySourceId: "source-dbs",
+    statementPeriodFrom: "2026-06-01",
+    statementPeriodTo: "2026-06-30",
+    status: "likely_missing",
+  },
+];
+
+const accountPrompts: AccountConfirmationPrompt[] = [
+  {
+    candidateAccounts: [
+      {
+        accountId: "account-dbs",
+        accountType: "deposit_account",
+        currency: "SGD",
+        displayName: "DBS Multiplier Account",
+        maskedIdentifier: "•••• 1234",
+      },
+      {
+        accountId: "account-card",
+        accountType: "credit_card",
+        currency: "SGD",
+        displayName: "DBS Visa Card",
+        maskedIdentifier: "•••• 5678",
+      },
+    ],
+    displayName: "DBS",
+    moneySourceId: "source-dbs",
+  },
+];
+
+const inboxDisabled: LocalInboxStatus = {
+  accessState: "disabled",
+  backupsPrepared: false,
+  enabled: false,
+  inboxLabel: "Inbox",
+  lastScan: null,
+};
+
+const inboxEnabled: LocalInboxStatus = {
+  accessState: "enabled",
+  backupsPrepared: false,
+  enabled: true,
+  inboxLabel: "Inbox",
+  lastScan: {
+    alreadyPresent: 12,
+    deferred: 1,
+    imported: 3,
+    suppressed: 2,
+  },
+};
+
+const inboxReauth: LocalInboxStatus = {
+  accessState: "needs_reauthorization",
+  backupsPrepared: false,
+  enabled: true,
+  inboxLabel: "Inbox",
+  lastScan: null,
+};
+
 const noop = () => undefined;
 
 function navigate(view: AppView) {
@@ -152,21 +234,62 @@ function Preview() {
 
   let content = null;
   let activeView: AppView = "overview";
-  if (state === "overview" || state === "overview-empty") {
+  if (state === "overview" || state === "overview-attention" || state === "overview-empty") {
     const empty = state === "overview-empty";
+    const withAttention = state === "overview-attention";
     content = (
       <OverviewView
+        accountPrompts={withAttention ? accountPrompts : []}
+        attentionBusyKey={null}
+        coveragePrompts={withAttention ? coveragePrompts : []}
         loading={false}
         moneyOverview={empty ? { assets: [], liabilities: [] } : moneyOverview}
+        moneySources={moneySources}
         notice={null}
+        onAddFile={noop}
+        onCancelRemind={noop}
+        onChangeRemindDate={noop}
+        onConfirmAccounts={noop}
+        onCoverageNotExpected={noop}
         onLock={noop}
         onOpenReview={() => navigate("review")}
         onOpenSources={() => navigate("sources")}
         onRefresh={noop}
+        onSaveRemind={noop}
+        onStartRemind={noop}
         onUndo={noop}
         recentActivity={empty ? [] : recentActivity}
+        remind={withAttention
+          ? {
+              date: "2026-08-15",
+              error: null,
+              key: coverageKey(coveragePrompts[0]!),
+              saving: false,
+            }
+          : null}
         reviewCount={empty ? 0 : reviewItems.length}
         undoingEventId={null}
+      />
+    );
+  } else if (state === "sources-inbox-disabled"
+    || state === "sources-inbox-enabled"
+    || state === "sources-inbox-reauth") {
+    activeView = "sources";
+    const status = state === "sources-inbox-enabled"
+      ? inboxEnabled
+      : state === "sources-inbox-reauth"
+        ? inboxReauth
+        : inboxDisabled;
+    content = (
+      <InboxPanel
+        busy={false}
+        confirmingDisable={false}
+        onCancelDisable={noop}
+        onChoose={noop}
+        onConfirmDisable={noop}
+        onRequestDisable={noop}
+        onRescan={noop}
+        status={status}
       />
     );
   } else {

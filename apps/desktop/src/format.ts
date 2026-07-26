@@ -6,6 +6,11 @@ const LEDGER_MONTHS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ] as const;
 
+const LEDGER_MONTHS_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
 /**
  * Groups the integer part of a host-supplied exact decimal string without
  * float conversion, preserving the source decimal scale.
@@ -44,6 +49,26 @@ export function formatLedgerDate(iso: string): string {
     return iso;
   }
   return `${day} ${LEDGER_MONTHS[month - 1]} ${year}`;
+}
+
+/** Renders the month of a host ISO date or month string, such as "June 2026". */
+export function formatLedgerMonth(iso: string): string {
+  const match = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(iso);
+  if (!match) {
+    return iso;
+  }
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) {
+    return iso;
+  }
+  return `${LEDGER_MONTHS_FULL[month - 1]} ${match[1]}`;
+}
+
+/** Returns the local calendar date as YYYY-MM-DD without timezone conversion. */
+export function localIsoToday(now: Date = new Date()): string {
+  const month = `${now.getMonth() + 1}`.padStart(2, "0");
+  const day = `${now.getDate()}`.padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
 }
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -128,4 +153,73 @@ export function batchGroupReasonLabel(reason: string | null): string {
     return "check its details";
   }
   return BATCH_GROUP_REASON_LABELS[reason] ?? "check its details";
+}
+
+const COVERAGE_DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  account_statement: "statement",
+  bank_statement: "bank statement",
+  credit_card_statement: "card statement",
+};
+
+export function coverageDocumentTypeLabel(documentType: string): string {
+  const known = COVERAGE_DOCUMENT_TYPE_LABELS[documentType];
+  if (known) {
+    return known;
+  }
+  const words = documentType.replaceAll("_", " ").trim();
+  return words.length === 0 ? "statement" : words;
+}
+
+const ACCOUNT_TYPE_LABELS: Record<string, string> = {
+  credit_card: "Credit card",
+  deposit_account: "Bank account",
+  manual_liability: "Liability",
+};
+
+export function accountTypeLabel(accountType: string): string {
+  const known = ACCOUNT_TYPE_LABELS[accountType];
+  if (known) {
+    return known;
+  }
+  const words = accountType.replaceAll("_", " ").trim();
+  return words.length === 0 ? "Account" : `${words[0]!.toUpperCase()}${words.slice(1)}`;
+}
+
+export function coveragePromptTitle(
+  prompt: {
+    documentType: string;
+    statementPeriodTo: string;
+    status: "confirmed_missing" | "likely_missing";
+  },
+  sourceName: string,
+): string {
+  const label = `${sourceName} ${formatLedgerMonth(prompt.statementPeriodTo)} ${
+    coverageDocumentTypeLabel(prompt.documentType)
+  }`;
+  return prompt.status === "confirmed_missing"
+    ? `${label} is missing`
+    : `${label} may be missing`;
+}
+
+/** Builds a calm plain-language sentence from a sanitized inbox scan summary. */
+export function localInboxScanSummaryText(summary: {
+  alreadyPresent: number;
+  deferred: number;
+  imported: number;
+  suppressed: number;
+}): string {
+  const parts: string[] = [];
+  if (summary.imported > 0) {
+    parts.push(`${summary.imported} added`);
+  }
+  if (summary.alreadyPresent > 0) {
+    parts.push(`${summary.alreadyPresent} already in CanCan`);
+  }
+  if (summary.deferred > 0) {
+    parts.push(`${summary.deferred} to try again later`);
+  }
+  if (summary.suppressed > 0) {
+    parts.push(`${summary.suppressed} kept deleted`);
+  }
+  return parts.length === 0 ? "Nothing new to add." : `${parts.join("; ")}.`;
 }

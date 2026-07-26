@@ -236,6 +236,72 @@ pub(super) fn validate_captured_container(mime_type: &str, plaintext: &[u8]) -> 
     }
 }
 
+pub(super) fn ensure_fiat_currency_instruments(
+    transaction: &Transaction<'_>,
+    accounts: &[TrustedAccountCandidate<'_>],
+) -> StoreResult<()> {
+    let currencies = accounts
+        .iter()
+        .filter_map(|account| account.currency)
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    for currency in currencies {
+        let instrument_id = fiat_currency_instrument_id(&currency);
+        let existing = transaction
+            .query_row(
+                "SELECT instrument_type, symbol, currency FROM instruments WHERE id = ?1",
+                [&instrument_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        if let Some((instrument_type, symbol, stored_currency)) = existing
+            && (instrument_type != "fiat_currency"
+                || symbol != currency
+                || stored_currency.as_deref() != Some(currency.as_str()))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "fiat currency instrument conflicts with its deterministic identity",
+            )
+            .into());
+        }
+        let fiat_currency_instrument_count: i64 = transaction.query_row(
+            "SELECT count(*) FROM instruments \
+             WHERE instrument_type = 'fiat_currency' AND currency = ?1",
+            params![currency],
+            |row| row.get(0),
+        )?;
+        match fiat_currency_instrument_count {
+            0 => {
+                transaction.execute(
+                    "INSERT INTO instruments(id, instrument_type, symbol, currency, display_name) \
+                     VALUES (?1, 'fiat_currency', ?2, ?3, ?4)",
+                    params![instrument_id, currency, currency, currency],
+                )?;
+            }
+            1 => {}
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "multiple fiat currency instruments exist",
+                )
+                .into());
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn fiat_currency_instrument_id(currency: &str) -> String {
+    format!("instrument-fiat-{currency}")
+}
+
 pub(super) fn validate_classification(
     input: &TrustedDocumentClassification<'_>,
 ) -> StoreResult<()> {

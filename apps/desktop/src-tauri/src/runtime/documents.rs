@@ -291,6 +291,44 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("list_sources_failed"))
     }
 
+    pub(crate) fn list_account_confirmation_prompts(
+        &self,
+    ) -> Result<Vec<AccountConfirmationPrompt>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .list_account_confirmation_prompts()
+            .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
+    }
+
+    pub(crate) fn confirm_candidate_accounts(
+        &self,
+        money_source_id: &str,
+        expected_candidate_account_ids: &[String],
+    ) -> Result<AccountConfirmationOutcome, RuntimeError> {
+        if money_source_id.is_empty()
+            || expected_candidate_account_ids.is_empty()
+            || expected_candidate_account_ids
+                .iter()
+                .any(|account_id| account_id.is_empty())
+            || expected_candidate_account_ids
+                .iter()
+                .collect::<HashSet<_>>()
+                .len()
+                != expected_candidate_account_ids.len()
+        {
+            return Err(RuntimeError::new("invalid_account_confirmation_request"));
+        }
+        let audit_id = random_identifier("audit");
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .confirm_candidate_accounts(money_source_id, expected_candidate_account_ids, &audit_id)
+            .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
+    }
+
     pub(crate) fn list_unassigned_source_documents(
         &self,
     ) -> Result<Vec<SourceDocumentSummary>, RuntimeError> {
@@ -825,7 +863,15 @@ pub(crate) async fn normalize_source_document(
     let result = run_normalizer_sidecar(&app, &document_id, &input)
         .await
         .map_err(VaultCommandError::from)?;
-    run_runtime_task(move || runtime.apply_normalizer_result(&document_id, &input, result)).await
+    let apply_runtime = runtime.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        apply_runtime.apply_normalizer_result(&document_id, &input, result)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(VaultCommandError::from)?;
+    process_queued_document_reconciliations(runtime).await?;
+    Ok(outcome)
 }
 
 #[tauri::command]
@@ -856,6 +902,27 @@ pub(crate) async fn list_money_sources(
 ) -> Result<Vec<MoneySourceSummary>, VaultCommandError> {
     let runtime = runtime.inner().clone();
     run_runtime_task(move || runtime.list_money_sources()).await
+}
+
+#[tauri::command]
+pub(crate) async fn list_account_confirmation_prompts(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<AccountConfirmationPrompt>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    run_runtime_task(move || runtime.list_account_confirmation_prompts()).await
+}
+
+#[tauri::command]
+pub(crate) async fn confirm_candidate_accounts(
+    money_source_id: String,
+    expected_candidate_account_ids: Vec<String>,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<AccountConfirmationOutcome, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    run_runtime_task(move || {
+        runtime.confirm_candidate_accounts(&money_source_id, &expected_candidate_account_ids)
+    })
+    .await
 }
 
 #[tauri::command]

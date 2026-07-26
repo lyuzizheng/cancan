@@ -1,8 +1,10 @@
 import type {
+  LocalInboxStatus,
   MoneySourceSummary,
   SourceDocumentSummary,
 } from "./command-contracts";
 import { Feedback, type Notice } from "./feedback";
+import { InboxPanel } from "./inbox";
 
 export interface MoneySourceDocuments {
   documents: SourceDocumentSummary[] | null;
@@ -13,11 +15,19 @@ export interface SourcesViewProps {
   busy: boolean;
   deletingDocumentId: string | null;
   importing: boolean;
+  inbox: LocalInboxStatus | null;
+  inboxBusy: boolean;
+  inboxConfirmingDisable: boolean;
   loadingDocuments: boolean;
   normalizingDocumentId: string | null;
   notice: Notice | null;
   onDelete: (documentId: string) => void;
   onImport: () => void;
+  onInboxCancelDisable: () => void;
+  onInboxChoose: () => void;
+  onInboxConfirmDisable: () => void;
+  onInboxRequestDisable: () => void;
+  onInboxRescan: () => void;
   onLock: () => void;
   onNormalize: (documentId: string) => void;
   onOpenUnlock: (document: SourceDocumentSummary) => void;
@@ -94,6 +104,17 @@ export function SourcesView(props: SourcesViewProps) {
         </section>
 
         {props.notice ? <Feedback {...props.notice} /> : null}
+
+        <InboxPanel
+          busy={props.inboxBusy}
+          confirmingDisable={props.inboxConfirmingDisable}
+          onCancelDisable={props.onInboxCancelDisable}
+          onChoose={props.onInboxChoose}
+          onConfirmDisable={props.onInboxConfirmDisable}
+          onRequestDisable={props.onInboxRequestDisable}
+          onRescan={props.onInboxRescan}
+          status={props.inbox}
+        />
 
         <section className="source-panel" aria-labelledby="sources-heading">
           <div className="source-panel-heading">

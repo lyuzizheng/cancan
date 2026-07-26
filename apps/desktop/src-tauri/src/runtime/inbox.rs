@@ -337,6 +337,49 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
     }
 
+    pub(super) fn queued_document_reconciliations(&self) -> Result<Vec<String>, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .queued_reconcile_document_ids()
+            .map_err(|_| RuntimeError::new("reconcile_failed"))
+    }
+
+    pub(super) fn start_document_reconciliation(
+        &self,
+        document_id: &str,
+    ) -> Result<bool, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .start_reconcile_document(document_id)
+            .map_err(|_| RuntimeError::new("reconcile_failed"))
+    }
+
+    pub(super) fn reconcile_document(&self, document_id: &str) -> Result<(), RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .reconcile_document(document_id)
+            .map_err(|_| RuntimeError::new("reconcile_failed"))
+    }
+
+    pub(super) fn fail_document_reconciliation(
+        &self,
+        document_id: &str,
+        reason: &'static str,
+    ) -> Result<(), RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .fail_reconcile_document(document_id, reason)
+            .map_err(|_| RuntimeError::new("reconcile_failed"))
+    }
+
     pub(super) fn activate_local_inbox_from_bookmark(&self) -> Result<bool, RuntimeError> {
         if self
             .inner
@@ -489,6 +532,48 @@ pub(super) async fn process_queued_local_inbox_parses(
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
         }
     }
+    process_queued_document_reconciliations(runtime).await?;
+    Ok(())
+}
+
+pub(super) async fn process_queued_document_reconciliations(
+    runtime: VaultRuntime,
+) -> Result<(), VaultCommandError> {
+    let document_ids = {
+        let runtime = runtime.clone();
+        tauri::async_runtime::spawn_blocking(move || runtime.queued_document_reconciliations())
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    for document_id in document_ids {
+        let started = {
+            let runtime = runtime.clone();
+            let document_id = document_id.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                runtime.start_document_reconciliation(&document_id)
+            })
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+        };
+        if !started {
+            continue;
+        }
+        let reconciled = {
+            let runtime = runtime.clone();
+            let document_id = document_id.clone();
+            tauri::async_runtime::spawn_blocking(move || runtime.reconcile_document(&document_id))
+                .await
+                .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        };
+        if reconciled.is_err() {
+            let runtime = runtime.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                runtime.fail_document_reconciliation(&document_id, "reconcile_failed")
+            })
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
+        }
+    }
     Ok(())
 }
 
@@ -503,6 +588,10 @@ pub(super) async fn resume_local_inbox_after_unlock(app: &AppHandle, runtime: Va
     if status.is_some_and(|status| status.access_state == LocalInboxAccessState::Enabled) {
         let _ = rescan_and_process_local_inbox(app, runtime).await;
     }
+}
+
+pub(super) async fn resume_document_reconciliations_after_unlock(runtime: VaultRuntime) {
+    let _ = process_queued_document_reconciliations(runtime).await;
 }
 
 #[tauri::command]

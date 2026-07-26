@@ -427,7 +427,11 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         )
         .expect("seed routing source");
     let routed = runtime
-        .apply_normalizer_result(&outcome.document_id, &bundle, synthetic_normalizer_result())
+        .apply_normalizer_result(
+            &outcome.document_id,
+            &bundle,
+            synthetic_pdf_normalizer_result(),
+        )
         .expect("route protected text-layer PDF");
     assert_eq!(
         routed.status,
@@ -589,7 +593,12 @@ fn rust_normalizer_command_matches_the_worker_golden_fixture() {
         "document-smoke",
         &"a".repeat(64),
         "text/csv",
-        b"CANCAN_SYNTHETIC_STATEMENT_V1\nprovider=synthetic-bank\nstatement_id=transfer-2026-07\n",
+        b"balance,2026-06-30,checking-001,1000.00,SGD,CANCAN_SYNTHETIC_STATEMENT_V1\n\
+2026-07-01,Transfer to savings,250.00,SGD,750.00,provider=synthetic-bank\n\
+balance,2026-07-01,checking-001,750.00,SGD,statement_id=transfer-2026-07\n\
+balance,2026-06-30,savings-002,100.00,SGD\n\
+2026-07-01,Transfer from checking,250.00,SGD,350.00\n\
+balance,2026-07-01,savings-002,350.00,SGD",
         None,
     )
     .expect("extract fixture observations");
@@ -2052,7 +2061,7 @@ fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
 }
 
 #[test]
-fn review_read_models_reject_a_locked_vault() {
+fn review_and_account_confirmation_models_reject_a_locked_vault() {
     let parent = tempfile::tempdir().expect("temporary app data");
     let runtime = VaultRuntime::new(parent.path().join("vault"));
 
@@ -2070,19 +2079,27 @@ fn review_read_models_reject_a_locked_vault() {
             .code(),
         "vault_locked"
     );
+    assert_eq!(
+        runtime
+            .list_account_confirmation_prompts()
+            .expect_err("reject confirmation list while locked")
+            .code(),
+        "vault_locked"
+    );
+    assert_eq!(
+        runtime
+            .confirm_candidate_accounts("source-dbs", &["account-1".to_owned()])
+            .expect_err("reject confirmation while locked")
+            .code(),
+        "vault_locked"
+    );
 }
 
 #[test]
 fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
     let parent = tempfile::tempdir().expect("temporary app data");
     let source_path = parent.path().join("synthetic.csv");
-    let fixture = [
-        "CANCAN_SYNTHETIC_STATEMENT_V1",
-        "provider=synthetic-bank",
-        "statement_id=transfer-2026-07",
-    ]
-    .join("\n");
-    fs::write(&source_path, &fixture).expect("write statement fixture");
+    fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
     let runtime = VaultRuntime::new(parent.path().join("vault"));
     runtime
         .create(b"synthetic-vault-password")
@@ -2118,7 +2135,7 @@ fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
         crate::database::SourceDocumentRoutingStatus::Routed
     );
     assert_eq!(routed.money_source_id.as_deref(), Some("source-synthetic"));
-    assert_eq!(routed.account_ids.len(), 1);
+    assert_eq!(routed.account_ids.len(), 2);
     let routed_documents = runtime
         .list_source_documents("source-synthetic")
         .expect("list routed documents");
@@ -2132,9 +2149,723 @@ fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
     );
 }
 
+#[test]
+fn persists_validated_records_and_reconciles_them_to_review_idempotently() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let source_path = parent.path().join("synthetic.csv");
+    fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+    let runtime = VaultRuntime::new(parent.path().join("vault"));
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    runtime
+        .seed_money_source(
+            "source-synthetic",
+            "synthetic-bank",
+            "Synthetic Bank",
+            "bank",
+        )
+        .expect("seed source");
+    let imported = runtime
+        .import_selected_document(&source_path, None)
+        .expect("capture statement");
+    let input = runtime
+        .normalization_input(&imported.document_id)
+        .expect("extract complete synthetic observations");
+
+    let mut normalizer_result = synthetic_normalizer_result();
+    let NormalizerResult::Classified { proposal, .. } = &mut normalizer_result else {
+        panic!("synthetic result must be classified");
+    };
+    proposal.records[0].posting_status = Some("posted".to_owned());
+    let routed = runtime
+        .apply_normalizer_result(&imported.document_id, &input, normalizer_result)
+        .expect("persist validated proposal");
+    assert_eq!(
+        routed.status,
+        crate::database::SourceDocumentRoutingStatus::Routed
+    );
+    assert_eq!(
+        structured_parse_test_state(&runtime, &imported.document_id),
+        crate::database::StructuredParseTestState {
+            balance_snapshots_without_amount: 4,
+            ledger_events: 0,
+            open_review_items: 0,
+            parse_runs: 1,
+            reconcile_status: Some("queued".to_owned()),
+            records: 6,
+            staged_records: 6,
+        }
+    );
+    assert_eq!(
+        structured_parse_posting_status(
+            &runtime,
+            &imported.document_id,
+            "synthetic:record-checking-out",
+        ),
+        Some("posted".to_owned())
+    );
+    assert_eq!(
+        structured_parse_posting_status(
+            &runtime,
+            &imported.document_id,
+            "synthetic:record-savings-in",
+        ),
+        None
+    );
+
+    assert!(
+        runtime
+            .start_document_reconciliation(&imported.document_id)
+            .expect("claim reconcile job")
+    );
+    runtime
+        .fail_document_reconciliation(&imported.document_id, "reconcile_failed")
+        .expect("record safe reconcile failure");
+    let failed = structured_parse_test_state(&runtime, &imported.document_id);
+    assert_eq!((failed.staged_records, failed.open_review_items), (6, 0));
+    assert_eq!(failed.reconcile_status.as_deref(), Some("failed"));
+
+    runtime
+        .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
+        .expect("repeat same profile");
+    assert_eq!(
+        structured_parse_posting_status(
+            &runtime,
+            &imported.document_id,
+            "synthetic:record-checking-out",
+        ),
+        Some("posted".to_owned())
+    );
+    assert_eq!(
+        runtime
+            .queued_document_reconciliations()
+            .expect("requeue failed reconcile"),
+        vec![imported.document_id.clone()]
+    );
+    assert!(
+        runtime
+            .start_document_reconciliation(&imported.document_id)
+            .expect("claim recovery candidate")
+    );
+    expire_reconcile_lease_for_test(&runtime, &imported.document_id);
+    assert_eq!(
+        runtime
+            .queued_document_reconciliations()
+            .expect("recover expired reconcile job"),
+        vec![imported.document_id.clone()]
+    );
+    assert!(
+        runtime
+            .start_document_reconciliation(&imported.document_id)
+            .expect("claim recovered reconcile job")
+    );
+    runtime
+        .reconcile_document(&imported.document_id)
+        .expect("move staged records to review");
+
+    runtime
+        .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
+        .expect("repeat after reconciliation");
+    assert!(
+        runtime
+            .start_document_reconciliation(&imported.document_id)
+            .expect("claim idempotent reconcile job")
+    );
+    runtime
+        .reconcile_document(&imported.document_id)
+        .expect("idempotent reconcile");
+    assert_eq!(
+        structured_parse_test_state(&runtime, &imported.document_id),
+        crate::database::StructuredParseTestState {
+            balance_snapshots_without_amount: 4,
+            ledger_events: 0,
+            open_review_items: 6,
+            parse_runs: 1,
+            reconcile_status: Some("succeeded".to_owned()),
+            records: 6,
+            staged_records: 0,
+        }
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn accepts_a_review_only_dbs_profile_and_reconciles_its_records_to_review() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let source_path = parent.path().join("dbs-statement.pdf");
+    fs::write(&source_path, synthetic_provider_statement_pdf()).expect("write DBS PDF fixture");
+    let runtime = VaultRuntime::new(parent.path().join("vault"));
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    runtime
+        .seed_money_source("source-dbs", "dbs", "DBS", "bank")
+        .expect("seed DBS source");
+    let imported = runtime
+        .import_selected_document(&source_path, None)
+        .expect("capture DBS statement");
+    let input = runtime
+        .normalization_input(&imported.document_id)
+        .expect("extract native DBS PDF observation");
+
+    let routed = runtime
+        .apply_normalizer_result(&imported.document_id, &input, dbs_bank_normalizer_result())
+        .expect("apply review-only DBS result");
+
+    assert_eq!(
+        routed.status,
+        crate::database::SourceDocumentRoutingStatus::Routed
+    );
+    let staged = structured_parse_test_state(&runtime, &imported.document_id);
+    assert_eq!(
+        (staged.parse_runs, staged.records, staged.staged_records),
+        (1, 3, 3)
+    );
+    assert_eq!(staged.reconcile_status.as_deref(), Some("queued"));
+    assert!(
+        runtime
+            .start_document_reconciliation(&imported.document_id)
+            .expect("claim DBS reconcile job")
+    );
+    runtime
+        .reconcile_document(&imported.document_id)
+        .expect("move DBS records to Review");
+    let reviewed = structured_parse_test_state(&runtime, &imported.document_id);
+    assert_eq!((reviewed.parse_runs, reviewed.records), (1, 3));
+    assert_eq!(reviewed.open_review_items, 3);
+    assert_eq!(reviewed.ledger_events, 0);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let inbox_root = parent.path().join("Cancan");
+    fs::create_dir(&inbox_root).expect("create named CanCan Inbox root");
+    let vault_root = parent.path().join("vault");
+    let bookmarks = Arc::new(MemoryLocalInboxBookmarkStore::default());
+    let runtime = VaultRuntime::with_secret_stores(
+        vault_root.clone(),
+        Arc::new(MemoryRememberedKeyStore::default()),
+        Arc::new(MemoryStatementPasswordStore::default()),
+        bookmarks.clone(),
+    );
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    runtime
+        .seed_money_source("source-dbs-card", "dbs", "DBS Card", "credit_card")
+        .expect("seed DBS card source");
+    runtime
+        .seed_money_source("source-hsbc-bank", "hsbc", "HSBC Bank", "bank")
+        .expect("seed HSBC bank source");
+    runtime
+        .configure_local_inbox(&inbox_root)
+        .expect("authorize named CanCan root");
+    assert!(bookmarks.load().expect("load stored bookmark").is_some());
+    assert_eq!(
+        runtime
+            .local_inbox_status()
+            .expect("read configured Inbox status")
+            .access_state,
+        LocalInboxAccessState::Enabled
+    );
+    runtime.lock().expect("lock Vault before restart");
+    drop(runtime);
+
+    let runtime = VaultRuntime::with_secret_stores(
+        vault_root,
+        Arc::new(MemoryRememberedKeyStore::default()),
+        Arc::new(MemoryStatementPasswordStore::default()),
+        bookmarks,
+    );
+    runtime
+        .unlock(b"synthetic-vault-password")
+        .expect("unlock restarted Vault");
+    assert_eq!(
+        runtime
+            .local_inbox_status()
+            .expect("restore Inbox bookmark after restart")
+            .access_state,
+        LocalInboxAccessState::Enabled
+    );
+
+    let inbox = inbox_root.join("Inbox");
+    let hsbc_path = inbox.join("hsbc-repayment-2026-06.pdf");
+    let dbs_path = inbox.join("dbs-card-repayment-2026-07.pdf");
+    let hsbc_bytes = hsbc_repayment_statement_pdf();
+    let dbs_bytes = dbs_card_repayment_statement_pdf();
+    fs::write(&hsbc_path, &hsbc_bytes).expect("write HSBC repayment statement");
+    fs::write(&dbs_path, &dbs_bytes).expect("write DBS card repayment statement");
+
+    assert_eq!(
+        runtime.rescan_local_inbox().expect("scan local Inbox"),
+        LocalInboxScanSummary {
+            already_present: 0,
+            deferred: 0,
+            imported: 2,
+            suppressed: 0,
+        }
+    );
+    assert_eq!(fs::read(&hsbc_path).expect("read HSBC source"), hsbc_bytes);
+    assert_eq!(fs::read(&dbs_path).expect("read DBS source"), dbs_bytes);
+
+    let mut parse_documents = runtime
+        .queued_local_inbox_parse_documents()
+        .expect("queue both imported statements");
+    parse_documents.sort();
+    assert_eq!(parse_documents.len(), 2);
+    let mut hsbc_document_id = None;
+    let mut dbs_document_id = None;
+    for document_id in &parse_documents {
+        assert!(
+            runtime
+                .start_local_inbox_parse(document_id)
+                .expect("claim local Inbox parse job")
+        );
+        let input = runtime
+            .normalization_input(document_id)
+            .expect("extract native PDF observation");
+        assert_eq!(input.observations.len(), 1);
+        let observation = &input.observations[0];
+        assert_eq!(observation.kind, SourceObservationKind::NativeText);
+        assert_eq!(observation.engine, "pdfkit");
+        assert_eq!(observation.engine_version, "macos-page-string-v1");
+
+        let routed = if observation.text.contains("provider=hsbc") {
+            hsbc_document_id = Some(document_id.clone());
+            runtime
+                .apply_normalizer_result(
+                    document_id,
+                    &input,
+                    hsbc_bank_repayment_normalizer_result(),
+                )
+                .expect("apply exact HSBC profile and proposal")
+        } else if observation.text.contains("provider=dbs") {
+            dbs_document_id = Some(document_id.clone());
+            runtime
+                .apply_normalizer_result(
+                    document_id,
+                    &input,
+                    dbs_card_repayment_normalizer_result(),
+                )
+                .expect("apply exact DBS card profile and proposal")
+        } else {
+            panic!("unexpected local Inbox PDF package");
+        };
+        assert_eq!(
+            routed.status,
+            crate::database::SourceDocumentRoutingStatus::Routed
+        );
+    }
+    let hsbc_document_id = hsbc_document_id.expect("identify HSBC statement");
+    let dbs_document_id = dbs_document_id.expect("identify DBS statement");
+
+    let mut reconcile_documents = runtime
+        .queued_document_reconciliations()
+        .expect("queue reconciliations after parse");
+    reconcile_documents.sort();
+    let mut expected_reconcile_documents = vec![hsbc_document_id.clone(), dbs_document_id.clone()];
+    expected_reconcile_documents.sort();
+    assert_eq!(reconcile_documents, expected_reconcile_documents);
+    for document_id in &reconcile_documents {
+        assert!(
+            runtime
+                .start_document_reconciliation(document_id)
+                .expect("claim document reconciliation")
+        );
+        runtime
+            .reconcile_document(document_id)
+            .expect("move parsed statement records into Review");
+    }
+    assert!(
+        runtime
+            .list_recent_activity()
+            .expect("read pre-commit Activity")
+            .is_empty()
+    );
+
+    let prompts = runtime
+        .list_account_confirmation_prompts()
+        .expect("list exact candidate account prompts");
+    assert_eq!(prompts.len(), 2);
+    let dbs_prompt = prompts
+        .iter()
+        .find(|prompt| prompt.money_source_id == "source-dbs-card")
+        .expect("DBS card confirmation prompt");
+    assert_eq!(dbs_prompt.candidate_accounts.len(), 1);
+    assert_eq!(dbs_prompt.candidate_accounts[0].account_type, "credit_card");
+    assert_eq!(
+        dbs_prompt.candidate_accounts[0].currency.as_deref(),
+        Some("SGD")
+    );
+    let dbs_candidate_ids = dbs_prompt
+        .candidate_accounts
+        .iter()
+        .map(|account| account.account_id.clone())
+        .collect::<Vec<_>>();
+    let hsbc_prompt = prompts
+        .iter()
+        .find(|prompt| prompt.money_source_id == "source-hsbc-bank")
+        .expect("HSBC bank confirmation prompt");
+    assert_eq!(hsbc_prompt.candidate_accounts.len(), 1);
+    assert_eq!(
+        hsbc_prompt.candidate_accounts[0].account_type,
+        "deposit_account"
+    );
+    assert_eq!(
+        hsbc_prompt.candidate_accounts[0].currency.as_deref(),
+        Some("SGD")
+    );
+    let hsbc_candidate_ids = hsbc_prompt
+        .candidate_accounts
+        .iter()
+        .map(|account| account.account_id.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        runtime
+            .confirm_candidate_accounts("source-dbs-card", &dbs_candidate_ids)
+            .expect("confirm exactly DBS card candidates")
+            .status,
+        crate::database::AccountConfirmationStatus::Confirmed
+    );
+    assert_eq!(
+        runtime
+            .confirm_candidate_accounts("source-hsbc-bank", &hsbc_candidate_ids)
+            .expect("confirm exactly HSBC bank candidates")
+            .status,
+        crate::database::AccountConfirmationStatus::Confirmed
+    );
+    assert!(
+        runtime
+            .list_account_confirmation_prompts()
+            .expect("candidate accounts are now confirmed")
+            .is_empty()
+    );
+
+    let review_items = runtime.list_review_items().expect("list Review items");
+    let repayment_items = review_items
+        .iter()
+        .filter(|item| item.event_type.as_deref() == Some("credit_card_repayment"))
+        .collect::<Vec<_>>();
+    assert_eq!(repayment_items.len(), 2);
+    let dbs_repayment = repayment_items
+        .iter()
+        .find(|item| item.posted_on.as_deref() == Some("2026-07-01"))
+        .expect("DBS card repayment review item");
+    let hsbc_repayment = repayment_items
+        .iter()
+        .find(|item| item.posted_on.as_deref() == Some("2026-06-30"))
+        .expect("historical HSBC repayment review item");
+    let candidate_input = runtime
+        .relationship_candidate_input(&dbs_repayment.review_item_id, dbs_repayment.record_version)
+        .expect("discover historical relationship candidates")
+        .expect("open DBS repayment review item");
+    assert_eq!(candidate_input.event_type, "credit_card_repayment");
+    assert_eq!(candidate_input.record.posted_on, "2026-07-01");
+    assert_eq!(
+        candidate_input
+            .candidates
+            .iter()
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>(),
+        vec![hsbc_repayment.record_id.as_str()]
+    );
+    let historical = candidate_input
+        .candidates
+        .first()
+        .expect("HSBC candidate within repayment window");
+    assert_eq!(historical.posted_on, "2026-06-30");
+    let prepared = test_prepared_repayment_event(&candidate_input.record, historical);
+    assert_eq!(prepared.event_type, "credit_card_repayment");
+    assert_eq!(prepared.event_date, "2026-06-30");
+    assert!(!prepared.spending);
+    assert_eq!(
+        runtime
+            .accept_review_relationship(
+                &dbs_repayment.review_item_id,
+                dbs_repayment.record_version,
+                &historical.id,
+                hsbc_repayment.record_version,
+                &prepared,
+            )
+            .expect("accept exact cross-month repayment")
+            .status,
+        ReviewMutationStatus::RelationshipAccepted
+    );
+
+    let job = runtime
+        .enqueue_commit_review_batch(&[
+            dbs_repayment.review_item_id.clone(),
+            hsbc_repayment.review_item_id.clone(),
+        ])
+        .expect("enqueue explicit repayment review selection");
+    assert_eq!(
+        runtime
+            .queued_review_job_ids()
+            .expect("list queued Review job"),
+        vec![job.job_id.clone()]
+    );
+    let claimed = runtime
+        .claim_review_batch(&job.job_id, "local-inbox-test")
+        .expect("claim Review batch")
+        .expect("queued Review batch");
+    let (groups, initial_outcomes) = runtime
+        .prepare_commit_review_groups(&claimed)
+        .expect("prepare accepted repayment group");
+    assert!(initial_outcomes.is_empty());
+    assert_eq!(groups.len(), 1);
+    let prepared_commit =
+        test_prepared_repayment_event(&groups[0].records[0], &groups[0].records[1]);
+    let committed = runtime
+        .commit_prepared_review_group(&claimed, &groups[0], &prepared_commit)
+        .expect("commit prepared repayment group");
+    assert_eq!(committed.status, ReviewBatchGroupStatus::Committed);
+    assert_eq!(
+        runtime
+            .finish_review_batch(&claimed, &[committed])
+            .expect("finish Review batch")
+            .status,
+        crate::database::ReviewJobStatus::Succeeded
+    );
+
+    let activity = runtime
+        .list_recent_activity()
+        .expect("list Recent Activity");
+    assert_eq!(activity.len(), 1);
+    assert_eq!(activity[0].event_type, "credit_card_repayment");
+    assert!(!activity[0].spending);
+    assert_eq!(activity[0].source_labels, vec!["DBS Card", "HSBC Bank"]);
+    let remaining_review_items = runtime.list_review_items().expect("list remaining Review");
+    assert_eq!(remaining_review_items.len(), 4);
+    assert!(
+        remaining_review_items
+            .iter()
+            .all(|item| item.event_type.as_deref() != Some("credit_card_repayment"))
+    );
+
+    assert_eq!(
+        runtime
+            .rescan_local_inbox()
+            .expect("repeat local Inbox scan"),
+        LocalInboxScanSummary {
+            already_present: 2,
+            deferred: 0,
+            imported: 0,
+            suppressed: 0,
+        }
+    );
+    assert_eq!(
+        fs::read(&hsbc_path).expect("read unchanged HSBC source"),
+        hsbc_bytes
+    );
+    assert_eq!(
+        fs::read(&dbs_path).expect("read unchanged DBS source"),
+        dbs_bytes
+    );
+    assert_eq!(
+        runtime
+            .list_recent_activity()
+            .expect("Activity remains idempotent")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn rejects_invalid_profiles_or_legacy_fingerprints_without_parse_persistence() {
+    for mismatch in ["unknown_package", "proposal_mismatch", "legacy_fingerprint"] {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let source_path = parent.path().join("synthetic.csv");
+        fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        runtime
+            .seed_money_source(
+                "source-synthetic",
+                "synthetic-bank",
+                "Synthetic Bank",
+                "bank",
+            )
+            .expect("seed source");
+        let imported = runtime
+            .import_selected_document(&source_path, None)
+            .expect("capture statement");
+        let mut input = runtime
+            .normalization_input(&imported.document_id)
+            .expect("extract complete synthetic observations");
+        let mut result = synthetic_normalizer_result();
+        let NormalizerResult::Classified { profile, .. } = &mut result else {
+            panic!("synthetic result must be classified");
+        };
+        if mismatch == "unknown_package" {
+            profile.package_id = "unknown/provider@1".to_owned();
+        } else if mismatch == "proposal_mismatch" {
+            profile.document_type = "bank_statement".to_owned();
+        } else if let Some(marker) = input
+            .observations
+            .iter_mut()
+            .find(|observation| observation.text.contains("CANCAN_SYNTHETIC_STATEMENT_V1"))
+        {
+            marker.text = "untrusted synthetic statement".to_owned();
+        } else {
+            panic!("synthetic marker must be present");
+        }
+
+        let outcome = runtime
+            .apply_normalizer_result(&imported.document_id, &input, result)
+            .expect("fail closed for invalid profile");
+        assert_eq!(
+            outcome.status,
+            crate::database::SourceDocumentRoutingStatus::NeedsAttention
+        );
+        let state = structured_parse_test_state(&runtime, &imported.document_id);
+        assert_eq!(
+            (state.parse_runs, state.records, state.open_review_items),
+            (0, 0, 0)
+        );
+    }
+}
+
+#[test]
+fn rejects_unknown_fields_in_the_normalization_profile_protocol() {
+    let mut encoded = serde_json::to_value(synthetic_normalization_profile())
+        .expect("serialize normalizer profile");
+    encoded
+        .as_object_mut()
+        .expect("serialized profile")
+        .insert("unexpected".to_owned(), serde_json::Value::Bool(true));
+
+    assert!(serde_json::from_value::<NormalizerProfile>(encoded).is_err());
+}
+
+#[test]
+fn rejects_invalid_normalizer_protocol_without_persisting_records_or_review() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let source_path = parent.path().join("synthetic.csv");
+    fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+    let runtime = VaultRuntime::new(parent.path().join("vault"));
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    runtime
+        .seed_money_source(
+            "source-synthetic",
+            "synthetic-bank",
+            "Synthetic Bank",
+            "bank",
+        )
+        .expect("seed source");
+    let imported = runtime
+        .import_selected_document(&source_path, None)
+        .expect("capture statement");
+    let input = runtime
+        .normalization_input(&imported.document_id)
+        .expect("extract complete synthetic observations");
+    let mut invalid = synthetic_normalizer_result();
+    let NormalizerResult::Classified { proposal, .. } = &mut invalid else {
+        panic!("synthetic result must be classified");
+    };
+    proposal.records[0].validation.raw_grounded = false;
+
+    let outcome = runtime
+        .apply_normalizer_result(&imported.document_id, &input, invalid)
+        .expect("reject invalid protocol safely");
+    assert_eq!(
+        outcome.status,
+        crate::database::SourceDocumentRoutingStatus::NeedsAttention
+    );
+    let state = structured_parse_test_state(&runtime, &imported.document_id);
+    assert_eq!(
+        (state.parse_runs, state.records, state.open_review_items),
+        (0, 0, 0)
+    );
+}
+
+#[test]
+fn rejects_invalid_normalizer_posting_status_without_persisting_records_or_review() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let source_path = parent.path().join("synthetic.csv");
+    fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+    let runtime = VaultRuntime::new(parent.path().join("vault"));
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    runtime
+        .seed_money_source(
+            "source-synthetic",
+            "synthetic-bank",
+            "Synthetic Bank",
+            "bank",
+        )
+        .expect("seed source");
+    let imported = runtime
+        .import_selected_document(&source_path, None)
+        .expect("capture statement");
+    let input = runtime
+        .normalization_input(&imported.document_id)
+        .expect("extract complete synthetic observations");
+    let mut invalid = synthetic_normalizer_result();
+    let NormalizerResult::Classified { proposal, .. } = &mut invalid else {
+        panic!("synthetic result must be classified");
+    };
+    proposal.records[0].posting_status = Some("pending".to_owned());
+
+    let outcome = runtime
+        .apply_normalizer_result(&imported.document_id, &input, invalid)
+        .expect("reject invalid protocol safely");
+    assert_eq!(
+        outcome.status,
+        crate::database::SourceDocumentRoutingStatus::NeedsAttention
+    );
+    let state = structured_parse_test_state(&runtime, &imported.document_id);
+    assert_eq!(
+        (state.parse_runs, state.records, state.open_review_items),
+        (0, 0, 0)
+    );
+}
+
+fn structured_parse_test_state(
+    runtime: &VaultRuntime,
+    document_id: &str,
+) -> crate::database::StructuredParseTestState {
+    let store = runtime.store().expect("open store");
+    store
+        .as_ref()
+        .expect("unlocked store")
+        .structured_parse_test_state(document_id)
+        .expect("read structured parse state")
+}
+
+fn structured_parse_posting_status(
+    runtime: &VaultRuntime,
+    document_id: &str,
+    stable_record_key: &str,
+) -> Option<String> {
+    let store = runtime.store().expect("open store");
+    store
+        .as_ref()
+        .expect("unlocked store")
+        .structured_parse_posting_status(document_id, stable_record_key)
+        .expect("read structured parse posting status")
+}
+
+fn expire_reconcile_lease_for_test(runtime: &VaultRuntime, document_id: &str) {
+    let store = runtime.store().expect("open store");
+    store
+        .as_ref()
+        .expect("unlocked store")
+        .expire_reconcile_lease_for_test(document_id)
+        .expect("expire reconcile lease");
+}
+
 fn synthetic_normalizer_result() -> NormalizerResult {
     NormalizerResult::Classified {
-        proposal: NormalizerProposal {
+        profile: Box::new(synthetic_normalization_profile()),
+        proposal: Box::new(NormalizerProposal {
             document: NormalizerDocument {
                 document_type: "transfer_export".to_owned(),
                 provider_key: "synthetic-bank".to_owned(),
@@ -2144,14 +2875,542 @@ fn synthetic_normalizer_result() -> NormalizerResult {
                     to: Some("2026-07-31".to_owned()),
                 }),
             },
+            accounts: vec![
+                NormalizerAccount {
+                    account_type: "deposit_account".to_owned(),
+                    currency: Some("SGD".to_owned()),
+                    masked_identifier: Some("••001".to_owned()),
+                    proposal_account_id: "account-checking".to_owned(),
+                    provider_account_id: Some("checking-001".to_owned()),
+                },
+                NormalizerAccount {
+                    account_type: "deposit_account".to_owned(),
+                    currency: Some("SGD".to_owned()),
+                    masked_identifier: Some("••002".to_owned()),
+                    proposal_account_id: "account-savings".to_owned(),
+                    provider_account_id: Some("savings-002".to_owned()),
+                },
+            ],
+            opening_snapshots: vec![
+                synthetic_normalizer_record(
+                    "record-checking-opening",
+                    "account-checking",
+                    "balance",
+                    "balance_snapshot",
+                    None,
+                    None,
+                    "1000.00",
+                ),
+                synthetic_normalizer_record(
+                    "record-savings-opening",
+                    "account-savings",
+                    "balance",
+                    "balance_snapshot",
+                    None,
+                    None,
+                    "100.00",
+                ),
+            ],
+            records: vec![
+                synthetic_normalizer_record(
+                    "record-checking-out",
+                    "account-checking",
+                    "transaction",
+                    "same_currency_transfer",
+                    Some("250.00"),
+                    Some("-250.00"),
+                    "750.00",
+                ),
+                synthetic_normalizer_record(
+                    "record-savings-in",
+                    "account-savings",
+                    "transaction",
+                    "same_currency_transfer",
+                    Some("250.00"),
+                    Some("250.00"),
+                    "350.00",
+                ),
+            ],
+            closing_snapshots: vec![
+                synthetic_normalizer_record(
+                    "record-checking-closing",
+                    "account-checking",
+                    "balance",
+                    "balance_snapshot",
+                    None,
+                    None,
+                    "750.00",
+                ),
+                synthetic_normalizer_record(
+                    "record-savings-closing",
+                    "account-savings",
+                    "balance",
+                    "balance_snapshot",
+                    None,
+                    None,
+                    "350.00",
+                ),
+            ],
+            status: "valid".to_owned(),
+        }),
+    }
+}
+
+fn synthetic_normalization_profile() -> NormalizerProfile {
+    NormalizerProfile {
+        id: "synthetic-bank-transfer-export-v1".to_owned(),
+        provider_key: "synthetic-bank".to_owned(),
+        document_type: "transfer_export".to_owned(),
+        package_id: "synthetic/bank_transfer_export@1".to_owned(),
+        package_version: "1.0.0".to_owned(),
+        parser_version: "synthetic-bank-v1".to_owned(),
+        skill_version: "synthetic-bank-v1".to_owned(),
+        prompt_version: "synthetic-bank-v1".to_owned(),
+        schema_version: "structured-proposal-v1".to_owned(),
+        validator_version: "synthetic-bank-v1".to_owned(),
+        normalizer_runtime: "single-pass-mock".to_owned(),
+        tool_contract_version: "synthetic-bank-v1".to_owned(),
+        input_strategy: "native-observations-v1".to_owned(),
+        extraction_engines: vec![NormalizerProfileExtractionEngine {
+            kind: NormalizerProfileExtractionKind::TableCell,
+            engine: "rust-csv".to_owned(),
+            version: "1.4.0".to_owned(),
+        }],
+        ocr_engines: Vec::new(),
+        model_provider: "cancan-deterministic-mock".to_owned(),
+        model: "fixture-v1".to_owned(),
+        review_only: true,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn synthetic_pdf_normalizer_result() -> NormalizerResult {
+    let mut result = synthetic_normalizer_result();
+    let NormalizerResult::Classified { profile, .. } = &mut result else {
+        panic!("synthetic result must be classified");
+    };
+    profile.extraction_engines = vec![NormalizerProfileExtractionEngine {
+        kind: NormalizerProfileExtractionKind::NativeText,
+        engine: "pdfkit".to_owned(),
+        version: "macos-page-string-v1".to_owned(),
+    }];
+    result
+}
+
+#[cfg(target_os = "macos")]
+fn dbs_bank_normalizer_result() -> NormalizerResult {
+    NormalizerResult::Classified {
+        profile: Box::new(dbs_bank_normalization_profile()),
+        proposal: Box::new(NormalizerProposal {
+            document: NormalizerDocument {
+                document_type: "bank_statement".to_owned(),
+                provider_key: "dbs".to_owned(),
+                statement_id: Some("dbs-bank_statement-2026-07".to_owned()),
+                statement_period: Some(NormalizerStatementPeriod {
+                    from: Some("2026-07-01".to_owned()),
+                    to: Some("2026-07-03".to_owned()),
+                }),
+            },
             accounts: vec![NormalizerAccount {
                 account_type: "deposit_account".to_owned(),
                 currency: Some("SGD".to_owned()),
-                masked_identifier: Some("••001".to_owned()),
-                provider_account_id: Some("checking-001".to_owned()),
+                masked_identifier: Some("••6789".to_owned()),
+                proposal_account_id: "dbs-account".to_owned(),
+                provider_account_id: Some("DBS-123456789".to_owned()),
             }],
-        },
+            opening_snapshots: vec![synthetic_normalizer_record(
+                "dbs-opening",
+                "dbs-account",
+                "balance",
+                "balance_snapshot",
+                None,
+                None,
+                "100.00",
+            )],
+            records: vec![synthetic_normalizer_record(
+                "dbs-posting",
+                "dbs-account",
+                "transaction",
+                "same_currency_transfer",
+                Some("20.00"),
+                Some("-20.00"),
+                "80.00",
+            )],
+            closing_snapshots: vec![synthetic_normalizer_record(
+                "dbs-closing",
+                "dbs-account",
+                "balance",
+                "balance_snapshot",
+                None,
+                None,
+                "80.00",
+            )],
+            status: "valid".to_owned(),
+        }),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn dbs_bank_normalization_profile() -> NormalizerProfile {
+    provider_pdf_normalization_profile("dbs", "bank_statement", "dbs/bank_statement@1")
+}
+
+#[cfg(target_os = "macos")]
+fn hsbc_bank_repayment_normalizer_result() -> NormalizerResult {
+    NormalizerResult::Classified {
+        profile: Box::new(provider_pdf_normalization_profile(
+            "hsbc",
+            "bank_statement",
+            "hsbc/bank_statement@1",
+        )),
+        proposal: Box::new(NormalizerProposal {
+            document: NormalizerDocument {
+                document_type: "bank_statement".to_owned(),
+                provider_key: "hsbc".to_owned(),
+                statement_id: Some("hsbc-bank_statement-2026-06".to_owned()),
+                statement_period: Some(NormalizerStatementPeriod {
+                    from: Some("2026-06-29".to_owned()),
+                    to: Some("2026-06-30".to_owned()),
+                }),
+            },
+            accounts: vec![NormalizerAccount {
+                account_type: "deposit_account".to_owned(),
+                currency: Some("SGD".to_owned()),
+                masked_identifier: Some("••6789".to_owned()),
+                proposal_account_id: "hsbc-bank-account".to_owned(),
+                provider_account_id: Some("HSBC-123456789".to_owned()),
+            }],
+            opening_snapshots: vec![provider_balance_normalizer_record(
+                "hsbc-opening",
+                "hsbc-bank-account",
+                "2026-06-29",
+                "100.00",
+                "opening_balance",
+                "hsbc:2026-06:opening",
+                1,
+            )],
+            records: vec![provider_repayment_normalizer_record(
+                ProviderRepaymentRecord {
+                    proposal_record_id: "hsbc-dbs-card-payment",
+                    proposal_account_id: "hsbc-bank-account",
+                    posted_on: "2026-06-30",
+                    description: "DBS CARD PAYMENT",
+                    side: "debit",
+                    amount: "20.00",
+                    account_balance_delta: "-20.00",
+                    balance_after: "80.00",
+                    stable_record_key: "hsbc:2026-06:dbs-card-payment",
+                    row: 2,
+                },
+            )],
+            closing_snapshots: vec![provider_balance_normalizer_record(
+                "hsbc-closing",
+                "hsbc-bank-account",
+                "2026-06-30",
+                "80.00",
+                "closing_balance",
+                "hsbc:2026-06:closing",
+                3,
+            )],
+            status: "valid".to_owned(),
+        }),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn dbs_card_repayment_normalizer_result() -> NormalizerResult {
+    NormalizerResult::Classified {
+        profile: Box::new(provider_pdf_normalization_profile(
+            "dbs",
+            "credit_card_statement",
+            "dbs/credit_card_statement@1",
+        )),
+        proposal: Box::new(NormalizerProposal {
+            document: NormalizerDocument {
+                document_type: "credit_card_statement".to_owned(),
+                provider_key: "dbs".to_owned(),
+                statement_id: Some("dbs-credit_card_statement-2026-07".to_owned()),
+                statement_period: Some(NormalizerStatementPeriod {
+                    from: Some("2026-07-01".to_owned()),
+                    to: Some("2026-07-01".to_owned()),
+                }),
+            },
+            accounts: vec![NormalizerAccount {
+                account_type: "credit_card".to_owned(),
+                currency: Some("SGD".to_owned()),
+                masked_identifier: Some("••6789".to_owned()),
+                proposal_account_id: "dbs-card-account".to_owned(),
+                provider_account_id: Some("DBS-123456789".to_owned()),
+            }],
+            opening_snapshots: vec![provider_balance_normalizer_record(
+                "dbs-card-opening",
+                "dbs-card-account",
+                "2026-07-01",
+                "100.00",
+                "opening_balance",
+                "dbs-card:2026-07:opening",
+                1,
+            )],
+            records: vec![provider_repayment_normalizer_record(
+                ProviderRepaymentRecord {
+                    proposal_record_id: "dbs-card-payment-thank-you",
+                    proposal_account_id: "dbs-card-account",
+                    posted_on: "2026-07-01",
+                    description: "PAYMENT - THANK YOU",
+                    side: "credit",
+                    amount: "20.00",
+                    account_balance_delta: "-20.00",
+                    balance_after: "80.00",
+                    stable_record_key: "dbs-card:2026-07:payment-thank-you",
+                    row: 2,
+                },
+            )],
+            closing_snapshots: vec![provider_balance_normalizer_record(
+                "dbs-card-closing",
+                "dbs-card-account",
+                "2026-07-01",
+                "80.00",
+                "closing_balance",
+                "dbs-card:2026-07:closing",
+                3,
+            )],
+            status: "valid".to_owned(),
+        }),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn provider_pdf_normalization_profile(
+    provider_key: &str,
+    document_type: &str,
+    package_id: &str,
+) -> NormalizerProfile {
+    NormalizerProfile {
+        id: format!(
+            "mock:{package_id}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1"
+        ),
+        provider_key: provider_key.to_owned(),
+        document_type: document_type.to_owned(),
+        package_id: package_id.to_owned(),
+        package_version: "1.0.0".to_owned(),
+        parser_version: "1.0.0".to_owned(),
+        skill_version: "1.0.0".to_owned(),
+        prompt_version: "1.0.0".to_owned(),
+        schema_version: "1.0.0".to_owned(),
+        validator_version: "1.0.0".to_owned(),
+        normalizer_runtime: "single-pass-mock".to_owned(),
+        tool_contract_version: "1.0.0".to_owned(),
+        input_strategy: "native-observations-v1".to_owned(),
+        extraction_engines: vec![NormalizerProfileExtractionEngine {
+            kind: NormalizerProfileExtractionKind::NativeText,
+            engine: "pdfkit".to_owned(),
+            version: "macos-page-string-v1".to_owned(),
+        }],
+        ocr_engines: Vec::new(),
+        model_provider: "cancan-deterministic-mock".to_owned(),
+        model: "fixture-v1".to_owned(),
+        review_only: true,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn provider_balance_normalizer_record(
+    proposal_record_id: &str,
+    proposal_account_id: &str,
+    posted_on: &str,
+    balance_after: &str,
+    kind: &str,
+    stable_record_key: &str,
+    row: u8,
+) -> NormalizerRecord {
+    NormalizerRecord {
+        account_balance_delta: None,
+        amount: None,
+        balance_after: Some(NormalizerMoney {
+            currency: "SGD".to_owned(),
+            value: balance_after.to_owned(),
+        }),
+        description_normalized: None,
+        description_raw: None,
+        event_type: None,
+        instrument_symbol: None,
+        posted_at: None,
+        posted_on: Some(posted_on.to_owned()),
+        posting_status: None,
+        proposal_account_id: Some(proposal_account_id.to_owned()),
+        proposal_record_id: proposal_record_id.to_owned(),
+        provider_record_id: None,
+        quantity: None,
+        raw: serde_json::json!({
+            "kind": kind,
+            "date": posted_on,
+            "balance": balance_after,
+            "locator": { "row": row },
+        }),
+        record_type: "balance".to_owned(),
+        stable_record_key: stable_record_key.to_owned(),
+        statement_entry_side: None,
+        transaction_on: None,
+        validation: NormalizerRecordValidation {
+            deterministic_validation_passed: true,
+            raw_grounded: true,
+            schema_valid: true,
+        },
+        valuation: None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+struct ProviderRepaymentRecord<'a> {
+    proposal_record_id: &'a str,
+    proposal_account_id: &'a str,
+    posted_on: &'a str,
+    description: &'a str,
+    side: &'a str,
+    amount: &'a str,
+    account_balance_delta: &'a str,
+    balance_after: &'a str,
+    stable_record_key: &'a str,
+    row: u8,
+}
+
+#[cfg(target_os = "macos")]
+fn provider_repayment_normalizer_record(input: ProviderRepaymentRecord<'_>) -> NormalizerRecord {
+    let money = |value: &str| NormalizerMoney {
+        currency: "SGD".to_owned(),
+        value: value.to_owned(),
+    };
+    let raw = if input.side == "debit" {
+        serde_json::json!({
+            "kind": "posting",
+            "date": input.posted_on,
+            "description": input.description,
+            "debit": input.amount,
+            "balance": input.balance_after,
+            "locator": { "row": input.row },
+        })
+    } else {
+        serde_json::json!({
+            "kind": "posting",
+            "date": input.posted_on,
+            "description": input.description,
+            "credit": input.amount,
+            "balance": input.balance_after,
+            "locator": { "row": input.row },
+        })
+    };
+    NormalizerRecord {
+        account_balance_delta: Some(money(input.account_balance_delta)),
+        amount: Some(money(input.amount)),
+        balance_after: Some(money(input.balance_after)),
+        description_normalized: Some(input.description.to_owned()),
+        description_raw: Some(input.description.to_owned()),
+        event_type: Some("credit_card_repayment".to_owned()),
+        instrument_symbol: None,
+        posted_at: None,
+        posted_on: Some(input.posted_on.to_owned()),
+        posting_status: Some("posted".to_owned()),
+        proposal_account_id: Some(input.proposal_account_id.to_owned()),
+        proposal_record_id: input.proposal_record_id.to_owned(),
+        provider_record_id: None,
+        quantity: None,
+        raw,
+        record_type: "transaction".to_owned(),
+        stable_record_key: input.stable_record_key.to_owned(),
+        statement_entry_side: Some(input.side.to_owned()),
+        transaction_on: None,
+        validation: NormalizerRecordValidation {
+            deterministic_validation_passed: true,
+            raw_grounded: true,
+            schema_valid: true,
+        },
+        valuation: None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn test_prepared_repayment_event(
+    first: &CoreReviewRecord,
+    second: &CoreReviewRecord,
+) -> CorePreparedReviewEvent {
+    let event_date = [first, second]
+        .into_iter()
+        .find(|record| record.account_type != "credit_card")
+        .expect("repayment has one cash-like record")
+        .posted_on
+        .clone();
+    let mut records = [first, second];
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    CorePreparedReviewEvent {
+        event_class: "posting".to_owned(),
+        event_date,
+        event_type: "credit_card_repayment".to_owned(),
+        legs: records
+            .iter()
+            .map(|record| crate::database::CoreReviewLeg {
+                account_id: record.account_id.clone(),
+                amount_value: record.account_balance_delta.clone(),
+                currency: record.currency.clone(),
+                instrument_id: record.instrument_id.clone(),
+            })
+            .collect(),
+        source_record_ids: records.iter().map(|record| record.id.clone()).collect(),
+        spending: false,
+    }
+}
+
+fn synthetic_normalizer_record(
+    proposal_record_id: &str,
+    proposal_account_id: &str,
+    record_type: &str,
+    event_type: &str,
+    amount: Option<&str>,
+    account_balance_delta: Option<&str>,
+    balance_after: &str,
+) -> NormalizerRecord {
+    let money = |value: &str| NormalizerMoney {
+        currency: "SGD".to_owned(),
+        value: value.to_owned(),
+    };
+    NormalizerRecord {
+        account_balance_delta: account_balance_delta.map(money),
+        amount: amount.map(money),
+        balance_after: Some(money(balance_after)),
+        description_normalized: None,
+        description_raw: None,
+        event_type: Some(event_type.to_owned()),
+        instrument_symbol: None,
+        posted_at: None,
+        posted_on: Some("2026-07-01".to_owned()),
+        posting_status: None,
+        proposal_account_id: Some(proposal_account_id.to_owned()),
+        proposal_record_id: proposal_record_id.to_owned(),
+        provider_record_id: None,
+        quantity: None,
+        raw: serde_json::json!({ "proposalRecordId": proposal_record_id }),
+        record_type: record_type.to_owned(),
+        stable_record_key: format!("synthetic:{proposal_record_id}"),
+        statement_entry_side: None,
+        transaction_on: None,
+        validation: NormalizerRecordValidation {
+            deterministic_validation_passed: true,
+            raw_grounded: true,
+            schema_valid: true,
+        },
+        valuation: None,
+    }
+}
+
+fn synthetic_statement_csv() -> String {
+    [
+        "balance,2026-06-30,checking-001,1000.00,SGD,CANCAN_SYNTHETIC_STATEMENT_V1",
+        "2026-07-01,Transfer to savings,250.00,SGD,750.00,provider=synthetic-bank",
+        "balance,2026-07-01,checking-001,750.00,SGD,statement_id=transfer-2026-07",
+        "balance,2026-06-30,savings-002,100.00,SGD",
+        "2026-07-01,Transfer from checking,250.00,SGD,350.00",
+        "balance,2026-07-01,savings-002,350.00,SGD",
+    ]
+    .join("\n")
 }
 
 #[cfg(target_os = "macos")]
@@ -2259,11 +3518,32 @@ fn synthetic_pdf() -> Vec<u8> {
     synthetic_pdf_with_stream("BT /F1 10 Tf 8 72 Td (CANCAN_SYNTHETIC_STATEMENT_V1) Tj ET")
 }
 
+#[cfg(target_os = "macos")]
+fn synthetic_provider_statement_pdf() -> Vec<u8> {
+    synthetic_pdf_with_stream(
+        "BT /F1 10 Tf 8 72 Td (CANCAN_SYNTHETIC_PROVIDER_STATEMENT_V1 provider=dbs document_type=bank_statement package_id=dbs/bank_statement@1 statement_id=dbs-bank_statement-2026-07 DBS Statement of Account WITHDRAWAL DEPOSIT BALANCE Account number DBS-123456789 Statement currency SGD opening_balance 2026-07-01 100.00 posting 2026-07-02 GROCERIES 20.00 80.00 closing_balance 2026-07-03 80.00) Tj ET",
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn hsbc_repayment_statement_pdf() -> Vec<u8> {
+    synthetic_pdf_with_stream(
+        "BT /F1 10 Tf 8 72 Td (CANCAN\\137SYNTHETIC\\137PROVIDER\\137STATEMENT\\137V1 provider=hsbc document\\137type=bank\\137statement package\\137id=hsbc/bank\\137statement@1 statement\\137id=hsbc-bank\\137statement-2026-06 HSBC ACCOUNT STATEMENT WITHDRAWAL DEPOSIT BALANCE Account number HSBC-123456789 Statement currency SGD opening\\137balance 2026-06-29 100.00 posting 2026-06-30 DBS CARD PAYMENT debit 20.00 balance 80.00 closing\\137balance 2026-06-30 80.00) Tj ET",
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn dbs_card_repayment_statement_pdf() -> Vec<u8> {
+    synthetic_pdf_with_stream(
+        "BT /F1 10 Tf 8 72 Td (CANCAN\\137SYNTHETIC\\137PROVIDER\\137STATEMENT\\137V1 provider=dbs document\\137type=credit\\137card\\137statement package\\137id=dbs/credit\\137card\\137statement@1 statement\\137id=dbs-credit\\137card\\137statement-2026-07 DBS CREDIT LIMIT PAYMENT DUE DATE PREVIOUS BALANCE Account number DBS-123456789 Statement currency SGD opening\\137balance 2026-07-01 100.00 posting 2026-07-01 PAYMENT - THANK YOU credit 20.00 balance 80.00 closing\\137balance 2026-07-01 80.00) Tj ET",
+    )
+}
+
 fn synthetic_pdf_with_stream(text: &str) -> Vec<u8> {
     let objects = [
         "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 640 96] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".to_owned(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 4096 96] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".to_owned(),
         format!("<< /Length {} >>\nstream\n{text}\nendstream", text.len()),
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_owned(),
     ];

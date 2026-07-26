@@ -5,8 +5,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, vi } from "vitest";
 
 import type {
+  AccountConfirmationOutcome,
+  AccountConfirmationPrompt,
+  LocalInboxScanSummary,
+  LocalInboxStatus,
   MoneyOverview,
   MoneySourceSummary,
+  StatementCoveragePrompt,
   RecentActivitySummary,
   RelationshipCandidateSummary,
   ReviewItemDetail,
@@ -89,6 +94,52 @@ export const reviewDetail: ReviewItemDetail = {
   documentLabel: "July statement.pdf",
   sourceLabel: "DBS",
 };
+export const inboxDisabled: LocalInboxStatus = {
+  accessState: "disabled",
+  backupsPrepared: false,
+  enabled: false,
+  inboxLabel: "Inbox",
+  lastScan: null,
+};
+
+export const inboxEnabled: LocalInboxStatus = {
+  accessState: "enabled",
+  backupsPrepared: false,
+  enabled: true,
+  inboxLabel: "Inbox",
+  lastScan: null,
+};
+
+export const coveragePrompt: StatementCoveragePrompt = {
+  accountId: "account-dbs",
+  documentType: "bank_statement",
+  moneySourceId: "money-source-1",
+  statementPeriodFrom: "2026-06-01",
+  statementPeriodTo: "2026-06-30",
+  status: "confirmed_missing",
+};
+
+export const accountConfirmationPrompt: AccountConfirmationPrompt = {
+  candidateAccounts: [
+    {
+      accountId: "account-dbs",
+      accountType: "deposit_account",
+      currency: "SGD",
+      displayName: "DBS Multiplier Account",
+      maskedIdentifier: "•••• 1234",
+    },
+    {
+      accountId: "account-card",
+      accountType: "credit_card",
+      currency: "SGD",
+      displayName: "DBS Visa Card",
+      maskedIdentifier: null,
+    },
+  ],
+  displayName: "Synthetic Bank",
+  moneySourceId: "money-source-1",
+};
+
 export const reviewCandidate: RelationshipCandidateSummary = {
   accountLabel: "DBS Visa Card",
   amountValue: "512.34",
@@ -122,8 +173,15 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
       reviewItemId: null,
       status: "relationship_accepted",
     })),
+    chooseLocalInboxRoot: vi.fn(
+      async (): Promise<LocalInboxStatus | null> => null,
+    ),
+    confirmCandidateAccounts: vi.fn(
+      async (): Promise<AccountConfirmationOutcome> => ({ status: "confirmed" }),
+    ),
     createVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     deleteSourceDocument: vi.fn(async (): Promise<boolean> => true),
+    disableLocalInbox: vi.fn(async (): Promise<LocalInboxStatus> => inboxDisabled),
     editReviewRecord: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
       reason: null,
       recordVersion: 2,
@@ -153,6 +211,7 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     importSourceDocument: vi.fn(
       async (): Promise<SourceDocumentImportOutcome | null> => null,
     ),
+    listAccountConfirmationPrompts: vi.fn(async () => []),
     listMoneySources: vi.fn(async (): Promise<MoneySourceSummary[]> => []),
     listRecentActivity: vi.fn(async (): Promise<RecentActivitySummary[]> => []),
     listRelationshipCandidates: vi.fn(
@@ -160,10 +219,12 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => []),
     listSourceDocuments: vi.fn(async (): Promise<SourceDocumentSummary[]> => []),
+    listStatementCoveragePrompts: vi.fn(async () => []),
     listStatementPasswordSources: vi.fn(async () => []),
     listUnassignedSourceDocuments: vi.fn(
       async (): Promise<SourceDocumentSummary[]> => [],
     ),
+    localInboxStatus: vi.fn(async (): Promise<LocalInboxStatus> => inboxDisabled),
     lockVault: vi.fn(async (): Promise<VaultStatus> => "locked"),
     normalizeSourceDocument: vi.fn(
       async (documentId: string): Promise<SourceDocumentRoutingOutcome> => ({
@@ -183,6 +244,7 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
         truncated: false,
       }),
     ),
+    recordStatementCoverageDecision: vi.fn(async (): Promise<void> => undefined),
     rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
     removeReviewRecord: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
       reason: null,
@@ -195,6 +257,14 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
         pageCount: 2,
         pageNumber,
         pngBase64: "cmVuZGVyZWQtcGFnZQ==",
+      }),
+    ),
+    rescanLocalInbox: vi.fn(
+      async (): Promise<LocalInboxScanSummary> => ({
+        alreadyPresent: 12,
+        deferred: 1,
+        imported: 3,
+        suppressed: 2,
       }),
     ),
     saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
@@ -293,6 +363,23 @@ export async function enterInput(selector: string, value: string) {
   )?.set;
   expect(setter).toBeDefined();
 
+  await act(async () => {
+    setter!.call(input, value);
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+    await settle();
+  });
+}
+
+export async function enterRemindDate(value: string) {
+  const input = container.querySelector<HTMLInputElement>(
+    ".attention-remind input[aria-label=\"Remind after\"]",
+  );
+  expect(input).not.toBeNull();
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  expect(setter).toBeDefined();
   await act(async () => {
     setter!.call(input, value);
     input!.dispatchEvent(new Event("input", { bubbles: true }));
