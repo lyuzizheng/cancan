@@ -179,7 +179,7 @@ apps/desktop/src-tauri/src/database/
   tests.rs           database test module
 ```
 
-Splitting the `ManualImportStore` impl into per-aggregate modules is a registered follow-up in `docs/alignment-temp/alignment-progress.md`; until then the store impl carries a ratchet-only size exemption.
+Splitting the `ManualImportStore` impl into per-aggregate modules is a registered follow-up in `docs/alignment-temp/alignment-progress.md`. Files that predate the guardrail (including that store impl, `app.tsx`, and the single-file `vault`/`viewer`/`source_observations` modules) carry ratchet-only per-file exemptions recorded in the `EXEMPTIONS` map of `scripts/check-source-file-size.mjs`; an exemption ceiling may only shrink, never grow, and removing one requires the split described here.
 
 The renderer keeps `app.tsx` as orchestration state only; presentational views live in sibling modules (`sources-view.tsx`, `document-modals.tsx`, `vault-gate.tsx`, `notices.ts`, `overview.tsx`, `review.tsx`, `vault-spine.tsx`). Interaction tests split per flow with shared fixtures instead of one monolithic file.
 
