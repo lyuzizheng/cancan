@@ -1,29 +1,39 @@
 import { AppShell } from "@cancan/ui";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  EditReviewRecordArgs,
+  MoneyOverview,
   MoneySourceSummary,
+  RecentActivitySummary,
+  RelationshipCandidateSummary,
   RenderedDocumentPage,
+  ReviewItemSummary,
+  ReviewJobSummary,
   SourceDocumentImportOutcome,
   SourceDocumentPreview,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   StatementPasswordSourceSummary,
-  VaultStatus,
 } from "./command-contracts";
+import { Feedback, type Notice } from "./feedback";
+import { reviewConflictMessage } from "./format";
+import { OverviewView } from "./overview";
+import {
+  ReviewView,
+  type ReviewDetailState,
+  type ReviewEditState,
+  type ReviewJobPanelState,
+} from "./review";
 import {
   commandErrorMessage,
   createVaultApi,
   type VaultApi,
 } from "./vault-api";
+import { VaultSpine, type AppView, type VaultScreenStatus } from "./vault-spine";
 
-type VaultScreenStatus = VaultStatus | "loading";
-
-export interface Notice {
-  body: string;
-  tone: "success" | "attention";
-  title: string;
-}
+export type { Notice } from "./feedback";
+export type { VaultScreenStatus } from "./vault-spine";
 
 export interface DocumentViewerState {
   documentId: string;
@@ -52,61 +62,50 @@ export interface MoneySourceDocuments {
   source: MoneySourceSummary;
 }
 
-export interface VaultManualImportViewProps {
+export interface SourcesViewProps {
   busy: boolean;
   deletingDocumentId: string | null;
-  error: string | null;
   importing: boolean;
   loadingDocuments: boolean;
   normalizingDocumentId: string | null;
   notice: Notice | null;
-  onCloseViewer: () => void;
-  onClosePreview: () => void;
-  onCloseUnlock: () => void;
   onDelete: (documentId: string) => void;
   onImport: () => void;
   onLock: () => void;
   onNormalize: (documentId: string) => void;
   onOpenUnlock: (document: SourceDocumentSummary) => void;
-  onRetryUnlockSources: () => void;
-  onPasswordChange: (password: string) => void;
   onRefresh: () => void;
   onRememberedChange: (remembered: boolean) => void;
   onSelectMoneySource: (moneySourceId: string) => void;
   onSaveRecoveryFile: () => void;
   onSaveSourceCopy: (documentId: string) => void;
-  onSubmitPassword: () => void;
-  onUnlockWithKeychain: () => void;
-  onUnlockPasswordChange: (password: string) => void;
-  onUnlockSourceChange: (moneySourceId: string) => void;
-  onUnlockSubmit: (updateSavedPassword: boolean) => void;
   onView: (
     document: SourceDocumentSummary,
     trigger: HTMLButtonElement,
   ) => void;
-  onViewerPage: (pageNumber: number) => void;
-  password: string;
-  preview: DocumentPreviewState | null;
-  rememberedOnThisMac: boolean | null;
   recoveryConfigured: boolean;
-  savingRecoveryFile: boolean;
+  rememberedOnThisMac: boolean | null;
   savingCopyDocumentId: string | null;
+  savingRecoveryFile: boolean;
   selectedMoneySourceId: string | null;
   sourceDocuments: MoneySourceDocuments[];
   unassignedDocuments: SourceDocumentSummary[];
-  unlockingDocument: DocumentUnlockState | null;
   updatingRemembered: boolean;
-  vaultStatus: VaultScreenStatus;
-  viewer: DocumentViewerState | null;
-  viewingPage: boolean;
 }
 
 const defaultVaultApi = createVaultApi();
 const VAULT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+const REVIEW_JOB_POLL_INTERVAL_MS = 600;
+const REVIEW_JOB_MAX_POLLS = 50;
+
+const UNSIGNED_DECIMAL = /^(0|[1-9]\d*)(\.\d+)?$/;
+const SIGNED_DECIMAL = /^-?(0|[1-9]\d*)(\.\d+)?$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [vaultStatus, setVaultStatus] = useState<VaultScreenStatus>("loading");
   const [busy, setBusy] = useState(true);
+  const [activeView, setActiveView] = useState<AppView>("overview");
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [rememberedOnThisMac, setRememberedOnThisMac] = useState<boolean | null>(
@@ -134,10 +133,25 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [updatingRemembered, setUpdatingRemembered] = useState(false);
   const [savingRecoveryFile, setSavingRecoveryFile] = useState(false);
   const [savingCopyDocumentId, setSavingCopyDocumentId] = useState<string | null>(null);
+  const [reviewItems, setReviewItems] = useState<ReviewItemSummary[] | null>(null);
+  const [selectedReviewIds, setSelectedReviewIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [reviewDetail, setReviewDetail] = useState<ReviewDetailState | null>(null);
+  const [reviewJob, setReviewJob] = useState<ReviewJobPanelState | null>(null);
+  const [mutatingReviewItemId, setMutatingReviewItemId] = useState<string | null>(null);
+  const [moneyOverview, setMoneyOverview] = useState<MoneyOverview | null>(null);
+  const [recentActivity, setRecentActivity] = useState<RecentActivitySummary[] | null>(
+    null,
+  );
+  const [undoingEventId, setUndoingEventId] = useState<string | null>(null);
   const viewerRequestId = useRef(0);
   const previewRequestId = useRef(0);
   const unlockRequestId = useRef(0);
   const documentLoadRequestId = useRef(0);
+  const financeLoadRequestId = useRef(0);
+  const reviewDetailRequestId = useRef(0);
+  const reviewJobPollTimer = useRef<number | null>(null);
   const selectedMoneySourceIdRef = useRef<string | null>(null);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
   const documentLoadsAllowed = useRef(false);
@@ -148,6 +162,11 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     unlockRequestId.current += 1;
     previewRequestId.current += 1;
     documentLoadRequestId.current += 1;
+    financeLoadRequestId.current += 1;
+    reviewDetailRequestId.current += 1;
+    if (reviewJobPollTimer.current !== null) {
+      window.clearTimeout(reviewJobPollTimer.current);
+    }
   }, []);
 
   const clearViewer = useCallback((restoreFocus = true) => {
@@ -164,16 +183,27 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setPreview(null);
   }, []);
 
+  const stopReviewJobPolling = useCallback(() => {
+    if (reviewJobPollTimer.current !== null) {
+      window.clearTimeout(reviewJobPollTimer.current);
+      reviewJobPollTimer.current = null;
+    }
+  }, []);
+
   const showVaultGate = useCallback((nextStatus: VaultScreenStatus) => {
     const nextSessionId = vaultSessionId.current + 1;
     vaultSessionId.current = nextSessionId;
     documentLoadsAllowed.current = false;
     documentLoadRequestId.current += 1;
+    financeLoadRequestId.current += 1;
+    reviewDetailRequestId.current += 1;
+    stopReviewJobPolling();
     clearViewer(false);
     clearPreview();
     unlockRequestId.current += 1;
     setUnlockingDocument(null);
     setVaultStatus(nextStatus);
+    setActiveView("overview");
     setError(null);
     setNotice(null);
     setPassword("");
@@ -183,9 +213,17 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setSelectedMoneySourceId(null);
     setLoadingDocuments(false);
     setSavingCopyDocumentId(null);
+    setReviewItems(null);
+    setSelectedReviewIds(new Set());
+    setReviewDetail(null);
+    setReviewJob(null);
+    setMutatingReviewItemId(null);
+    setMoneyOverview(null);
+    setRecentActivity(null);
+    setUndoingEventId(null);
     setBusy(false);
     return nextSessionId;
-  }, [clearViewer, clearPreview]);
+  }, [clearViewer, clearPreview, stopReviewJobPolling]);
 
   useEffect(() => {
     if (viewer === null && preview === null && viewerReturnFocus.current) {
@@ -244,6 +282,42 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         && documentLoadRequestId.current === requestId
       ) {
         setLoadingDocuments(false);
+      }
+    }
+  }, [api]);
+
+  const loadFinanceData = useCallback(async () => {
+    if (!documentLoadsAllowed.current) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    const requestId = financeLoadRequestId.current + 1;
+    financeLoadRequestId.current = requestId;
+    try {
+      const [items, overview, activity] = await Promise.all([
+        api.listReviewItems(),
+        api.getMoneyOverview(),
+        api.listRecentActivity(),
+      ]);
+      if (
+        vaultSessionId.current === sessionId
+        && financeLoadRequestId.current === requestId
+      ) {
+        setReviewItems(items);
+        setMoneyOverview(overview);
+        setRecentActivity(activity);
+        setSelectedReviewIds((current) => new Set(
+          [...current].filter((id) =>
+            items.some((item) => item.reviewItemId === id)
+          ),
+        ));
+      }
+    } catch (nextError) {
+      if (
+        vaultSessionId.current === sessionId
+        && financeLoadRequestId.current === requestId
+      ) {
+        setError(commandErrorMessage(nextError));
       }
     }
   }, [api]);
@@ -314,6 +388,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         if (nextStatus === "unlocked") {
           setError(commandErrorMessage(nextError));
           await loadDocuments();
+          await loadFinanceData();
           return vaultSessionId.current === sessionId;
         }
       } catch {
@@ -323,7 +398,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       }
     }
     return false;
-  }, [api, loadDocuments, showVaultGate]);
+  }, [api, loadDocuments, loadFinanceData, showVaultGate]);
 
   useEffect(() => {
     if (vaultStatus !== "unlocked") {
@@ -385,16 +460,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
         await loadDocuments();
+        await loadFinanceData();
       } else {
-        documentLoadRequestId.current += 1;
-        setUnassignedDocuments([]);
-        setSourceDocuments([]);
-        selectedMoneySourceIdRef.current = null;
-        setSelectedMoneySourceId(null);
-        clearViewer(false);
-        clearPreview();
-        unlockRequestId.current += 1;
-        setUnlockingDocument(null);
+        showVaultGate(nextStatus);
       }
     } catch (nextError) {
       if (vaultSessionId.current === sessionId) {
@@ -405,7 +473,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setBusy(false);
       }
     }
-  }, [clearViewer, clearPreview, loadDocuments]);
+  }, [api, loadDocuments, loadFinanceData, showVaultGate]);
 
   useEffect(() => {
     let active = true;
@@ -479,6 +547,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
         await loadDocuments();
+        await loadFinanceData();
       }
     }, sessionId);
   };
@@ -496,6 +565,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         if (nextStatus === "unlocked") {
           setPassword("");
           await loadDocuments();
+          await loadFinanceData();
         }
       } catch (nextError) {
         if (vaultSessionId.current !== sessionId) {
@@ -809,281 +879,729 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     });
   };
 
-  return (
-    <VaultManualImportView
-      busy={busy}
-      deletingDocumentId={deletingDocumentId}
-      error={error}
-      importing={importing}
-      loadingDocuments={loadingDocuments}
-      normalizingDocumentId={normalizingDocumentId}
-      notice={notice}
-      onCloseViewer={clearViewer}
-      onClosePreview={clearPreview}
-      onCloseUnlock={() => {
-        unlockRequestId.current += 1;
-        setUnlockingDocument(null);
-      }}
-      onDelete={deleteDocument}
-      onImport={importDocument}
-      onLock={() => void requestVaultLock()}
-      onNormalize={normalizeDocument}
-      onOpenUnlock={openDocumentUnlock}
-      onRetryUnlockSources={() => {
-        if (unlockingDocument) {
-          loadUnlockSources(unlockingDocument.documentId, unlockingDocument.documentTitle);
-        }
-      }}
-      onPasswordChange={setPassword}
-      onRefresh={() => void refreshVaultStatus()}
-      onRememberedChange={updateRemembered}
-      onSelectMoneySource={selectMoneySource}
-      onSaveRecoveryFile={saveRecoveryFile}
-      onSaveSourceCopy={saveSourceCopy}
-      onSubmitPassword={submitPassword}
-      onUnlockWithKeychain={unlockWithKeychain}
-      onUnlockPasswordChange={(nextPassword) => setUnlockingDocument((current) => current
-        ? { ...current, error: null, password: nextPassword }
-        : current)}
-      onUnlockSourceChange={selectUnlockSource}
-      onUnlockSubmit={submitDocumentPassword}
-      onView={(document, trigger) => {
-        viewerReturnFocus.current = trigger;
-        if (document.mimeType === "text/csv") {
-          loadDocumentPreview(document.documentId, document.originalFilename);
-        } else {
-          loadViewerPage(document.documentId, document.originalFilename, 1);
-        }
-      }}
-      onViewerPage={(pageNumber) => {
-        if (viewer) {
-          loadViewerPage(viewer.documentId, viewer.documentTitle, pageNumber);
-        }
-      }}
-      password={password}
-      preview={preview}
-      rememberedOnThisMac={rememberedOnThisMac}
-      recoveryConfigured={recoveryConfigured}
-      savingRecoveryFile={savingRecoveryFile}
-      savingCopyDocumentId={savingCopyDocumentId}
-      selectedMoneySourceId={selectedMoneySourceId}
-      sourceDocuments={sourceDocuments}
-      unassignedDocuments={unassignedDocuments}
-      unlockingDocument={unlockingDocument}
-      updatingRemembered={updatingRemembered}
-      vaultStatus={vaultStatus}
-      viewer={viewer}
-      viewingPage={viewingPage}
-    />
-  );
-}
+  const navigate = (view: AppView) => {
+    setActiveView(view);
+    setError(null);
+    setNotice(null);
+  };
 
-export function VaultManualImportView(props: VaultManualImportViewProps) {
-  const unlocked = props.vaultStatus === "unlocked";
-  const modalOpen = props.viewer !== null
-    || props.preview !== null
-    || props.unlockingDocument !== null;
+  const openReviewDetail = (item: ReviewItemSummary) => {
+    const sessionId = vaultSessionId.current;
+    const requestId = reviewDetailRequestId.current + 1;
+    reviewDetailRequestId.current = requestId;
+    setReviewDetail({
+      candidates: null,
+      confirmingRemove: false,
+      detail: null,
+      editing: null,
+      reviewItemId: item.reviewItemId,
+      summary: item,
+    });
+    void Promise.all([
+      api.getReviewDetail(item.reviewItemId),
+      api.listRelationshipCandidates(item.reviewItemId, item.recordVersion),
+    ]).then(([detail, candidates]) => {
+      if (
+        vaultSessionId.current !== sessionId
+        || reviewDetailRequestId.current !== requestId
+      ) {
+        return;
+      }
+      if (detail === null) {
+        setReviewDetail(null);
+        setNotice({
+          body: "That item is no longer waiting for review.",
+          tone: "attention",
+          title: "Already resolved",
+        });
+        void loadFinanceData();
+        return;
+      }
+      setReviewDetail({
+        candidates,
+        confirmingRemove: false,
+        detail,
+        editing: null,
+        reviewItemId: item.reviewItemId,
+        summary: item,
+      });
+    }).catch((nextError) => {
+      if (
+        vaultSessionId.current === sessionId
+        && reviewDetailRequestId.current === requestId
+      ) {
+        reviewDetailRequestId.current += 1;
+        setReviewDetail(null);
+        setError(commandErrorMessage(nextError));
+      }
+    });
+  };
+
+  const closeReviewDetail = () => {
+    reviewDetailRequestId.current += 1;
+    setReviewDetail(null);
+  };
+
+  const toggleReviewSelection = (reviewItemId: string) => {
+    setSelectedReviewIds((current) => {
+      const next = new Set(current);
+      if (next.has(reviewItemId)) {
+        next.delete(reviewItemId);
+      } else {
+        next.add(reviewItemId);
+      }
+      return next;
+    });
+  };
+
+  const handleReviewConflict = async (reason: string | null) => {
+    setNotice({
+      body: reviewConflictMessage(reason),
+      tone: "attention",
+      title: "Couldn’t apply that change",
+    });
+    reviewDetailRequestId.current += 1;
+    setReviewDetail(null);
+    await loadFinanceData();
+  };
+
+  const startReviewEdit = () => {
+    setReviewDetail((current) => current === null
+      ? current
+      : {
+          ...current,
+          confirmingRemove: false,
+          editing: {
+            accountBalanceDelta: "",
+            amountValue: current.summary.amountValue ?? "",
+            error: null,
+            postedOn: current.summary.postedOn ?? "",
+            saving: false,
+          },
+        });
+  };
+
+  const cancelReviewEdit = () => {
+    setReviewDetail((current) => current === null
+      ? current
+      : { ...current, editing: null });
+  };
+
+  const changeReviewEdit = (
+    patch: Partial<Pick<
+      ReviewEditState,
+      "accountBalanceDelta" | "amountValue" | "postedOn"
+    >>,
+  ) => {
+    setReviewDetail((current) => current?.editing
+      ? { ...current, editing: { ...current.editing, ...patch, error: null } }
+      : current);
+  };
+
+  const setReviewEditError = (message: string) => {
+    setReviewDetail((current) => current?.editing
+      ? { ...current, editing: { ...current.editing, error: message, saving: false } }
+      : current);
+  };
+
+  const saveReviewEdit = async () => {
+    const state = reviewDetail;
+    if (!state?.editing || mutatingReviewItemId !== null) {
+      return;
+    }
+    const { editing } = state;
+    const patch: Omit<EditReviewRecordArgs, "expectedRecordVersion" | "reviewItemId"> = {};
+    const amountValue = editing.amountValue.trim();
+    const postedOn = editing.postedOn.trim();
+    const accountBalanceDelta = editing.accountBalanceDelta.trim();
+    if (amountValue !== (state.summary.amountValue ?? "")) {
+      if (!UNSIGNED_DECIMAL.test(amountValue)) {
+        setReviewEditError("Amount must be a positive decimal, such as 128.50.");
+        return;
+      }
+      patch.amountValue = amountValue;
+    }
+    if (postedOn !== (state.summary.postedOn ?? "")) {
+      if (!ISO_DATE.test(postedOn) || !isRealIsoDate(postedOn)) {
+        setReviewEditError("Date must use the YYYY-MM-DD format, such as 2026-07-19.");
+        return;
+      }
+      patch.postedOn = postedOn;
+    }
+    if (accountBalanceDelta !== "") {
+      if (!SIGNED_DECIMAL.test(accountBalanceDelta)) {
+        setReviewEditError("Balance change must be a signed decimal, such as -128.50.");
+        return;
+      }
+      patch.accountBalanceDelta = accountBalanceDelta;
+    }
+    if (
+      patch.amountValue === undefined
+      && patch.postedOn === undefined
+      && patch.accountBalanceDelta === undefined
+    ) {
+      setReviewEditError("Change something before saving.");
+      return;
+    }
+
+    const sessionId = vaultSessionId.current;
+    setMutatingReviewItemId(state.reviewItemId);
+    setReviewDetail((current) => current?.editing
+      ? { ...current, editing: { ...current.editing, saving: true } }
+      : current);
+    try {
+      const outcome = await api.editReviewRecord(
+        state.reviewItemId,
+        state.summary.recordVersion,
+        patch,
+      );
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      if (outcome.status === "conflict") {
+        setMutatingReviewItemId(null);
+        await handleReviewConflict(outcome.reason);
+        return;
+      }
+      setNotice({
+        body: "CanCan will use the corrected details from now on.",
+        tone: "success",
+        title: "Edit saved",
+      });
+      setMutatingReviewItemId(null);
+      await loadFinanceData();
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      if (outcome.reviewItemId !== null) {
+        const refreshed = await api.listReviewItems();
+        if (vaultSessionId.current !== sessionId) {
+          return;
+        }
+        const nextItem = refreshed.find(
+          (item) => item.reviewItemId === outcome.reviewItemId,
+        );
+        if (nextItem) {
+          openReviewDetail(nextItem);
+        } else {
+          closeReviewDetail();
+        }
+      } else {
+        closeReviewDetail();
+      }
+    } catch (nextError) {
+      if (vaultSessionId.current === sessionId) {
+        setMutatingReviewItemId(null);
+        setReviewDetail((current) => current?.editing
+          ? { ...current, editing: { ...current.editing, saving: false } }
+          : current);
+        setError(commandErrorMessage(nextError));
+      }
+    }
+  };
+
+  const requestReviewRemove = () => {
+    setReviewDetail((current) => current === null
+      ? current
+      : { ...current, confirmingRemove: true, editing: null });
+  };
+
+  const cancelReviewRemove = () => {
+    setReviewDetail((current) => current === null
+      ? current
+      : { ...current, confirmingRemove: false });
+  };
+
+  const confirmReviewRemove = async () => {
+    const state = reviewDetail;
+    if (!state || mutatingReviewItemId !== null) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setMutatingReviewItemId(state.reviewItemId);
+    try {
+      const outcome = await api.removeReviewRecord(
+        state.reviewItemId,
+        state.summary.recordVersion,
+      );
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      setMutatingReviewItemId(null);
+      if (outcome.status === "conflict") {
+        await handleReviewConflict(outcome.reason);
+        return;
+      }
+      reviewDetailRequestId.current += 1;
+      setReviewDetail(null);
+      setSelectedReviewIds((current) => {
+        const next = new Set(current);
+        next.delete(state.reviewItemId);
+        return next;
+      });
+      setNotice({
+        body: "The staged record is out of the queue. Its history stays in your audit trail.",
+        tone: "success",
+        title: "Record removed",
+      });
+      await loadFinanceData();
+    } catch (nextError) {
+      if (vaultSessionId.current === sessionId) {
+        setMutatingReviewItemId(null);
+        setError(commandErrorMessage(nextError));
+      }
+    }
+  };
+
+  const acceptReviewCandidate = async (candidate: RelationshipCandidateSummary) => {
+    const state = reviewDetail;
+    if (!state || mutatingReviewItemId !== null) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setMutatingReviewItemId(state.reviewItemId);
+    try {
+      const outcome = await api.acceptReviewRelationship(
+        state.reviewItemId,
+        state.summary.recordVersion,
+        candidate.recordId,
+        candidate.recordVersion,
+      );
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      setMutatingReviewItemId(null);
+      if (outcome.status === "conflict") {
+        await handleReviewConflict(outcome.reason);
+        return;
+      }
+      setSelectedReviewIds((current) => {
+        const next = new Set(current);
+        next.add(state.reviewItemId);
+        const linked = reviewItems?.find(
+          (item) => item.recordId === candidate.recordId,
+        );
+        if (linked) {
+          next.add(linked.reviewItemId);
+        }
+        return next;
+      });
+      setNotice({
+        body: "CanCan will treat them as one event. Add both together when you’re ready.",
+        tone: "success",
+        title: "Linked",
+      });
+      await loadFinanceData();
+      if (vaultSessionId.current === sessionId) {
+        openReviewDetail(state.summary);
+      }
+    } catch (nextError) {
+      if (vaultSessionId.current === sessionId) {
+        setMutatingReviewItemId(null);
+        setError(commandErrorMessage(nextError));
+      }
+    }
+  };
+
+  const finishReviewJob = (summary: ReviewJobSummary) => {
+    if (summary.status === "succeeded") {
+      setReviewJob({ jobId: summary.jobId, outcomes: summary.outcomes, status: "done" });
+    } else {
+      setReviewJob({ jobId: summary.jobId, outcomes: summary.outcomes, status: "failed" });
+    }
+    setSelectedReviewIds(new Set());
+    void loadFinanceData();
+  };
+
+  const pollReviewJob = (jobId: string, attempt: number) => {
+    stopReviewJobPolling();
+    if (attempt >= REVIEW_JOB_MAX_POLLS) {
+      setReviewJob({ jobId, outcomes: [], status: "failed" });
+      setSelectedReviewIds(new Set());
+      void loadFinanceData();
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    reviewJobPollTimer.current = window.setTimeout(() => {
+      reviewJobPollTimer.current = null;
+      void api.getReviewJob(jobId).then((summary) => {
+        if (vaultSessionId.current !== sessionId) {
+          return;
+        }
+        if (summary === null) {
+          setReviewJob({ jobId, outcomes: [], status: "failed" });
+          setSelectedReviewIds(new Set());
+          void loadFinanceData();
+          return;
+        }
+        if (
+          summary.status === "queued"
+          || summary.status === "running"
+        ) {
+          pollReviewJob(jobId, attempt + 1);
+          return;
+        }
+        finishReviewJob(summary);
+      }).catch(() => {
+        if (vaultSessionId.current === sessionId) {
+          pollReviewJob(jobId, attempt + 1);
+        }
+      });
+    }, REVIEW_JOB_POLL_INTERVAL_MS);
+  };
+
+  const enqueueReviewBatch = () => {
+    if (reviewItems === null || reviewJob?.status === "running") {
+      return;
+    }
+    const ids = reviewItems
+      .filter((item) => selectedReviewIds.has(item.reviewItemId))
+      .map((item) => item.reviewItemId);
+    if (ids.length === 0) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setNotice(null);
+    setReviewJob({ jobId: "", outcomes: [], status: "running" });
+    void api.enqueueCommitReviewBatch(ids).then((summary) => {
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      setReviewJob({ jobId: summary.jobId, outcomes: [], status: "running" });
+      if (summary.status === "queued" || summary.status === "running") {
+        pollReviewJob(summary.jobId, 0);
+        return;
+      }
+      finishReviewJob(summary);
+    }).catch((nextError) => {
+      if (vaultSessionId.current === sessionId) {
+        setReviewJob(null);
+        setError(commandErrorMessage(nextError));
+      }
+    });
+  };
+
+  const undoCommittedEvent = (eventId: string) => {
+    if (undoingEventId !== null) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setUndoingEventId(eventId);
+    void run(async () => {
+      const outcome = await api.undoCommittedEvent(eventId);
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      setNotice(
+        outcome.status === "undone"
+          ? {
+              body: "CanCan added the reversal to your recent activity.",
+              tone: "success",
+              title: "Undone",
+            }
+          : {
+              body: "That event was already reversed.",
+              tone: "attention",
+              title: "Already undone",
+            },
+      );
+      await loadFinanceData();
+    }, sessionId).finally(() => {
+      if (vaultSessionId.current === sessionId) {
+        setUndoingEventId(null);
+      }
+    });
+  };
+
+  const modalOpen = viewer !== null
+    || preview !== null
+    || unlockingDocument !== null;
+  const unlocked = vaultStatus === "unlocked";
 
   return (
     <AppShell>
-      <aside aria-hidden={modalOpen ? true : undefined} className="vault-spine" inert={modalOpen} aria-label="CanCan Vault">
-        <div className="vault-brand">
-          <span className="vault-mark" aria-hidden="true">C</span>
-          <span>CanCan</span>
-        </div>
-        <nav className="vault-nav" aria-label="Command Center">
-          <p className="vault-nav-label">Command Center</p>
-          <ul className="vault-nav-list">
-            <li><span className="vault-nav-item vault-nav-item-active" aria-current="page"><NavIcon name="sources" />Sources<span className="vault-nav-dot" aria-hidden="true" /></span></li>
-            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="assets" />Assets</span></li>
-            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="transactions" />Transactions</span></li>
-            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="review" />Review</span></li>
-            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="money-flow" />Money Flow</span></li>
-            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="jobs" />Jobs</span></li>
-            <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="settings" />Settings</span></li>
-          </ul>
-        </nav>
-        <div className="vault-assistant">
-          <span className="vault-nav-item vault-nav-upcoming"><NavIcon name="assistant" />AI Assistant</span>
-        </div>
-        <div className="vault-spine-status">
-          <p className="vault-spine-label">Local Vault</p>
-          <p className="vault-spine-state">
-            <span className={`vault-status-light vault-status-${props.vaultStatus}`} aria-hidden="true" />
-            {vaultStatusLabel(props.vaultStatus)}
-          </p>
-          <p className="vault-spine-copy">Evidence stays encrypted on this Mac.</p>
-        </div>
-        <p className="vault-spine-footnote">Manual import</p>
-      </aside>
+      <VaultSpine
+        activeView={activeView}
+        inert={modalOpen}
+        onNavigate={navigate}
+        reviewCount={unlocked ? reviewItems?.length ?? null : null}
+        vaultStatus={vaultStatus}
+      />
 
-      <section aria-hidden={modalOpen ? true : undefined} className="ledger" inert={modalOpen} aria-busy={props.vaultStatus === "loading"}>
-        <header className="ledger-header">
-          <div>
-            <p className="ledger-eyebrow">Sources / Evidence</p>
-            <h1>Secure file intake</h1>
-          </div>
-          {unlocked ? (
-            <div className="ledger-actions">
-              <label className="remember-vault-control">
-                <input
-                  checked={props.rememberedOnThisMac === true}
-                  disabled={props.busy || props.normalizingDocumentId !== null || props.rememberedOnThisMac === null}
-                  onChange={(event) => props.onRememberedChange(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>{props.updatingRemembered ? "Updating Keychain…" : props.rememberedOnThisMac === null ? "Keychain unavailable" : "Remember on this Mac"}</span>
-              </label>
-              <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onLock} type="button">
-                Lock Vault
-              </button>
-              <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onImport} type="button">
-                {props.importing ? "Opening picker…" : "Add file"}
-              </button>
-            </div>
-          ) : null}
-        </header>
-
-        {props.error ? (
-          <Feedback tone="error" title="Something needs your attention" body={props.error} action={props.onRefresh} />
+      <section
+        aria-hidden={modalOpen ? true : undefined}
+        className="ledger"
+        inert={modalOpen}
+        aria-busy={vaultStatus === "loading"}
+      >
+        {error ? (
+          <Feedback tone="error" title="Something needs your attention" body={error} action={() => void refreshVaultStatus()} />
         ) : null}
 
-        {props.vaultStatus === "loading" ? (
+        {vaultStatus === "loading" ? (
           <VaultGate busy title="Checking your Vault" body="Confirming the local Vault state before showing evidence." />
         ) : null}
 
-        {props.vaultStatus === "not_created" || props.vaultStatus === "locked" ? (
+        {vaultStatus === "not_created" || vaultStatus === "locked" ? (
           <VaultGate
-            busy={props.busy}
-            body={props.vaultStatus === "not_created" ? "Create a local Vault before adding your first statement or export." : "Unlock your local Vault to add a file or check its routing."}
-            password={props.password}
-            rememberedOnThisMac={props.rememberedOnThisMac}
-            title={props.vaultStatus === "not_created" ? "Create your Vault" : "Unlock your Vault"}
-            onPasswordChange={props.onPasswordChange}
-            onSubmit={props.onSubmitPassword}
-            onUnlockWithKeychain={props.vaultStatus === "locked" ? props.onUnlockWithKeychain : undefined}
+            busy={busy}
+            body={vaultStatus === "not_created" ? "Create a local Vault before adding your first statement or export." : "Unlock your local Vault to add a file or check its routing."}
+            password={password}
+            rememberedOnThisMac={rememberedOnThisMac}
+            title={vaultStatus === "not_created" ? "Create your Vault" : "Unlock your Vault"}
+            onPasswordChange={setPassword}
+            onSubmit={submitPassword}
+            onUnlockWithKeychain={vaultStatus === "locked" ? unlockWithKeychain : undefined}
           />
         ) : null}
 
-        {unlocked ? (
-          <section className="intake-content" aria-label="Manual import">
-            {!props.recoveryConfigured ? (
-              <section className="todo-panel" aria-labelledby="todo-heading">
-                <div className="todo-panel-heading">
-                  <h2 id="todo-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />To do</h2>
-                  <span className="attention-count" aria-label="1 task">1</span>
-                </div>
-                <ul className="todo-list">
-                  <li className="todo-row">
-                    <div>
-                      <p className="todo-title">Save your recovery file</p>
-                      <p className="todo-copy">Use it to recover your Vault if you lose access to this Mac or forget your password. Anyone with the file can recover compatible Vault data, so store it privately.</p>
-                    </div>
-                    <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onSaveRecoveryFile} type="button">
-                      {props.savingRecoveryFile ? "Saving…" : "Save recovery file"}
-                    </button>
-                  </li>
-                </ul>
-              </section>
-            ) : null}
+        {unlocked && activeView === "overview" ? (
+          <OverviewView
+            loading={moneyOverview === null && recentActivity === null}
+            moneyOverview={moneyOverview}
+            notice={notice}
+            onLock={() => void requestVaultLock()}
+            onOpenReview={() => navigate("review")}
+            onOpenSources={() => navigate("sources")}
+            onRefresh={() => void refreshVaultStatus()}
+            onUndo={undoCommittedEvent}
+            recentActivity={recentActivity}
+            reviewCount={reviewItems?.length ?? null}
+            undoingEventId={undoingEventId}
+          />
+        ) : null}
 
-            <section className="intake-intro">
-              <h2>Add a statement or export</h2>
-              <p>Choose a PDF, CSV, PNG, or JPEG. CanCan saves it in your Vault before checking its configured source.</p>
-            </section>
+        {unlocked && activeView === "review" ? (
+          <ReviewView
+            detail={reviewDetail}
+            items={reviewItems}
+            job={reviewJob}
+            mutatingItemId={mutatingReviewItemId}
+            notice={notice}
+            onAcceptCandidate={(candidate) => void acceptReviewCandidate(candidate)}
+            onCancelEdit={cancelReviewEdit}
+            onCancelRemove={cancelReviewRemove}
+            onClearSelection={() => setSelectedReviewIds(new Set())}
+            onCloseDetail={closeReviewDetail}
+            onConfirmRemove={() => void confirmReviewRemove()}
+            onEditChange={changeReviewEdit}
+            onEnqueue={enqueueReviewBatch}
+            onLock={() => void requestVaultLock()}
+            onOpenDetail={openReviewDetail}
+            onRefresh={() => void refreshVaultStatus()}
+            onRemove={requestReviewRemove}
+            onSaveEdit={() => void saveReviewEdit()}
+            onSelectAll={() => setSelectedReviewIds(new Set(
+              reviewItems?.map((item) => item.reviewItemId) ?? [],
+            ))}
+            onStartEdit={startReviewEdit}
+            onToggleSelect={toggleReviewSelection}
+            selectedIds={selectedReviewIds}
+          />
+        ) : null}
 
-            {props.notice ? <Feedback {...props.notice} /> : null}
-
-            <section className="source-panel" aria-labelledby="sources-heading">
-              <div className="source-panel-heading">
-                <h2 id="sources-heading"><span className="panel-dot panel-dot-emerald" aria-hidden="true" />Money Sources</h2>
-                <span className="source-count" aria-label={`${props.sourceDocuments.length} ${props.sourceDocuments.length === 1 ? "source" : "sources"}`}>
-                  {props.sourceDocuments.length}
-                </span>
-              </div>
-              {props.loadingDocuments ? <p className="panel-status" role="status">Refreshing sources…</p> : null}
-              {!props.loadingDocuments && props.sourceDocuments.length === 0 ? (
-                <p className="panel-status">No Money Sources are configured yet.</p>
-              ) : null}
-              {props.sourceDocuments.map(({ documents, source }) => {
-                const selected = props.selectedMoneySourceId === source.moneySourceId;
-                return (
-                  <section className="source-documents" key={source.moneySourceId}>
-                    <div className="source-documents-heading">
-                      <div>
-                        <h3>{source.displayName}</h3>
-                        <p>{sourceTypeLabel(source.sourceType)}</p>
-                      </div>
-                      <button
-                        aria-expanded={selected}
-                        aria-label={`View documents for ${source.displayName}`}
-                        className="button button-quiet"
-                        disabled={props.loadingDocuments}
-                        onClick={() => props.onSelectMoneySource(source.moneySourceId)}
-                        type="button"
-                      >
-                        {selected && documents !== null
-                          ? "Refresh documents"
-                          : "View documents"}
-                      </button>
-                    </div>
-                  {selected && documents === null && props.loadingDocuments ? (
-                    <p className="panel-status" role="status">Loading documents…</p>
-                  ) : null}
-                    {selected && documents?.length === 0 ? (
-                      <p className="panel-status">No routed documents yet.</p>
-                    ) : null}
-                    {selected && documents && documents.length > 0 ? (
-                      <EvidenceDocumentGroups documents={documents} props={props} showRouting={false} />
-                    ) : null}
-                  </section>
-                );
-              })}
-            </section>
-
-            <section className="attention-panel" aria-labelledby="attention-heading">
-              <div className="attention-panel-heading">
-                <h2 id="attention-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />Needs attention</h2>
-                <span className="attention-count" aria-label={`${props.unassignedDocuments.length} documents`}>
-                  {props.unassignedDocuments.length}
-                </span>
-              </div>
-
-              {!props.loadingDocuments && props.unassignedDocuments.length === 0 ? (
-                <p className="panel-status">No evidence needs your attention.</p>
-              ) : null}
-              {props.unassignedDocuments.length > 0 ? (
-                <EvidenceDocumentGroups documents={props.unassignedDocuments} props={props} showRouting />
-              ) : null}
-            </section>
-          </section>
+        {unlocked && activeView === "sources" ? (
+          <SourcesView
+            busy={busy}
+            deletingDocumentId={deletingDocumentId}
+            importing={importing}
+            loadingDocuments={loadingDocuments}
+            normalizingDocumentId={normalizingDocumentId}
+            notice={notice}
+            onDelete={deleteDocument}
+            onImport={importDocument}
+            onLock={() => void requestVaultLock()}
+            onNormalize={normalizeDocument}
+            onOpenUnlock={openDocumentUnlock}
+            onRefresh={() => void refreshVaultStatus()}
+            onRememberedChange={updateRemembered}
+            onSelectMoneySource={selectMoneySource}
+            onSaveRecoveryFile={saveRecoveryFile}
+            onSaveSourceCopy={saveSourceCopy}
+            onView={(document, trigger) => {
+              viewerReturnFocus.current = trigger;
+              if (document.mimeType === "text/csv") {
+                loadDocumentPreview(document.documentId, document.originalFilename);
+              } else {
+                loadViewerPage(document.documentId, document.originalFilename, 1);
+              }
+            }}
+            recoveryConfigured={recoveryConfigured}
+            rememberedOnThisMac={rememberedOnThisMac}
+            savingCopyDocumentId={savingCopyDocumentId}
+            savingRecoveryFile={savingRecoveryFile}
+            selectedMoneySourceId={selectedMoneySourceId}
+            sourceDocuments={sourceDocuments}
+            unassignedDocuments={unassignedDocuments}
+            updatingRemembered={updatingRemembered}
+          />
         ) : null}
       </section>
-      {unlocked && props.viewer ? (
+      {unlocked && viewer ? (
         <DocumentViewer
-          onClose={props.onCloseViewer}
-          onPage={props.onViewerPage}
-          viewer={props.viewer}
-          viewingPage={props.viewingPage}
+          onClose={clearViewer}
+          onPage={(pageNumber) => {
+            if (viewer) {
+              loadViewerPage(viewer.documentId, viewer.documentTitle, pageNumber);
+            }
+          }}
+          viewer={viewer}
+          viewingPage={viewingPage}
         />
       ) : null}
-      {unlocked && props.preview ? (
+      {unlocked && preview ? (
         <DocumentPreview
-          onClose={props.onClosePreview}
-          state={props.preview}
+          onClose={clearPreview}
+          state={preview}
         />
       ) : null}
-      {unlocked && props.unlockingDocument ? (
+      {unlocked && unlockingDocument ? (
         <DocumentUnlock
-          onClose={props.onCloseUnlock}
-          onPasswordChange={props.onUnlockPasswordChange}
-          onRetrySources={props.onRetryUnlockSources}
-          onSourceChange={props.onUnlockSourceChange}
-          onSubmit={props.onUnlockSubmit}
-          state={props.unlockingDocument}
+          onClose={() => {
+            unlockRequestId.current += 1;
+            setUnlockingDocument(null);
+          }}
+          onPasswordChange={(nextPassword) => setUnlockingDocument((current) => current
+            ? { ...current, error: null, password: nextPassword }
+            : current)}
+          onRetrySources={() => {
+            if (unlockingDocument) {
+              loadUnlockSources(unlockingDocument.documentId, unlockingDocument.documentTitle);
+            }
+          }}
+          onSourceChange={selectUnlockSource}
+          onSubmit={submitDocumentPassword}
+          state={unlockingDocument}
         />
       ) : null}
     </AppShell>
+  );
+}
+
+function isRealIsoDate(value: string): boolean {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export function SourcesView(props: SourcesViewProps) {
+  return (
+    <>
+      <header className="ledger-header">
+        <div>
+          <p className="ledger-eyebrow">Sources / Evidence</p>
+          <h1>Secure file intake</h1>
+        </div>
+        <div className="ledger-actions">
+          <label className="remember-vault-control">
+            <input
+              checked={props.rememberedOnThisMac === true}
+              disabled={props.busy || props.normalizingDocumentId !== null || props.rememberedOnThisMac === null}
+              onChange={(event) => props.onRememberedChange(event.target.checked)}
+              type="checkbox"
+            />
+            <span>{props.updatingRemembered ? "Updating Keychain…" : props.rememberedOnThisMac === null ? "Keychain unavailable" : "Remember on this Mac"}</span>
+          </label>
+          <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onLock} type="button">
+            Lock Vault
+          </button>
+          <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onImport} type="button">
+            {props.importing ? "Opening picker…" : "Add file"}
+          </button>
+        </div>
+      </header>
+
+      <section className="intake-content" aria-label="Manual import">
+        {!props.recoveryConfigured ? (
+          <section className="todo-panel" aria-labelledby="todo-heading">
+            <div className="todo-panel-heading">
+              <h2 id="todo-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />To do</h2>
+              <span className="attention-count" aria-label="1 task">1</span>
+            </div>
+            <ul className="todo-list">
+              <li className="todo-row">
+                <div>
+                  <p className="todo-title">Save your recovery file</p>
+                  <p className="todo-copy">Use it to recover your Vault if you lose access to this Mac or forget your password. Anyone with the file can recover compatible Vault data, so store it privately.</p>
+                </div>
+                <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onSaveRecoveryFile} type="button">
+                  {props.savingRecoveryFile ? "Saving…" : "Save recovery file"}
+                </button>
+              </li>
+            </ul>
+          </section>
+        ) : null}
+
+        <section className="intake-intro">
+          <h2>Add a statement or export</h2>
+          <p>Choose a PDF, CSV, PNG, or JPEG. CanCan saves it in your Vault before checking its configured source.</p>
+        </section>
+
+        {props.notice ? <Feedback {...props.notice} /> : null}
+
+        <section className="source-panel" aria-labelledby="sources-heading">
+          <div className="source-panel-heading">
+            <h2 id="sources-heading"><span className="panel-dot panel-dot-emerald" aria-hidden="true" />Money Sources</h2>
+            <span className="source-count" aria-label={`${props.sourceDocuments.length} ${props.sourceDocuments.length === 1 ? "source" : "sources"}`}>
+              {props.sourceDocuments.length}
+            </span>
+          </div>
+          {props.loadingDocuments ? <p className="panel-status" role="status">Refreshing sources…</p> : null}
+          {!props.loadingDocuments && props.sourceDocuments.length === 0 ? (
+            <p className="panel-status">No Money Sources are configured yet.</p>
+          ) : null}
+          {props.sourceDocuments.map(({ documents, source }) => {
+            const selected = props.selectedMoneySourceId === source.moneySourceId;
+            return (
+              <section className="source-documents" key={source.moneySourceId}>
+                <div className="source-documents-heading">
+                  <div>
+                    <h3>{source.displayName}</h3>
+                    <p>{sourceTypeLabel(source.sourceType)}</p>
+                  </div>
+                  <button
+                    aria-expanded={selected}
+                    aria-label={`View documents for ${source.displayName}`}
+                    className="button button-quiet"
+                    disabled={props.loadingDocuments}
+                    onClick={() => props.onSelectMoneySource(source.moneySourceId)}
+                    type="button"
+                  >
+                    {selected && documents !== null
+                      ? "Refresh documents"
+                      : "View documents"}
+                  </button>
+                </div>
+              {selected && documents === null && props.loadingDocuments ? (
+                <p className="panel-status" role="status">Loading documents…</p>
+              ) : null}
+              {selected && documents?.length === 0 ? (
+                <p className="panel-status">No routed documents yet.</p>
+              ) : null}
+              {selected && documents && documents.length > 0 ? (
+                <EvidenceDocumentGroups documents={documents} props={props} showRouting={false} />
+              ) : null}
+              </section>
+            );
+          })}
+        </section>
+
+        <section className="attention-panel" aria-labelledby="attention-heading">
+          <div className="attention-panel-heading">
+            <h2 id="attention-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />Needs attention</h2>
+            <span className="attention-count" aria-label={`${props.unassignedDocuments.length} documents`}>
+              {props.unassignedDocuments.length}
+            </span>
+          </div>
+
+          {!props.loadingDocuments && props.unassignedDocuments.length === 0 ? (
+            <p className="panel-status">No evidence needs your attention.</p>
+          ) : null}
+          {props.unassignedDocuments.length > 0 ? (
+            <EvidenceDocumentGroups documents={props.unassignedDocuments} props={props} showRouting />
+          ) : null}
+        </section>
+      </section>
+    </>
   );
 }
 
@@ -1093,7 +1611,7 @@ function EvidenceDocumentGroups({
   showRouting,
 }: {
   documents: SourceDocumentSummary[];
-  props: VaultManualImportViewProps;
+  props: SourcesViewProps;
   showRouting: boolean;
 }) {
   return groupEvidenceByMonth(documents).map((group) => (
@@ -1163,7 +1681,7 @@ function EvidenceDocumentGroups({
   ));
 }
 
-function DocumentUnlock({
+export function DocumentUnlock({
   onClose,
   onPasswordChange,
   onRetrySources,
@@ -1283,7 +1801,7 @@ function DocumentUnlock({
   );
 }
 
-function DocumentViewer({
+export function DocumentViewer({
   onClose,
   onPage,
   viewer,
@@ -1351,7 +1869,7 @@ function DocumentViewer({
   );
 }
 
-function DocumentPreview({
+export function DocumentPreview({
   onClose,
   state,
 }: {
@@ -1420,7 +1938,7 @@ function DocumentPreview({
   );
 }
 
-function VaultGate({
+export function VaultGate({
   body,
   busy,
   onPasswordChange,
@@ -1464,15 +1982,6 @@ function VaultGate({
   );
 }
 
-function Feedback({ action, body, title, tone }: Omit<Notice, "tone"> & { action?: () => void; tone: Notice["tone"] | "error" }) {
-  return (
-    <section className={`feedback feedback-${tone}`} aria-live="polite">
-      <div><p className="feedback-title">{title}</p><p>{body}</p></div>
-      {action ? <button className="button button-quiet" onClick={action} type="button">Try again</button> : null}
-    </section>
-  );
-}
-
 export function importNotice(status: SourceDocumentImportOutcome["status"] | "cancelled"): Notice {
   const notices: Record<SourceDocumentImportOutcome["status"] | "cancelled", Notice> = {
     imported: { tone: "success", title: "Added to your Vault", body: "Your file is safely stored. Check its routing when you’re ready." },
@@ -1500,10 +2009,6 @@ export function routingNotice(
 
 function sourceTypeLabel(sourceType: string) {
   return sourceType.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
-}
-
-function vaultStatusLabel(status: VaultScreenStatus) {
-  return status === "unlocked" ? "Vault unlocked" : status === "locked" ? "Vault locked" : status === "not_created" ? "Vault setup needed" : "Checking Vault";
 }
 
 function fileStateLabel(fileState: SourceDocumentSummary["fileState"]) {
@@ -1604,70 +2109,4 @@ export function groupEvidenceByMonth(
     }
     return b.key.localeCompare(a.key);
   });
-}
-
-type NavIconName =
-  | "sources"
-  | "assets"
-  | "transactions"
-  | "review"
-  | "money-flow"
-  | "jobs"
-  | "settings"
-  | "assistant";
-
-function NavIcon({ name }: { name: NavIconName }) {
-  const shapes: Record<NavIconName, ReactNode> = {
-    sources: (
-      <>
-        <rect x="3" y="3" width="12" height="12" rx="2" />
-        <path d="M3 8h12" />
-      </>
-    ),
-    assets: (
-      <>
-        <circle cx="9" cy="9" r="6" />
-        <path d="M9 3v6l4.2 2.4" />
-      </>
-    ),
-    transactions: (
-      <>
-        <path d="M3 6h10" />
-        <path d="M10 3l3 3-3 3" />
-        <path d="M15 12H5" />
-        <path d="M8 9l-3 3 3 3" />
-      </>
-    ),
-    review: (
-      <>
-        <rect x="3" y="3" width="12" height="12" rx="2" />
-        <path d="M6 9.2l2.2 2.2 4-4.4" />
-      </>
-    ),
-    "money-flow": <path d="M3 13.5l3.8-3.8 3 3 5.2-5.7" />,
-    jobs: <path d="M5 4.5h8M5 9h8M5 13.5h5" />,
-    settings: (
-      <>
-        <circle cx="9" cy="9" r="2.2" />
-        <path d="M9 3v2.1M9 12.9V15M3 9h2.1M12.9 9H15M5.2 5.2l1.5 1.5M11.3 11.3l1.5 1.5M12.8 5.2l-1.5 1.5M6.7 11.3l-1.5 1.5" />
-      </>
-    ),
-    assistant: (
-      <path d="M4 3.5h10a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-4.5 3v-12a1.5 1.5 0 0 1 .5-1z" />
-    ),
-  };
-  return (
-    <svg
-      aria-hidden="true"
-      className="vault-nav-icon"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="1.5"
-      viewBox="0 0 18 18"
-    >
-      {shapes[name]}
-    </svg>
-  );
 }

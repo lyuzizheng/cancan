@@ -2,14 +2,29 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import type {
+  AcceptReviewRelationshipArgs,
+  EditReviewRecordArgs,
+  EnqueueCommitReviewBatchArgs,
+  GetReviewJobArgs,
   DeleteSourceDocumentArgs,
   ListSourceDocumentsArgs,
+  LocalInboxScanSummary,
+  LocalInboxStatus,
+  MoneyOverview,
   MoneySourceSummary,
   NormalizeSourceDocumentArgs,
   PreviewSourceDocumentArgs,
+  RecentActivitySummary,
   RemoveStatementPasswordArgs,
+  ReviewItemDetail,
+  ReviewItemIdArgs,
+  ReviewItemSummary,
+  ReviewJobSummary,
+  ReviewMutationOutcome,
   RenderedDocumentPage,
+  RecordStatementCoverageDecisionArgs,
   RenderSourceDocumentPageArgs,
+  RelationshipCandidateSummary,
   SavedStatementPasswordResult,
   SaveSourceDocumentCopyArgs,
   SourceDocumentImportOutcome,
@@ -17,11 +32,16 @@ import type {
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   DocumentStatementPasswordArgs,
+  StatementCoverageDecisionArgs,
+  StatementCoveragePrompt,
   StatementPasswordSourceSummary,
   TrySavedStatementPasswordArgs,
+  UndoCommittedEventArgs,
+  UndoOutcome,
   VaultAccessStatus,
   VaultPasswordArgs,
   VaultStatus,
+  ReviewVersionArgs,
 } from "./command-contracts";
 
 export type TauriInvoke = <
@@ -38,26 +58,59 @@ export type TauriListen = (
 ) => Promise<() => void>;
 
 export interface VaultApi {
+  acceptReviewRelationship(
+    reviewItemId: string,
+    expectedRecordVersion: number,
+    candidateRecordId: string,
+    expectedCandidateVersion: number,
+  ): Promise<ReviewMutationOutcome>;
   createVault(password: string): Promise<VaultStatus>;
+  chooseLocalInboxRoot(): Promise<LocalInboxStatus | null>;
   deleteSourceDocument(documentId: string): Promise<boolean>;
+  disableLocalInbox(): Promise<LocalInboxStatus>;
+  editReviewRecord(
+    reviewItemId: string,
+    expectedRecordVersion: number,
+    patch: Omit<EditReviewRecordArgs, "expectedRecordVersion" | "reviewItemId">,
+  ): Promise<ReviewMutationOutcome>;
+  enqueueCommitReviewBatch(reviewItemIds: string[]): Promise<ReviewJobSummary>;
   forgetVaultOnThisMac(): Promise<void>;
+  getMoneyOverview(): Promise<MoneyOverview>;
+  getReviewDetail(reviewItemId: string): Promise<ReviewItemDetail | null>;
+  getReviewJob(jobId: string): Promise<ReviewJobSummary | null>;
   importSourceDocument(): Promise<SourceDocumentImportOutcome | null>;
   listMoneySources(): Promise<MoneySourceSummary[]>;
+  listStatementCoveragePrompts(): Promise<StatementCoveragePrompt[]>;
+  listRecentActivity(): Promise<RecentActivitySummary[]>;
+  listRelationshipCandidates(
+    reviewItemId: string,
+    expectedRecordVersion: number,
+  ): Promise<RelationshipCandidateSummary[]>;
+  listReviewItems(): Promise<ReviewItemSummary[]>;
   listSourceDocuments(moneySourceId: string): Promise<SourceDocumentSummary[]>;
   listStatementPasswordSources(): Promise<StatementPasswordSourceSummary[]>;
   listUnassignedSourceDocuments(): Promise<SourceDocumentSummary[]>;
   lockVault(): Promise<VaultStatus>;
+  localInboxStatus(): Promise<LocalInboxStatus>;
   normalizeSourceDocument(
     documentId: string,
   ): Promise<SourceDocumentRoutingOutcome>;
   onVaultLocked(handler: () => void): Promise<() => void>;
   previewSourceDocument(documentId: string): Promise<SourceDocumentPreview>;
   rememberVaultOnThisMac(): Promise<void>;
+  recordStatementCoverageDecision(
+    decision: StatementCoverageDecisionArgs,
+  ): Promise<void>;
+  removeReviewRecord(
+    reviewItemId: string,
+    expectedRecordVersion: number,
+  ): Promise<ReviewMutationOutcome>;
   removeStatementPassword(moneySourceId: string): Promise<void>;
   renderSourceDocumentPage(
     documentId: string,
     pageNumber: number,
   ): Promise<RenderedDocumentPage>;
+  rescanLocalInbox(): Promise<LocalInboxScanSummary>;
   saveRecoveryFile(): Promise<boolean>;
   saveSourceDocumentCopy(documentId: string): Promise<boolean>;
   trySavedStatementPassword(
@@ -72,6 +125,7 @@ export interface VaultApi {
   ): Promise<void>;
   unlockVault(password: string): Promise<VaultStatus>;
   unlockVaultWithKeychain(): Promise<VaultStatus>;
+  undoCommittedEvent(eventId: string): Promise<UndoOutcome>;
   vaultAccessStatus(): Promise<VaultAccessStatus>;
   vaultStatus(): Promise<VaultStatus>;
 }
@@ -87,10 +141,97 @@ export function createVaultApi(
   return {
     vaultAccessStatus: () => call<VaultAccessStatus>("vault_access_status"),
     vaultStatus: () => call<VaultStatus>("vault_status"),
+    listReviewItems: () => call<ReviewItemSummary[]>("list_review_items"),
+    getReviewDetail: (reviewItemId) => {
+      const args: ReviewItemIdArgs = { reviewItemId };
+      return call<ReviewItemDetail | null, ReviewItemIdArgs>(
+        "get_review_detail",
+        args,
+      );
+    },
+    listRecentActivity: () =>
+      call<RecentActivitySummary[]>("list_recent_activity"),
+    getMoneyOverview: () => call<MoneyOverview>("get_money_overview"),
+    listRelationshipCandidates: (reviewItemId, expectedRecordVersion) => {
+      const args: ReviewVersionArgs = { reviewItemId, expectedRecordVersion };
+      return call<RelationshipCandidateSummary[], ReviewVersionArgs>(
+        "list_relationship_candidates",
+        args,
+      );
+    },
+    editReviewRecord: (reviewItemId, expectedRecordVersion, patch) => {
+      const args: EditReviewRecordArgs = {
+        reviewItemId,
+        expectedRecordVersion,
+        ...patch,
+      };
+      return call<ReviewMutationOutcome, EditReviewRecordArgs>(
+        "edit_review_record",
+        args,
+      );
+    },
+    removeReviewRecord: (reviewItemId, expectedRecordVersion) => {
+      const args: ReviewVersionArgs = { reviewItemId, expectedRecordVersion };
+      return call<ReviewMutationOutcome, ReviewVersionArgs>(
+        "remove_review_record",
+        args,
+      );
+    },
+    acceptReviewRelationship: (
+      reviewItemId,
+      expectedRecordVersion,
+      candidateRecordId,
+      expectedCandidateVersion,
+    ) => {
+      const args: AcceptReviewRelationshipArgs = {
+        reviewItemId,
+        expectedRecordVersion,
+        candidateRecordId,
+        expectedCandidateVersion,
+      };
+      return call<ReviewMutationOutcome, AcceptReviewRelationshipArgs>(
+        "accept_review_relationship",
+        args,
+      );
+    },
+    enqueueCommitReviewBatch: (reviewItemIds) => {
+      const args: EnqueueCommitReviewBatchArgs = { reviewItemIds };
+      return call<ReviewJobSummary, EnqueueCommitReviewBatchArgs>(
+        "enqueue_commit_review_batch",
+        args,
+      );
+    },
+    getReviewJob: (jobId) => {
+      const args: GetReviewJobArgs = { jobId };
+      return call<ReviewJobSummary | null, GetReviewJobArgs>(
+        "get_review_job",
+        args,
+      );
+    },
+    undoCommittedEvent: (eventId) => {
+      const args: UndoCommittedEventArgs = { eventId };
+      return call<UndoOutcome, UndoCommittedEventArgs>(
+        "undo_committed_event",
+        args,
+      );
+    },
     createVault: (password) => {
       const args: VaultPasswordArgs = { password };
       return call<VaultStatus, VaultPasswordArgs>("create_vault", args);
     },
+    chooseLocalInboxRoot: () =>
+      call<LocalInboxStatus | null>("choose_local_inbox_root"),
+    localInboxStatus: () => call<LocalInboxStatus>("local_inbox_status"),
+    disableLocalInbox: () => call<LocalInboxStatus>("disable_local_inbox"),
+    rescanLocalInbox: () =>
+      call<LocalInboxScanSummary>("rescan_local_inbox"),
+    listStatementCoveragePrompts: () =>
+      call<StatementCoveragePrompt[]>("list_statement_coverage_prompts"),
+    recordStatementCoverageDecision: (decision) =>
+      call<void, RecordStatementCoverageDecisionArgs>(
+        "record_statement_coverage_decision",
+        { request: decision },
+      ),
     unlockVault: (password) => {
       const args: VaultPasswordArgs = { password };
       return call<VaultStatus, VaultPasswordArgs>("unlock_vault", args);

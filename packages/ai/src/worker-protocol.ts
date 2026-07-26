@@ -1,4 +1,12 @@
 import type { ExtractionBundle } from "@cancan/parsers";
+import {
+  findHistoricalRelationshipCandidates,
+  prepareReviewRelationship,
+  prepareReviewReversal,
+  type PreparedReviewEvent,
+  type ReviewEventType,
+  type ReviewSourceRecord,
+} from "@cancan/core";
 
 export interface NormalizeDocumentInput {
   documentId: string;
@@ -10,7 +18,56 @@ export interface NormalizeCommand extends NormalizeDocumentInput {
   requestId: string;
 }
 
-export type WorkerCommand = NormalizeCommand | { type: "shutdown" };
+export type CoreCommand =
+  | {
+      input: {
+        candidates: ReviewSourceRecord[];
+        eventType: ReviewEventType;
+        record: ReviewSourceRecord;
+      };
+      operation: "find_relationship_candidates";
+      requestId: string;
+      type: "core";
+    }
+  | {
+      input: {
+        eventType: ReviewEventType;
+        records: [ReviewSourceRecord, ReviewSourceRecord];
+      };
+      operation: "prepare_review_relationship";
+      requestId: string;
+      type: "core";
+    }
+  | {
+      input: { event: PreparedReviewEvent; eventDate: string };
+      operation: "prepare_review_reversal";
+      requestId: string;
+      type: "core";
+    };
+
+export type CoreCommandResult =
+  | {
+      candidates: Array<{ id: string }>;
+      status: "candidates";
+    }
+  | ReturnType<typeof prepareReviewRelationship>
+  | { event: ReturnType<typeof prepareReviewReversal>; status: "ready" };
+
+export type WorkerCommand = NormalizeCommand | CoreCommand | { type: "shutdown" };
+
+const REVIEW_EVENT_TYPES = new Set<ReviewEventType>([
+  "credit_card_repayment",
+  "same_currency_transfer",
+]);
+const REVIEW_RECORD_KEYS = [
+  "accountBalanceDelta",
+  "accountId",
+  "accountType",
+  "currency",
+  "id",
+  "instrumentId",
+  "postedOn",
+];
 
 const BUNDLE_KEYS = [
   "fileSha256",
@@ -41,6 +98,9 @@ export function parseWorkerCommand(value: unknown): WorkerCommand | undefined {
   if (value.type === "shutdown" && hasExactKeys(value, ["type"])) {
     return { type: "shutdown" };
   }
+  if (value.type === "core") {
+    return parseCoreCommand(value);
+  }
   if (
     !hasExactKeys(value, ["documentId", "extractionBundle", "requestId", "type"]) ||
     value.type !== "normalize" ||
@@ -53,6 +113,144 @@ export function parseWorkerCommand(value: unknown): WorkerCommand | undefined {
     return undefined;
   }
   return value as unknown as NormalizeCommand;
+}
+
+export function runCoreCommand(command: CoreCommand): CoreCommandResult {
+  switch (command.operation) {
+    case "find_relationship_candidates":
+      return {
+        status: "candidates",
+        candidates: findHistoricalRelationshipCandidates(command.input).map(({ id }) => ({ id })),
+      };
+    case "prepare_review_relationship":
+      return prepareReviewRelationship(command.input);
+    case "prepare_review_reversal":
+      return {
+        status: "ready",
+        event: prepareReviewReversal(command.input),
+      };
+  }
+}
+
+function parseCoreCommand(value: Record<string, unknown>): CoreCommand | undefined {
+  if (!isNonEmptyString(value.requestId) || typeof value.operation !== "string") {
+    return undefined;
+  }
+  if (value.operation === "find_relationship_candidates") {
+    if (
+      !hasExactKeys(value, ["input", "operation", "requestId", "type"]) ||
+      !isRelationshipCandidatesInput(value.input)
+    ) {
+      return undefined;
+    }
+    return value as unknown as CoreCommand;
+  }
+  if (value.operation === "prepare_review_relationship") {
+    if (
+      !hasExactKeys(value, ["input", "operation", "requestId", "type"]) ||
+      !isRelationshipPreparationInput(value.input)
+    ) {
+      return undefined;
+    }
+    return value as unknown as CoreCommand;
+  }
+  if (value.operation === "prepare_review_reversal") {
+    if (
+      !hasExactKeys(value, ["input", "operation", "requestId", "type"]) ||
+      !isReviewReversalInput(value.input)
+    ) {
+      return undefined;
+    }
+    return value as unknown as CoreCommand;
+  }
+  return undefined;
+}
+
+function isRelationshipCandidatesInput(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ["candidates", "eventType", "record"]) &&
+    isReviewEventType(value.eventType) &&
+    isReviewSourceRecord(value.record) &&
+    Array.isArray(value.candidates) &&
+    value.candidates.length <= 100 &&
+    value.candidates.every(isReviewSourceRecord)
+  );
+}
+
+function isRelationshipPreparationInput(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ["eventType", "records"]) &&
+    isReviewEventType(value.eventType) &&
+    Array.isArray(value.records) &&
+    value.records.length === 2 &&
+    value.records.every(isReviewSourceRecord)
+  );
+}
+
+function isReviewReversalInput(value: unknown): boolean {
+  if (!isRecord(value) || !hasExactKeys(value, ["event", "eventDate"]) || !isIsoDate(value.eventDate)) {
+    return false;
+  }
+  return isPreparedReviewEvent(value.event);
+}
+
+function isPreparedReviewEvent(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["eventClass", "eventDate", "eventType", "legs", "sourceRecordIds", "spending"]) ||
+    value.eventClass !== "posting" ||
+    !isReviewEventType(value.eventType) ||
+    !isIsoDate(value.eventDate) ||
+    value.spending !== false ||
+    !Array.isArray(value.sourceRecordIds) ||
+    value.sourceRecordIds.length !== 2 ||
+    !value.sourceRecordIds.every(isNonEmptyString) ||
+    !Array.isArray(value.legs) ||
+    value.legs.length !== 2 ||
+    !value.legs.every(isPreparedReviewLeg)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isPreparedReviewLeg(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ["accountId", "amountValue", "currency", "instrumentId"]) &&
+    isNonEmptyString(value.accountId) &&
+    isExactDecimal(value.amountValue) &&
+    isNonEmptyString(value.currency) &&
+    isNonEmptyString(value.instrumentId)
+  );
+}
+
+function isReviewSourceRecord(value: unknown): value is ReviewSourceRecord {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, REVIEW_RECORD_KEYS) &&
+    isExactDecimal(value.accountBalanceDelta) &&
+    isNonEmptyString(value.accountId) &&
+    isNonEmptyString(value.accountType) &&
+    isNonEmptyString(value.currency) &&
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.instrumentId) &&
+    isIsoDate(value.postedOn)
+  );
+}
+
+function isReviewEventType(value: unknown): value is ReviewEventType {
+  return typeof value === "string" && REVIEW_EVENT_TYPES.has(value as ReviewEventType);
+}
+
+function isIsoDate(value: unknown): boolean {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isExactDecimal(value: unknown): value is string {
+  return typeof value === "string" && /^-?(0|[1-9]\d*)(?:\.\d+)?$/.test(value);
 }
 
 function isNormalizeDocumentInput(value: unknown): value is NormalizeDocumentInput {

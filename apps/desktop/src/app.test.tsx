@@ -7,11 +7,13 @@ import type {
   SourceDocumentSummary,
 } from "./command-contracts";
 import {
-  VaultManualImportView,
+  DocumentViewer,
+  SourcesView,
+  VaultGate,
   importNotice,
   parseReceivedAt,
   routingNotice,
-  type VaultManualImportViewProps,
+  type SourcesViewProps,
 } from "./app";
 
 const document: SourceDocumentSummary = {
@@ -30,78 +32,89 @@ const source: MoneySourceSummary = {
   sourceType: "bank",
 };
 
-const baseProps: VaultManualImportViewProps = {
+const baseProps: SourcesViewProps = {
   busy: false,
   deletingDocumentId: null,
-  error: null,
   importing: false,
   loadingDocuments: false,
   normalizingDocumentId: null,
   notice: null,
-  onCloseUnlock: () => undefined,
-  onClosePreview: () => undefined,
-  onCloseViewer: () => undefined,
   onDelete: () => undefined,
   onImport: () => undefined,
   onLock: () => undefined,
   onNormalize: () => undefined,
   onOpenUnlock: () => undefined,
-  onRetryUnlockSources: () => undefined,
-  onPasswordChange: () => undefined,
   onRefresh: () => undefined,
   onRememberedChange: () => undefined,
   onSelectMoneySource: () => undefined,
   onSaveRecoveryFile: () => undefined,
   onSaveSourceCopy: () => undefined,
-  onSubmitPassword: () => undefined,
-  onUnlockWithKeychain: () => undefined,
-  onUnlockPasswordChange: () => undefined,
-  onUnlockSourceChange: () => undefined,
-  onUnlockSubmit: () => undefined,
   onView: () => undefined,
-  onViewerPage: () => undefined,
-  password: "",
-  preview: null,
-  rememberedOnThisMac: false,
   recoveryConfigured: false,
-  savingRecoveryFile: false,
+  rememberedOnThisMac: false,
   savingCopyDocumentId: null,
+  savingRecoveryFile: false,
   selectedMoneySourceId: null,
   sourceDocuments: [],
   unassignedDocuments: [],
-  unlockingDocument: null,
   updatingRemembered: false,
-  vaultStatus: "unlocked",
-  viewer: null,
-  viewingPage: false,
 };
 
-function render(props: Partial<VaultManualImportViewProps> = {}) {
-  return renderToStaticMarkup(<VaultManualImportView {...baseProps} {...props} />);
+function render(props: Partial<SourcesViewProps> = {}) {
+  return renderToStaticMarkup(<SourcesView {...baseProps} {...props} />);
 }
 
-describe("VaultManualImportView", () => {
+describe("VaultGate", () => {
   it("renders initial loading and locked Vault states", () => {
-    expect(render({ busy: true, vaultStatus: "loading" })).toContain(
-      "Checking your Vault",
+    expect(
+      renderToStaticMarkup(
+        <VaultGate busy title="Checking your Vault" body="Confirming the local Vault state before showing evidence." />,
+      ),
+    ).toContain("Checking your Vault");
+
+    const locked = renderToStaticMarkup(
+      <VaultGate
+        busy={false}
+        body="Unlock your local Vault to add a file or check its routing."
+        onPasswordChange={() => undefined}
+        onSubmit={() => undefined}
+        password=""
+        title="Unlock your Vault"
+      />,
     );
-    const locked = render({ vaultStatus: "locked" });
     expect(locked).toContain("Unlock your Vault");
     expect(locked).not.toContain("Add file");
 
-    const remembered = render({
-      rememberedOnThisMac: true,
-      vaultStatus: "locked",
-    });
+    const remembered = renderToStaticMarkup(
+      <VaultGate
+        busy={false}
+        body="Unlock your local Vault to add a file or check its routing."
+        onPasswordChange={() => undefined}
+        onSubmit={() => undefined}
+        onUnlockWithKeychain={() => undefined}
+        password=""
+        rememberedOnThisMac
+        title="Unlock your Vault"
+      />,
+    );
     expect(remembered).toContain("Unlock with this Mac");
 
-    const unavailable = render({
-      rememberedOnThisMac: null,
-      vaultStatus: "locked",
-    });
+    const unavailable = renderToStaticMarkup(
+      <VaultGate
+        busy={false}
+        body="Unlock your local Vault to add a file or check its routing."
+        onPasswordChange={() => undefined}
+        onSubmit={() => undefined}
+        password=""
+        rememberedOnThisMac={null}
+        title="Unlock your Vault"
+      />,
+    );
     expect(unavailable).toContain("Keychain unlock is unavailable");
   });
+});
 
+describe("SourcesView", () => {
   it("renders an unlocked import path and an unassigned document", () => {
     const markup = render({ unassignedDocuments: [document] });
 
@@ -168,36 +181,38 @@ describe("VaultManualImportView", () => {
     expect(configured).toContain("Add a statement or export");
   });
 
-  it("renders only page pixels and bounded viewer navigation", () => {
-    const markup = render({
-      viewer: {
-        documentId: document.documentId,
-        documentTitle: document.originalFilename,
-        page: {
-          pageCount: 2,
-          pageNumber: 1,
-          pngBase64: "cmVuZGVyZWQtcGFnZQ==",
-        },
-      },
-    });
-
-    expect(markup).toContain("data:image/png;base64,cmVuZGVyZWQtcGFnZQ==");
-    expect(markup).toContain("Page 1 of 2");
-    expect(markup).toContain("inert=\"\"");
-    expect(markup).toContain("aria-hidden=\"true\"");
-    expect(markup).not.toContain("%PDF");
-  });
-
-  it("renders the active normalization state and friendly errors", () => {
+  it("renders the active normalization state", () => {
     const normalizing = render({
-      error: "Unlock your Vault to continue.",
       normalizingDocumentId: document.documentId,
       unassignedDocuments: [document],
     });
 
     expect(normalizing).toContain("Checking…");
-    expect(normalizing).toContain("Unlock your Vault to continue.");
-    expect(normalizing).toContain("Try again");
+  });
+});
+
+describe("DocumentViewer", () => {
+  it("renders only page pixels and bounded viewer navigation", () => {
+    const markup = renderToStaticMarkup(
+      <DocumentViewer
+        onClose={() => undefined}
+        onPage={() => undefined}
+        viewer={{
+          documentId: document.documentId,
+          documentTitle: document.originalFilename,
+          page: {
+            pageCount: 2,
+            pageNumber: 1,
+            pngBase64: "cmVuZGVyZWQtcGFnZQ==",
+          },
+        }}
+        viewingPage={false}
+      />,
+    );
+
+    expect(markup).toContain("data:image/png;base64,cmVuZGVyZWQtcGFnZQ==");
+    expect(markup).toContain("Page 1 of 2");
+    expect(markup).not.toContain("%PDF");
   });
 });
 

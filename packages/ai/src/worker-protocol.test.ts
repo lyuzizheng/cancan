@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { parseWorkerCommand } from "./worker-protocol";
+import { parseWorkerCommand, runCoreCommand } from "./worker-protocol";
 
 const rustNormalizerCommandFixture: unknown = JSON.parse(
   readFileSync(
@@ -188,5 +188,115 @@ describe("normalizer worker protocol", () => {
     expect(parseWorkerCommand(negativeBox)).toBeUndefined();
     expect(parseWorkerCommand(zeroSizeBox)).toBeUndefined();
     expect(parseWorkerCommand(oversizedBox)).toBeUndefined();
+  });
+
+  it("accepts only bounded deterministic core requests and keeps raw record authority out", () => {
+    const coreCommand = {
+      type: "core",
+      requestId: "core-candidates-1",
+      operation: "find_relationship_candidates",
+      input: {
+        eventType: "credit_card_repayment",
+        record: {
+          id: "record-hsbc-cash",
+          accountId: "account-hsbc",
+          accountType: "deposit_account",
+          instrumentId: "instrument-sgd",
+          postedOn: "2026-06-30",
+          currency: "SGD",
+          accountBalanceDelta: "-500.00",
+        },
+        candidates: [
+          {
+            id: "record-dbs-card",
+            accountId: "account-dbs-card",
+            accountType: "credit_card",
+            instrumentId: "instrument-sgd",
+            postedOn: "2026-07-01",
+            currency: "SGD",
+            accountBalanceDelta: "-500.00",
+          },
+        ],
+      },
+    };
+    const parsed = parseWorkerCommand(coreCommand);
+    if (!parsed || parsed.type !== "core") {
+      throw new Error("expected a core command");
+    }
+
+    expect(runCoreCommand(parsed)).toEqual({
+      status: "candidates",
+      candidates: [{ id: "record-dbs-card" }],
+    });
+    expect(
+      parseWorkerCommand({
+        ...coreCommand,
+        input: { ...coreCommand.input, rawJson: { secret: "must-not-pass" } },
+      }),
+    ).toBeUndefined();
+    expect(
+      parseWorkerCommand({
+        ...coreCommand,
+        input: { ...coreCommand.input, candidates: new Array(101).fill(coreCommand.input.record) },
+      }),
+    ).toBeUndefined();
+  });
+
+  it("prepares a relationship and typed reversal through the core protocol", () => {
+    const relationship = parseWorkerCommand({
+      type: "core",
+      requestId: "core-prepare-1",
+      operation: "prepare_review_relationship",
+      input: {
+        eventType: "same_currency_transfer",
+        records: [
+          {
+            id: "record-out",
+            accountId: "account-hsbc",
+            accountType: "deposit_account",
+            instrumentId: "instrument-sgd",
+            postedOn: "2026-06-30",
+            currency: "SGD",
+            accountBalanceDelta: "-20.00",
+          },
+          {
+            id: "record-in",
+            accountId: "account-dbs",
+            accountType: "deposit_account",
+            instrumentId: "instrument-sgd",
+            postedOn: "2026-07-03",
+            currency: "SGD",
+            accountBalanceDelta: "20.00",
+          },
+        ],
+      },
+    });
+    if (!relationship || relationship.type !== "core") {
+      throw new Error("expected a relationship command");
+    }
+    const prepared = runCoreCommand(relationship);
+    expect(prepared).toMatchObject({
+      status: "ready",
+      event: { eventDate: "2026-06-30", eventType: "same_currency_transfer" },
+    });
+    if (prepared.status !== "ready" || !("event" in prepared)) {
+      throw new Error("expected a prepared event");
+    }
+    const reversal = parseWorkerCommand({
+      type: "core",
+      requestId: "core-reversal-1",
+      operation: "prepare_review_reversal",
+      input: { event: prepared.event, eventDate: "2026-07-04" },
+    });
+    if (!reversal || reversal.type !== "core") {
+      throw new Error("expected a reversal command");
+    }
+    expect(runCoreCommand(reversal)).toMatchObject({
+      status: "ready",
+      event: {
+        eventType: "same_currency_transfer_reversal",
+        eventDate: "2026-07-04",
+      },
+    });
   });
 });

@@ -1,0 +1,232 @@
+/**
+ * Dev-only visual inspection harness. Renders the Command Center views with
+ * deterministic fixtures, selected via `?state=` (overview, overview-empty,
+ * review, review-empty, review-detail, review-job). Not part of the shipped
+ * bundle: `vite build` only bundles index.html.
+ */
+import { AppShell } from "@cancan/ui";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import "@cancan/ui/foundation.css";
+
+import type {
+  MoneyOverview,
+  RecentActivitySummary,
+  RelationshipCandidateSummary,
+  ReviewItemDetail,
+  ReviewItemSummary,
+} from "./command-contracts";
+import { OverviewView } from "./overview";
+import { ReviewView, type ReviewDetailState, type ReviewJobPanelState } from "./review";
+import { VaultSpine, type AppView } from "./vault-spine";
+
+const moneyOverview: MoneyOverview = {
+  assets: [
+    {
+      accountId: "account-dbs",
+      accountLabel: "DBS Multiplier Account",
+      asOf: "2026-07-19",
+      currency: "SGD",
+      value: "12456.78",
+    },
+    {
+      accountId: "account-wise",
+      accountLabel: "Wise USD Balance",
+      asOf: "2026-07-18",
+      currency: "USD",
+      value: "980.50",
+    },
+  ],
+  liabilities: [
+    {
+      accountId: "account-card",
+      accountLabel: "DBS Visa Card",
+      asOf: "2026-07-19",
+      currency: "SGD",
+      value: "1234.56",
+    },
+  ],
+};
+
+const recentActivity: RecentActivitySummary[] = [
+  {
+    canUndo: true,
+    eventDate: "2026-07-18",
+    eventId: "event-1",
+    eventType: "credit_card_repayment",
+    sourceLabels: ["DBS", "DBS Card"],
+    spending: false,
+  },
+  {
+    canUndo: false,
+    eventDate: "2026-07-17",
+    eventId: "event-2",
+    eventType: "purchase",
+    sourceLabels: ["DBS Card"],
+    spending: true,
+  },
+];
+
+const reviewItems: ReviewItemSummary[] = [
+  {
+    accountLabel: "DBS Multiplier Account",
+    amountValue: "512.34",
+    currency: "SGD",
+    eventType: "credit_card_repayment",
+    postedOn: "2026-07-15",
+    reasonCode: "possible_card_repayment",
+    recordId: "record-1",
+    recordVersion: 1,
+    reviewItemId: "review-1",
+  },
+  {
+    accountLabel: "DBS Visa Card",
+    amountValue: "512.34",
+    currency: "SGD",
+    eventType: "credit_card_repayment",
+    postedOn: "2026-07-17",
+    reasonCode: "possible_card_repayment",
+    recordId: "record-2",
+    recordVersion: 1,
+    reviewItemId: "review-2",
+  },
+  {
+    accountLabel: "DBS Multiplier Account",
+    amountValue: "86.40",
+    currency: "SGD",
+    eventType: "purchase",
+    postedOn: null,
+    reasonCode: "classification_conflict",
+    recordId: "record-3",
+    recordVersion: 1,
+    reviewItemId: "review-3",
+  },
+];
+
+const reviewDetail: ReviewItemDetail = {
+  ...reviewItems[0]!,
+  documentLabel: "July statement.pdf",
+  sourceLabel: "DBS",
+};
+
+const reviewCandidates: RelationshipCandidateSummary[] = [
+  {
+    accountLabel: "DBS Visa Card",
+    amountValue: "512.34",
+    currency: "SGD",
+    eventType: "credit_card_repayment",
+    postedOn: "2026-07-17",
+    recordId: "record-2",
+    recordVersion: 1,
+  },
+];
+
+const expandedDetail: ReviewDetailState = {
+  candidates: reviewCandidates,
+  confirmingRemove: false,
+  detail: reviewDetail,
+  editing: null,
+  reviewItemId: "review-1",
+  summary: reviewItems[0]!,
+};
+
+const finishedJob: ReviewJobPanelState = {
+  jobId: "job-1",
+  outcomes: [
+    { reason: null, recordIds: ["record-1", "record-2"], status: "committed" },
+    { reason: "core_preflight_failed", recordIds: ["record-3"], status: "still_needs_review" },
+  ],
+  status: "done",
+};
+
+const noop = () => undefined;
+
+function navigate(view: AppView) {
+  const state = view === "sources" ? "review" : view;
+  window.location.search = `?state=${state}`;
+}
+
+function Preview() {
+  const params = new URLSearchParams(window.location.search);
+  const state = params.get("state") ?? "overview";
+
+  let content = null;
+  let activeView: AppView = "overview";
+  if (state === "overview" || state === "overview-empty") {
+    const empty = state === "overview-empty";
+    content = (
+      <OverviewView
+        loading={false}
+        moneyOverview={empty ? { assets: [], liabilities: [] } : moneyOverview}
+        notice={null}
+        onLock={noop}
+        onOpenReview={() => navigate("review")}
+        onOpenSources={() => navigate("sources")}
+        onRefresh={noop}
+        onUndo={noop}
+        recentActivity={empty ? [] : recentActivity}
+        reviewCount={empty ? 0 : reviewItems.length}
+        undoingEventId={null}
+      />
+    );
+  } else {
+    activeView = "review";
+    content = (
+      <ReviewView
+        detail={state === "review-detail" ? expandedDetail : null}
+        items={state === "review-empty" ? [] : reviewItems}
+        job={state === "review-job" ? finishedJob : null}
+        mutatingItemId={null}
+        notice={state === "review-detail"
+          ? {
+              body: "CanCan will treat them as one event. Add both together when you’re ready.",
+              tone: "success",
+              title: "Linked",
+            }
+          : null}
+        onAcceptCandidate={noop}
+        onCancelEdit={noop}
+        onCancelRemove={noop}
+        onClearSelection={noop}
+        onCloseDetail={noop}
+        onConfirmRemove={noop}
+        onEditChange={noop}
+        onEnqueue={noop}
+        onLock={noop}
+        onOpenDetail={noop}
+        onRefresh={noop}
+        onRemove={noop}
+        onSaveEdit={noop}
+        onSelectAll={noop}
+        onStartEdit={noop}
+        onToggleSelect={noop}
+        selectedIds={state === "review-job" ? new Set() : new Set(["review-1", "review-2"])}
+      />
+    );
+  }
+
+  return (
+    <AppShell>
+      <VaultSpine
+        activeView={activeView}
+        inert={false}
+        onNavigate={navigate}
+        reviewCount={state === "overview-empty" || state === "review-empty" ? 0 : reviewItems.length}
+        vaultStatus="unlocked"
+      />
+      <section className="ledger">{content}</section>
+    </AppShell>
+  );
+}
+
+const root = document.getElementById("root");
+
+if (!root) {
+  throw new Error("CanCan preview root element is missing");
+}
+
+createRoot(root).render(
+  <StrictMode>
+    <Preview />
+  </StrictMode>,
+);

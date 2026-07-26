@@ -20,7 +20,10 @@ React + TypeScript UI
 TypeScript core domain engine
 SQLite/SQLCipher local database
 Tauri/Rust privileged commands for filesystem, database, backup, and secrets
+Tauri-controlled bundled Node worker mode for executing the pure TypeScript core behind the host boundary
 ```
+
+The deterministic core worker mode has no AI/model, filesystem, database, network, secret, or renderer capability. Rust supplies bounded typed inputs, validates the protocol result, and remains the only owner of SQLCipher transactions and durable financial writes. This avoids a second implementation of canonical validation, reconciliation, and ledger-construction rules in Rust.
 
 Do not use Rails/Sure as the app base. Use Sure only as a domain/product reference.
 

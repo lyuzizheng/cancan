@@ -55,6 +55,8 @@ money-flow graph building
 source-backed valuation and compatible subtotal interfaces
 ```
 
+Production Tauri commands execute these pure functions through a separate request mode in the bundled Tauri-controlled Node worker. The core mode imports `packages/core`, accepts only bounded typed domain inputs, performs no AI/model call, and has no filesystem, database, network, secret, or renderer capability. Rust validates the protocol result and owns every SQLCipher transaction and durable mutation. This preserves one TypeScript implementation of financial rules without granting the renderer or the AI normalizer ledger-write authority.
+
 ### packages/db
 
 Owns:
@@ -119,9 +121,9 @@ AI permission boundary helpers
 
 The document agent is a small normalizer with fixed parser tools. It is not a coding agent and must not expose shell, generic filesystem, arbitrary network, database, secret, or ledger tools.
 
-The initial runtime is single-pass structured normalization in a trusted Node worker/sidecar bundled and controlled by Tauri. The existing macOS `arm64` evidence route uses the pinned Node 24 single-executable format. Phase 1 must package and validate an architecture-matched sidecar on both macOS `arm64` and `x86_64`; production signing and notarization remain release gates. The product must not require users to install Node, Docker, a VM, QEMU, or a separate sandbox runtime.
+The initial AI runtime is single-pass structured normalization in a trusted Node worker/sidecar bundled and controlled by Tauri. The same binary has a protocol-separated deterministic core mode so production host commands can execute `packages/core` without duplicating financial rules in Rust. Core mode performs no model or provider call and receives no filesystem, database, network, or secret capability. The existing macOS `arm64` evidence route uses the pinned Node 24 single-executable format. Phase 1 must package and validate an architecture-matched sidecar on both macOS `arm64` and `x86_64`; production signing and notarization remain release gates. The product must not require users to install Node, Docker, a VM, QEMU, or a separate sandbox runtime.
 
-The Tauri/Rust boundary continues to own user-selected file access and OS-secret retrieval. The sidecar is process separation and packaging, not an assumed permission sandbox. ToolLoopAgent and Pi Agent Core remain unselected until qualification fixtures show a material advantage over the same single-pass contract.
+The Tauri/Rust boundary continues to own user-selected file access, SQLCipher transactions, durable jobs, and OS-secret retrieval. The sidecar is process separation and packaging, not an assumed permission sandbox. ToolLoopAgent and Pi Agent Core remain unselected until qualification fixtures show a material advantage over the same single-pass contract.
 
 ### packages/ui
 

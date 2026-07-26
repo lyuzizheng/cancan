@@ -19,6 +19,7 @@ chacha20poly1305 = { version = "=0.10.1", features = ["std"] }
 csv = "=1.4.0"
 hkdf = "=0.12.4"
 keyring-core = "=1.0.0"
+libc = "=0.2.189"
 png = "=0.18.1"
 rand = "=0.8.5"
 rusqlite = { version = "=0.40.1", default-features = false, features = ["bundled-sqlcipher-vendored-openssl"] }
@@ -38,7 +39,7 @@ objc2 = "=0.6.4"
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["NSWorkspace", "block2"] }
 objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["std", "CFData", "CFDictionary", "CFNumber", "CFString"] }
 objc2-core-graphics = { version = "=0.3.2", default-features = false, features = ["CGImage"] }
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["NSArray", "NSData", "NSDictionary", "NSNotification", "NSOperation", "NSString", "block2"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["NSArray", "NSData", "NSDictionary", "NSError", "NSNotification", "NSOperation", "NSString", "NSURL", "NSValue", "block2"] }
 objc2-image-io = { version = "=0.3.2", default-features = false, features = ["std", "CGImageProperties", "CGImageSource", "objc2-core-graphics"] }
 objc2-pdf-kit = { version = "=0.3.2", default-features = false, features = ["PDFDocument", "PDFPage"] }
 objc2-vision = { version = "=0.3.2", default-features = false, features = ["std", "VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler", "VNTypes", "objc2-core-foundation"] }

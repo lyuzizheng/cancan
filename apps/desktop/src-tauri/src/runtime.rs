@@ -1,8 +1,21 @@
 use crate::{
     database::{
-        DATABASE_FILE_NAME, ManualImportStore, SourceDocumentImport, SourceDocumentImportOutcome,
-        SourceDocumentImportStatus, SourceDocumentRoutingOutcome, SourceDocumentView,
+        ClaimedReviewBatch, CommitReviewGroup, CorePreparedReversalEvent, CorePreparedReviewEvent,
+        CoreReviewRecord, DATABASE_FILE_NAME, ManualImportStore, MoneyOverview,
+        RecentActivitySummary, RelationshipCandidateSummary, ReviewBatchGroupOutcome,
+        ReviewBatchGroupStatus, ReviewItemDetail, ReviewItemSummary, ReviewJobSummary,
+        ReviewMutationOutcome, ReviewMutationStatus, ReviewRelationshipCandidateInput,
+        SourceDocumentImport, SourceDocumentImportOutcome, SourceDocumentImportStatus,
+        SourceDocumentRoutingOutcome, SourceDocumentView, StatementCoverageDecision,
+        StatementCoverageDecisionInput, StatementCoveragePolicy, StatementCoveragePrompt,
         StatementPasswordStatus, TrustedAccountCandidate, TrustedDocumentClassification,
+        UndoOutcome,
+    },
+    local_inbox::{
+        AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureOutcome,
+        LocalInboxPaths, NativePreflight, SETTLE_INTERVAL, SystemNativePreflight, authorize_root,
+        capture_after_second_scan, ensure_inbox_paths, first_snapshot_after_preflight,
+        resolve_root_bookmark,
     },
     source_observations::{ExtractionBundle, extract_bundle},
     vault::{
@@ -56,9 +69,15 @@ const KEYCHAIN_ACCOUNT: &str = "active-vault";
 const KEYCHAIN_ITEM_NOT_FOUND_STATUS: i32 = -25300;
 const KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.remembered-vault";
 const STATEMENT_PASSWORD_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.statement-password";
+const LOCAL_INBOX_BOOKMARK_ACCOUNT: &str = "authorized-root";
+const LOCAL_INBOX_BOOKMARK_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.local-inbox";
 const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+// The shipped synthetic normalizer models an on-demand export, so it has no
+// statement cadence. Real provider packages must add an explicit declaration;
+// CanCan never infers cadence from filenames or prior dates.
+const STATEMENT_COVERAGE_POLICIES: &[StatementCoveragePolicy<'static>] = &[];
 // A CSV preview returns at most the first lines of the decrypted text. A small
 // CSV may appear in full, but the renderer never receives raw original-file
 // bytes or unbounded content. The caps keep IPC bounded while giving enough
@@ -89,6 +108,54 @@ pub(crate) struct VaultAccessStatus {
     recovery_configured: bool,
     remembered_on_this_mac: Option<bool>,
     status: VaultStatus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum LocalInboxAccessState {
+    Disabled,
+    Enabled,
+    NeedsAttention,
+    NeedsReauthorization,
+    Paused,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalInboxScanSummary {
+    already_present: u64,
+    deferred: u64,
+    imported: u64,
+    suppressed: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalInboxStatus {
+    access_state: LocalInboxAccessState,
+    backups_prepared: bool,
+    enabled: bool,
+    inbox_label: &'static str,
+    last_scan: Option<LocalInboxScanSummary>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StatementCoverageDecisionAction {
+    NotExpected,
+    RemindLater,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StatementCoverageDecisionRequest {
+    account_id: String,
+    action: StatementCoverageDecisionAction,
+    document_type: String,
+    money_source_id: String,
+    remind_after: Option<String>,
+    statement_period_from: String,
+    statement_period_to: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -148,6 +215,14 @@ struct NormalizerDocument {
     document_type: String,
     provider_key: String,
     statement_id: Option<String>,
+    statement_period: Option<NormalizerStatementPeriod>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NormalizerStatementPeriod {
+    from: Option<String>,
+    to: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -191,6 +266,79 @@ enum NormalizerMessage {
     Error,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewCoreCommand<'a, T> {
+    input: &'a T,
+    operation: &'static str,
+    request_id: &'a str,
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RelationshipCandidatesInput<'a> {
+    candidates: &'a [CoreReviewRecord],
+    event_type: &'a str,
+    record: &'a CoreReviewRecord,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RelationshipPreparationInput<'a> {
+    event_type: &'a str,
+    records: &'a [CoreReviewRecord; 2],
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReversalPreparationInput<'a> {
+    event: &'a CorePreparedReviewEvent,
+    event_date: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CoreCandidate {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ReviewCoreReadyEvent {
+    Relationship(CorePreparedReviewEvent),
+    Reversal(CorePreparedReversalEvent),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "status", deny_unknown_fields)]
+enum ReviewCoreResult {
+    Candidates { candidates: Vec<CoreCandidate> },
+    Ready { event: ReviewCoreReadyEvent },
+    Review { reasons: Vec<String> },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum ReviewCoreMessage {
+    Ready {
+        #[serde(rename = "protocolVersion")]
+        protocol_version: u8,
+        runtime: String,
+        #[serde(rename = "environmentCleared")]
+        environment_cleared: bool,
+    },
+    Result {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        result: ReviewCoreResult,
+    },
+    Error {
+        code: String,
+    },
+}
+
 impl VaultCommandError {
     fn new(code: &'static str) -> Self {
         Self { code }
@@ -226,6 +374,11 @@ pub(crate) struct VaultRuntime {
 
 struct RuntimeInner {
     document_passwords: Mutex<DocumentPasswordSessions>,
+    local_inbox_access: Mutex<Option<AuthorizedRoot>>,
+    local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
+    local_inbox_last_scan: Mutex<Option<LocalInboxScanSummary>>,
+    local_inbox_needs_attention: AtomicBool,
+    local_inbox_needs_reauthorization: AtomicBool,
     remembered_keys: Arc<dyn RememberedKeyStore>,
     root: PathBuf,
     statement_passwords: Arc<dyn StatementPasswordStore>,
@@ -246,6 +399,12 @@ trait StatementPasswordStore: Send + Sync {
     fn delete(&self, secret_ref: &str) -> Result<(), ()>;
     fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
     fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()>;
+}
+
+trait LocalInboxBookmarkStore: Send + Sync {
+    fn delete(&self) -> Result<(), ()>;
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
+    fn save(&self, bookmark: &[u8]) -> Result<(), ()>;
 }
 
 #[derive(Clone)]
@@ -404,12 +563,60 @@ impl StatementPasswordStore for KeychainStatementPasswordStore {
     }
 }
 
+#[derive(Clone)]
+struct KeychainLocalInboxBookmarkStore {
+    account: String,
+    service: String,
+}
+
+impl KeychainLocalInboxBookmarkStore {
+    fn production() -> Self {
+        Self {
+            account: LOCAL_INBOX_BOOKMARK_ACCOUNT.to_owned(),
+            service: LOCAL_INBOX_BOOKMARK_KEYCHAIN_SERVICE.to_owned(),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn entry(&self) -> Result<KeyringEntry, ()> {
+        KeychainCredential::build(MacKeychainDomain::User, &self.service, &self.account)
+            .map_err(|_| ())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn entry(&self) -> Result<KeyringEntry, ()> {
+        Err(())
+    }
+}
+
+impl LocalInboxBookmarkStore for KeychainLocalInboxBookmarkStore {
+    fn delete(&self) -> Result<(), ()> {
+        match self.entry()?.delete_credential() {
+            Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+        match self.entry()?.get_secret() {
+            Ok(bookmark) => Ok(Some(Zeroizing::new(bookmark))),
+            Err(KeyringError::NoEntry) => Ok(None),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn save(&self, bookmark: &[u8]) -> Result<(), ()> {
+        self.entry()?.set_secret(bookmark).map_err(|_| ())
+    }
+}
+
 impl VaultRuntime {
     pub(crate) fn new(root: PathBuf) -> Self {
         Self::with_secret_stores(
             root,
             Arc::new(KeychainRememberedKeyStore::production()),
             Arc::new(KeychainStatementPasswordStore::production()),
+            Arc::new(KeychainLocalInboxBookmarkStore::production()),
         )
     }
 
@@ -419,6 +626,7 @@ impl VaultRuntime {
             root,
             remembered_keys,
             Arc::new(KeychainStatementPasswordStore::production()),
+            Arc::new(KeychainLocalInboxBookmarkStore::production()),
         )
     }
 
@@ -426,10 +634,16 @@ impl VaultRuntime {
         root: PathBuf,
         remembered_keys: Arc<dyn RememberedKeyStore>,
         statement_passwords: Arc<dyn StatementPasswordStore>,
+        local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
     ) -> Self {
         Self {
             inner: Arc::new(RuntimeInner {
                 document_passwords: Mutex::new(HashMap::new()),
+                local_inbox_access: Mutex::new(None),
+                local_inbox_bookmarks,
+                local_inbox_last_scan: Mutex::new(None),
+                local_inbox_needs_attention: AtomicBool::new(false),
+                local_inbox_needs_reauthorization: AtomicBool::new(false),
                 remembered_keys,
                 root,
                 statement_passwords,
@@ -510,7 +724,9 @@ impl VaultRuntime {
         }
         let opened = result?;
         *store = Some(opened);
+        drop(store);
         self.advance_vault_session();
+        let _ = self.activate_local_inbox_from_bookmark();
         Ok(VaultStatus::Unlocked)
     }
 
@@ -580,7 +796,9 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("invalid_vault"))?;
         self.reconcile_statement_passwords(&opened)?;
         *store = Some(opened);
+        drop(store);
         self.advance_vault_session();
+        let _ = self.activate_local_inbox_from_bookmark();
         Ok(VaultStatus::Unlocked)
     }
 
@@ -602,7 +820,9 @@ impl VaultRuntime {
             Ok(opened) => {
                 self.reconcile_statement_passwords(&opened)?;
                 *store = Some(opened);
+                drop(store);
                 self.advance_vault_session();
+                let _ = self.activate_local_inbox_from_bookmark();
                 Ok(VaultStatus::Unlocked)
             }
             Err(_) => Err(RuntimeError::new("remembered_unlock_failed")),
@@ -664,6 +884,7 @@ impl VaultRuntime {
 
     pub(crate) fn lock(&self) -> Result<VaultStatus, RuntimeError> {
         self.advance_vault_session();
+        self.clear_local_inbox_access();
         let mut store = self.raw_store()?;
         *store = None;
         self.document_passwords()?.clear();
@@ -678,6 +899,7 @@ impl VaultRuntime {
             .system_lock_generation
             .fetch_add(1, Ordering::SeqCst);
         self.advance_vault_session();
+        self.clear_local_inbox_access();
         let mut store = self.raw_store()?;
         *store = None;
         self.document_passwords()?.clear();
@@ -693,6 +915,399 @@ impl VaultRuntime {
             .system_session_active
             .store(true, Ordering::SeqCst);
         Ok(())
+    }
+
+    pub(crate) fn configure_local_inbox(&self, root: &Path) -> Result<(), RuntimeError> {
+        self.require_unlocked()?;
+        let (bookmark, authorized_root) = authorize_root(root)
+            .map_err(|_| RuntimeError::new("local_inbox_authorization_failed"))?;
+        ensure_inbox_paths(authorized_root.root())
+            .map_err(|_| RuntimeError::new("local_inbox_setup_failed"))?;
+        self.inner
+            .local_inbox_bookmarks
+            .save(&bookmark)
+            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?;
+        *self
+            .inner
+            .local_inbox_access
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))? = Some(authorized_root);
+        self.inner
+            .local_inbox_needs_reauthorization
+            .store(false, Ordering::SeqCst);
+        self.inner
+            .local_inbox_needs_attention
+            .store(false, Ordering::SeqCst);
+        Ok(())
+    }
+
+    pub(crate) fn local_inbox_status(&self) -> Result<LocalInboxStatus, RuntimeError> {
+        let configured = self
+            .inner
+            .local_inbox_bookmarks
+            .load()
+            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?
+            .is_some();
+        let vault_status = self.status()?;
+        if configured
+            && vault_status == VaultStatus::Unlocked
+            && !self
+                .inner
+                .local_inbox_access
+                .lock()
+                .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?
+                .is_some()
+        {
+            self.activate_local_inbox_from_bookmark()?;
+        }
+        let access = self
+            .inner
+            .local_inbox_access
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+        let needs_reauthorization = self
+            .inner
+            .local_inbox_needs_reauthorization
+            .load(Ordering::SeqCst);
+        let needs_attention = self
+            .inner
+            .local_inbox_needs_attention
+            .load(Ordering::SeqCst);
+        let active = access.is_some();
+        Ok(LocalInboxStatus {
+            access_state: if !configured {
+                LocalInboxAccessState::Disabled
+            } else if needs_reauthorization {
+                LocalInboxAccessState::NeedsReauthorization
+            } else if needs_attention {
+                LocalInboxAccessState::NeedsAttention
+            } else if active {
+                LocalInboxAccessState::Enabled
+            } else {
+                LocalInboxAccessState::Paused
+            },
+            backups_prepared: access
+                .as_ref()
+                .is_some_and(|root| root.root().join(BACKUPS_DIRECTORY_NAME).is_dir()),
+            enabled: configured,
+            inbox_label: "Inbox",
+            last_scan: self
+                .inner
+                .local_inbox_last_scan
+                .lock()
+                .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?
+                .clone(),
+        })
+    }
+
+    pub(crate) fn disable_local_inbox(&self) -> Result<LocalInboxStatus, RuntimeError> {
+        self.inner
+            .local_inbox_bookmarks
+            .delete()
+            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?;
+        self.clear_local_inbox_access();
+        self.inner
+            .local_inbox_needs_reauthorization
+            .store(false, Ordering::SeqCst);
+        self.inner
+            .local_inbox_needs_attention
+            .store(false, Ordering::SeqCst);
+        self.local_inbox_status()
+    }
+
+    pub(crate) fn list_statement_coverage_prompts(
+        &self,
+    ) -> Result<Vec<StatementCoveragePrompt>, RuntimeError> {
+        let store = self.store()?;
+        let store = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        let today = store
+            .statement_coverage_today()
+            .map_err(|_| RuntimeError::new("coverage_unavailable"))?;
+        store
+            .list_statement_coverage_prompts(STATEMENT_COVERAGE_POLICIES, &today)
+            .map_err(|_| RuntimeError::new("coverage_unavailable"))
+    }
+
+    pub(crate) fn record_statement_coverage_decision(
+        &self,
+        request: &StatementCoverageDecisionRequest,
+    ) -> Result<(), RuntimeError> {
+        let mut store = self.store()?;
+        let store = store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        let today = store
+            .statement_coverage_today()
+            .map_err(|_| RuntimeError::new("coverage_decision_invalid"))?;
+        let is_current_prompt = store
+            .list_statement_coverage_prompts(STATEMENT_COVERAGE_POLICIES, &today)
+            .map_err(|_| RuntimeError::new("coverage_decision_invalid"))?
+            .iter()
+            .any(|prompt| {
+                prompt.account_id == request.account_id
+                    && prompt.document_type == request.document_type
+                    && prompt.money_source_id == request.money_source_id
+                    && prompt.statement_period_from == request.statement_period_from
+                    && prompt.statement_period_to == request.statement_period_to
+            });
+        if !is_current_prompt {
+            return Err(RuntimeError::new("coverage_decision_invalid"));
+        }
+        let decision = match request.action {
+            StatementCoverageDecisionAction::NotExpected => StatementCoverageDecision::NotExpected,
+            StatementCoverageDecisionAction::RemindLater => StatementCoverageDecision::RemindLater,
+        };
+        let audit_id = random_identifier("audit");
+        store
+            .record_statement_coverage_decision(&StatementCoverageDecisionInput {
+                account_id: &request.account_id,
+                audit_id: &audit_id,
+                decision,
+                document_type: &request.document_type,
+                money_source_id: &request.money_source_id,
+                remind_after: request.remind_after.as_deref(),
+                statement_period_from: &request.statement_period_from,
+                statement_period_to: &request.statement_period_to,
+            })
+            .map_err(|_| RuntimeError::new("coverage_decision_invalid"))
+    }
+
+    pub(crate) fn rescan_local_inbox(&self) -> Result<LocalInboxScanSummary, RuntimeError> {
+        self.require_unlocked()?;
+        if !self.activate_local_inbox_from_bookmark()? {
+            let code = if self
+                .inner
+                .local_inbox_needs_reauthorization
+                .load(Ordering::SeqCst)
+            {
+                "local_inbox_reauthorization_required"
+            } else if self
+                .inner
+                .local_inbox_needs_attention
+                .load(Ordering::SeqCst)
+            {
+                "local_inbox_setup_required"
+            } else {
+                "local_inbox_not_configured"
+            };
+            return Err(RuntimeError::new(code));
+        }
+        let access = self
+            .inner
+            .local_inbox_access
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+        let root = access
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("local_inbox_reauthorization_required"))?;
+        let LocalInboxPaths { inbox, .. } = ensure_inbox_paths(root.root())
+            .map_err(|_| RuntimeError::new("local_inbox_setup_failed"))?;
+        let tombstoned_hashes = {
+            let store = self.store()?;
+            store
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .deleted_source_hashes()
+                .map_err(|_| RuntimeError::new("local_inbox_scan_failed"))?
+        };
+        let entries =
+            fs::read_dir(inbox).map_err(|_| RuntimeError::new("local_inbox_scan_failed"))?;
+        let mut summary = LocalInboxScanSummary::default();
+        let preflight = SystemNativePreflight;
+        let mut candidates = Vec::new();
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => {
+                    summary.deferred += 1;
+                    continue;
+                }
+            };
+            let path = entry.path();
+            match first_snapshot_after_preflight(&path, &preflight) {
+                Ok(snapshot) => candidates.push((path, snapshot)),
+                Err(_) => summary.deferred += 1,
+            }
+        }
+        if !candidates.is_empty() {
+            std::thread::sleep(SETTLE_INTERVAL);
+        }
+        for (path, first_snapshot) in candidates {
+            if !preflight.permits_read(&path) {
+                summary.deferred += 1;
+                continue;
+            }
+            let mut persisted = None;
+            let outcome =
+                capture_after_second_scan(&path, first_snapshot, &tombstoned_hashes, |bytes| {
+                    match self.register_local_inbox_capture(&path, bytes) {
+                        Ok(outcome) => {
+                            persisted = Some(outcome);
+                            Ok(())
+                        }
+                        Err(_) => Err(io::Error::other("local Inbox import failed")),
+                    }
+                });
+            match outcome {
+                CaptureOutcome::Captured { .. } => match persisted {
+                    Some(outcome) => match outcome.status {
+                        SourceDocumentImportStatus::Imported
+                        | SourceDocumentImportStatus::Restored => {
+                            summary.imported += 1;
+                        }
+                        SourceDocumentImportStatus::AlreadyPresent => summary.already_present += 1,
+                        SourceDocumentImportStatus::RestoreConfirmationRequired => {
+                            summary.suppressed += 1;
+                        }
+                    },
+                    None => summary.deferred += 1,
+                },
+                CaptureOutcome::Suppressed { .. } => summary.suppressed += 1,
+                CaptureOutcome::Deferred(_) => summary.deferred += 1,
+            }
+        }
+        *self
+            .inner
+            .local_inbox_last_scan
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))? = Some(summary.clone());
+        Ok(summary)
+    }
+
+    fn register_local_inbox_capture(
+        &self,
+        source_path: &Path,
+        captured_bytes: Zeroizing<Vec<u8>>,
+    ) -> Result<SourceDocumentImportOutcome, RuntimeError> {
+        let (original_filename, mime_type) = source_document_filename_metadata(source_path)?;
+        let document_id = random_identifier("document");
+        let audit_id = random_identifier("audit");
+        let input = SourceDocumentImport {
+            audit_actor: "system",
+            audit_id: &audit_id,
+            audit_policy_version: IMPORT_POLICY_VERSION,
+            audit_reason: "local_inbox_import",
+            document_id: &document_id,
+            mime_type,
+            original_filename: &original_filename,
+            source_path,
+        };
+        let mut store = self.store()?;
+        let store = store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        let outcome = store
+            .register_captured_import(&input, captured_bytes, None)
+            .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?;
+        if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired {
+            store
+                .enqueue_source_document_pipeline(&outcome.document_id)
+                .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?;
+        }
+        Ok(outcome)
+    }
+
+    fn queued_local_inbox_parse_documents(&self) -> Result<Vec<String>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .queued_parse_document_ids()
+            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+    }
+
+    fn start_local_inbox_parse(&self, document_id: &str) -> Result<bool, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .start_parse_document(document_id)
+            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+    }
+
+    fn block_local_inbox_parse(
+        &self,
+        document_id: &str,
+        reason: &'static str,
+    ) -> Result<(), RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .block_parse_document(document_id, reason)
+            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+    }
+
+    fn fail_local_inbox_parse(
+        &self,
+        document_id: &str,
+        reason: &'static str,
+    ) -> Result<(), RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .fail_parse_document(document_id, reason)
+            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+    }
+
+    fn activate_local_inbox_from_bookmark(&self) -> Result<bool, RuntimeError> {
+        if self
+            .inner
+            .local_inbox_access
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?
+            .is_some()
+        {
+            return Ok(true);
+        }
+        let Some(bookmark) = self
+            .inner
+            .local_inbox_bookmarks
+            .load()
+            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?
+        else {
+            return Ok(false);
+        };
+        match resolve_root_bookmark(&bookmark) {
+            Ok(BookmarkResolution::Active(root)) => {
+                if ensure_inbox_paths(root.root()).is_err() {
+                    self.inner
+                        .local_inbox_needs_attention
+                        .store(true, Ordering::SeqCst);
+                    return Ok(false);
+                }
+                *self
+                    .inner
+                    .local_inbox_access
+                    .lock()
+                    .map_err(|_| RuntimeError::new("local_inbox_unavailable"))? = Some(root);
+                self.inner
+                    .local_inbox_needs_reauthorization
+                    .store(false, Ordering::SeqCst);
+                self.inner
+                    .local_inbox_needs_attention
+                    .store(false, Ordering::SeqCst);
+                Ok(true)
+            }
+            Ok(BookmarkResolution::Stale) | Err(_) => {
+                self.inner
+                    .local_inbox_needs_reauthorization
+                    .store(true, Ordering::SeqCst);
+                self.inner
+                    .local_inbox_needs_attention
+                    .store(false, Ordering::SeqCst);
+                Ok(false)
+            }
+        }
+    }
+
+    fn clear_local_inbox_access(&self) {
+        if let Ok(mut access) = self.inner.local_inbox_access.lock() {
+            *access = None;
+        }
     }
 
     pub(crate) fn import_selected_document(
@@ -1210,6 +1825,258 @@ impl VaultRuntime {
         Ok(bounded_text_preview(&input.plaintext))
     }
 
+    pub(crate) fn list_review_items(&self) -> Result<Vec<ReviewItemSummary>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .list_review_items()
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    pub(crate) fn review_item_detail(
+        &self,
+        review_item_id: &str,
+    ) -> Result<Option<ReviewItemDetail>, RuntimeError> {
+        if review_item_id.is_empty() {
+            return Err(RuntimeError::new("invalid_review_request"));
+        }
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .review_item_detail(review_item_id)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    pub(crate) fn list_recent_activity(&self) -> Result<Vec<RecentActivitySummary>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .list_recent_activity()
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    pub(crate) fn money_overview(&self) -> Result<MoneyOverview, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .money_overview()
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn relationship_candidate_input(
+        &self,
+        review_item_id: &str,
+        expected_record_version: i64,
+    ) -> Result<Option<ReviewRelationshipCandidateInput>, RuntimeError> {
+        if review_item_id.is_empty() || expected_record_version <= 0 {
+            return Err(RuntimeError::new("invalid_review_request"));
+        }
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .relationship_candidate_input(review_item_id, expected_record_version)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn relationship_candidate_summaries(
+        &self,
+        candidate_ids: &[String],
+    ) -> Result<Vec<RelationshipCandidateSummary>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .relationship_candidate_summaries(candidate_ids)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn edit_review_record(
+        &self,
+        review_item_id: &str,
+        expected_record_version: i64,
+        posted_on: Option<&str>,
+        amount_value: Option<&str>,
+        account_balance_delta: Option<&str>,
+    ) -> Result<ReviewMutationOutcome, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .edit_review_record(
+                review_item_id,
+                expected_record_version,
+                posted_on,
+                amount_value,
+                account_balance_delta,
+            )
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn remove_review_record(
+        &self,
+        review_item_id: &str,
+        expected_record_version: i64,
+    ) -> Result<ReviewMutationOutcome, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .remove_review_record(review_item_id, expected_record_version)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn accept_review_relationship(
+        &self,
+        review_item_id: &str,
+        expected_record_version: i64,
+        candidate_record_id: &str,
+        expected_candidate_version: i64,
+        event: &CorePreparedReviewEvent,
+    ) -> Result<ReviewMutationOutcome, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .accept_review_relationship(
+                review_item_id,
+                expected_record_version,
+                candidate_record_id,
+                expected_candidate_version,
+                event,
+            )
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn enqueue_commit_review_batch(
+        &self,
+        review_item_ids: &[String],
+    ) -> Result<ReviewJobSummary, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .enqueue_commit_review_batch(review_item_ids)
+            .map_err(|_| RuntimeError::new("invalid_review_request"))
+    }
+
+    fn review_job(&self, job_id: &str) -> Result<Option<ReviewJobSummary>, RuntimeError> {
+        if job_id.is_empty() {
+            return Err(RuntimeError::new("invalid_review_request"));
+        }
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .review_job(job_id)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn queued_review_job_ids(&self) -> Result<Vec<String>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .queued_review_job_ids()
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn claim_review_batch(
+        &self,
+        job_id: &str,
+        lease_owner: &str,
+    ) -> Result<Option<ClaimedReviewBatch>, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .claim_review_batch(job_id, lease_owner)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn prepare_commit_review_groups(
+        &self,
+        claimed: &ClaimedReviewBatch,
+    ) -> Result<(Vec<CommitReviewGroup>, Vec<ReviewBatchGroupOutcome>), RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .prepare_commit_review_groups(claimed)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn commit_prepared_review_group(
+        &self,
+        claimed: &ClaimedReviewBatch,
+        group: &CommitReviewGroup,
+        event: &CorePreparedReviewEvent,
+    ) -> Result<ReviewBatchGroupOutcome, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .commit_prepared_review_group(claimed, group, event)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn finish_review_batch(
+        &self,
+        claimed: &ClaimedReviewBatch,
+        outcomes: &[ReviewBatchGroupOutcome],
+    ) -> Result<ReviewJobSummary, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .finish_review_batch(claimed, outcomes)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn fail_review_batch(
+        &self,
+        claimed: &ClaimedReviewBatch,
+    ) -> Result<ReviewJobSummary, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .fail_review_batch(claimed, "review_core_failed")
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn committed_review_event_for_reversal(
+        &self,
+        event_id: &str,
+    ) -> Result<Option<CorePreparedReviewEvent>, RuntimeError> {
+        if event_id.is_empty() {
+            return Err(RuntimeError::new("invalid_review_request"));
+        }
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .committed_review_event_for_reversal(event_id)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
+    fn persist_review_reversal(
+        &self,
+        original_event_id: &str,
+        reversal: &CorePreparedReversalEvent,
+    ) -> Result<Option<UndoOutcome>, RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .persist_review_reversal(original_event_id, reversal)
+            .map_err(|_| RuntimeError::new("review_unavailable"))
+    }
+
     fn apply_normalizer_result(
         &self,
         document_id: &str,
@@ -1224,23 +2091,29 @@ impl VaultRuntime {
                 } else {
                     "classification_uncertain"
                 };
-                return Ok(SourceDocumentRoutingOutcome::needs_attention(
+                return self.finish_normalizer_outcome(
                     document_id,
-                    reason,
-                ));
+                    SourceDocumentRoutingOutcome::needs_attention(document_id, reason),
+                );
             }
         };
         let Some(statement_id) = proposal.document.statement_id.as_deref() else {
-            return Ok(SourceDocumentRoutingOutcome::needs_attention(
+            return self.finish_normalizer_outcome(
                 document_id,
-                "classification_uncertain",
-            ));
+                SourceDocumentRoutingOutcome::needs_attention(
+                    document_id,
+                    "classification_uncertain",
+                ),
+            );
         };
         if !valid_synthetic_fingerprint(extraction_bundle, &proposal) {
-            return Ok(SourceDocumentRoutingOutcome::needs_attention(
+            return self.finish_normalizer_outcome(
                 document_id,
-                "provider_fingerprint_mismatch",
-            ));
+                SourceDocumentRoutingOutcome::needs_attention(
+                    document_id,
+                    "provider_fingerprint_mismatch",
+                ),
+            );
         }
         let semantic_document_key = format!(
             "{}:{}",
@@ -1268,15 +2141,46 @@ impl VaultRuntime {
             accounts: &accounts,
             audit_id: &audit_id,
             document_id,
+            document_type: Some(&proposal.document.document_type),
             provider_key: &proposal.document.provider_key,
             semantic_document_key: &semantic_document_key,
+            statement_period_from: proposal
+                .document
+                .statement_period
+                .as_ref()
+                .and_then(|period| period.from.as_deref()),
+            statement_period_to: proposal
+                .document
+                .statement_period
+                .as_ref()
+                .and_then(|period| period.to.as_deref()),
         };
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        let outcome = store
             .apply_trusted_classification(&classification)
-            .map_err(|_| RuntimeError::new("classification_failed"))
+            .map_err(|_| RuntimeError::new("classification_failed"))?;
+        store
+            .finish_parse_document(document_id, &outcome)
+            .map_err(|_| RuntimeError::new("classification_failed"))?;
+        Ok(outcome)
+    }
+
+    fn finish_normalizer_outcome(
+        &self,
+        document_id: &str,
+        outcome: SourceDocumentRoutingOutcome,
+    ) -> Result<SourceDocumentRoutingOutcome, RuntimeError> {
+        let mut store = self.store()?;
+        let store = store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
+            .finish_parse_document(document_id, &outcome)
+            .map_err(|_| RuntimeError::new("classification_failed"))?;
+        Ok(outcome)
     }
 
     #[cfg(test)]
@@ -1437,6 +2341,149 @@ fn ensure_statement_password_source(
     }
 }
 
+fn review_conflict(reason: &'static str) -> ReviewMutationOutcome {
+    ReviewMutationOutcome {
+        reason: Some(reason),
+        record_version: None,
+        review_item_id: None,
+        status: ReviewMutationStatus::Conflict,
+    }
+}
+
+async fn rescan_and_process_local_inbox(
+    app: &AppHandle,
+    runtime: VaultRuntime,
+) -> Result<LocalInboxScanSummary, VaultCommandError> {
+    let summary = {
+        let runtime = runtime.clone();
+        tauri::async_runtime::spawn_blocking(move || runtime.rescan_local_inbox())
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    process_queued_local_inbox_parses(app, runtime).await?;
+    Ok(summary)
+}
+
+async fn process_queued_local_inbox_parses(
+    app: &AppHandle,
+    runtime: VaultRuntime,
+) -> Result<(), VaultCommandError> {
+    let document_ids = {
+        let runtime = runtime.clone();
+        tauri::async_runtime::spawn_blocking(move || runtime.queued_local_inbox_parse_documents())
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    for document_id in document_ids {
+        let started = {
+            let runtime = runtime.clone();
+            let document_id = document_id.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                runtime.start_local_inbox_parse(&document_id)
+            })
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+        };
+        if !started {
+            continue;
+        }
+        let input = {
+            let runtime = runtime.clone();
+            let document_id = document_id.clone();
+            tauri::async_runtime::spawn_blocking(move || runtime.normalization_input(&document_id))
+                .await
+                .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        };
+        let input = match input {
+            Ok(input) => input,
+            Err(error) => {
+                let reason = if error.code == "statement_password_required" {
+                    "password_required"
+                } else {
+                    "parse_input_unavailable"
+                };
+                let runtime = runtime.clone();
+                let document_id = document_id.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    runtime.block_local_inbox_parse(&document_id, reason)
+                })
+                .await
+                .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
+                continue;
+            }
+        };
+        let result = match run_normalizer_sidecar(app, &document_id, &input).await {
+            Ok(result) => result,
+            Err(_) => {
+                let runtime = runtime.clone();
+                let document_id = document_id.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    runtime.fail_local_inbox_parse(&document_id, "normalizer_failed")
+                })
+                .await
+                .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
+                continue;
+            }
+        };
+        let applied = {
+            let runtime = runtime.clone();
+            let document_id = document_id.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                runtime.apply_normalizer_result(&document_id, &input, result)
+            })
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        };
+        if applied.is_err() {
+            let runtime = runtime.clone();
+            let document_id = document_id.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                runtime.fail_local_inbox_parse(&document_id, "classification_failed")
+            })
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
+        }
+    }
+    Ok(())
+}
+
+async fn resume_local_inbox_after_unlock(app: &AppHandle, runtime: VaultRuntime) {
+    let status = tauri::async_runtime::spawn_blocking({
+        let runtime = runtime.clone();
+        move || runtime.local_inbox_status()
+    })
+    .await
+    .ok()
+    .and_then(Result::ok);
+    if status.is_some_and(|status| status.access_state == LocalInboxAccessState::Enabled) {
+        let _ = rescan_and_process_local_inbox(app, runtime).await;
+    }
+}
+
+async fn resume_review_jobs_after_unlock(app: &AppHandle, runtime: VaultRuntime) {
+    let job_ids = tauri::async_runtime::spawn_blocking({
+        let runtime = runtime.clone();
+        move || runtime.queued_review_job_ids()
+    })
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .unwrap_or_default();
+    for job_id in job_ids {
+        let job = tauri::async_runtime::spawn_blocking({
+            let runtime = runtime.clone();
+            move || runtime.review_job(&job_id)
+        })
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .flatten();
+        if let Some(job) = job {
+            let _ = process_review_batch_job(app, runtime.clone(), job).await;
+        }
+    }
+}
+
 #[tauri::command]
 pub(crate) async fn vault_status(
     runtime: State<'_, VaultRuntime>,
@@ -1460,6 +2507,99 @@ pub(crate) async fn vault_access_status(
 }
 
 #[tauri::command]
+pub(crate) async fn choose_local_inbox_root(
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Option<LocalInboxStatus>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    let configure_runtime = runtime.clone();
+    let picker_app = app.clone();
+    let configured = tauri::async_runtime::spawn_blocking(move || -> Result<bool, RuntimeError> {
+        configure_runtime.require_unlocked()?;
+        let selected = picker_app
+            .dialog()
+            .file()
+            .set_title("Choose your Cancan folder")
+            .blocking_pick_folder();
+        let Some(selected) = selected else {
+            return Ok(false);
+        };
+        let path = selected
+            .into_path()
+            .map_err(|_| RuntimeError::new("file_selection_failed"))?;
+        configure_runtime.configure_local_inbox(&path)?;
+        Ok(true)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(VaultCommandError::from)?;
+    if !configured {
+        return Ok(None);
+    }
+    rescan_and_process_local_inbox(&app, runtime.clone()).await?;
+    tauri::async_runtime::spawn_blocking(move || runtime.local_inbox_status().map(Some))
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn local_inbox_status(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<LocalInboxStatus, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.local_inbox_status())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn disable_local_inbox(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<LocalInboxStatus, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.disable_local_inbox())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn list_statement_coverage_prompts(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<StatementCoveragePrompt>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.list_statement_coverage_prompts())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn record_statement_coverage_decision(
+    request: StatementCoverageDecisionRequest,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<(), VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.record_statement_coverage_decision(&request)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn rescan_local_inbox(
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<LocalInboxScanSummary, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    rescan_and_process_local_inbox(&app, runtime).await
+}
+
+#[tauri::command]
 pub(crate) async fn create_vault(
     password: String,
     runtime: State<'_, VaultRuntime>,
@@ -1475,25 +2615,37 @@ pub(crate) async fn create_vault(
 #[tauri::command]
 pub(crate) async fn unlock_vault(
     password: String,
+    app: AppHandle,
     runtime: State<'_, VaultRuntime>,
 ) -> Result<VaultStatus, VaultCommandError> {
     let runtime = runtime.inner().clone();
     let password = Zeroizing::new(password);
-    tauri::async_runtime::spawn_blocking(move || runtime.unlock(password.as_bytes()))
-        .await
-        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-        .map_err(Into::into)
+    let unlock_runtime = runtime.clone();
+    let status =
+        tauri::async_runtime::spawn_blocking(move || unlock_runtime.unlock(password.as_bytes()))
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+            .map_err(VaultCommandError::from)?;
+    resume_review_jobs_after_unlock(&app, runtime.clone()).await;
+    resume_local_inbox_after_unlock(&app, runtime).await;
+    Ok(status)
 }
 
 #[tauri::command]
 pub(crate) async fn unlock_vault_with_keychain(
+    app: AppHandle,
     runtime: State<'_, VaultRuntime>,
 ) -> Result<VaultStatus, VaultCommandError> {
     let runtime = runtime.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || runtime.unlock_with_keychain())
-        .await
-        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-        .map_err(Into::into)
+    let unlock_runtime = runtime.clone();
+    let status =
+        tauri::async_runtime::spawn_blocking(move || unlock_runtime.unlock_with_keychain())
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+            .map_err(VaultCommandError::from)?;
+    resume_review_jobs_after_unlock(&app, runtime.clone()).await;
+    resume_local_inbox_after_unlock(&app, runtime).await;
+    Ok(status)
 }
 
 #[tauri::command]
@@ -1857,7 +3009,456 @@ pub(crate) async fn preview_source_document(
         .map_err(Into::into)
 }
 
+#[tauri::command]
+pub(crate) async fn list_review_items(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<ReviewItemSummary>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.list_review_items())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn get_review_detail(
+    review_item_id: String,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Option<ReviewItemDetail>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.review_item_detail(&review_item_id))
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn list_recent_activity(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<RecentActivitySummary>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.list_recent_activity())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn get_money_overview(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<MoneyOverview, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.money_overview())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn list_relationship_candidates(
+    review_item_id: String,
+    expected_record_version: i64,
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<RelationshipCandidateSummary>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    let candidate_input = {
+        let runtime = runtime.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            runtime.relationship_candidate_input(&review_item_id, expected_record_version)
+        })
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    let Some(ReviewRelationshipCandidateInput {
+        candidates,
+        event_type,
+        record,
+        ..
+    }) = candidate_input
+    else {
+        return Ok(Vec::new());
+    };
+    if event_type.is_empty() {
+        return Ok(Vec::new());
+    }
+    let result = run_review_core_sidecar(
+        &app,
+        "find_relationship_candidates",
+        &RelationshipCandidatesInput {
+            candidates: &candidates,
+            event_type: &event_type,
+            record: &record,
+        },
+    )
+    .await
+    .map_err(VaultCommandError::from)?;
+    let ReviewCoreResult::Candidates {
+        candidates: matches,
+    } = result
+    else {
+        return Err(VaultCommandError::new("review_core_failed"));
+    };
+    if matches.len() != 1 {
+        return Ok(Vec::new());
+    }
+    let candidate_id = &matches[0].id;
+    if candidate_id.is_empty()
+        || !candidates
+            .iter()
+            .any(|candidate| candidate.id == *candidate_id)
+    {
+        return Err(VaultCommandError::new("review_core_failed"));
+    }
+    let candidate_ids = vec![candidate_id.clone()];
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.relationship_candidate_summaries(&candidate_ids)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn edit_review_record(
+    review_item_id: String,
+    expected_record_version: i64,
+    posted_on: Option<String>,
+    amount_value: Option<String>,
+    account_balance_delta: Option<String>,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<ReviewMutationOutcome, VaultCommandError> {
+    if review_item_id.is_empty() || expected_record_version <= 0 {
+        return Err(VaultCommandError::new("invalid_review_request"));
+    }
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.edit_review_record(
+            &review_item_id,
+            expected_record_version,
+            posted_on.as_deref(),
+            amount_value.as_deref(),
+            account_balance_delta.as_deref(),
+        )
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn remove_review_record(
+    review_item_id: String,
+    expected_record_version: i64,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<ReviewMutationOutcome, VaultCommandError> {
+    if review_item_id.is_empty() || expected_record_version <= 0 {
+        return Err(VaultCommandError::new("invalid_review_request"));
+    }
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.remove_review_record(&review_item_id, expected_record_version)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn accept_review_relationship(
+    review_item_id: String,
+    expected_record_version: i64,
+    candidate_record_id: String,
+    expected_candidate_version: i64,
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<ReviewMutationOutcome, VaultCommandError> {
+    if review_item_id.is_empty()
+        || expected_record_version <= 0
+        || candidate_record_id.is_empty()
+        || expected_candidate_version <= 0
+    {
+        return Err(VaultCommandError::new("invalid_review_request"));
+    }
+    let runtime = runtime.inner().clone();
+    let candidate_input = {
+        let runtime = runtime.clone();
+        let review_item_id = review_item_id.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            runtime.relationship_candidate_input(&review_item_id, expected_record_version)
+        })
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    let Some(ReviewRelationshipCandidateInput {
+        candidates,
+        event_type,
+        record,
+        ..
+    }) = candidate_input
+    else {
+        return Ok(review_conflict("stale_review_item"));
+    };
+    if event_type.is_empty() {
+        return Ok(review_conflict("relationship_needs_review"));
+    }
+    let result = run_review_core_sidecar(
+        &app,
+        "find_relationship_candidates",
+        &RelationshipCandidatesInput {
+            candidates: &candidates,
+            event_type: &event_type,
+            record: &record,
+        },
+    )
+    .await
+    .map_err(VaultCommandError::from)?;
+    let ReviewCoreResult::Candidates {
+        candidates: matches,
+    } = result
+    else {
+        return Err(VaultCommandError::new("review_core_failed"));
+    };
+    if !is_unique_requested_relationship_candidate(&matches, &candidate_record_id) {
+        return Ok(review_conflict("relationship_needs_review"));
+    }
+    let Some(candidate) = candidates
+        .into_iter()
+        .find(|candidate| candidate.id == candidate_record_id)
+    else {
+        return Ok(review_conflict("relationship_needs_review"));
+    };
+    let records = [record, candidate];
+    let result = run_review_core_sidecar(
+        &app,
+        "prepare_review_relationship",
+        &RelationshipPreparationInput {
+            event_type: &event_type,
+            records: &records,
+        },
+    )
+    .await
+    .map_err(VaultCommandError::from)?;
+    let event = match result {
+        ReviewCoreResult::Ready {
+            event: ReviewCoreReadyEvent::Relationship(event),
+        } => event,
+        ReviewCoreResult::Review { reasons } => {
+            let _ = reasons;
+            return Ok(review_conflict("relationship_needs_review"));
+        }
+        ReviewCoreResult::Ready {
+            event: ReviewCoreReadyEvent::Reversal(_),
+        }
+        | ReviewCoreResult::Candidates { .. } => {
+            return Err(VaultCommandError::new("review_core_failed"));
+        }
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.accept_review_relationship(
+            &review_item_id,
+            expected_record_version,
+            &candidate_record_id,
+            expected_candidate_version,
+            &event,
+        )
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn enqueue_commit_review_batch(
+    review_item_ids: Vec<String>,
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<ReviewJobSummary, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    let job = {
+        let runtime = runtime.clone();
+        let review_item_ids = review_item_ids.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            runtime.enqueue_commit_review_batch(&review_item_ids)
+        })
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    process_review_batch_job(&app, runtime, job).await
+}
+
+async fn process_review_batch_job(
+    app: &AppHandle,
+    runtime: VaultRuntime,
+    job: ReviewJobSummary,
+) -> Result<ReviewJobSummary, VaultCommandError> {
+    let job_id = job.job_id.clone();
+    let lease_owner = random_identifier("review-worker");
+    let claimed = {
+        let runtime = runtime.clone();
+        let job_id = job_id.clone();
+        let lease_owner = lease_owner.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            runtime.claim_review_batch(&job_id, &lease_owner)
+        })
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    let Some(claimed) = claimed else {
+        return Ok(job);
+    };
+    let (groups, mut outcomes) = {
+        let runtime = runtime.clone();
+        let claimed = claimed.clone();
+        tauri::async_runtime::spawn_blocking(move || runtime.prepare_commit_review_groups(&claimed))
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    for group in groups {
+        let result = run_review_core_sidecar(
+            app,
+            "prepare_review_relationship",
+            &RelationshipPreparationInput {
+                event_type: &group.event_type,
+                records: &group.records,
+            },
+        )
+        .await;
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                let failure_runtime = runtime.clone();
+                let failure_claimed = claimed.clone();
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    failure_runtime.fail_review_batch(&failure_claimed)
+                })
+                .await;
+                return Err(error.into());
+            }
+        };
+        match result {
+            ReviewCoreResult::Ready {
+                event: ReviewCoreReadyEvent::Relationship(event),
+            } => {
+                let outcome = {
+                    let runtime = runtime.clone();
+                    let claimed = claimed.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        runtime.commit_prepared_review_group(&claimed, &group, &event)
+                    })
+                    .await
+                    .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+                };
+                outcomes.push(outcome);
+            }
+            ReviewCoreResult::Review { reasons } => {
+                let _ = reasons;
+                outcomes.push(ReviewBatchGroupOutcome {
+                    reason: Some("relationship_needs_review".to_owned()),
+                    record_ids: group
+                        .records
+                        .iter()
+                        .map(|record| record.id.clone())
+                        .collect(),
+                    status: ReviewBatchGroupStatus::StillNeedsReview,
+                });
+            }
+            ReviewCoreResult::Ready {
+                event: ReviewCoreReadyEvent::Reversal(_),
+            }
+            | ReviewCoreResult::Candidates { .. } => {
+                let failure_runtime = runtime.clone();
+                let failure_claimed = claimed.clone();
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    failure_runtime.fail_review_batch(&failure_claimed)
+                })
+                .await;
+                return Err(VaultCommandError::new("review_core_failed"));
+            }
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || runtime.finish_review_batch(&claimed, &outcomes))
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn get_review_job(
+    job_id: String,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Option<ReviewJobSummary>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.review_job(&job_id))
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) async fn undo_committed_event(
+    event_id: String,
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<UndoOutcome, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    let event = {
+        let runtime = runtime.clone();
+        let event_id = event_id.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            runtime.committed_review_event_for_reversal(&event_id)
+        })
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+    };
+    let Some(event) = event else {
+        return Err(VaultCommandError::new("undo_unavailable"));
+    };
+    let result = run_review_core_sidecar(
+        &app,
+        "prepare_review_reversal",
+        &ReversalPreparationInput {
+            event_date: &event.event_date,
+            event: &event,
+        },
+    )
+    .await
+    .map_err(VaultCommandError::from)?;
+    let reversal = match result {
+        ReviewCoreResult::Ready {
+            event: ReviewCoreReadyEvent::Reversal(event),
+        } => event,
+        ReviewCoreResult::Ready {
+            event: ReviewCoreReadyEvent::Relationship(_),
+        }
+        | ReviewCoreResult::Candidates { .. } => {
+            return Err(VaultCommandError::new("review_core_failed"));
+        }
+        ReviewCoreResult::Review { reasons } => {
+            let _ = reasons;
+            return Err(VaultCommandError::new("review_core_failed"));
+        }
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.persist_review_reversal(&event_id, &reversal)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    .map_err(|_| VaultCommandError::new("undo_unavailable"))?
+    .ok_or_else(|| VaultCommandError::new("undo_unavailable"))
+}
+
 fn source_document_metadata(source_path: &Path) -> Result<(String, &'static str), RuntimeError> {
+    let metadata = fs::metadata(source_path).map_err(|_| RuntimeError::new("import_failed"))?;
+    if !metadata.is_file() {
+        return Err(RuntimeError::new("unsupported_document"));
+    }
+    source_document_filename_metadata(source_path)
+}
+
+fn source_document_filename_metadata(
+    source_path: &Path,
+) -> Result<(String, &'static str), RuntimeError> {
     let mime_type = match source_path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -1870,10 +3471,6 @@ fn source_document_metadata(source_path: &Path) -> Result<(String, &'static str)
         Some("jpg" | "jpeg") => "image/jpeg",
         _ => return Err(RuntimeError::new("unsupported_document")),
     };
-    let metadata = fs::metadata(source_path).map_err(|_| RuntimeError::new("import_failed"))?;
-    if !metadata.is_file() {
-        return Err(RuntimeError::new("unsupported_document"));
-    }
     let original_filename = source_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -1976,6 +3573,113 @@ async fn run_normalizer_sidecar(
 fn fail_normalizer(child: CommandChild) -> Result<NormalizerResult, RuntimeError> {
     let _ = child.kill();
     Err(RuntimeError::new("normalizer_failed"))
+}
+
+async fn run_review_core_sidecar<T: Serialize>(
+    app: &AppHandle,
+    operation: &'static str,
+    input: &T,
+) -> Result<ReviewCoreResult, RuntimeError> {
+    let request_id = random_identifier("review-core");
+    let command = Zeroizing::new(
+        serde_json::to_vec(&ReviewCoreCommand {
+            input,
+            operation,
+            request_id: &request_id,
+            kind: "core",
+        })
+        .map_err(|_| RuntimeError::new("review_core_failed"))?,
+    );
+    let sidecar = app
+        .shell()
+        .sidecar("cancan-document-normalizer")
+        .map_err(|_| RuntimeError::new("review_core_failed"))?
+        .env_clear();
+    let (mut events, mut child) = sidecar
+        .spawn()
+        .map_err(|_| RuntimeError::new("review_core_failed"))?;
+    let deadline = Instant::now() + NORMALIZER_TIMEOUT;
+    let mut ready = false;
+    let result = loop {
+        let event = match timeout_at(deadline, events.recv()).await {
+            Ok(Some(event)) => event,
+            Ok(None) | Err(_) => return fail_review_core(child),
+        };
+        match event {
+            CommandEvent::Stdout(bytes) => {
+                let message = match serde_json::from_slice::<ReviewCoreMessage>(&bytes) {
+                    Ok(message) => message,
+                    Err(_) => return fail_review_core(child),
+                };
+                match message {
+                    ReviewCoreMessage::Ready {
+                        protocol_version,
+                        runtime,
+                        environment_cleared,
+                    } if !ready
+                        && valid_normalizer_ready(
+                            protocol_version,
+                            &runtime,
+                            environment_cleared,
+                        ) =>
+                    {
+                        let mut framed = Zeroizing::new(command.to_vec());
+                        framed.push(b'\n');
+                        if child.write(&framed).is_err() {
+                            return fail_review_core(child);
+                        }
+                        ready = true;
+                    }
+                    ReviewCoreMessage::Result {
+                        request_id: response_id,
+                        result,
+                    } if ready && response_id == request_id => break result,
+                    ReviewCoreMessage::Error { code } => {
+                        let _ = code;
+                        return fail_review_core(child);
+                    }
+                    ReviewCoreMessage::Ready { .. } | ReviewCoreMessage::Result { .. } => {
+                        return fail_review_core(child);
+                    }
+                }
+            }
+            CommandEvent::Terminated(_) => return Err(RuntimeError::new("review_core_failed")),
+            CommandEvent::Stderr(_) | CommandEvent::Error(_) => return fail_review_core(child),
+            _ => return fail_review_core(child),
+        }
+    };
+
+    if child.write(b"{\"type\":\"shutdown\"}\n").is_err() {
+        return fail_review_core(child);
+    }
+    let shutdown_deadline = Instant::now() + NORMALIZER_SHUTDOWN_TIMEOUT;
+    let event = match timeout_at(shutdown_deadline, events.recv()).await {
+        Ok(Some(event)) => event,
+        Ok(None) | Err(_) => return fail_review_core(child),
+    };
+    match event {
+        CommandEvent::Terminated(payload) if payload.code == Some(0) => Ok(result),
+        CommandEvent::Terminated(_) => Err(RuntimeError::new("review_core_failed")),
+        CommandEvent::Stdout(_) | CommandEvent::Stderr(_) | CommandEvent::Error(_) => {
+            fail_review_core(child)
+        }
+        _ => fail_review_core(child),
+    }
+}
+
+fn fail_review_core(child: CommandChild) -> Result<ReviewCoreResult, RuntimeError> {
+    let _ = child.kill();
+    Err(RuntimeError::new("review_core_failed"))
+}
+
+fn is_unique_requested_relationship_candidate(
+    candidates: &[CoreCandidate],
+    candidate_record_id: &str,
+) -> bool {
+    matches!(
+        candidates,
+        [candidate] if candidate.id.as_str() == candidate_record_id
+    )
 }
 
 fn valid_normalizer_ready(protocol_version: u8, runtime: &str, environment_cleared: bool) -> bool {
@@ -2253,6 +3957,32 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct MemoryLocalInboxBookmarkStore {
+        bookmark: Mutex<Option<Vec<u8>>>,
+    }
+
+    impl LocalInboxBookmarkStore for MemoryLocalInboxBookmarkStore {
+        fn delete(&self) -> Result<(), ()> {
+            *self.bookmark.lock().map_err(|_| ())? = None;
+            Ok(())
+        }
+
+        fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+            Ok(self
+                .bookmark
+                .lock()
+                .map_err(|_| ())?
+                .clone()
+                .map(Zeroizing::new))
+        }
+
+        fn save(&self, bookmark: &[u8]) -> Result<(), ()> {
+            *self.bookmark.lock().map_err(|_| ())? = Some(bookmark.to_vec());
+            Ok(())
+        }
+    }
+
     fn statement_password_runtime(
         root: &Path,
         statement_passwords: Arc<dyn StatementPasswordStore>,
@@ -2261,6 +3991,7 @@ mod tests {
             root.to_path_buf(),
             Arc::new(MemoryRememberedKeyStore::default()),
             statement_passwords,
+            Arc::new(MemoryLocalInboxBookmarkStore::default()),
         );
         runtime
             .create(b"synthetic-vault-password")
@@ -2281,6 +4012,87 @@ mod tests {
             .expect("unlocked store")
             .statement_password_state("source-dbs")
             .expect("statement password state")
+    }
+
+    #[test]
+    fn refuses_an_ambiguous_or_mismatched_core_relationship_candidate() {
+        assert!(is_unique_requested_relationship_candidate(
+            &[CoreCandidate {
+                id: "record-dbs-card".to_owned(),
+            }],
+            "record-dbs-card",
+        ));
+        assert!(!is_unique_requested_relationship_candidate(
+            &[
+                CoreCandidate {
+                    id: "record-dbs-card".to_owned(),
+                },
+                CoreCandidate {
+                    id: "record-other-card".to_owned(),
+                },
+            ],
+            "record-dbs-card",
+        ));
+        assert!(!is_unique_requested_relationship_candidate(
+            &[CoreCandidate {
+                id: "record-other-card".to_owned(),
+            }],
+            "record-dbs-card",
+        ));
+    }
+
+    #[test]
+    fn local_inbox_bookmark_is_paused_while_locked_and_disable_removes_it() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let bookmarks = Arc::new(MemoryLocalInboxBookmarkStore::default());
+        let runtime = VaultRuntime::with_secret_stores(
+            parent.path().join("vault"),
+            Arc::new(MemoryRememberedKeyStore::default()),
+            Arc::new(MemoryStatementPasswordStore::default()),
+            bookmarks.clone(),
+        );
+        runtime
+            .create(b"synthetic-vault-password")
+            .expect("create Vault");
+        bookmarks
+            .save(b"security-scoped-bookmark")
+            .expect("save bookmark");
+        runtime.lock().expect("lock Vault");
+
+        let paused = runtime.local_inbox_status().expect("paused status");
+        assert_eq!(paused.access_state, LocalInboxAccessState::Paused);
+        assert!(paused.enabled);
+        assert!(!paused.backups_prepared);
+
+        let disabled = runtime.disable_local_inbox().expect("disable Inbox");
+        assert_eq!(disabled.access_state, LocalInboxAccessState::Disabled);
+        assert!(!disabled.enabled);
+        assert!(bookmarks.load().expect("load bookmark").is_none());
+    }
+
+    #[test]
+    fn rejects_coverage_decision_without_a_current_declared_prompt() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let runtime = statement_password_runtime(
+            &parent.path().join("vault"),
+            Arc::new(MemoryStatementPasswordStore::default()),
+        );
+
+        assert_eq!(
+            runtime
+                .record_statement_coverage_decision(&StatementCoverageDecisionRequest {
+                    account_id: "account-dbs".to_owned(),
+                    action: StatementCoverageDecisionAction::NotExpected,
+                    document_type: "account_statement".to_owned(),
+                    money_source_id: "source-dbs".to_owned(),
+                    remind_after: None,
+                    statement_period_from: "2026-02-01".to_owned(),
+                    statement_period_to: "2026-02-28".to_owned(),
+                })
+                .expect_err("empty provider policy has no current coverage prompt")
+                .code(),
+            "coverage_decision_invalid"
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -4072,6 +5884,27 @@ mod tests {
     }
 
     #[test]
+    fn review_read_models_reject_a_locked_vault() {
+        let parent = tempfile::tempdir().expect("temporary app data");
+        let runtime = VaultRuntime::new(parent.path().join("vault"));
+
+        assert_eq!(
+            runtime
+                .list_review_items()
+                .expect_err("reject review list while locked")
+                .code(),
+            "vault_locked"
+        );
+        assert_eq!(
+            runtime
+                .money_overview()
+                .expect_err("reject overview while locked")
+                .code(),
+            "vault_locked"
+        );
+    }
+
+    #[test]
     fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
         let parent = tempfile::tempdir().expect("temporary app data");
         let source_path = parent.path().join("synthetic.csv");
@@ -4138,6 +5971,10 @@ mod tests {
                     document_type: "transfer_export".to_owned(),
                     provider_key: "synthetic-bank".to_owned(),
                     statement_id: Some("transfer-2026-07".to_owned()),
+                    statement_period: Some(NormalizerStatementPeriod {
+                        from: Some("2026-07-01".to_owned()),
+                        to: Some("2026-07-31".to_owned()),
+                    }),
                 },
                 accounts: vec![NormalizerAccount {
                     account_type: "deposit_account".to_owned(),

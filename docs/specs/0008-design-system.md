@@ -4,9 +4,11 @@
 
 Define CanCan's visual design direction before UI implementation.
 
-## Implementation blocker
+## Implementation ownership
 
-The core visual direction, semantic palette, typography direction, and motion rhythm are accepted. Exact component-library major/version and Figma's role remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). Do not delay code-native UI exploration on those two tooling decisions, but do not silently add a component library before its contract is accepted.
+The core visual direction, semantic palette, typography direction, and motion rhythm are accepted. Kimi Code CLI owns customer-facing renderer craft: it may select the component foundation and exact pinned versions, decide whether Figma is useful as an exploratory artifact or omit it, and structure the renderer implementation freely within the accepted visual, accessibility, privacy, and product-state contracts.
+
+The production code and canonical specs remain authoritative. Figma is never required as an implementation input and cannot redefine finance, evidence, job, or security behavior. Component and Figma choices therefore do not block backend business-logic work or the `review-ledger-ui` slice.
 
 CanCan should feel like a 2026 personal finance and account-record workspace: futuristic, classic, technical, secure, precise, and calm, with professional-grade detail available through progressive disclosure.
 
@@ -86,23 +88,9 @@ Rules:
 
 ## Component strategy
 
-Use a mature React component foundation to keep code volume under control and ensure consistency.
+Kimi Code CLI should use the smallest mature React foundation that supports the accepted design and accessibility requirements. Any introduced dependency must be pinned and justified by the renderer implementation that uses it. Avoid mixing component systems or adding wrappers, charting, table, or motion libraries before a concrete screen needs them.
 
-Recommended default:
-
-```text
-Hero UI for app components
-Tailwind-compatible theme tokens
-CanCan-owned wrappers in packages/ui
-lucide-react icons
-TanStack Table for complex tables
-Recharts or equivalent for simple charts
-motion/react or CSS transitions for purposeful motion
-```
-
-Alternatives such as shadcn/Radix are acceptable if chosen deliberately. Do not mix multiple component systems without a written reason.
-
-DaisyUI can inspire fast prototypes, but should not define final brand identity.
+The choice may include Hero UI, shadcn/Radix, or a lighter code-native approach. No option is canonical in advance, and library defaults must not define CanCan's final brand identity.
 
 ## Layout
 

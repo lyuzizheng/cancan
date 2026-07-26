@@ -5,13 +5,21 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  MoneyOverview,
   MoneySourceSummary,
+  RecentActivitySummary,
+  RelationshipCandidateSummary,
+  ReviewItemDetail,
+  ReviewItemSummary,
+  ReviewJobSummary,
+  ReviewMutationOutcome,
   SourceDocumentImportOutcome,
   RenderedDocumentPage,
   SavedStatementPasswordResult,
   SourceDocumentPreview,
   SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
+  UndoOutcome,
   VaultAccessStatus,
   VaultStatus,
 } from "./command-contracts";
@@ -35,6 +43,39 @@ const otherMoneySource: MoneySourceSummary = {
   displayName: "Another Bank",
   moneySourceId: "money-source-2",
   sourceType: "bank",
+};
+
+const reviewItem: ReviewItemSummary = {
+  accountLabel: "DBS Multiplier Account",
+  amountValue: "512.34",
+  currency: "SGD",
+  eventType: "credit_card_repayment",
+  postedOn: "2026-07-15",
+  reasonCode: "possible_card_repayment",
+  recordId: "record-1",
+  recordVersion: 1,
+  reviewItemId: "review-1",
+};
+const linkedReviewItem: ReviewItemSummary = {
+  ...reviewItem,
+  accountLabel: "DBS Visa Card",
+  postedOn: "2026-07-17",
+  recordId: "record-2",
+  reviewItemId: "review-2",
+};
+const reviewDetail: ReviewItemDetail = {
+  ...reviewItem,
+  documentLabel: "July statement.pdf",
+  sourceLabel: "DBS",
+};
+const reviewCandidate: RelationshipCandidateSummary = {
+  accountLabel: "DBS Visa Card",
+  amountValue: "512.34",
+  currency: "SGD",
+  eventType: "credit_card_repayment",
+  postedOn: "2026-07-17",
+  recordId: "record-2",
+  recordVersion: 1,
 };
 
 beforeEach(() => {
@@ -69,13 +110,49 @@ function sourceDocument(
 
 function createApi(overrides: Partial<VaultApi> = {}) {
   const api = {
+    acceptReviewRelationship: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
+      reason: null,
+      recordVersion: null,
+      reviewItemId: null,
+      status: "relationship_accepted",
+    })),
     createVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     deleteSourceDocument: vi.fn(async (): Promise<boolean> => true),
+    editReviewRecord: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
+      reason: null,
+      recordVersion: 2,
+      reviewItemId: null,
+      status: "updated",
+    })),
+    enqueueCommitReviewBatch: vi.fn(async (): Promise<ReviewJobSummary> => ({
+      createdAt: "2026-07-25 09:00:00",
+      finishedAt: null,
+      jobId: "job-1",
+      outcomes: [],
+      status: "queued",
+    })),
     forgetVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
+    getMoneyOverview: vi.fn(async (): Promise<MoneyOverview> => ({
+      assets: [],
+      liabilities: [],
+    })),
+    getReviewDetail: vi.fn(async (): Promise<ReviewItemDetail | null> => reviewDetail),
+    getReviewJob: vi.fn(async (): Promise<ReviewJobSummary | null> => ({
+      createdAt: "2026-07-25 09:00:00",
+      finishedAt: "2026-07-25 09:00:01",
+      jobId: "job-1",
+      outcomes: [],
+      status: "succeeded",
+    })),
     importSourceDocument: vi.fn(
       async (): Promise<SourceDocumentImportOutcome | null> => null,
     ),
     listMoneySources: vi.fn(async (): Promise<MoneySourceSummary[]> => []),
+    listRecentActivity: vi.fn(async (): Promise<RecentActivitySummary[]> => []),
+    listRelationshipCandidates: vi.fn(
+      async (): Promise<RelationshipCandidateSummary[]> => [],
+    ),
+    listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => []),
     listSourceDocuments: vi.fn(async (): Promise<SourceDocumentSummary[]> => []),
     listStatementPasswordSources: vi.fn(async () => []),
     listUnassignedSourceDocuments: vi.fn(
@@ -100,6 +177,13 @@ function createApi(overrides: Partial<VaultApi> = {}) {
         truncated: false,
       }),
     ),
+    rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
+    removeReviewRecord: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
+      reason: null,
+      recordVersion: null,
+      reviewItemId: null,
+      status: "removed",
+    })),
     renderSourceDocumentPage: vi.fn(
       async (_documentId: string, pageNumber: number): Promise<RenderedDocumentPage> => ({
         pageCount: 2,
@@ -107,12 +191,15 @@ function createApi(overrides: Partial<VaultApi> = {}) {
         pngBase64: "cmVuZGVyZWQtcGFnZQ==",
       }),
     ),
-    rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
     saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
     saveSourceDocumentCopy: vi.fn(async (): Promise<boolean> => false),
     trySavedStatementPassword: vi.fn(
       async (): Promise<SavedStatementPasswordResult> => "invalid",
     ),
+    undoCommittedEvent: vi.fn(async (): Promise<UndoOutcome> => ({
+      eventId: "event-1",
+      status: "undone",
+    })),
     unlockSourceDocument: vi.fn(async (): Promise<void> => undefined),
     unlockVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     unlockVaultWithKeychain: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
@@ -146,11 +233,24 @@ async function settle() {
   await Promise.resolve();
 }
 
-async function mount(api: VaultApi) {
+async function mount(api: VaultApi, view?: "sources" | "review") {
   await act(async () => {
     root.render(<App api={api} />);
     await settle();
   });
+  if (view !== undefined) {
+    await act(async () => {
+      navItem(view === "sources" ? "Sources" : "Review").click();
+      await settle();
+    });
+  }
+}
+
+function navItem(label: string): HTMLButtonElement {
+  const matches = [...container.querySelectorAll<HTMLButtonElement>(".vault-nav-item")]
+    .filter((element) => element.textContent?.trim().startsWith(label));
+  expect(matches).toHaveLength(1);
+  return matches[0]!;
 }
 
 function button(label: string): HTMLButtonElement {
@@ -194,6 +294,21 @@ async function enterInput(selector: string, value: string) {
   });
 }
 
+async function enterField(label: string, value: string) {
+  const input = [...container.querySelectorAll<HTMLInputElement>(".review-edit-grid input")]
+    .find((element) => element.getAttribute("aria-label") === label);
+  expect(input).toBeDefined();
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  await act(async () => {
+    setter!.call(input, value);
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+    await settle();
+  });
+}
+
 describe("App manual import orchestration", () => {
   it("unlocks the Vault and loads unassigned documents through the injected API", async () => {
     const api = createApi({
@@ -217,6 +332,11 @@ describe("App manual import orchestration", () => {
 
     expect(api.unlockVault).toHaveBeenCalledWith("vault-password");
     expect(api.createVault).not.toHaveBeenCalled();
+
+    await act(async () => {
+      navItem("Sources").click();
+      await settle();
+    });
     expect(container.textContent).toContain(availableDocument.originalFilename);
     expect(button("Add file").disabled).toBe(false);
   });
@@ -230,7 +350,7 @@ describe("App manual import orchestration", () => {
       listSourceDocuments,
     });
 
-    await mount(api);
+    await mount(api, "sources");
 
     expect(container.textContent).toContain(moneySource.displayName);
     expect(container.textContent).toContain(otherMoneySource.displayName);
@@ -261,7 +381,7 @@ describe("App manual import orchestration", () => {
       }),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     const selectSource = container.querySelector<HTMLButtonElement>(
       `[aria-label="View documents for ${moneySource.displayName}"]`,
     );
@@ -286,7 +406,7 @@ describe("App manual import orchestration", () => {
       listSourceDocuments,
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await act(async () => {
       container.querySelector<HTMLButtonElement>(
         `[aria-label="View documents for ${moneySource.displayName}"]`,
@@ -321,6 +441,11 @@ describe("App manual import orchestration", () => {
 
     expect(api.createVault).toHaveBeenCalledWith("new-vault-password");
     expect(api.unlockVault).not.toHaveBeenCalled();
+
+    await act(async () => {
+      navItem("Sources").click();
+      await settle();
+    });
     expect(button("Add file")).toBeDefined();
   });
 
@@ -329,7 +454,7 @@ describe("App manual import orchestration", () => {
       saveRecoveryFile: vi.fn(async (): Promise<boolean> => true),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     expect(container.textContent).toContain("Save your recovery file");
 
     await click("Save recovery file");
@@ -342,7 +467,7 @@ describe("App manual import orchestration", () => {
   it("keeps the recovery task after the save picker is cancelled", async () => {
     const api = createApi();
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Save recovery file");
 
     expect(container.textContent).toContain("Save your recovery file");
@@ -366,7 +491,7 @@ describe("App manual import orchestration", () => {
     await click("Unlock with this Mac");
 
     expect(api.unlockVaultWithKeychain).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain("Add file");
+    expect(container.textContent).not.toContain("Unlock with this Mac");
 
     await click("Lock Vault");
     expect(container.querySelector<HTMLInputElement>("#vault-password")?.value).toBe("");
@@ -392,7 +517,7 @@ describe("App manual import orchestration", () => {
   it("enables and removes remembered unlock without sending the key to the renderer", async () => {
     const api = createApi();
 
-    await mount(api);
+    await mount(api, "sources");
     const checkbox = container.querySelector<HTMLInputElement>(
       '.remember-vault-control input[type="checkbox"]',
     );
@@ -422,7 +547,7 @@ describe("App manual import orchestration", () => {
       }),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     const checkbox = container.querySelector<HTMLInputElement>(
       '.remember-vault-control input[type="checkbox"]',
     );
@@ -473,7 +598,7 @@ describe("App manual import orchestration", () => {
       importSourceDocument: vi.fn(() => importOutcomes.shift()!),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Add file");
 
     expect(api.importSourceDocument).toHaveBeenCalledTimes(1);
@@ -522,7 +647,7 @@ describe("App manual import orchestration", () => {
       unlockSourceDocument,
     });
 
-    await mount(api);
+    await mount(api, "sources");
     expect(container.textContent).toContain("Needs attention");
     expect(container.textContent).not.toContain("Check routing");
     expect(container.textContent).toContain("Delete source file");
@@ -589,7 +714,7 @@ describe("App manual import orchestration", () => {
       }),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Unlock");
 
     expect(container.textContent).toContain(
@@ -621,7 +746,7 @@ describe("App manual import orchestration", () => {
       ]),
     });
 
-    await mount(api);
+    await mount(api, "sources");
 
     const statusFor = (filename: string) => [...container.querySelectorAll(".evidence-row")]
       .find((row) => row.textContent?.includes(filename))
@@ -645,7 +770,7 @@ describe("App manual import orchestration", () => {
       trySavedStatementPassword: vi.fn(async () => "unavailable" as const),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Unlock");
 
     expect(container.textContent).toContain(
@@ -671,7 +796,7 @@ describe("App manual import orchestration", () => {
       ]),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Unlock");
     expect(container.textContent).toContain("Money Sources couldn’t be loaded");
     expect(container.textContent).not.toContain("No Money Source is configured");
@@ -700,7 +825,7 @@ describe("App manual import orchestration", () => {
       trySavedStatementPassword: vi.fn(() => savedPassword.promise),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Unlock");
     expect(api.trySavedStatementPassword).toHaveBeenCalledTimes(1);
 
@@ -747,7 +872,7 @@ describe("App manual import orchestration", () => {
       normalizeSourceDocument,
     });
 
-    await mount(api);
+    await mount(api, "sources");
     const unavailable = buttons("Routing unavailable");
     expect(unavailable).toHaveLength(2);
     expect(unavailable.every((element) => element.disabled)).toBe(true);
@@ -809,7 +934,7 @@ describe("App manual import orchestration", () => {
       normalizeSourceDocument: vi.fn(() => routing.promise),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Check routing");
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
@@ -861,7 +986,7 @@ describe("App manual import orchestration", () => {
       vaultAccessStatus,
     });
 
-    await mount(api);
+    await mount(api, "sources");
     expect(api.listMoneySources).toHaveBeenCalledTimes(1);
     expect(api.listUnassignedSourceDocuments).toHaveBeenCalledTimes(1);
 
@@ -886,7 +1011,7 @@ describe("App manual import orchestration", () => {
       listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     const viewTrigger = button("View document");
     await click("View document");
 
@@ -896,6 +1021,8 @@ describe("App manual import orchestration", () => {
       "data:image/png;base64,cmVuZGVyZWQtcGFnZQ==",
     );
     expect(container.textContent).toContain("Page 1 of 2");
+    expect(container.querySelector("section.ledger")?.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector("aside.vault-spine")?.hasAttribute("inert")).toBe(true);
 
     const close = button("Close");
     const next = button("Next");
@@ -956,7 +1083,7 @@ describe("App manual import orchestration", () => {
       ),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     expect(container.textContent).toContain("PNG");
     await click("View document");
 
@@ -986,7 +1113,7 @@ describe("App manual import orchestration", () => {
       ),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     const viewTrigger = button("View document");
     await click("View document");
 
@@ -1026,7 +1153,7 @@ describe("App manual import orchestration", () => {
       previewSourceDocument: vi.fn(() => preview.promise),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("View document");
     expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
 
@@ -1063,7 +1190,7 @@ describe("App manual import orchestration", () => {
       previewSourceDocument: vi.fn(() => preview.promise),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("View document");
     expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
 
@@ -1086,7 +1213,7 @@ describe("App manual import orchestration", () => {
       .mockResolvedValueOnce([deletedDocument]);
     const api = createApi({ listUnassignedSourceDocuments });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Delete source file");
 
     expect(api.deleteSourceDocument).toHaveBeenCalledWith(
@@ -1107,7 +1234,7 @@ describe("App manual import orchestration", () => {
       saveSourceDocumentCopy: vi.fn(async () => outcomes.shift()!),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Save a copy");
     expect(container.textContent).not.toContain("Copy saved");
 
@@ -1134,7 +1261,7 @@ describe("App manual import orchestration", () => {
       saveSourceDocumentCopy: vi.fn(() => copy.promise),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Save a copy");
     expect(container.textContent).toContain("Saving copy…");
 
@@ -1157,7 +1284,7 @@ describe("App manual import orchestration", () => {
       listUnassignedSourceDocuments,
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Delete source file");
 
     expect(api.deleteSourceDocument).toHaveBeenCalledTimes(1);
@@ -1180,7 +1307,7 @@ describe("App manual import orchestration", () => {
       listUnassignedSourceDocuments,
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Delete source file");
 
     expect(container.textContent).toContain("File deleted");
@@ -1226,7 +1353,7 @@ describe("App manual import orchestration", () => {
       }),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("View document");
     expect(container.querySelector("img")).not.toBeNull();
 
@@ -1331,7 +1458,7 @@ describe("App manual import orchestration", () => {
       lockVault: vi.fn(() => inactivityLock.promise),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("View document");
     expect(container.querySelector("img")).not.toBeNull();
     expect(container.textContent).toContain(availableDocument.originalFilename);
@@ -1363,7 +1490,7 @@ describe("App manual import orchestration", () => {
       lockVault: vi.fn(() => inactivityLock.promise),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("Add file");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
@@ -1525,7 +1652,7 @@ describe("App manual import orchestration", () => {
       ),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("View document");
     await click("Next");
     await click("Close");
@@ -1558,7 +1685,7 @@ describe("App manual import orchestration", () => {
       ),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("View document");
     await click("Next");
     await click("Close");
@@ -1589,7 +1716,7 @@ describe("App manual import orchestration", () => {
       ),
     });
 
-    await mount(api);
+    await mount(api, "sources");
     await click("View document");
     await click("Next");
 
@@ -1619,5 +1746,436 @@ describe("App manual import orchestration", () => {
       "That password did not unlock this Vault.",
     );
     expect(container.textContent).not.toContain("invalid_credentials");
+  });
+});
+
+describe("App review and overview orchestration", () => {
+  it("lands on Overview with money totals, review count, and activity after unlock", async () => {
+    const api = createApi({
+      getMoneyOverview: vi.fn(async (): Promise<MoneyOverview> => ({
+        assets: [{
+          accountId: "account-1",
+          accountLabel: "DBS Multiplier Account",
+          asOf: "2026-07-25",
+          currency: "SGD",
+          value: "6245.00",
+        }],
+        liabilities: [{
+          accountId: "account-2",
+          accountLabel: "DBS Visa Card",
+          asOf: "2026-07-24",
+          currency: "SGD",
+          value: "-512.34",
+        }],
+      })),
+      listRecentActivity: vi.fn(async (): Promise<RecentActivitySummary[]> => [
+        {
+          canUndo: true,
+          eventDate: "2026-07-25",
+          eventId: "event-1",
+          eventType: "purchase",
+          sourceLabels: ["DBS"],
+          spending: true,
+        },
+        {
+          canUndo: false,
+          eventDate: "2026-07-24",
+          eventId: "event-2",
+          eventType: "credit_card_repayment",
+          sourceLabels: [],
+          spending: false,
+        },
+      ]),
+      listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => [
+        reviewItem,
+        linkedReviewItem,
+      ]),
+    });
+
+    await mount(api);
+
+    expect(container.textContent).toContain("Your money, organized");
+    expect(container.textContent).toContain("Money Overview");
+    expect(container.textContent).toContain("SGD 6,245.00");
+    expect(container.textContent).toContain("SGD -512.34");
+    expect(container.textContent).toContain("2 records need your check.");
+    expect(container.textContent).toContain("Purchase");
+    expect(container.textContent).toContain("Spending");
+    expect(container.textContent).toContain("25 Jul 2026 · DBS");
+    expect(buttons("Undo")).toHaveLength(1);
+  });
+
+  it("switches between Overview, Sources, and Review from the vault nav", async () => {
+    const api = createApi({
+      listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => [
+        reviewItem,
+        linkedReviewItem,
+      ]),
+    });
+    await mount(api);
+
+    expect(navItem("Overview").getAttribute("aria-current")).toBe("page");
+    expect(navItem("Review").textContent).toContain("2");
+
+    await act(async () => {
+      navItem("Review").click();
+      await settle();
+    });
+    expect(navItem("Review").getAttribute("aria-current")).toBe("page");
+    expect(container.textContent).toContain("Needs your check");
+    expect(container.textContent).toContain("Looks like a card repayment");
+
+    await act(async () => {
+      navItem("Sources").click();
+      await settle();
+    });
+    expect(navItem("Sources").getAttribute("aria-current")).toBe("page");
+    expect(button("Add file")).toBeDefined();
+  });
+
+  it("opens review details with linked-record candidates", async () => {
+    const api = createApi({
+      listRelationshipCandidates: vi.fn(
+        async (): Promise<RelationshipCandidateSummary[]> => [reviewCandidate],
+      ),
+      listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => [
+        reviewItem,
+        linkedReviewItem,
+      ]),
+    });
+    await mount(api, "review");
+
+    await act(async () => {
+      buttons("Review details")[0]!.click();
+      await settle();
+    });
+
+    expect(api.getReviewDetail).toHaveBeenCalledWith("review-1");
+    expect(api.listRelationshipCandidates).toHaveBeenCalledWith("review-1", 1);
+    expect(container.textContent).toContain("July statement.pdf");
+    expect(container.textContent).toContain("Card repayment");
+    expect(container.textContent).toContain("Looks related");
+    expect(container.textContent).toContain("DBS Visa Card");
+    expect(button("Accept link")).toBeDefined();
+  });
+
+  it("saves only the edited fields and reopens the queue at the new record version", async () => {
+    const updatedItem: ReviewItemSummary = {
+      ...reviewItem,
+      amountValue: "600.00",
+      recordVersion: 2,
+      reviewItemId: "review-1:v2",
+    };
+    const api = createApi({
+      editReviewRecord: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
+        reason: null,
+        recordVersion: 2,
+        reviewItemId: "review-1:v2",
+        status: "updated",
+      })),
+      listReviewItems: vi.fn()
+        .mockResolvedValueOnce([reviewItem, linkedReviewItem])
+        .mockResolvedValue([updatedItem]),
+    });
+    await mount(api, "review");
+
+    await act(async () => {
+      buttons("Review details")[0]!.click();
+      await settle();
+    });
+    await click("Edit record");
+    await enterField("Amount", "600.00");
+    await click("Save edit");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(api.editReviewRecord).toHaveBeenCalledWith(
+      "review-1",
+      1,
+      { amountValue: "600.00" },
+    );
+    expect(container.textContent).toContain("Edit saved");
+    expect(api.getReviewDetail).toHaveBeenCalledWith("review-1:v2");
+    expect(container.textContent).toContain("SGD 600.00");
+    expect(container.textContent).not.toContain("SGD 512.34");
+  });
+
+  it("blocks an invalid edit without calling the host", async () => {
+    const api = createApi({
+      listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => [
+        reviewItem,
+        linkedReviewItem,
+      ]),
+    });
+    await mount(api, "review");
+
+    await act(async () => {
+      buttons("Review details")[0]!.click();
+      await settle();
+    });
+    await click("Edit record");
+    await enterField("Amount", "12.3.4");
+    await click("Save edit");
+
+    expect(container.textContent).toContain(
+      "Amount must be a positive decimal, such as 128.50.",
+    );
+    expect(api.editReviewRecord).not.toHaveBeenCalled();
+    expect(button("Save edit")).toBeDefined();
+  });
+
+  it("removes a record after a two-step confirmation and empties the queue", async () => {
+    const api = createApi({
+      listReviewItems: vi.fn()
+        .mockResolvedValueOnce([reviewItem])
+        .mockResolvedValue([]),
+    });
+    await mount(api, "review");
+
+    await click("Review details");
+    await click("Remove record");
+    await click("Confirm remove");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(api.removeReviewRecord).toHaveBeenCalledWith("review-1", 1);
+    expect(container.textContent).toContain("Record removed");
+    expect(container.textContent).toContain("Nothing needs your check");
+  });
+
+  it("accepts a suggested relationship, selects both records, and shows the Linked notice", async () => {
+    const api = createApi({
+      listRelationshipCandidates: vi.fn(
+        async (): Promise<RelationshipCandidateSummary[]> => [reviewCandidate],
+      ),
+      listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => [
+        reviewItem,
+        linkedReviewItem,
+      ]),
+    });
+    await mount(api, "review");
+
+    await act(async () => {
+      buttons("Review details")[0]!.click();
+      await settle();
+    });
+    await click("Accept link");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(api.acceptReviewRelationship).toHaveBeenCalledWith(
+      "review-1",
+      1,
+      "record-2",
+      1,
+    );
+    expect(container.textContent).toContain("Linked");
+    const checkboxes = [...container.querySelectorAll<HTMLInputElement>(
+      ".review-select input[type='checkbox']",
+    )];
+    expect(checkboxes).toHaveLength(2);
+    for (const checkbox of checkboxes) {
+      expect(checkbox.checked).toBe(true);
+    }
+  });
+
+  it("commits the selected batch, polls the job, and reports the committed outcome", async () => {
+    const committedJob: ReviewJobSummary = {
+      createdAt: "2026-07-25 09:00:00",
+      finishedAt: "2026-07-25 09:00:01",
+      jobId: "job-1",
+      outcomes: [{
+        reason: null,
+        recordIds: ["record-1", "record-2"],
+        status: "committed",
+      }],
+      status: "succeeded",
+    };
+    const api = createApi({
+      getReviewJob: vi.fn(async (): Promise<ReviewJobSummary | null> => committedJob),
+      listReviewItems: vi.fn()
+        .mockResolvedValueOnce([reviewItem, linkedReviewItem])
+        .mockResolvedValue([]),
+    });
+    await mount(api, "review");
+
+    vi.useFakeTimers();
+    await click("Select all");
+    await click("Add selected (2)");
+
+    expect(api.enqueueCommitReviewBatch).toHaveBeenCalledWith([
+      "review-1",
+      "review-2",
+    ]);
+    expect(container.textContent).toContain("Adding your records…");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+      await settle();
+      await settle();
+    });
+
+    expect(api.getReviewJob).toHaveBeenCalledWith("job-1");
+    expect(container.textContent).toContain("Added 2 records.");
+    expect(container.textContent).toContain("Nothing needs your check");
+  });
+
+  it("shows a stale-change notice and reloads the queue when a save conflicts", async () => {
+    const api = createApi({
+      editReviewRecord: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
+        reason: "stale_review_item",
+        recordVersion: null,
+        reviewItemId: null,
+        status: "conflict",
+      })),
+      listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => [
+        reviewItem,
+        linkedReviewItem,
+      ]),
+    });
+    await mount(api, "review");
+
+    await act(async () => {
+      buttons("Review details")[0]!.click();
+      await settle();
+    });
+    await click("Edit record");
+    await enterField("Amount", "600.00");
+    await click("Save edit");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Couldn’t apply that change");
+    expect(container.textContent).toContain(
+      "This item changed while you worked. CanCan reloaded the latest version.",
+    );
+    expect(api.listReviewItems).toHaveBeenCalledTimes(2);
+  });
+
+  it("undoes the last ledger step from Overview and reloads activity", async () => {
+    const api = createApi({
+      listRecentActivity: vi.fn(async (): Promise<RecentActivitySummary[]> => [{
+        canUndo: true,
+        eventDate: "2026-07-25",
+        eventId: "event-1",
+        eventType: "purchase",
+        sourceLabels: ["DBS"],
+        spending: true,
+      }]),
+    });
+    await mount(api);
+
+    await click("Undo");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(api.undoCommittedEvent).toHaveBeenCalledWith("event-1");
+    expect(container.textContent).toContain("Undone");
+    expect(api.listRecentActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears finance and review data when the native host reports a lock", async () => {
+    let notifyLocked: (() => void) | undefined;
+    const listReviewItems = vi.fn(
+      async (): Promise<ReviewItemSummary[]> => [reviewItem, linkedReviewItem],
+    );
+    const api = createApi({
+      listReviewItems,
+      onVaultLocked: vi.fn(async (handler) => {
+        notifyLocked = handler;
+        return () => undefined;
+      }),
+    });
+    await mount(api);
+
+    expect(container.textContent).toContain("Money Overview");
+    expect(container.textContent).toContain("2 records need your check.");
+
+    await act(async () => {
+      notifyLocked?.();
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).not.toContain("Money Overview");
+    expect(container.textContent).not.toContain("Looks like a card repayment");
+
+    listReviewItems.mockClear();
+    await enterPassword("vault-password");
+    await click("Unlock Vault");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Money Overview");
+    expect(container.textContent).toContain("2 records need your check.");
+    expect(listReviewItems).toHaveBeenCalled();
+  });
+
+  it("invalidates an in-flight review edit when focus reconciliation finds the Vault locked", async () => {
+    const edit = deferred<ReviewMutationOutcome>();
+    const api = createApi({
+      editReviewRecord: vi.fn(() => edit.promise),
+      listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => [
+        reviewItem,
+        linkedReviewItem,
+      ]),
+      vaultAccessStatus: vi.fn()
+        .mockResolvedValueOnce({
+          recoveryConfigured: false,
+          rememberedOnThisMac: false,
+          status: "unlocked",
+        })
+        .mockResolvedValueOnce({
+          recoveryConfigured: false,
+          rememberedOnThisMac: false,
+          status: "locked",
+        }),
+    });
+    await mount(api, "review");
+
+    await act(async () => {
+      buttons("Review details")[0]!.click();
+      await settle();
+    });
+    await click("Edit record");
+    await enterField("Amount", "600.00");
+    await click("Save edit");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await settle();
+    });
+    expect(container.textContent).toContain("Unlock your Vault");
+
+    await act(async () => {
+      edit.resolve({
+        reason: null,
+        recordVersion: 2,
+        reviewItemId: null,
+        status: "updated",
+      });
+      await settle();
+    });
+    await enterPassword("vault-password");
+    await click("Unlock Vault");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Your money, organized");
+    expect(container.textContent).not.toContain("Edit saved");
   });
 });
