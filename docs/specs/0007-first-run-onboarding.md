@@ -8,7 +8,7 @@ The first-run experience must communicate technology, safety, and local ownershi
 
 ## Implementation blocker
 
-First-run optionality and exact Gmail/cloud-AI data consent remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). The simple password/Keychain/recovery-file model is accepted; exact cryptographic claims still depend on validated implementation evidence.
+First-run optionality and final one-time per-mailbox Gmail/cloud-AI disclosure wording remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). The simple password/Keychain/recovery-file model, multiple mailbox connections, and mailbox-level authorization before Gmail-derived data reaches cloud AI are accepted; exact cryptographic claims still depend on validated implementation evidence.
 
 ## Experience goal
 
@@ -52,17 +52,15 @@ Avoid defensive product copy that explains what CanCan does not do. UI copy shou
 
 CanCan should not let users create arbitrary integration providers for MVP.
 
-MVP providers are fixed and product-defined:
+The first-preview Money Source targets are fixed and product-defined:
 
 ```text
-DBS bank account statement
-DBS credit card statement
-UOB bank account statement
-UOB credit card statement
-Wise PDF/CSV/export
+DBS, with bank and credit-card statement profiles under one Money Source
+HSBC
+UOB
 ```
 
-Users can create accounts/sub-accounts under supported money sources. Custom/manual assets can exist later, but they must not be confused with supported automated integrations.
+HSBC and UOB need no fixed Bank/Card matrix and may begin with Review-only profiles, but each advertised source needs at least one real package/profile with deterministic review-only evidence. CPF and additional providers are follow-ons. Users can create accounts/sub-accounts under supported money sources. Custom/manual assets can exist later, but they must not be confused with supported automated integrations.
 
 ## First-run flow
 
@@ -78,7 +76,7 @@ Welcome / product promise
 -> AI provider setup
 -> Add a first file or choose a supported Money Source
 -> Detect and confirm/create the Money Source plus sub-account(s) as evidence arrives
--> Optionally authorize the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) or connect Gmail using Desktop OAuth + PKCE loopback
+-> Optionally authorize the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) or connect one or more Gmail mailboxes using repeated Desktop OAuth + PKCE loopback
 -> Optional statement password setup when a supported provider needs it
 -> Review enabled capabilities and privacy-sensitive switches
 -> Land in Command Center
@@ -109,10 +107,10 @@ Before entering Command Center, show one polished review screen with the current
 ```text
 Local vault and lock
 AI provider / cloud processing
-Gmail connection
+Gmail mailbox connections
 Automatic Gmail scan
 CanCan iCloud Drive root (`Inbox` / `Backups`)
-Automatically add qualified records
+Automatically add high-confidence records
 Optional FX-rate source
 Update checks
 Backup target / last successful backup
@@ -163,17 +161,17 @@ Text recognition: local or configured OCR service
 AI structuring: text-only or multimodal normalizer
 ```
 
-The app chooses native text, OCR, both, or original page evidence using the accepted parser input-planning rules. The normal onboarding flow does not ask users to choose an OCR provider or a normalizer architecture. Exact cloud-data disclosure and consent text remain blocked by the Gmail/cloud-AI consent decision.
+The app chooses native text, OCR, both, or original page evidence using the accepted parser input-planning rules. The normal onboarding flow does not ask users to choose an OCR provider or a normalizer architecture. Final cloud-data disclosure wording remains blocked, but the product rule is accepted: connecting each Gmail mailbox includes one explicit disclosure/authorization for read access and configured-AI processing across that mailbox's enabled rules; no repeated rule-level authorization is required.
 
-The future dedicated cloud-image OCR capability is separately disclosed and explicitly opt-in. Its manually imported cloud OCR payload/config and transport contract is owned by [`0004-parser-contract.md`](./0004-parser-contract.md). The reusable executor may perform the accepted request through an injected fetch boundary, but none of the user flow exists yet: Keychain or environment loading, Settings, Tauri/sidecar/UI wiring, disclosure UI, and the opt-in local smoke test remain unimplemented. It does not authorize a live provider call during development or Gmail attachment or message-body uploads.
+The future dedicated cloud-image OCR capability is separately disclosed and explicitly opt-in. Its manually imported cloud OCR payload/config and transport contract is owned by [`0004-parser-contract.md`](./0004-parser-contract.md). The reusable executor may perform the accepted request through an injected fetch boundary, but none of the user flow exists yet: Keychain or environment loading, Settings, Tauri/sidecar/UI wiring, disclosure UI, and the opt-in local smoke test remain unimplemented. That transport checkpoint alone does not authorize a live provider call or Gmail upload; the connected mailbox's authorization does.
 
 ## Gmail setup decision
 
-Gmail MVP uses official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect.
+Gmail MVP uses official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect. The user may repeat that flow to add multiple mailbox-scoped connections.
 
 Computer-use/browser automation is not the primary Gmail architecture. It may be reconsidered later for non-Gmail bank portals or as an experimental fallback.
 
-Gmail setup is not the first or required ingestion step. Onboarding should lead with `Add a file`, then offer the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) and Gmail as optional convenience channels. Transaction-notification body capture is a separate opt-in from statement-attachment collection because it reads and retains different email content.
+Gmail setup is not the first or required ingestion step. Onboarding should lead with `Add a file`, then offer the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) and one or more Gmail mailboxes as optional convenience channels. The one-time mailbox disclosure must cover attachment and provider-approved transaction-body processing; rules select what CanCan actually reads and retains, but do not trigger repeated authorization prompts. A Money Source may then add different rules against any connected mailbox; those rules still converge on the shared parser job.
 
 ## Protected statement passwords
 
@@ -250,6 +248,7 @@ Open app
 - User may defer saving the recovery file, with an accurate persistent `Not configured` state and a later save action.
 - MVP does not ask for base currency.
 - AI setup is prominent and its current state is visible; whether setup may be skipped follows the unresolved first-run optionality decision.
+- Gmail setup can add multiple mailbox-scoped OAuth connections, records one truthful read/AI-processing authorization per mailbox, and does not repeat consent for each later rule.
 - Gmail setup uses local-first Desktop OAuth + PKCE loopback flow.
 - The first useful import does not require Gmail or a source/account preselection; optional CanCan-root setup links to the canonical `Inbox`/`Backups` contract and explains that the source folder remains outside the encrypted Vault.
 - Transaction-notification email body capture is separately disclosed and enabled from attachment collection.

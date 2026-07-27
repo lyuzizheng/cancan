@@ -85,9 +85,11 @@ Its response is plain transcription text only. It has no coordinate, box, layout
 
 ## Provider parser skills
 
-Each supported provider/document type is a versioned product parser package and document-agent skill with the same contract. DBS bank statements and DBS credit-card statements are separate document-type configurations under the DBS provider.
+Each supported provider/document type is a versioned product parser package and document-agent skill with the same contract. DBS bank statements and DBS credit-card statements are separate document-type configurations under one DBS provider/Money Source. DBS, HSBC, and UOB are the first-preview source targets. The preview does not require a fixed Bank/Card matrix for HSBC or UOB: each source may ship whichever working profiles exist, including Review-only profiles, but release copy may claim source support only after at least one real profile for that source passes its review-only package/fixture gates.
 
 These product skills belong in the parser package. They are not repo-development skills and must never be loaded from `.agents/skills/` by the product runtime.
+
+Provider breadth beyond the accepted first-preview source set is not a release blocker. Later sources may expand through owner dogfooding. Product and release copy must distinguish an available review-only/experimental package from a package/profile whose confidence calibration and hard-gate evidence allow automatic addition. An empty Source shell is not provider support. Adding a provider remains a versioned package, fixture, and review-boundary change rather than a hard-coded parser branch.
 
 Each package defines:
 
@@ -102,7 +104,7 @@ account/container detection rules
 deterministic financial validators
 supported capabilities and record types
 parser, skill, prompt, schema, tool-contract, and validator versions
-fixture/eval references and qualification profiles
+fixture/eval references and confidence-calibration profiles
 human-readable supported layouts and known limitations
 ```
 
@@ -187,7 +189,7 @@ the default budget is at most eight model steps and two proposal submissions
 validation failures may be returned once for bounded repair; exhaustion creates visible review/failure state
 ```
 
-The agent may choose native extraction, OCR, table extraction, or page inspection within the selected skill's allowlist. It cannot bypass schema, evidence, financial, qualification, or review gates.
+The agent may choose native extraction, OCR, table extraction, or page inspection within the selected skill's allowlist. It cannot bypass schema, evidence, financial, confidence, hard-gate, or review boundaries.
 
 ## Structured parse proposal
 
@@ -341,17 +343,19 @@ Stable external-record identity uses a provider record ID when available. Otherw
 Reparse rules:
 
 ```text
-an identical request for the same document and complete normalization profile is idempotent
+an automatic retry of the same logical parse request reuses its parse run and idempotency key
+an explicit user re-run creates a new parse run even when the complete normalization profile is unchanged
 a changed profile creates a new parse run and external-record version
+every run records input/output hashes; a same-profile output change is retained and reviewed rather than silently ignored
 new uncommitted records supersede prior uncommitted versions
 committed ledger events are never rewritten automatically by reparse
 changed output that conflicts with committed facts creates review work
 deleting the current source file makes its uncommitted records ineligible for future automatic commit but does not delete record history or alter committed events
 ```
 
-## Normalization profiles and qualification
+## Normalization profiles and confidence calibration
 
-Qualification attaches to the complete behavior-changing profile, not only a parser name:
+Confidence calibration attaches to the complete behavior-changing profile, not only a parser name:
 
 ```text
 provider + document type
@@ -361,7 +365,7 @@ provider + document type
 + AI provider/model version
 ```
 
-Changing any behavior-relevant component creates a new profile. A new profile does not inherit auto-commit qualification; it returns to fixture evaluation and shadow mode.
+Changing any behavior-relevant component creates a new profile. A new profile does not inherit the prior profile's confidence threshold evidence; it returns to Review/shadow behavior until the accepted calibration and hard-gate evidence for that profile passes.
 
 ## Normalizer runtime and execution environment
 
@@ -427,7 +431,7 @@ account mapping status
 impossible signs or values
 ```
 
-Raw model confidence never grants eligibility. Package-calibrated field outcomes, grounded evidence, deterministic validators, and the review/commit policy decide eligibility.
+Structured model confidence may contribute to eligibility only through the accepted package/document threshold. It never grants eligibility alone: grounded evidence, deterministic validators, identity/deduplication/reconciliation gates, and the review/commit policy remain authoritative.
 
 ## Fixture and harness policy
 
@@ -442,7 +446,7 @@ expected raw-record grounding and financial-validation results
 expected review items and eligibility outcome
 ```
 
-Any future agentic candidate must be tested against the selected single-pass structured-normalization baseline. It enters production only if the qualification suite shows a material accuracy or recovery advantage that justifies its extra calls, latency, cost, and dependency surface.
+Any future agentic candidate must be tested against the selected single-pass structured-normalization baseline. It enters production only if the evaluation suite shows a material accuracy or recovery advantage that justifies its extra calls, latency, cost, and dependency surface.
 
 ## Acceptance criteria
 
@@ -461,6 +465,9 @@ Any future agentic candidate must be tested against the selected single-pass str
 - Transaction notifications default to provisional and can later reconcile with posted statement evidence without creating duplicate ledger impact.
 - Explicit exact-hash Add/Restore may restore a deleted current artifact without duplicating its source-document row; automatic folder/Gmail discovery respects deletion suppression.
 - Re-import, reparse, and source-file deletion preserve record identity without rewriting committed ledger events; deleted evidence cannot drive future automatic commit.
-- Complete normalization profiles qualify independently and reset to shadow mode after behavior-changing updates.
-- Single-pass structured normalization is the initial runtime; ToolLoopAgent or Pi Agent Core requires new qualification evidence showing a material accuracy or recovery advantage.
+- Automatic parse retries are idempotent within one logical run, while an explicit user re-run creates auditable parse history even for an unchanged profile.
+- Provider-package breadth may grow through owner dogfooding after the accepted first-preview source set, but review-only packages are never presented as auto-add capable.
+- Each advertised first-preview source has at least one real review-only package/profile with deterministic fixture/runtime evidence; an empty Source shell is not support.
+- Complete normalization profiles calibrate confidence independently and reset to Review/shadow behavior after behavior-changing updates.
+- Single-pass structured normalization is the initial runtime; ToolLoopAgent or Pi Agent Core requires new evaluation evidence showing a material accuracy or recovery advantage.
 - No sandbox installation is required for users; any process isolation is evidence-driven rather than permission theater.

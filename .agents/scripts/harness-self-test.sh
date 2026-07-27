@@ -284,7 +284,7 @@ expect_failure "ready slice retains blockers" env CANCAN_ROOT="$TEST_ROOT" "$TES
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-sed 's/| qualified-auto-commit | blocked |/| qualified-auto-commit | ready |/' "$manifest.bak" > "$manifest"
+sed 's/| high-confidence-auto-commit | blocked |/| high-confidence-auto-commit | ready |/' "$manifest.bak" > "$manifest"
 expect_failure "ready slice has incomplete dependency" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 

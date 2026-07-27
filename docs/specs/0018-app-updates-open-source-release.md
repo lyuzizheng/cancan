@@ -22,6 +22,11 @@ Do not implement an unsigned updater, remote prompt/config download, or platform
 - GitHub owns source, releases, issue/PR workflow, discussions, and security reporting; the website presents the product, policy, help, and verified download links.
 - Phase 1 supports macOS on both Apple Silicon (`arm64`) and Intel (`x86_64`).
 - Windows desktop support is Phase 2 and does not block the Phase 1 macOS release.
+- The first public release is a pre-1.0 preview, not a `1.0` stability promise.
+- The first pre-1.0 preview includes local file ingestion, multiple user-authorized Gmail mailbox connections, Gmail attachment ingestion, and provider-approved transaction-email ingestion.
+- `Automatically add high-confidence records` is available and on by default. A record auto-commits only when its structured AI confidence meets the package/document threshold and it passes every accepted deterministic hard gate in `0005`; review-only, uncalibrated, or experimental profiles remain in Review.
+- The first-preview source target is DBS, HSBC, and UOB. DBS Bank and DBS Card are separate accounts/profiles under one DBS Money Source. HSBC and UOB do not need a fixed Bank/Card profile matrix and may initially expose Review-only profiles, but each advertised source needs at least one working package/profile with deterministic fixture/runtime evidence. CPF and additional sources are follow-ons rather than first-preview blockers. Package/document confidence thresholds and calibration evidence remain release blockers for any profile advertised as auto-commit eligible.
+- Public Gmail availability is therefore a release prerequisite. The production consent screen, website disclosures, privacy/support contacts, restricted-scope justification, and required Google verification must complete before the preview ships.
 
 ## Platform scope
 
@@ -39,6 +44,8 @@ The release pipeline may later choose separate architecture artifacts or one uni
 The minimum supported macOS version is still a release compatibility decision. Do not infer it from the current developer machine or GitHub runner image.
 
 Windows is a Phase 2 port. Phase 2 must separately define supported Windows versions and architectures, installer/update format, code signing, OS secret storage, filesystem semantics, and equivalent Vault/security tests. Do not add Windows-specific production branches, dependencies, CI, or release claims during Phase 1 unless a focused Phase 2 slice is explicitly started.
+
+A native macOS Finder `Share > CanCan` intake entry is also Phase 2. When Desktop is closed or locked, the selected files use bounded App Group handoff staging until import after unlock. Its dedicated slice owns the extension/service target, entitlements, staged-plaintext protection/cleanup/expiry, supported multi-file behavior, signing/notarization, and packaged runtime evidence. It reuses the existing host Add/capture path and must not create a second parser, Vault owner, source registry, or durable job queue.
 
 ## Future iOS intake companion
 
@@ -80,11 +87,13 @@ First public pages:
 ```text
 landing and product story
 downloads and release notes linking to verified GitHub Releases artifacts
-local-first/privacy explanation and Google API Services User Data Policy Limited Use disclosure
+local-first/privacy explanation for the capabilities that actually ship
 security model, vulnerability-reporting route, and supported-version policy
-documentation/help and Gmail connection explanation
+documentation/help for the capabilities that actually ship
 community/contributing links
 ```
+
+Before the pre-1.0 preview ships, add the Gmail connection explanation, Google API Services User Data Policy Limited Use disclosure, verified privacy/support contacts, and every public OAuth requirement owned by `0003-gmail-collector.md`. Website and in-app copy must distinguish attachment ingestion from separately consented provider-approved transaction-email body ingestion.
 
 Keep the site static. Do not add Cloudflare Workers/Pages Functions, hosted accounts, behavioral analytics, trackers, or a second product backend for the landing page. Any future telemetry requires a separate explicit product/privacy decision.
 
@@ -181,7 +190,7 @@ compatibility or migration warning
 install now / remind later
 ```
 
-Do not force an update silently. Security-critical update policy and stable/beta channels remain unresolved.
+Do not force an update silently. Security-critical update policy and the exact alpha/beta channel label remain unresolved. The first public channel is nevertheless pre-1.0 and must not imply provider stability or auto-commit eligibility beyond calibrated profiles that pass every accepted hard gate.
 
 ADR 0001 is accepted, so implementation may use the Tauri signed updater with GitHub-hosted artifacts and `latest.json`. The updater signing public key may be embedded in the app; the private key and password must remain release secrets. Back up the private key through a documented offline recovery path because losing it prevents signed updates to installed clients.
 
@@ -189,15 +198,15 @@ Reference: [Tauri updater signing and GitHub release metadata](https://v2.tauri.
 
 ## Provider-parser delivery
 
-Provider parser packages, prompts, schemas, validators, and qualification metadata change frequently and carry explicit versions.
+Provider parser packages, prompts, schemas, validators, and confidence-calibration metadata change frequently and carry explicit versions.
 
 Safe MVP boundary:
 
 ```text
 ship parser updates inside signed app releases
-do not download unsigned prompts, parser logic, or qualification config at runtime
+do not download unsigned prompts, parser logic, or confidence-calibration config at runtime
 preserve the exact parser/prompt/schema/validator versions used by every parse run
-new parser versions start unqualified and follow fixture + shadow gates
+new parser versions start uncalibrated and follow the accepted calibration + hard-gate evidence
 installing an app update does not automatically reparse or mutate committed facts
 ```
 
@@ -267,12 +276,12 @@ References:
 - [official rustup installer](https://rustup.rs/)
 - [Tauri macOS prerequisites](https://v2.tauri.app/start/prerequisites/#macos)
 
-Before public release, a maintainer must deliberately provision and record ownership/recovery for:
+Before the corresponding public capability or release surface goes live, a maintainer must deliberately provision and record ownership/recovery for:
 
 ```text
 GitHub repository, Actions, Releases, Discussions, private vulnerability reporting, environments, and release approvers
 Cloudflare account/zone, custom domain, Pages project, and least-privilege repository integration
-Google Cloud development and production projects, Gmail API, OAuth consent screen/client, test users, Search Console domain ownership, and public support contact
+Google Cloud development and production projects, Gmail API, OAuth consent screen/client, test users, Search Console domain ownership, and public support contact before public Gmail availability
 Apple Developer Program signing/notarization credentials if macOS is distributed outside the App Store
 platform code-signing credentials for every other supported operating system
 Tauri updater signing key, Actions secret, and offline recovery copy
@@ -286,13 +295,16 @@ BYO-AI provider keys belong only in the user's local OS secret store. They are n
 - Every published app artifact traces to a public immutable source tag and GitHub Actions run.
 - Releases include checksums, signatures where required, notes, and compatibility information.
 - Update artifacts are signature-verified and are not silently forced.
-- Parser updates are versioned, qualified independently, and cannot silently rewrite committed facts.
+- Parser updates are versioned, confidence-calibrated independently, and cannot silently rewrite committed facts.
 - MVP does not download unsigned parser/prompt/config updates.
 - Older incompatible apps refuse mutation and explain the required version.
 - Tauri updater work remains gated on finalized signing-key custody, release channels, supported operating systems, and release approval.
 - Static public pages deploy to preview and production environments without adding an application backend or analytics.
 - GitHub community files route support, bugs, contributions, and private security reports without asking users to expose financial data.
 - A release is not promoted until its public website/privacy claims, supported platforms, license, signing, updater-key recovery, and approval owner are complete.
+- The first public release uses a pre-1.0 version and honest preview language; review-only providers remain in Review and do not become stability or auto-add claims.
+- The first pre-1.0 release includes local files, multiple Gmail mailbox connections, Gmail attachments, and provider-approved transaction-email ingestion only after its public OAuth, consent, disclosure, and verification gates pass.
+- The default-on auto-commit toggle applies only when structured AI confidence meets the accepted package/document threshold and every accepted deterministic hard gate passes; all other records remain in Review.
 - A fresh supported development machine can install and verify the pinned toolchain with one repository command; setup version drift and non-idempotent profile edits fail deterministic tests.
 - Phase 1 release evidence covers both macOS `arm64` and `x86_64`; evidence from one architecture never qualifies the other.
 - Windows remains Phase 2 and creates no Phase 1 implementation or release requirement.

@@ -113,7 +113,7 @@ Owns:
 ```text
 provider routing
 single-pass structured normalization as the initial runtime
-bounded document-agent runtime adapters only after qualification evidence justifies one
+bounded document-agent runtime adapters only after evaluation evidence justifies one
 prompt/version logging helpers
 model configuration types
 AI permission boundary helpers
@@ -123,7 +123,7 @@ The document agent is a small normalizer with fixed parser tools. It is not a co
 
 The initial AI runtime is single-pass structured normalization in a trusted Node worker/sidecar bundled and controlled by Tauri. The same binary has a protocol-separated deterministic core mode so production host commands can execute `packages/core` without duplicating financial rules in Rust. Core mode performs no model or provider call and receives no filesystem, database, network, or secret capability. The existing macOS `arm64` evidence route uses the pinned Node 24 single-executable format. Phase 1 must package and validate an architecture-matched sidecar on both macOS `arm64` and `x86_64`; production signing and notarization remain release gates. The product must not require users to install Node, Docker, a VM, QEMU, or a separate sandbox runtime.
 
-The Tauri/Rust boundary continues to own user-selected file access, SQLCipher transactions, durable jobs, and OS-secret retrieval. The sidecar is process separation and packaging, not an assumed permission sandbox. ToolLoopAgent and Pi Agent Core remain unselected until qualification fixtures show a material advantage over the same single-pass contract.
+The Tauri/Rust boundary continues to own user-selected file access, SQLCipher transactions, durable jobs, and OS-secret retrieval. The sidecar is process separation and packaging, not an assumed permission sandbox. ToolLoopAgent and Pi Agent Core remain unselected until evaluation fixtures show a material advantage over the same single-pass contract.
 
 ### packages/ui
 
@@ -181,7 +181,11 @@ apps/desktop/src-tauri/src/database/
 
 Splitting the `ManualImportStore` impl into per-aggregate modules is a registered follow-up in `docs/alignment-temp/alignment-progress.md`. Files that predate the guardrail (including that store impl, `app.tsx`, and the single-file `vault`/`viewer`/`source_observations` modules) carry ratchet-only per-file exemptions recorded in the `EXEMPTIONS` map of `scripts/check-source-file-size.mjs`; an exemption ceiling may only shrink, never grow, and removing one requires the split described here.
 
+The store mutex protects only bounded state/repository reads, job claims, and transactional writes. File I/O, PDF/image decode, OCR, sidecar/model execution, hashing, and other long-running extraction work happen outside it. A worker snapshots the required IDs/version while holding the lock, releases it for the long work, then reacquires it and validates the current version/idempotency key before applying the result. The per-aggregate impl split remains a readability follow-up; long-work lock ownership is already decided and does not wait for that refactor.
+
 The renderer keeps `app.tsx` as orchestration state only; presentational views live in sibling modules (`sources-view.tsx`, `document-modals.tsx`, `vault-gate.tsx`, `notices.ts`, `overview.tsx`, `review.tsx`, `vault-spine.tsx`). Interaction tests split per flow with shared fixtures instead of one monolithic file.
+
+The presentation-safe Rust command surface generates its TypeScript request/response types into committed files. CI reruns the deterministic generator and fails when `git diff --exit-code` detects drift. Semantic renderer API wrappers remain handwritten, and the current per-view React state/session guards remain in place. Do not add React Query, another cache framework, or a renderer state replatform merely to generate command types.
 
 ## Implemented workspace and application gates
 

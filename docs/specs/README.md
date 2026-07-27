@@ -17,7 +17,7 @@ Do not load every spec by default unless the task spans the whole system.
 | `0001-repo-structure.md` | Monorepo/package layout and code boundaries |
 | `0002-database-schema.md` | Slice-owned SQLite/SQLCipher migrations, raw-record storage, query-driven indexes, and DB reset |
 | `0003-gmail-collector.md` | Gmail OAuth/API, rules, sync, attachments, protected PDF passwords |
-| `0004-parser-contract.md` | Source observations, bounded AI normalization, evidence grounding, and parser qualification |
+| `0004-parser-contract.md` | Source observations, bounded AI normalization, evidence grounding, and confidence calibration |
 | `0005-review-and-commit-policy.md` | Review, deterministic validation, auto-commit policy |
 | `0006-command-center-ui.md` | Main app shell, dashboard modules, review surface, AI Assistant entry |
 | `0007-first-run-onboarding.md` | First launch, vault setup, provider setup, startup sequence |
@@ -32,6 +32,7 @@ Do not load every spec by default unless the task spans the whole system.
 | `0016-testing-fixtures-agent-gates.md` | Fixture privacy, deterministic tests, DB reset, future application gates |
 | `0017-evidence-documents-source-ux.md` | Source Documents placement, document detail, states, search, and actions |
 | `0018-app-updates-open-source-release.md` | App updates, forward compatibility, parser delivery, and open-source GitHub releases |
+| `0019-ai-capability-platform-and-cli.md` | Phase 2 shared AI capability registry, in-app AI boundary, CLI, and external-agent gateway |
 
 ## Adding a new spec
 

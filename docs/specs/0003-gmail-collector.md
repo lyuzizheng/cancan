@@ -2,11 +2,11 @@
 
 ## Goal
 
-Collect supported statement attachments and transaction-notification evidence from a user-authorized Gmail mailbox while preserving local-first behavior.
+Collect supported statement attachments and transaction-notification evidence from one or more user-authorized Gmail mailboxes while preserving local-first behavior.
 
 ## Implementation blocker
 
-Public OAuth verification and Gmail-data transfer to cloud AI remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not claim public Gmail availability, freeze the AI disclosure, or submit verification until the real data flow and public identity are reviewable.
+Public OAuth verification, provider retention, Limited Use compatibility, and final one-time per-mailbox Gmail-to-AI disclosure wording remain open in the [active alignment register](../alignment-temp/alignment-progress.md). The mailbox-level authorization and payload boundary below are accepted, but do not claim public Gmail availability or submit verification until the real multi-mailbox data flow and public identity are reviewable.
 
 ## MVP decision
 
@@ -34,7 +34,8 @@ Flow:
 9. App stores refresh_token in macOS Keychain / OS secret storage.
 10. App stores access_token in memory or Keychain and refreshes as needed.
 11. App calls Gmail API directly from local app.
-12. Email metadata, attachments, cache, index, and sync state are stored locally in encrypted vault/database.
+12. App records one connected-mailbox identity, stores its refresh token under a mailbox-scoped Keychain key, and may repeat this flow to add another mailbox.
+13. Email metadata, attachments, cache, index, and sync state are stored locally in encrypted vault/database.
 ```
 
 Desktop apps cannot safely keep a client secret. PKCE is required to protect the authorization code exchange.
@@ -121,7 +122,7 @@ Top section: guided builder.
 
 ```text
 Mode: statement attachment | transaction notification | CanCan Inbox attachment
-Provider: DBS | UOB | Wise | supported source | detect automatically
+Provider: DBS | HSBC | UOB | another supported source | detect automatically
 Document type: bank statement | credit card statement | export | transaction notification
 Required keywords
 Excluded keywords
@@ -154,6 +155,10 @@ Manual source/support requests should be tracked as future feature requests, not
 
 Each provider-specific Gmail rule normally points to a user-configured Money Source. A generic `CanCan Inbox attachment` rule may leave the source unset so trusted classification can route supported evidence to one of the user's configured Money Sources. CanCan may provide useful defaults, and the user may edit or override the query.
 
+Each rule also belongs to exactly one connected Gmail mailbox. One Money Source may have different rules across multiple mailboxes, and one mailbox may serve multiple Money Sources. Adding a mailbox repeats the official Google OAuth flow and one truthful mailbox-level AI-processing disclosure; refresh tokens, authorization state, reconnect state, rule cursors, and failures remain mailbox-scoped. Connecting the same mailbox address twice must reconnect the existing mailbox instead of creating duplicate sync authority.
+
+Disconnecting a mailbox disables all of its rules, cancels queued sync jobs, stops an in-flight sync at its next safe boundary before another remote fetch/capture, and deletes its refresh token from Keychain. The mailbox identity, disabled rules, cursors, prior captured evidence, message mappings, and evidence tombstones remain. Re-authorizing the same normalized mailbox address reconnects that existing identity and resumes from the retained rule/cursor state rather than creating duplicate authority or re-importing prior messages.
+
 A Gmail rule may have provider and source hints, but downloaded documents and message evidence still go through classifier/parser verification. Do not trust the rule or source assignment alone.
 
 Transaction-notification rules additionally define exact supported sender/domain and authentication fingerprints. Before body normalization, the connector rejects Spam/Trash and deterministically verifies Gmail-provided authentication results against the provider package's aligned domain policy. Missing, failed, or mismatched authentication remains untrusted `Needs attention` evidence and cannot auto-link or auto-commit. A matching display-name or `From` header alone is never sufficient.
@@ -161,8 +166,22 @@ Transaction-notification rules additionally define exact supported sender/domain
 ## Data model
 
 ```text
+gmail_accounts
+- id
+- mailbox_address
+- secret_storage_key
+- connection_status
+- ai_processing_authorized_at
+- created_at
+- updated_at
+```
+
+`mailbox_address` is the normalized address returned by Gmail `users.getProfile` under the authorized read-only scope and is unique within the Vault. It is safe display metadata and reconnect identity, but Gmail message idempotency still uses the internal `gmail_account_id` plus message ID. The refresh token lives in Keychain under `secret_storage_key`, never SQLite.
+
+```text
 gmail_search_rules
 - id
+- gmail_account_id
 - money_source_id nullable only for generic inbox attachment rules
 - name
 - evidence_mode = attachment | transaction_notification
@@ -231,13 +250,15 @@ store file hash and source document metadata
 
 Do not store full email body by default unless needed for evidence/parser behavior or explicitly enabled.
 
+Connecting one mailbox requires one explicit mailbox-level authorization that accurately describes Gmail read access, the configured AI provider, and the allowed attachment/body processing. After that authorization, CanCan may read messages needed by any enabled rule for that mailbox and may send the complete matched attachment or provider-approved body required by the selected parser to the configured AI provider without asking again per rule. The product still executes user-configured queries instead of bulk-ingesting the mailbox, and AI payloads never include OAuth tokens, statement passwords, unrelated messages, or messages outside an enabled rule. Revoking or disconnecting the mailbox removes this live authority; already captured local evidence follows the normal retained-evidence lifecycle.
+
 ### Send to yourself
 
 A user may share a bank PDF/CSV from a phone to their own Gmail address. A generic CanCan Inbox rule can find that attachment, capture it, and let trusted classification select the configured Money Source and account. CanCan does not provide a hosted upload email address in MVP: that would add server custody, retention, abuse handling, and a second security boundary.
 
 ### Transaction notifications without attachments
 
-A supported provider's transaction email may contain one useful record and no file. This is allowed only through an explicit provider-owned `transaction_notification` rule and separate body-capture consent.
+A supported provider's transaction email may contain one useful record and no file. This is allowed only through an explicit provider-owned `transaction_notification` rule under a mailbox whose one-time authorization disclosed body capture and configured-AI processing.
 
 The connector creates one deterministic canonical message-evidence envelope containing the authenticated mailbox/message ID, internal date, sender, subject, the provider-selected body fields or bounded body text, and attachment metadata. The encrypted envelope becomes a normal source-document artifact and the provider parser normalizes it into at most the supported records. The app does not manufacture a fake PDF or insert a transaction directly from email fields.
 
@@ -303,7 +324,9 @@ configurable interval while app is running
 
 Auto-scan should be configurable and can be disabled. Manual scan must always be available.
 
-Overlapping rules and overlap-window retries use authenticated-mailbox plus Gmail-message ID for connector idempotency. The mapping remains attached to a deleted source-document tombstone, so an unchanged Gmail message is not silently restored on the next scan or after an envelope-format update. Only an explicit user restore action can re-enable it. Attachment SHA-256 and canonical-envelope SHA-256 remain artifact identity; financial record identity remains owned by the parser contract.
+Gmail sync execution is globally serial within one unlocked Vault: at most one `gmail_sync_rule` job runs at a time across every connected mailbox and rule. A failed or retry-delayed rule releases the worker so later queued rules can run; it does not create mailbox-level parallelism or monopolize the queue.
+
+Overlapping rules and overlap-window retries use `gmail_account_id` plus Gmail-message ID for connector idempotency. The mapping remains attached to a deleted source-document tombstone, so an unchanged Gmail message is not silently restored on the next scan or after an envelope-format update. Only an explicit user restore action can re-enable it. Attachment SHA-256 and canonical-envelope SHA-256 remain artifact identity; financial record identity remains owned by the parser contract.
 
 ## Test rule UX
 
@@ -338,6 +361,12 @@ Use mocked Gmail API fixtures for:
 OAuth callback success
 OAuth callback failure
 refresh token flow
+add two independently authorized mailboxes
+same mailbox address reconnect converges instead of duplicating the mailbox
+disconnect disables rules, cancels queued work, stops before another remote fetch/capture, and deletes the token while retaining cursors/evidence
+reconnect resumes the retained mailbox/rule identity without duplicate imports
+rules for one Money Source running against different mailboxes
+multiple mailbox/rule sync jobs execute globally one at a time
 first scan from start date
 incremental scan with historyId
 historyId expired fallback to overlap query
@@ -352,7 +381,8 @@ PDF attachment import
 password-protected PDF attachment import
 CSV attachment import
 message body not stored by default
-transaction notification body requires explicit rule and consent
+transaction notification body requires an explicit rule under an authorized mailbox
+Gmail attachment/body cloud-AI transfer is impossible before the one-time mailbox authorization and remains scoped to enabled rules
 generic inbox rule requires a dedicated recipient/alias or label and excludes unrelated attachments
 Spam/Trash and spoofed/misaligned provider sender fixtures never become trusted notification records
 transaction notification creates canonical encrypted message evidence, not a direct ledger write
@@ -365,17 +395,22 @@ email notification later matched to the posted statement row without duplicate l
 ## Acceptance criteria
 
 - Gmail connect uses Desktop OAuth + PKCE + loopback redirect.
+- A Vault may connect multiple Gmail mailboxes through repeated official OAuth flows; tokens, rules, cursors, reconnect state, and failures remain mailbox-scoped.
+- One truthful authorization per mailbox covers Gmail read access and configured-AI processing for all enabled rules under that mailbox; CanCan does not prompt again for each rule.
+- Disconnect disables that mailbox's rules, cancels/stops sync work before further capture, deletes its refresh token, and retains mailbox/rule/cursor/evidence identities for convergent reconnect.
 - No Gmail data touches a CanCan server.
 - Refresh token is stored in local secret storage.
 - Only read-only Gmail scope is requested.
 - User can create guided rules and edit expert query.
 - Provider-specific rules belong to a configured Money Source; only the generic CanCan Inbox attachment rule may defer assignment to trusted classification.
+- One Money Source may own different search rules across multiple connected mailboxes; every captured item still queues the shared `parse_document` path rather than a source-specific parser job type.
 - Generic Inbox discovery starts from a dedicated recipient/alias or user-selected label; broad mailbox attachment collection is never the silent default.
 - User can test a rule before enabling it.
 - App supports startup/wake/manual/configurable polling sync.
 - Re-running sync does not duplicate already imported attachments.
 - Recurring sync never restores user-deleted evidence automatically.
-- Supported no-attachment transaction emails require explicit body consent, become encrypted canonical evidence, and remain provisional until posted evidence and policy gates resolve them.
+- Supported no-attachment transaction emails require an explicit provider-owned rule under a mailbox whose authorization disclosed body capture, become encrypted canonical evidence, and remain provisional until posted evidence and policy gates resolve them.
+- Gmail-derived attachments or provider-approved bodies reach a configured cloud AI provider only after the one-time mailbox authorization; tokens, passwords, unrelated messages, and out-of-rule data never do.
 - Transaction-notification parsing requires provider-owned sender/domain authentication checks and excludes Spam/Trash; display names and content resemblance alone are untrusted.
 - CanCan provides no hosted inbound email address in MVP; send-to-self ingestion uses the user's authorized Gmail mailbox.
 - Password-protected PDFs can be detected, unlocked locally, and optionally tied to a saved secret reference.

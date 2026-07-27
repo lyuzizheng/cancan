@@ -11,6 +11,7 @@ SQLCipher plus FTS5 feasibility is verified by the [desktop spike](../../spikes/
 ## Database policy
 
 - Use hand-written SQL migrations.
+- Never edit a migration that has merged and may already be applied to an owner/dogfood Vault. Post-PR41 hardening appends a new versioned migration after `0007_local_inbox.sql`; it does not require resetting the owner's Vault.
 - Do not use Prisma.
 - Avoid clever, huge SQL queries that are hard to reason about.
 - Prefer small indexed queries and TypeScript composition when it improves clarity.
@@ -39,6 +40,8 @@ audit_log
 ```
 
 Later slices add their own tables only when their behavior is implemented. Examples include the production `source_documents` file columns, durable jobs, Gmail rules/sync state, and other connector state. A migration must name its owning slice and have an integration test that starts from a clean test database.
+
+The Gmail slice adds one `gmail_accounts` connection row per normalized mailbox address, including connection status and the one-time mailbox AI-processing authorization timestamp, and makes every search rule/sync cursor reference that connection. OAuth refresh tokens stay in Keychain under mailbox-scoped secret keys. Disconnect deletes the token and disables rules while retaining the mailbox/rule/cursor/evidence identities for convergent reconnect. One Money Source may have rules in multiple mailboxes; mailbox/message identity, artifact SHA-256, and financial record identity remain separate idempotency layers.
 
 ## Ledger schema projection
 
@@ -77,10 +80,11 @@ The implemented query paths must support opening a source record and finding its
 `0014-money-overview-source-taxonomy.md` owns account identity and lifecycle behavior. The schema must support:
 
 ```text
-candidate, confirmed, archived, and merged account states
+candidate, confirmed, dismissed, archived, and merged account states
 one stable provider account ID when the provider supplies it
 one user-safe masked identifier for display when available
-first-seen candidate confirmation when no stable provider ID exists
+first-seen per-candidate accept/reject decisions before first commit
+an audited rejected-proposal reference and restore transition for dismissed candidates
 merged_into_account_id without rewriting committed ledger legs
 idempotent account resolution and audited merge/archive transitions
 ```
@@ -184,18 +188,20 @@ Acceptance requires integration tests to run from a clean database without manua
 ## Acceptance criteria
 
 - Schema changes use hand-written, versioned migrations.
+- Applied/merged migrations remain immutable; hardening uses a forward migration and proves upgrade from the existing `0007_local_inbox.sql` state.
 - Core query dimensions are columns rather than hidden in JSON.
 - Exact source-file identity uses SHA-256 and remains separate from semantic document identity.
 - `source_documents` covers imported files and canonical encrypted email-message envelopes without adding a second inbox/evidence table.
 - Newly captured evidence may remain unassigned until trusted provider classification resolves one configured Money Source; channel and user source hints are not semantic authority.
-- Queryable document type and statement-period bounds support Source/Documents filtering and deterministic coverage prompts without expected-month rows.
+- Queryable document type and statement-period bounds support Source/Documents filtering and a later bounded source-analysis API without expected-month rows.
 - A newly captured file may keep semantic document identity null until trusted classification; renderer or user input cannot set it.
 - `source_documents` is the MVP encrypted-file registry and tombstone; no separate `vault_files` table is required.
 - Deleting or losing a current Vault file preserves its source-document row and every record, parse, review, ledger, and audit relationship.
 - Byte-different evidence for one statement identity uses separate source-document rows grouped by semantic identity; an explicit exact-hash re-import may restore a deleted current artifact, while automatic discovery respects the tombstone and skips it.
 - Every external record retains one bounded validated raw source record plus a validation summary, without a separate field-evidence graph or permanent raw full-document text.
 - Provisional transaction notifications remain queryable and cannot be mistaken for posted statement facts.
-- Account identity supports a stable provider account ID when available, first-seen candidates, archive, and merge redirects without using display names or masked suffixes as automatic identity.
+- Multiple Gmail mailbox connections keep authorization state, tokens, rules, cursors, reconnect state, and message idempotency scoped to `gmail_account_id`; Money Sources may reference rules across those connections, and disconnect retains non-secret identities while deleting the Keychain token.
+- Account identity supports a stable provider account ID when available, first-seen candidates, dismissed rejection/restore projections, archive, and merge redirects without using display names or masked suffixes as automatic identity.
 - The schema supports immutable committed events, reversals, commit idempotency, many-to-many allocations, and atomic audit records.
 - A late corroborating-evidence edge may be appended to a committed event only through the audited role-aware rule; committed financial allocations, legs, and prior edges remain immutable.
 - Two source records can link through one canonical transfer event and are navigable in both directions.
