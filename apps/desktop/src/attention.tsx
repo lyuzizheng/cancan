@@ -31,9 +31,11 @@ export function AttentionSection(props: AttentionSectionProps) {
           <span className="panel-dot panel-dot-amber" aria-hidden="true" />
           Needs attention
         </h2>
-        <span className="attention-count" aria-label={`${total} to check`}>
-          {total}
-        </span>
+        {total > 0 ? (
+          <span className="attention-count" aria-label={`${total} to check`}>
+            {total}
+          </span>
+        ) : null}
       </div>
       <ul className="attention-card-list">
         {props.accountPrompts.map((prompt) => (

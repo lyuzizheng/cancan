@@ -475,7 +475,7 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - The foundation application CI invokes real typecheck, unit-test, Rust-check, web-build, and Tauri debug-build commands.
 - Required hosted checks must start and pass for normal merge; infrastructure no-start results are never represented as green code evidence.
 - Presentation-safe Rust-to-TypeScript generated types have a deterministic drift gate; handwritten semantic wrappers and current React state remain outside code generation.
-- Generated Rust-to-TypeScript files are committed; CI reruns the generator and fails on any resulting worktree diff.
+- Generated Rust-to-TypeScript files are committed; native CI builds the sidecar and runs the focused Rust test that compares generated output with the committed file.
 - Add/capture integration covers failure before blob durability, failure or rollback of the atomic source-registration/parse-job transaction, success before asynchronous parsing completes, and later parse failure without losing the captured source.
 - Migration integration upgrades an existing `0007_local_inbox.sql` database through the appended hardening migration without editing history or losing a dogfood Vault.
 - Long OCR/extraction/sidecar tests prove unrelated bounded store reads remain responsive and stale post-work writes fail their version/idempotency validation.

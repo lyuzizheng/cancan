@@ -148,7 +148,7 @@ pub(super) fn persist_import(
         _ => {}
     }
     let (document_id, status) = if let Some(existing) = existing {
-        let status = if existing.file_state == "available" && !stored.created {
+        let status = if existing.file_state == "available" {
             SourceDocumentImportStatus::AlreadyPresent
         } else {
             transaction.execute(

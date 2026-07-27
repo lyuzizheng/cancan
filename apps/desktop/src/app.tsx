@@ -1410,9 +1410,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         });
       } else {
         setNotice({
-          body: "Accepted accounts can enter review. Dismissed records remain in history.",
+          body: outcome.status === "already_confirmed" ? "These account choices were already saved." : "Accepted accounts can enter review. Dismissed records remain in history.",
           tone: "success",
-          title: "Account choices saved",
+          title: outcome.status === "already_confirmed" ? "Account choices already saved" : "Account choices saved",
         });
       }
       await loadFinanceData();

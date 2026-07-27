@@ -553,7 +553,7 @@ impl VaultRuntime {
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
             .requeue_password_blocked_parse_document_job(document_id)
-            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))?;
+            .map_err(|_| RuntimeError::new("parse_resume_failed"))?;
         Ok(())
     }
 

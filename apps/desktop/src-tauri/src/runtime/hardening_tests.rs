@@ -175,6 +175,52 @@ fn reopen_requeues_an_unexpired_parse_claim_and_rejects_the_old_token() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn background_inbox_failure_changes_enabled_status_to_needs_attention() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let inbox_root = parent.path().join("Cancan");
+    fs::create_dir(&inbox_root).expect("create named CanCan root");
+    let runtime = test_runtime(
+        &parent.path().join("vault"),
+        Arc::new(MemoryLocalInboxBookmarkStore::default()),
+    );
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    runtime
+        .configure_local_inbox(&inbox_root)
+        .expect("configure local Inbox");
+    assert_eq!(
+        runtime
+            .local_inbox_status()
+            .expect("read enabled Inbox")
+            .access_state,
+        LocalInboxAccessState::Enabled
+    );
+
+    runtime.mark_local_inbox_needs_attention();
+
+    assert_eq!(
+        runtime
+            .local_inbox_status()
+            .expect("read failed Inbox")
+            .access_state,
+        LocalInboxAccessState::NeedsAttention
+    );
+
+    runtime
+        .rescan_local_inbox()
+        .expect("successful retry clears background failure");
+    assert_eq!(
+        runtime
+            .local_inbox_status()
+            .expect("read recovered Inbox")
+            .access_state,
+        LocalInboxAccessState::Enabled
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn unlocking_a_password_blocked_parse_requeues_the_same_logical_run() {
     let parent = tempfile::tempdir().expect("temporary app data");
     let statement_passwords = Arc::new(MemoryStatementPasswordStore::default());

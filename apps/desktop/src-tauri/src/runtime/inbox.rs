@@ -8,6 +8,12 @@ pub(super) struct ParseDocumentAttempt {
 }
 
 impl VaultRuntime {
+    pub(super) fn mark_local_inbox_needs_attention(&self) {
+        self.inner
+            .local_inbox_needs_attention
+            .store(true, Ordering::SeqCst);
+    }
+
     pub(crate) fn configure_local_inbox(&self, root: &Path) -> Result<(), RuntimeError> {
         self.require_unlocked()?;
         let (bookmark, authorized_root) = authorize_root(root)
@@ -219,6 +225,9 @@ impl VaultRuntime {
             .local_inbox_last_scan
             .lock()
             .map_err(|_| RuntimeError::new("local_inbox_unavailable"))? = Some(summary.clone());
+        self.inner
+            .local_inbox_needs_attention
+            .store(false, Ordering::SeqCst);
         Ok(summary)
     }
 
@@ -327,11 +336,15 @@ impl VaultRuntime {
             return Err(RuntimeError::new("invalid_document_request"));
         }
         let mut store = self.store()?;
-        store
+        let enqueued = store
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
             .enqueue_source_document_pipeline(document_id)
-            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))?;
+        if !enqueued {
+            return Err(RuntimeError::new("parse_already_running"));
+        }
+        Ok(())
     }
 
     pub(super) fn start_local_inbox_parse(
@@ -504,6 +517,7 @@ pub(super) async fn rescan_and_process_local_inbox(
             .await
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
     };
+    let _ = runtime.start_local_inbox_watcher(app.clone());
     schedule_queued_local_inbox_parses(app.clone(), runtime);
     Ok(summary)
 }
@@ -572,7 +586,7 @@ pub(super) async fn process_queued_local_inbox_parses(
                     continue;
                 }
             };
-            let result = match run_normalizer_sidecar(app, &job.document_id, &input).await {
+            let result = match run_normalizer_sidecar(app, &job.document_id, &input.bundle).await {
                 Ok(result) => result,
                 Err(_) => {
                     let runtime = runtime.clone();
@@ -598,7 +612,7 @@ pub(super) async fn process_queued_local_inbox_parses(
                 let runtime = runtime.clone();
                 let attempt = attempt.clone();
                 tauri::async_runtime::spawn_blocking(move || {
-                    runtime.fail_local_inbox_parse(&attempt, "classification_failed")
+                    runtime.block_local_inbox_parse(&attempt, "classification_failed")
                 })
                 .await
                 .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
@@ -668,7 +682,7 @@ pub(super) async fn resume_parse_document_jobs_after_unlock(
     app: &AppHandle,
     runtime: VaultRuntime,
 ) {
-    let _ = process_queued_local_inbox_parses(app, runtime).await;
+    schedule_queued_local_inbox_parses(app.clone(), runtime);
 }
 
 pub(super) async fn resume_document_reconciliations_after_unlock(runtime: VaultRuntime) {

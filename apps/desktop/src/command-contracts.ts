@@ -91,14 +91,6 @@ export interface StatementPasswordSourceSummary {
   moneySourceId: string;
 }
 
-export interface SourceDocumentRoutingOutcome {
-  accountIds: string[];
-  documentId: string;
-  moneySourceId: string | null;
-  reason: string | null;
-  status: "routed" | "needs_attention";
-}
-
 export interface RenderedDocumentPage {
   pageCount: number;
   pageNumber: number;

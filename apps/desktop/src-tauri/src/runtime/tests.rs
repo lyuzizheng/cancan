@@ -2184,6 +2184,13 @@ fn persists_validated_records_and_reconciles_an_explicit_parser_re_run() {
     runtime
         .enqueue_source_document_reparse(&imported.document_id)
         .expect("enqueue explicit parser re-run");
+    assert_eq!(
+        runtime
+            .enqueue_source_document_reparse(&imported.document_id)
+            .expect_err("reject a second active parser re-run")
+            .code(),
+        "parse_already_running"
+    );
     let reparse = runtime
         .queued_local_inbox_parse_documents()
         .expect("read explicit parser re-run")
@@ -2683,6 +2690,7 @@ fn rejects_invalid_profiles_or_legacy_fingerprints_without_parse_persistence() {
         } else if mismatch == "proposal_mismatch" {
             profile.document_type = "bank_statement".to_owned();
         } else if let Some(marker) = input
+            .bundle
             .observations
             .iter_mut()
             .find(|observation| observation.text.contains("CANCAN_SYNTHETIC_STATEMENT_V1"))
@@ -2693,7 +2701,7 @@ fn rejects_invalid_profiles_or_legacy_fingerprints_without_parse_persistence() {
         }
 
         let outcome = runtime
-            .apply_normalizer_result(&imported.document_id, &input, result)
+            .apply_normalizer_result(&imported.document_id, &input.bundle, result)
             .expect("fail closed for invalid profile");
         assert_eq!(
             outcome.status,

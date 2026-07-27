@@ -73,6 +73,7 @@ describe("App local inbox orchestration", () => {
 
     expect(api.chooseLocalInboxRoot).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("Add statements without opening CanCan");
+    expect(container.textContent).not.toContain("Something needs your attention");
   });
 
   it("rescans the inbox and shows the sanitized summary", async () => {
@@ -117,6 +118,10 @@ describe("App local inbox orchestration", () => {
     expect(api.disableLocalInbox).not.toHaveBeenCalled();
 
     await click("Keep");
+    expect(container.textContent).not.toContain(
+      "Turn off CanCan Inbox? Your folder and files stay untouched.",
+    );
+    expect(container.textContent).toContain("Turn off");
     await click("Turn off");
     await click("Turn off");
 
@@ -135,7 +140,9 @@ describe("App local inbox orchestration", () => {
 
     await click("Check now");
 
-    expect(container.textContent).toContain("Something needs your attention");
+    expect(container.textContent).toContain(
+      "Choose your Cancan folder again so CanCan can reach it.",
+    );
   });
 });
 
@@ -203,5 +210,23 @@ describe("App candidate-account decisions", () => {
 
     expect(container.textContent).toContain("That account list changed");
     expect(container.textContent).toContain("CanCan found new accounts");
+  });
+
+  it("reports an idempotent account decision without claiming a new save", async () => {
+    const api = createApi({
+      decideCandidateAccounts: vi.fn(
+        async (): Promise<AccountConfirmationOutcome> => ({ status: "already_confirmed" }),
+      ),
+      listAccountConfirmationPrompts: vi.fn(async () => [accountConfirmationPrompt]),
+    });
+    await mount(api);
+
+    await click("Save choices");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(container.textContent).toContain("Account choices already saved");
   });
 });

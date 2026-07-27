@@ -185,7 +185,7 @@ The store mutex protects only bounded state/repository reads, job claims, and tr
 
 The renderer keeps `app.tsx` as orchestration state only; presentational views live in sibling modules (`sources-view.tsx`, `document-modals.tsx`, `vault-gate.tsx`, `notices.ts`, `overview.tsx`, `review.tsx`, `vault-spine.tsx`). Interaction tests split per flow with shared fixtures instead of one monolithic file.
 
-The presentation-safe Rust command surface generates its TypeScript request/response types into committed files. CI reruns the deterministic generator and fails when `git diff --exit-code` detects drift. Semantic renderer API wrappers remain handwritten, and the current per-view React state/session guards remain in place. Do not add React Query, another cache framework, or a renderer state replatform merely to generate command types.
+The presentation-safe Rust command surface generates its TypeScript request/response types into committed files. The native CI gate builds the required sidecar, reruns the focused Rust comparison test, and fails when its generated string differs from the committed file; the standalone check builds the sidecar itself before running that test. Semantic renderer API wrappers remain handwritten, and the current per-view React state/session guards remain in place. Do not add React Query, another cache framework, or a renderer state replatform merely to generate command types.
 
 ## Implemented workspace and application gates
 

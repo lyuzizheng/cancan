@@ -2,6 +2,15 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-28
+
+### Completed
+
+- Addressed the PR45 review round: kept Linux `verify:fast` free of Rust-native dependencies, made standalone presentation checks prepare their sidecar while the macOS native gate reuses one prepared build, made committed generated-type edits trigger that native gate, and aligned the canonical drift-gate description with the Rust generated-string comparison test.
+- Made unlock schedule queued parsing without waiting for the backlog, recovered interrupted commit and reconcile jobs on Vault reopen, blocked deterministic apply-stage rejections instead of retrying them blindly, rejected concurrent explicit reparses, and made concurrent same-file capture report `AlreadyPresent` without a duplicate parse job.
+- Made available processing/non-password-attention evidence viewable, kept password-blocked evidence behind Unlock, surfaced watcher startup and background-rescan failures through Local Inbox status, treated watcher errors as rescan wake-ups, and restored truthful account/inbox feedback assertions.
+- Removed the dead statement-coverage evaluator, provisional evaluator tests, and unused renderer routing notice while retaining only the Phase 2 schema foundation; strengthened the hardening migration test around retired ingest jobs, rebuilt account self-references, and post-upgrade account/parse-run inserts.
+
 ## 2026-07-27
 
 ### Completed
@@ -23,7 +32,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Refined future repayment review to host-validated AI allocation proposals for partial, grouped, and cross-currency cases. One-click acceptance uses a concise explanation with exact evidence in progressive disclosure; every difference is an explicit fee, FX leg, or remainder, never arbitrary tolerance.
 - Accepted committed generated presentation-safe Rust-to-TypeScript files with deterministic CI drift detection. Semantic API wrappers and current React state remain handwritten; no React Query or renderer replatform is part of hardening.
 - Closed the rejected-candidate lifecycle: reject appends an audited proposal-version decision, projects the account and current uncommitted records as dismissed/hidden, preserves source/parse/raw-record/audit history, remains dismissed across an identical reparse, and supports explicit restore. Mixed accept/reject remains independent and stale batches write nothing.
-- Kept the existing coverage statement/source/account schema and exact-period idempotent decision primitive, but rejected the current direct renderer/Tauri commands, empty production policy, deterministic monthly prompt authority, and core-refresh coupling as the final Phase 2 design.
+- Kept the existing coverage statement/source/account schema foundation, but removed the unused exact-period decision code together with the direct renderer/Tauri commands, empty production policy, deterministic monthly prompt authority, and core-refresh coupling; Phase 2 will reintroduce actions only through the unified capability.
 - Accepted moving file I/O, decode, OCR, hashing, and sidecar/model work outside the shared store mutex; only short snapshots/claims and version-validated transactional writes remain inside it.
 - Replaced the fixed `100 labeled + 20 shadow` auto-commit authority with per-required-field AI confidence plus deterministic hard gates. The weakest required field controls eligibility; probable duplicates, warnings/competing parses, and partial/grouped allocations remain in Review; snapshot closure applies only to profile/event contracts with the required snapshots. Calibration uses representative/held-out and shadow evidence, zero incorrect eligible outcomes, and explicit owner approval without a universal case count. Exact thresholds/statistics remain the next focused decision.
 - Accepted multiple mailbox-scoped Gmail OAuth connections. A Money Source may own rules across mailboxes, but every captured attachment/message still queues the shared `parse_document` path. Explicit provider/payload authorization may allow the enabled rule's complete attachment or provider-approved body to reach the configured AI provider.

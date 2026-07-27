@@ -207,7 +207,7 @@ function EvidenceDocumentGroups({
           const passwordRequired = document.documentStatus === "needs_attention"
             && document.attentionReason === "password_required";
           const fileAvailable = document.fileState === "available";
-          const viewingAvailable = fileAvailable && document.documentStatus === "ready";
+          const viewingAvailable = fileAvailable && !passwordRequired;
           const routingAvailable = fileAvailable
             && (document.documentStatus === "ready" || document.documentStatus === "needs_attention")
             && !passwordRequired;
@@ -222,7 +222,7 @@ function EvidenceDocumentGroups({
                 <p>{document.originalFilename}</p>
                 <span className="evidence-meta">{evidenceMeta(document)}</span>
               </div>
-              <p className={`doc-status doc-status-${attentionRequired ? "attention" : document.fileState}`}>
+              <p className={`doc-status doc-status-${document.documentStatus === "processing" ? "processing" : attentionRequired ? "attention" : document.fileState}`}>
                 <span className="doc-status-dot" aria-hidden="true" />
                 {documentStatusLabel(document)}
               </p>

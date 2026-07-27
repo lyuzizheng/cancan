@@ -385,6 +385,10 @@ export function commandErrorMessage(error: unknown): string {
       return "Choose a PDF, CSV, PNG, or JPEG file.";
     case "normalizer_failed":
       return "CanCan could not finish the secure document check. Try again.";
+    case "parse_already_running":
+      return "The parser is already running for this document.";
+    case "parse_resume_failed":
+      return "CanCan couldn’t resume parsing this statement. Try again.";
     case "document_unavailable":
       return "This file is no longer available.";
     case "invalid_document_request":

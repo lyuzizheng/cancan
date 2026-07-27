@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeSet, HashSet},
     error::Error,
     fs, io,
     path::Path,
@@ -24,9 +24,6 @@ pub(crate) use accounts::{
 pub(crate) use accounts::{
     AccountConfirmationOutcome, AccountConfirmationPrompt, CandidateAccountDecisionInput,
 };
-#[cfg(test)]
-pub(crate) use coverage::*;
-
 const KEY_LEN: usize = 32;
 pub(crate) const DATABASE_FILE_NAME: &str = "finance.sqlite";
 const DATABASE_KEY_CONTEXT: &[u8] = b"cancan:database:v1";
@@ -96,7 +93,9 @@ const REVIEW_POLICY_VERSION: &str = "review-ledger-v1";
 const ACCOUNT_CONFIRMATION_POLICY_VERSION: &str = "account-confirmation-v1";
 const COMMIT_REVIEW_BATCH_JOB_TYPE: &str = "commit_review_batch";
 const PARSE_DOCUMENT_JOB_TYPE: &str = "parse_document";
+const PARSE_DOCUMENT_LEASE_SECONDS: i64 = 300;
 const RECONCILE_DOCUMENT_JOB_TYPE: &str = "reconcile_document";
+const RECONCILE_DOCUMENT_LEASE_SECONDS: i64 = 300;
 const COMMIT_REVIEW_BATCH_LEASE_SECONDS: i64 = 300;
 const MAX_SUPPORTED_RELATIONSHIP_WINDOW_DAYS: i64 = 7;
 const MAX_PERSISTED_PARSE_JSON_BYTES: usize = 16 * 1024;
@@ -541,6 +540,7 @@ impl ManualImportStore {
         store.reconcile_files()?;
         store.recover_expired_parse_document_jobs()?;
         store.recover_interrupted_parse_document_jobs()?;
+        store.recover_interrupted_review_jobs()?;
         store.recover_expired_review_jobs()?;
         Ok(store)
     }
@@ -757,33 +757,6 @@ impl ManualImportStore {
         Ok(())
     }
 
-    pub(crate) fn enqueue_source_document_pipeline(
-        &mut self,
-        document_id: &str,
-    ) -> StoreResult<()> {
-        if document_id.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "source document id must not be empty",
-            )
-            .into());
-        }
-        let transaction = self.connection.transaction()?;
-        let exists: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM source_documents WHERE id = ?1)",
-            [document_id],
-            |row| row.get(0),
-        )?;
-        if !exists {
-            return Err(
-                io::Error::new(io::ErrorKind::NotFound, "source document not found").into(),
-            );
-        }
-        enqueue_parse_document(&transaction, document_id, &new_database_id("parse-run"))?;
-        transaction.commit()?;
-        Ok(())
-    }
-
     pub(crate) fn queued_parse_document_jobs(&mut self) -> StoreResult<Vec<ParseDocumentJob>> {
         self.recover_expired_parse_document_jobs()?;
         let mut statement = self.connection.prepare(
@@ -817,12 +790,13 @@ impl ManualImportStore {
         let claim_token = new_database_id("parse-lease");
         let changed = self.connection.execute(
             "UPDATE jobs SET status = 'running', attempts = attempts + 1, \
-                     lease_owner = ?1, lease_until = datetime('now', '+300 seconds'), \
+                     lease_owner = ?1, lease_until = datetime('now', ?2), \
                      started_at = COALESCE(started_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP \
-             WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
+             WHERE id = ?3 AND related_source_document_id = ?4 AND job_type = ?5 \
                AND status = 'queued' AND attempts < max_attempts",
             params![
                 claim_token,
+                format!("+{PARSE_DOCUMENT_LEASE_SECONDS} seconds"),
                 job.job_id,
                 job.document_id,
                 PARSE_DOCUMENT_JOB_TYPE,
@@ -910,11 +884,15 @@ impl ManualImportStore {
             "UPDATE jobs \
              SET status = 'running', attempts = attempts + 1, \
                  lease_owner = 'reconcile-document', \
-                 lease_until = datetime('now', '+300 seconds'), \
+                 lease_until = datetime('now', ?2), \
                  started_at = COALESCE(started_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP \
-             WHERE related_source_document_id = ?1 AND job_type = ?2 \
+             WHERE related_source_document_id = ?1 AND job_type = ?3 \
                AND status = 'queued' AND attempts < max_attempts",
-            params![document_id, RECONCILE_DOCUMENT_JOB_TYPE],
+            params![
+                document_id,
+                format!("+{RECONCILE_DOCUMENT_LEASE_SECONDS} seconds"),
+                RECONCILE_DOCUMENT_JOB_TYPE
+            ],
         )?;
         if changed == 0 {
             self.connection.execute(
@@ -2316,6 +2294,18 @@ impl ManualImportStore {
         Ok(())
     }
 
+    pub(crate) fn recover_interrupted_review_jobs(&mut self) -> StoreResult<()> {
+        // The app holds exclusive process ownership of the Vault, so these
+        // running claims cannot still belong to a live peer at open.
+        self.connection.execute(
+            "UPDATE jobs \
+             SET status = 'queued', lease_owner = NULL, lease_until = NULL, updated_at = CURRENT_TIMESTAMP \
+             WHERE job_type IN (?1, ?2) AND status = 'running'",
+            params![COMMIT_REVIEW_BATCH_JOB_TYPE, RECONCILE_DOCUMENT_JOB_TYPE],
+        )?;
+        Ok(())
+    }
+
     pub(crate) fn recover_expired_parse_document_jobs(&mut self) -> StoreResult<()> {
         self.connection.execute(
             "UPDATE jobs \
@@ -3294,7 +3284,6 @@ fn valid_currency(value: &str) -> bool {
 mod accounts;
 #[cfg(test)]
 mod accounts_tests;
-mod coverage;
 #[cfg(test)]
 mod hardening_tests;
 pub(crate) mod imports;

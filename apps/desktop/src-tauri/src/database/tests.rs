@@ -303,215 +303,36 @@ fn explicit_reparse_creates_a_new_parse_job_and_logical_run() {
         .expect("read initial parse job")
         .pop()
         .expect("initial parse job");
-
+    let first_claim = store
+        .start_parse_document_job(&first)
+        .expect("claim initial parse")
+        .expect("initial parse claimed");
     store
-        .enqueue_source_document_pipeline("document-reparse")
-        .expect("enqueue explicit reparse");
+        .finish_parse_document_job(
+            &first_claim,
+            &SourceDocumentRoutingOutcome::needs_attention(
+                "document-reparse",
+                "classification_uncertain",
+            ),
+        )
+        .expect("finish initial parse");
+
+    assert!(
+        store
+            .enqueue_source_document_pipeline("document-reparse")
+            .expect("enqueue explicit reparse")
+    );
+    assert!(
+        !store
+            .enqueue_source_document_pipeline("document-reparse")
+            .expect("reject duplicate active reparse")
+    );
     let jobs = store
         .queued_parse_document_jobs()
         .expect("read queued parse jobs");
 
-    assert_eq!(jobs.len(), 2);
-    assert!(jobs.iter().any(|job| job.job_id == first.job_id));
-    assert!(
-        jobs.iter()
-            .any(|job| job.logical_run_key != first.logical_run_key)
-    );
-}
-
-fn seed_coverage_statement(
-    store: &mut ManualImportStore,
-    document_id: &str,
-    period_from: &str,
-    period_to: &str,
-) {
-    store
-        .connection
-        .execute(
-            "INSERT INTO source_documents( \
-               id, money_source_id, file_sha256, semantic_document_key, original_filename, \
-               mime_type, byte_size, encrypted_locator, file_state, document_type, \
-               statement_period_from, statement_period_to \
-             ) VALUES (?1, 'source-dbs', ?2, ?3, ?4, 'application/pdf', 1, ?5, \
-                       'available', 'account_statement', ?6, ?7)",
-            params![
-                document_id,
-                format!("{document_id:0<64}"),
-                format!("dbs:checking:{period_from}"),
-                format!("{document_id}.pdf"),
-                format!("files/{document_id}.ccenv"),
-                period_from,
-                period_to,
-            ],
-        )
-        .expect("seed coverage document");
-    store
-        .connection
-        .execute(
-            "INSERT INTO source_document_accounts(source_document_id, account_id) \
-             VALUES (?1, 'account-dbs')",
-            [document_id],
-        )
-        .expect("link coverage account");
-}
-
-#[test]
-fn derives_monthly_coverage_gaps_and_idempotent_user_decisions() {
-    let root = tempfile::tempdir().expect("temporary Vault");
-    let mut store = open_store(root.path());
-    store
-        .connection
-        .execute(
-            "INSERT INTO accounts( \
-               id, money_source_id, provider_key, provider_account_id, account_type, \
-               display_name, currency, status \
-             ) VALUES ('account-dbs', 'source-dbs', 'dbs', 'checking-001', \
-                       'deposit_account', 'DBS checking', 'SGD', 'confirmed')",
-            [],
-        )
-        .expect("seed coverage account");
-    seed_coverage_statement(&mut store, "document-january", "2026-01-01", "2026-01-31");
-    seed_coverage_statement(&mut store, "document-march", "2026-03-01", "2026-03-31");
-    let policy = [StatementCoveragePolicy {
-        cadence_months: 1,
-        document_type: "account_statement",
-        grace_days: 7,
-        provider_key: "dbs",
-    }];
-    let prompts = store
-        .list_statement_coverage_prompts(&policy, "2026-05-10")
-        .expect("derive coverage prompts");
-    assert_eq!(
-        prompts,
-        vec![
-            StatementCoveragePrompt {
-                account_id: "account-dbs".to_owned(),
-                document_type: "account_statement".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-                statement_period_from: "2026-02-01".to_owned(),
-                statement_period_to: "2026-02-28".to_owned(),
-                status: StatementCoveragePromptStatus::ConfirmedMissing,
-            },
-            StatementCoveragePrompt {
-                account_id: "account-dbs".to_owned(),
-                document_type: "account_statement".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-                statement_period_from: "2026-04-01".to_owned(),
-                statement_period_to: "2026-04-30".to_owned(),
-                status: StatementCoveragePromptStatus::LikelyMissing,
-            },
-        ]
-    );
-
-    let not_expected = StatementCoverageDecisionInput {
-        account_id: "account-dbs",
-        audit_id: "audit-coverage-february",
-        decision: StatementCoverageDecision::NotExpected,
-        document_type: "account_statement",
-        money_source_id: "source-dbs",
-        remind_after: None,
-        statement_period_from: "2026-02-01",
-        statement_period_to: "2026-02-28",
-    };
-    store
-        .record_statement_coverage_decision(&not_expected)
-        .expect("record not expected");
-    store
-        .record_statement_coverage_decision(&not_expected)
-        .expect("repeat not expected");
-    let audits: i64 = store
-        .connection
-        .query_row(
-            "SELECT count(*) FROM audit_log \
-             WHERE action = 'statement_coverage_decided' AND entity_id LIKE '%:2026-02-01:2026-02-28'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("count coverage audits");
-    assert_eq!(audits, 1);
-
-    let remind_later = StatementCoverageDecisionInput {
-        account_id: "account-dbs",
-        audit_id: "audit-coverage-april",
-        decision: StatementCoverageDecision::RemindLater,
-        document_type: "account_statement",
-        money_source_id: "source-dbs",
-        remind_after: Some("2099-01-01"),
-        statement_period_from: "2026-04-01",
-        statement_period_to: "2026-04-30",
-    };
-    store
-        .record_statement_coverage_decision(&remind_later)
-        .expect("record reminder");
-    assert!(
-        store
-            .list_statement_coverage_prompts(&policy, "2026-05-10")
-            .expect("derive suppressed prompts")
-            .is_empty()
-    );
-    assert_eq!(
-        store
-            .list_statement_coverage_prompts(&policy, "2100-01-01")
-            .expect("derive reappeared prompts"),
-        vec![StatementCoveragePrompt {
-            account_id: "account-dbs".to_owned(),
-            document_type: "account_statement".to_owned(),
-            money_source_id: "source-dbs".to_owned(),
-            statement_period_from: "2026-04-01".to_owned(),
-            statement_period_to: "2026-04-30".to_owned(),
-            status: StatementCoveragePromptStatus::LikelyMissing,
-        }]
-    );
-}
-
-#[test]
-fn keeps_month_end_when_multiple_monthly_periods_are_missing() {
-    let root = tempfile::tempdir().expect("temporary Vault");
-    let mut store = open_store(root.path());
-    store
-        .connection
-        .execute(
-            "INSERT INTO accounts( \
-               id, money_source_id, provider_key, provider_account_id, account_type, \
-               display_name, currency, status \
-             ) VALUES ('account-dbs', 'source-dbs', 'dbs', 'checking-001', \
-                       'deposit_account', 'DBS checking', 'SGD', 'confirmed')",
-            [],
-        )
-        .expect("seed coverage account");
-    seed_coverage_statement(&mut store, "document-january", "2026-01-01", "2026-01-31");
-    seed_coverage_statement(&mut store, "document-april", "2026-04-01", "2026-04-30");
-    let policy = [StatementCoveragePolicy {
-        cadence_months: 1,
-        document_type: "account_statement",
-        grace_days: 7,
-        provider_key: "dbs",
-    }];
-
-    let prompts = store
-        .list_statement_coverage_prompts(&policy, "2026-04-01")
-        .expect("derive missing periods");
-    assert_eq!(
-        prompts,
-        vec![
-            StatementCoveragePrompt {
-                account_id: "account-dbs".to_owned(),
-                document_type: "account_statement".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-                statement_period_from: "2026-02-01".to_owned(),
-                statement_period_to: "2026-02-28".to_owned(),
-                status: StatementCoveragePromptStatus::ConfirmedMissing,
-            },
-            StatementCoveragePrompt {
-                account_id: "account-dbs".to_owned(),
-                document_type: "account_statement".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-                statement_period_from: "2026-03-01".to_owned(),
-                statement_period_to: "2026-03-31".to_owned(),
-                status: StatementCoveragePromptStatus::ConfirmedMissing,
-            },
-        ]
-    );
+    assert_eq!(jobs.len(), 1);
+    assert_ne!(jobs[0].logical_run_key, first.logical_run_key);
 }
 
 #[test]

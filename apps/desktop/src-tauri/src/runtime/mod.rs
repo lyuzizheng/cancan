@@ -46,7 +46,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, Write},
-    ops::{Deref, DerefMut},
+    ops::Deref,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, MutexGuard,
@@ -96,12 +96,6 @@ impl Deref for ExtractedDocument {
 
     fn deref(&self) -> &Self::Target {
         &self.bundle
-    }
-}
-
-impl DerefMut for ExtractedDocument {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.bundle
     }
 }
 

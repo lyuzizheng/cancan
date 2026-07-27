@@ -8,7 +8,7 @@ CREATE TABLE accounts_next (
   masked_identifier TEXT,
   currency TEXT,
   status TEXT NOT NULL CHECK (status IN ('candidate', 'confirmed', 'dismissed', 'archived', 'merged')),
-  merged_into_account_id TEXT REFERENCES accounts_next(id),
+  merged_into_account_id TEXT REFERENCES accounts(id),
   raw_identity_json TEXT,
   first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

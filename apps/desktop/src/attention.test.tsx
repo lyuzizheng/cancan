@@ -64,4 +64,16 @@ describe("AttentionSection", () => {
     expect(html).toContain("Saving…");
     expect((html.match(/disabled=""/g) ?? []).length).toBeGreaterThan(1);
   });
+
+  it("does not show a zero attention badge for restore-only accounts", () => {
+    const html = render({
+      accountPrompts: [{
+        ...prompt,
+        candidateAccounts: [],
+      }],
+    });
+
+    expect(html).not.toContain('aria-label="0 to check"');
+    expect(html).toContain("Wise USD Balance · dismissed");
+  });
 });

@@ -223,6 +223,12 @@ describe("Vault API", () => {
     expect(commandErrorMessage('{"code":"normalizer_failed"}')).toBe(
       "CanCan could not finish the secure document check. Try again.",
     );
+    expect(commandErrorMessage('{"code":"parse_already_running"}')).toBe(
+      "The parser is already running for this document.",
+    );
+    expect(commandErrorMessage('{"code":"parse_resume_failed"}')).toBe(
+      "CanCan couldn’t resume parsing this statement. Try again.",
+    );
     expect(commandErrorMessage('{"code":"document_unavailable"}')).toBe(
       "This file is no longer available.",
     );
