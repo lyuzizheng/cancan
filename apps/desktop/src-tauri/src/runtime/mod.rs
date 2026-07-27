@@ -449,6 +449,7 @@ struct RuntimeInner {
     local_inbox_needs_reauthorization: AtomicBool,
     local_inbox_scan_pending: AtomicBool,
     local_inbox_scan_scheduled: AtomicBool,
+    local_inbox_watch_failed: AtomicBool,
     local_inbox_watcher: Mutex<Option<LocalInboxWatcher>>,
     remembered_keys: Arc<dyn RememberedKeyStore>,
     root: PathBuf,
@@ -462,6 +463,8 @@ struct RuntimeInner {
 mod documents;
 mod error;
 mod inbox;
+#[cfg(test)]
+mod inbox_tests;
 mod inbox_watcher;
 mod keyring;
 mod review;

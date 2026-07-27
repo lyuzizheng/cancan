@@ -39,6 +39,7 @@ impl VaultRuntime {
                 local_inbox_needs_reauthorization: AtomicBool::new(false),
                 local_inbox_scan_pending: AtomicBool::new(false),
                 local_inbox_scan_scheduled: AtomicBool::new(false),
+                local_inbox_watch_failed: AtomicBool::new(false),
                 local_inbox_watcher: Mutex::new(None),
                 remembered_keys,
                 root,

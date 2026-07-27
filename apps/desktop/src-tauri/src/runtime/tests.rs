@@ -6,7 +6,7 @@ use crate::viewer::tests::{protected_pdf_fixture, synthetic_png_fixture};
 use std::{collections::HashMap, thread, time::Duration};
 
 #[derive(Default)]
-struct MemoryRememberedKeyStore {
+pub(super) struct MemoryRememberedKeyStore {
     secret: Mutex<Option<Vec<u8>>>,
 }
 
@@ -96,7 +96,7 @@ impl RememberedKeyStore for MalformedDeleteFailingRememberedKeyStore {
 }
 
 #[derive(Default)]
-struct MemoryStatementPasswordStore {
+pub(super) struct MemoryStatementPasswordStore {
     fail_delete: AtomicBool,
     fail_save: AtomicBool,
     secrets: Mutex<HashMap<String, Vec<u8>>>,
@@ -134,7 +134,7 @@ impl StatementPasswordStore for MemoryStatementPasswordStore {
 }
 
 #[derive(Default)]
-struct MemoryLocalInboxBookmarkStore {
+pub(super) struct MemoryLocalInboxBookmarkStore {
     bookmark: Mutex<Option<Vec<u8>>>,
 }
 

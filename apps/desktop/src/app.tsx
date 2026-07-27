@@ -283,21 +283,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       ]),
       api.localInboxStatus(),
     ]);
-    if (
-      vaultSessionId.current !== sessionId
-      || financeLoadRequestId.current !== requestId
-    ) {
-      return;
-    }
+    if (vaultSessionId.current !== sessionId || financeLoadRequestId.current !== requestId) return;
     if (financeResult.status === "fulfilled") {
-      const [
-        items,
-        overview,
-        activity,
-        sources,
-        coverage,
-        accounts,
-      ] = financeResult.value;
+      const [items, overview, activity, sources, coverage, accounts] = financeResult.value;
       setReviewItems(items);
       setMoneyOverview(overview);
       setRecentActivity(activity);
@@ -1327,6 +1315,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         return;
       }
       setLocalInbox(status);
+      setLocalInboxError(null);
       setInboxConfirmingDisable(false);
       setNotice({
         body: "New statements you save to Inbox are added for you. The folder stays outside your encrypted Vault.",
@@ -1336,13 +1325,24 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       await loadFinanceData();
     } catch (nextError) {
       if (vaultSessionId.current === sessionId) {
-        setError(commandErrorMessage(nextError));
+        setLocalInbox(null);
+        setLocalInboxError(commandErrorMessage(nextError));
       }
     } finally {
       if (vaultSessionId.current === sessionId) {
         setInboxBusy(false);
       }
     }
+  };
+
+  const retryInboxStatus = async () => {
+    const sessionId = vaultSessionId.current;
+    const [result] = await Promise.allSettled([api.localInboxStatus()]);
+    if (vaultSessionId.current !== sessionId) return;
+    setLocalInbox(result.status === "fulfilled" ? result.value : null);
+    setLocalInboxError(result.status === "rejected"
+      ? commandErrorMessage(result.reason)
+      : null);
   };
 
   const rescanInbox = async () => {
@@ -1666,7 +1666,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onLock={() => void requestVaultLock()}
             onNormalize={normalizeDocument}
             onOpenUnlock={openDocumentUnlock}
-            onRefresh={() => void refreshVaultStatus()}
+            onRefresh={() => void retryInboxStatus()}
             onRememberedChange={updateRemembered}
             onSelectMoneySource={selectMoneySource}
             onSaveRecoveryFile={saveRecoveryFile}

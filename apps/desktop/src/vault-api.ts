@@ -414,7 +414,7 @@ export function commandErrorMessage(error: unknown): string {
     case "local_inbox_reauthorization_required":
       return "Choose your Cancan folder again so CanCan can reach it.";
     case "local_inbox_watch_failed":
-      return "CanCan couldn’t watch Inbox for new files. Choose the folder again or use Check now.";
+      return "CanCan Inbox is set up, but CanCan couldn’t watch for new files. Try again to restore automatic checks.";
     case "local_inbox_storage_failed":
     case "local_inbox_unavailable":
       return "CanCan couldn’t reach the local Inbox setup. Try again.";

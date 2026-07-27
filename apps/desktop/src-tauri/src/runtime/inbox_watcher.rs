@@ -1,6 +1,9 @@
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{io, path::Path};
 
+use super::*;
+use crate::local_inbox::INBOX_DIRECTORY_NAME;
+
 pub(super) struct LocalInboxWatcher {
     _watcher: RecommendedWatcher,
 }
@@ -24,6 +27,38 @@ impl LocalInboxWatcher {
             .watch(inbox, RecursiveMode::NonRecursive)
             .map_err(notify_error)?;
         Ok(Self { _watcher: watcher })
+    }
+}
+
+impl VaultRuntime {
+    pub(super) fn install_local_inbox_watcher(
+        &self,
+        session_generation: u64,
+        inbox: &Path,
+        watcher: LocalInboxWatcher,
+    ) -> Result<(), RuntimeError> {
+        let mut watcher_slot = self
+            .inner
+            .local_inbox_watcher
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+        let access = self
+            .inner
+            .local_inbox_access
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+        self.require_vault_session(session_generation)?;
+        let current_inbox = access
+            .as_ref()
+            .map(|root| root.root().join(INBOX_DIRECTORY_NAME));
+        if current_inbox.as_deref() != Some(inbox) {
+            return Err(RuntimeError::new("local_inbox_reauthorization_required"));
+        }
+        *watcher_slot = Some(watcher);
+        self.inner
+            .local_inbox_watch_failed
+            .store(false, Ordering::SeqCst);
+        Ok(())
     }
 }
 

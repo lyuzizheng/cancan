@@ -55,6 +55,22 @@ describe("App local inbox orchestration", () => {
     expect(container.textContent).not.toContain("Something needs your attention");
   });
 
+  it("keeps a watcher setup failure inside Sources", async () => {
+    const api = createApi({
+      chooseLocalInboxRoot: vi.fn(async (): Promise<LocalInboxStatus> => {
+        throw { code: "local_inbox_watch_failed" };
+      }),
+    });
+    await mount(api, "sources");
+
+    await click("Choose Cancan folder");
+
+    expect(container.textContent).toContain("CanCan Inbox unavailable");
+    expect(container.textContent).toContain("CanCan Inbox is set up");
+    expect(container.textContent).not.toContain("Something needs your attention");
+    expect(api.vaultAccessStatus).toHaveBeenCalledTimes(1);
+  });
+
   it("rescans the inbox and shows the sanitized summary", async () => {
     const scanSummary: LocalInboxScanSummary = {
       alreadyPresent: 12,
@@ -144,6 +160,24 @@ describe("App local inbox orchestration", () => {
       "CanCan couldn’t reach the local Inbox setup.",
     );
     expect(container.textContent).not.toContain("Something needs your attention");
+  });
+
+  it("retries only the local inbox status from its error state", async () => {
+    const api = createApi({
+      localInboxStatus: vi.fn()
+        .mockRejectedValueOnce({ code: "local_inbox_watch_failed" })
+        .mockResolvedValue(inboxEnabled),
+    });
+    await mount(api, "sources");
+
+    expect(container.textContent).toContain("CanCan Inbox unavailable");
+    await click("Try again");
+
+    expect(api.localInboxStatus).toHaveBeenCalledTimes(2);
+    expect(api.vaultAccessStatus).toHaveBeenCalledTimes(1);
+    expect(api.listRecentActivity).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("CanCan Inbox is on");
+    expect(container.textContent).not.toContain("CanCan Inbox unavailable");
   });
 });
 

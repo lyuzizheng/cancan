@@ -273,6 +273,7 @@ function Preview() {
     );
   } else if (state === "sources-inbox-disabled"
     || state === "sources-inbox-enabled"
+    || state === "sources-inbox-error"
     || state === "sources-inbox-reauth") {
     activeView = "sources";
     const status = state === "sources-inbox-enabled"
@@ -288,7 +289,9 @@ function Preview() {
         inbox={status}
         inboxBusy={false}
         inboxConfirmingDisable={false}
-        inboxError={null}
+        inboxError={state === "sources-inbox-error"
+          ? "CanCan Inbox is set up, but CanCan couldn’t watch for new files. Try again to restore automatic checks."
+          : null}
         loadingDocuments={false}
         normalizingDocumentId={null}
         notice={null}
