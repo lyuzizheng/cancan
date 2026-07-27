@@ -1,12 +1,11 @@
 use crate::{
+    local_inbox::FileSnapshot,
     vault::{FileVault, PreparedSource, StoredFile},
     viewer::validate_image_container,
 };
 use hkdf::Hkdf;
 use rand::{RngCore, rngs::OsRng};
-use rusqlite::{
-    Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior, params,
-};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, Transaction, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -17,6 +16,16 @@ use std::{
     path::Path,
 };
 use zeroize::Zeroizing;
+
+#[cfg(test)]
+pub(crate) use accounts::{
+    AccountConfirmationCandidate, AccountConfirmationStatus, CandidateAccountDecision,
+};
+pub(crate) use accounts::{
+    AccountConfirmationOutcome, AccountConfirmationPrompt, CandidateAccountDecisionInput,
+};
+#[cfg(test)]
+pub(crate) use coverage::*;
 
 const KEY_LEN: usize = 32;
 pub(crate) const DATABASE_FILE_NAME: &str = "finance.sqlite";
@@ -76,6 +85,11 @@ const MIGRATIONS: &[Migration] = &[
         ),
         foreign_keys_off: false,
     },
+    Migration {
+        version: 9,
+        sql: include_str!("../../../../../packages/db/migrations/0009_post_pr41_hardening.sql"),
+        foreign_keys_off: true,
+    },
 ];
 
 const REVIEW_POLICY_VERSION: &str = "review-ledger-v1";
@@ -83,12 +97,33 @@ const ACCOUNT_CONFIRMATION_POLICY_VERSION: &str = "account-confirmation-v1";
 const COMMIT_REVIEW_BATCH_JOB_TYPE: &str = "commit_review_batch";
 const PARSE_DOCUMENT_JOB_TYPE: &str = "parse_document";
 const RECONCILE_DOCUMENT_JOB_TYPE: &str = "reconcile_document";
-const SOURCE_DOCUMENT_INGEST_JOB_TYPE: &str = "source_document_ingest";
 const COMMIT_REVIEW_BATCH_LEASE_SECONDS: i64 = 300;
 const MAX_SUPPORTED_RELATIONSHIP_WINDOW_DAYS: i64 = 7;
 const MAX_PERSISTED_PARSE_JSON_BYTES: usize = 16 * 1024;
 
 type StoreResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ParseDocumentJob {
+    pub(crate) document_id: String,
+    pub(crate) job_id: String,
+    pub(crate) logical_run_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ParseDocumentClaim {
+    pub(crate) claim_token: String,
+    pub(crate) document_id: String,
+    pub(crate) job_id: String,
+    pub(crate) logical_run_key: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ParseDocumentJobInput {
+    document_id: String,
+    logical_run_key: String,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -115,6 +150,7 @@ pub struct SourceDocumentImport<'a> {
     pub document_id: &'a str,
     pub mime_type: &'a str,
     pub original_filename: &'a str,
+    #[cfg(test)]
     pub source_path: &'a Path,
 }
 
@@ -355,38 +391,6 @@ pub(crate) struct MoneySourceView {
     pub(crate) source_type: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct AccountConfirmationCandidate {
-    pub(crate) account_id: String,
-    pub(crate) account_type: String,
-    pub(crate) currency: Option<String>,
-    pub(crate) display_name: String,
-    pub(crate) masked_identifier: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct AccountConfirmationPrompt {
-    pub(crate) candidate_accounts: Vec<AccountConfirmationCandidate>,
-    pub(crate) display_name: String,
-    pub(crate) money_source_id: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum AccountConfirmationStatus {
-    AlreadyConfirmed,
-    Confirmed,
-    Conflict,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct AccountConfirmationOutcome {
-    pub(crate) status: AccountConfirmationStatus,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StatementPasswordStatus {
     PendingDelete,
@@ -493,61 +497,12 @@ pub(crate) struct StructuredParseTestState {
     pub(crate) staged_records: i64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct StatementCoveragePolicy<'a> {
-    pub(crate) cadence_months: u32,
-    pub(crate) document_type: &'a str,
-    pub(crate) grace_days: i64,
-    pub(crate) provider_key: &'a str,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum StatementCoveragePromptStatus {
-    ConfirmedMissing,
-    LikelyMissing,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct StatementCoveragePrompt {
-    pub(crate) account_id: String,
-    pub(crate) document_type: String,
-    pub(crate) money_source_id: String,
-    pub(crate) statement_period_from: String,
-    pub(crate) statement_period_to: String,
-    pub(crate) status: StatementCoveragePromptStatus,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum StatementCoverageDecision {
-    NotExpected,
-    RemindLater,
-}
-
-pub(crate) struct StatementCoverageDecisionInput<'a> {
-    pub(crate) account_id: &'a str,
-    pub(crate) audit_id: &'a str,
-    pub(crate) decision: StatementCoverageDecision,
-    pub(crate) document_type: &'a str,
-    pub(crate) money_source_id: &'a str,
-    pub(crate) remind_after: Option<&'a str>,
-    pub(crate) statement_period_from: &'a str,
-    pub(crate) statement_period_to: &'a str,
-}
-
 #[derive(Debug)]
 struct ExistingDocument {
     document_id: String,
     encrypted_locator: Option<String>,
     file_sha256: String,
     file_state: String,
-}
-
-#[derive(Clone, Debug)]
-struct CoveragePeriod {
-    statement_period_from: String,
-    statement_period_to: String,
 }
 
 pub struct ManualImportStore {
@@ -584,6 +539,8 @@ impl ManualImportStore {
             master_key,
         };
         store.reconcile_files()?;
+        store.recover_expired_parse_document_jobs()?;
+        store.recover_interrupted_parse_document_jobs()?;
         store.recover_expired_review_jobs()?;
         Ok(store)
     }
@@ -592,6 +549,7 @@ impl ManualImportStore {
         &self.master_key
     }
 
+    #[cfg(test)]
     pub fn register_import(
         &mut self,
         input: &SourceDocumentImport<'_>,
@@ -602,6 +560,7 @@ impl ManualImportStore {
         self.register_prepared_import(input, source, restore_deleted_document_id)
     }
 
+    #[cfg(test)]
     pub(crate) fn register_captured_import(
         &mut self,
         input: &SourceDocumentImport<'_>,
@@ -614,22 +573,45 @@ impl ManualImportStore {
         self.register_prepared_import(input, source, restore_deleted_document_id)
     }
 
-    fn register_prepared_import(
-        &mut self,
-        input: &SourceDocumentImport<'_>,
-        source: PreparedSource,
-        restore_deleted_document_id: Option<&str>,
-    ) -> StoreResult<SourceDocumentImportOutcome> {
-        if matches!(input.mime_type, "image/png" | "image/jpeg") {
-            validate_image_container(source.plaintext(), input.mime_type)?;
+    pub(crate) fn prepare_source_path(
+        mime_type: &str,
+        source_path: &Path,
+    ) -> StoreResult<PreparedSource> {
+        let source = FileVault::prepare(source_path)?;
+        if matches!(mime_type, "image/png" | "image/jpeg") {
+            validate_image_container(source.plaintext(), mime_type)?;
         }
+        Ok(source)
+    }
+
+    pub(crate) fn prepare_source_bytes(
+        mime_type: &str,
+        captured_bytes: Zeroizing<Vec<u8>>,
+    ) -> StoreResult<PreparedSource> {
+        validate_captured_container(mime_type, &captured_bytes)?;
+        let source = FileVault::prepare_bytes(captured_bytes)?;
+        if matches!(mime_type, "image/png" | "image/jpeg") {
+            validate_image_container(source.plaintext(), mime_type)?;
+        }
+        Ok(source)
+    }
+
+    pub(crate) fn source_capture_plan(
+        &self,
+        input: &SourceDocumentImport<'_>,
+        source: &PreparedSource,
+        restore_deleted_document_id: Option<&str>,
+    ) -> StoreResult<SourceCapturePlan> {
+        validate_import(input)?;
         let existing = find_exact_document(&self.connection, source.file_sha256())?;
         match (existing.as_ref(), restore_deleted_document_id) {
             (Some(existing), None) if existing.file_state == "deleted" => {
-                return Ok(SourceDocumentImportOutcome {
-                    document_id: existing.document_id.clone(),
-                    status: SourceDocumentImportStatus::RestoreConfirmationRequired,
-                });
+                return Ok(SourceCapturePlan::RestoreConfirmationRequired(
+                    SourceDocumentImportOutcome {
+                        document_id: existing.document_id.clone(),
+                        status: SourceDocumentImportStatus::RestoreConfirmationRequired,
+                    },
+                ));
             }
             (Some(existing), Some(expected_document_id))
                 if existing.file_state == "deleted"
@@ -643,38 +625,52 @@ impl ManualImportStore {
             }
             _ => {}
         }
-        let replace_existing = existing
-            .as_ref()
-            .is_some_and(|document| document.file_state != "available");
-        let stored = match self
-            .files
-            .store_prepared(&self.master_key, &source, replace_existing)
-        {
-            Ok(stored) => stored,
-            Err(error)
-                if existing
-                    .as_ref()
-                    .is_some_and(|document| document.file_state == "available")
-                    && matches!(
-                        error.kind(),
-                        io::ErrorKind::InvalidData | io::ErrorKind::NotFound
-                    ) =>
-            {
-                let document = existing.as_ref().expect("guarded existing document");
-                mark_missing(&mut self.connection, document, source.file_sha256())?;
-                self.files.store_prepared(&self.master_key, &source, true)?
-            }
-            Err(error) => return Err(error.into()),
-        };
+        Ok(SourceCapturePlan::Capture(SourceCapture {
+            files: self.files.clone(),
+            master_key: self.master_key.clone(),
+            replace_existing: existing
+                .as_ref()
+                .is_some_and(|document| document.file_state != "available"),
+        }))
+    }
 
-        match persist_import(&mut self.connection, input, &stored) {
-            Ok(outcome) => Ok(outcome),
-            Err(error) => {
-                if stored.created {
-                    let _ = self.files.remove(&stored.encrypted_locator);
-                }
-                Err(error.into())
+    pub(crate) fn persist_captured_import(
+        &mut self,
+        input: &SourceDocumentImport<'_>,
+        stored: &StoredFile,
+        restore_deleted_document_id: Option<&str>,
+    ) -> StoreResult<SourceDocumentImportOutcome> {
+        Ok(persist_import(
+            &mut self.connection,
+            input,
+            stored,
+            restore_deleted_document_id,
+        )?)
+    }
+
+    #[cfg(test)]
+    fn register_prepared_import(
+        &mut self,
+        input: &SourceDocumentImport<'_>,
+        source: PreparedSource,
+        restore_deleted_document_id: Option<&str>,
+    ) -> StoreResult<SourceDocumentImportOutcome> {
+        if matches!(input.mime_type, "image/png" | "image/jpeg") {
+            validate_image_container(source.plaintext(), input.mime_type)?;
+        }
+        let capture = match self.source_capture_plan(input, &source, restore_deleted_document_id)? {
+            SourceCapturePlan::Capture(capture) => capture,
+            SourceCapturePlan::RestoreConfirmationRequired(outcome) => return Ok(outcome),
+        };
+        let stored = capture.store_prepared(&source)?;
+        match self.persist_captured_import(input, &stored, restore_deleted_document_id) {
+            Ok(outcome)
+                if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired =>
+            {
+                Ok(outcome)
             }
+            Ok(outcome) => Ok(outcome),
+            Err(error) => Err(error),
         }
     }
 
@@ -684,6 +680,81 @@ impl ManualImportStore {
             .prepare("SELECT file_sha256 FROM source_documents WHERE file_state = 'deleted'")?;
         let rows = statement.query_map([], |row| row.get(0))?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub(crate) fn local_inbox_entry_is_current(
+        &self,
+        entry_key: &str,
+        snapshot: &FileSnapshot,
+    ) -> StoreResult<bool> {
+        self.connection
+            .query_row(
+                "SELECT creation_nanoseconds, creation_seconds, change_nanoseconds, change_seconds, \
+                        device, inode, last_observed_entry_identity, modified_nanoseconds, \
+                        modified_seconds, size_bytes \
+                 FROM local_inbox_entry_observations WHERE entry_key = ?1",
+                [entry_key],
+                |row| {
+                    Ok(
+                        row.get::<_, i64>(0)? == snapshot.creation_nanoseconds
+                            && row.get::<_, i64>(1)? == snapshot.creation_seconds
+                            && row.get::<_, i64>(2)? == snapshot.change_nanoseconds
+                            && row.get::<_, i64>(3)? == snapshot.change_seconds
+                            && row.get::<_, i64>(4)? == i64::try_from(snapshot.identity.device).unwrap_or(-1)
+                            && row.get::<_, i64>(5)? == i64::try_from(snapshot.identity.inode).unwrap_or(-1)
+                            && row.get::<_, String>(6)?
+                                == format!("{}:{}", snapshot.identity.device, snapshot.identity.inode)
+                            && row.get::<_, i64>(7)? == snapshot.modified_nanoseconds
+                            && row.get::<_, i64>(8)? == snapshot.modified_seconds
+                            && row.get::<_, i64>(9)? == i64::try_from(snapshot.size).unwrap_or(-1),
+                    )
+                },
+            )
+            .optional()
+            .map(|current| current.unwrap_or(false))
+            .map_err(Into::into)
+    }
+
+    pub(crate) fn record_local_inbox_entry_observation(
+        &mut self,
+        entry_key: &str,
+        snapshot: &FileSnapshot,
+    ) -> StoreResult<()> {
+        let device = i64::try_from(snapshot.identity.device)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid file device"))?;
+        let inode = i64::try_from(snapshot.identity.inode)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid file inode"))?;
+        let size = i64::try_from(snapshot.size)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid file size"))?;
+        self.connection.execute(
+            "INSERT INTO local_inbox_entry_observations( \
+               entry_key, creation_nanoseconds, creation_seconds, change_nanoseconds, change_seconds, \
+               device, inode, last_observed_entry_identity, modified_nanoseconds, modified_seconds, size_bytes \
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
+             ON CONFLICT(entry_key) DO UPDATE SET \
+               creation_nanoseconds = excluded.creation_nanoseconds, \
+               creation_seconds = excluded.creation_seconds, \
+               change_nanoseconds = excluded.change_nanoseconds, \
+               change_seconds = excluded.change_seconds, device = excluded.device, inode = excluded.inode, \
+               last_observed_entry_identity = excluded.last_observed_entry_identity, \
+               modified_nanoseconds = excluded.modified_nanoseconds, \
+               modified_seconds = excluded.modified_seconds, size_bytes = excluded.size_bytes, \
+               updated_at = CURRENT_TIMESTAMP",
+            params![
+                entry_key,
+                snapshot.creation_nanoseconds,
+                snapshot.creation_seconds,
+                snapshot.change_nanoseconds,
+                snapshot.change_seconds,
+                device,
+                inode,
+                format!("{}:{}", snapshot.identity.device, snapshot.identity.inode),
+                snapshot.modified_nanoseconds,
+                snapshot.modified_seconds,
+                size,
+            ],
+        )?;
+        Ok(())
     }
 
     pub(crate) fn enqueue_source_document_pipeline(
@@ -708,130 +779,115 @@ impl ManualImportStore {
                 io::Error::new(io::ErrorKind::NotFound, "source document not found").into(),
             );
         }
-        let ingest_exists: bool = transaction.query_row(
-            "SELECT EXISTS( \
-               SELECT 1 FROM jobs \
-               WHERE related_source_document_id = ?1 \
-                 AND job_type = ?2 \
-             )",
-            params![document_id, SOURCE_DOCUMENT_INGEST_JOB_TYPE],
-            |row| row.get(0),
-        )?;
-        let input_json = serde_json::json!({ "documentId": document_id }).to_string();
-        if !ingest_exists {
-            transaction.execute(
-                "INSERT INTO jobs( \
-                   id, job_type, status, input_json, result_json, related_source_document_id, finished_at \
-                 ) VALUES (?1, ?2, 'succeeded', ?3, ?4, ?5, CURRENT_TIMESTAMP)",
-                params![
-                    new_database_id("job"),
-                    SOURCE_DOCUMENT_INGEST_JOB_TYPE,
-                    input_json,
-                    serde_json::json!({ "nextJobType": PARSE_DOCUMENT_JOB_TYPE }).to_string(),
-                    document_id,
-                ],
-            )?;
-        }
-        let parse_exists: bool = transaction.query_row(
-            "SELECT EXISTS( \
-               SELECT 1 FROM jobs \
-               WHERE related_source_document_id = ?1 \
-                 AND job_type = ?2 \
-             )",
-            params![document_id, PARSE_DOCUMENT_JOB_TYPE],
-            |row| row.get(0),
-        )?;
-        if !parse_exists {
-            transaction.execute(
-                "INSERT INTO jobs(id, job_type, status, input_json, related_source_document_id) \
-                 VALUES (?1, ?2, 'queued', ?3, ?4)",
-                params![
-                    new_database_id("job"),
-                    PARSE_DOCUMENT_JOB_TYPE,
-                    input_json,
-                    document_id
-                ],
-            )?;
-        } else {
-            transaction.execute(
-                "UPDATE jobs \
-                 SET status = 'queued', result_json = NULL, error_json = NULL, \
-                     blocked_reason = NULL, lease_owner = NULL, lease_until = NULL, \
-                     finished_at = NULL, updated_at = CURRENT_TIMESTAMP \
-                 WHERE related_source_document_id = ?1 AND job_type = ?2 \
-                   AND status = 'failed' AND attempts < max_attempts",
-                params![document_id, PARSE_DOCUMENT_JOB_TYPE],
-            )?;
-        }
+        enqueue_parse_document(&transaction, document_id, &new_database_id("parse-run"))?;
         transaction.commit()?;
         Ok(())
     }
 
-    pub(crate) fn queued_parse_document_ids(&self) -> StoreResult<Vec<String>> {
+    pub(crate) fn queued_parse_document_jobs(&mut self) -> StoreResult<Vec<ParseDocumentJob>> {
+        self.recover_expired_parse_document_jobs()?;
         let mut statement = self.connection.prepare(
-            "SELECT related_source_document_id FROM jobs \
-             WHERE job_type = ?1 AND status = 'queued' \
-             ORDER BY created_at, id",
+            "SELECT id, related_source_document_id, input_json FROM jobs \
+             WHERE job_type = ?1 AND status = 'queued' ORDER BY created_at, id",
         )?;
-        let rows = statement.query_map([PARSE_DOCUMENT_JOB_TYPE], |row| row.get(0))?;
+        let rows = statement.query_map([PARSE_DOCUMENT_JOB_TYPE], |row| {
+            let input: ParseDocumentJobInput = serde_json::from_str(&row.get::<_, String>(2)?)
+                .map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        2,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
+            Ok(ParseDocumentJob {
+                document_id: row
+                    .get::<_, Option<String>>(1)?
+                    .unwrap_or(input.document_id),
+                job_id: row.get(0)?,
+                logical_run_key: input.logical_run_key,
+            })
+        })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    pub(crate) fn start_parse_document(&mut self, document_id: &str) -> StoreResult<bool> {
+    pub(crate) fn start_parse_document_job(
+        &mut self,
+        job: &ParseDocumentJob,
+    ) -> StoreResult<Option<ParseDocumentClaim>> {
+        let claim_token = new_database_id("parse-lease");
         let changed = self.connection.execute(
-            "UPDATE jobs \
-             SET status = 'running', attempts = attempts + 1, \
-                 lease_owner = 'local-inbox', lease_until = datetime('now', '+300 seconds'), \
-                 started_at = COALESCE(started_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP \
-             WHERE related_source_document_id = ?1 AND job_type = ?2 \
+            "UPDATE jobs SET status = 'running', attempts = attempts + 1, \
+                     lease_owner = ?1, lease_until = datetime('now', '+300 seconds'), \
+                     started_at = COALESCE(started_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP \
+             WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
                AND status = 'queued' AND attempts < max_attempts",
-            params![document_id, PARSE_DOCUMENT_JOB_TYPE],
+            params![
+                claim_token,
+                job.job_id,
+                job.document_id,
+                PARSE_DOCUMENT_JOB_TYPE,
+            ],
         )?;
-        if changed == 0 {
-            self.connection.execute(
-                "UPDATE jobs SET status = 'failed', blocked_reason = 'retry_limit_reached', \
-                         finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-                 WHERE related_source_document_id = ?1 AND job_type = ?2 \
-                   AND status = 'queued' AND attempts >= max_attempts",
-                params![document_id, PARSE_DOCUMENT_JOB_TYPE],
-            )?;
+        if changed == 1 {
+            return Ok(Some(ParseDocumentClaim {
+                claim_token,
+                document_id: job.document_id.clone(),
+                job_id: job.job_id.clone(),
+                logical_run_key: job.logical_run_key.clone(),
+            }));
         }
-        Ok(changed == 1)
+        self.connection.execute(
+            "UPDATE jobs SET status = 'failed', blocked_reason = 'retry_limit_reached', \
+                     finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
+             WHERE id = ?1 AND job_type = ?2 AND status = 'queued' AND attempts >= max_attempts",
+            params![job.job_id, PARSE_DOCUMENT_JOB_TYPE],
+        )?;
+        Ok(None)
     }
 
-    pub(crate) fn finish_parse_document(
+    pub(crate) fn finish_parse_document_job(
         &mut self,
-        document_id: &str,
+        claim: &ParseDocumentClaim,
         outcome: &SourceDocumentRoutingOutcome,
     ) -> StoreResult<()> {
         let transaction = self.connection.transaction()?;
         match outcome.status {
             SourceDocumentRoutingStatus::Routed => {
-                transaction.execute(
+                let changed = transaction.execute(
                     "UPDATE jobs SET status = 'succeeded', result_json = ?1, lease_owner = NULL, \
                          lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-                     WHERE related_source_document_id = ?2 AND job_type = ?3 \
-                       AND status IN ('queued', 'running')",
+                     WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
+                       AND status = 'running' AND lease_owner = ?5",
                     params![
                         serde_json::json!({ "nextJobType": RECONCILE_DOCUMENT_JOB_TYPE }).to_string(),
-                        document_id,
+                        claim.job_id,
+                        claim.document_id,
                         PARSE_DOCUMENT_JOB_TYPE,
+                        claim.claim_token,
                     ],
                 )?;
-                enqueue_reconcile_document(&transaction, document_id)?;
+                if changed != 1 {
+                    return Err(io::Error::other("parse job is no longer claimed").into());
+                }
+                enqueue_reconcile_document(&transaction, &claim.document_id)?;
             }
             SourceDocumentRoutingStatus::NeedsAttention => {
-                transaction.execute(
+                let changed = transaction.execute(
                     "UPDATE jobs SET status = 'blocked', blocked_reason = ?1, lease_owner = NULL, \
                          lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-                     WHERE related_source_document_id = ?2 AND job_type = ?3 \
-                       AND status IN ('queued', 'running')",
+                     WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
+                       AND status = 'running' AND lease_owner = ?5",
                     params![
                         outcome.reason.unwrap_or("classification_uncertain"),
-                        document_id,
+                        claim.job_id,
+                        claim.document_id,
                         PARSE_DOCUMENT_JOB_TYPE,
+                        claim.claim_token,
                     ],
                 )?;
+                if changed != 1 {
+                    return Err(io::Error::other("parse job is no longer claimed").into());
+                }
             }
         }
         transaction.commit()?;
@@ -940,371 +996,53 @@ impl ManualImportStore {
         Ok(())
     }
 
-    pub(crate) fn block_parse_document(
+    pub(crate) fn block_parse_document_job(
         &mut self,
-        document_id: &str,
+        claim: &ParseDocumentClaim,
         reason: &'static str,
     ) -> StoreResult<()> {
-        self.connection.execute(
+        let changed = self.connection.execute(
             "UPDATE jobs SET status = 'blocked', blocked_reason = ?1, lease_owner = NULL, \
                      lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-             WHERE related_source_document_id = ?2 AND job_type = ?3 \
-               AND status IN ('queued', 'running')",
-            params![reason, document_id, PARSE_DOCUMENT_JOB_TYPE],
+             WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
+               AND status = 'running' AND lease_owner = ?5",
+            params![
+                reason,
+                claim.job_id,
+                claim.document_id,
+                PARSE_DOCUMENT_JOB_TYPE,
+                claim.claim_token,
+            ],
         )?;
-        Ok(())
+        parse_job_update(changed)
     }
 
-    pub(crate) fn fail_parse_document(
+    pub(crate) fn fail_parse_document_job(
         &mut self,
-        document_id: &str,
+        claim: &ParseDocumentClaim,
         reason: &'static str,
     ) -> StoreResult<()> {
-        self.connection.execute(
-            "UPDATE jobs SET status = 'failed', blocked_reason = ?1, lease_owner = NULL, \
-                     lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-             WHERE related_source_document_id = ?2 AND job_type = ?3 \
-               AND status = 'running'",
-            params![reason, document_id, PARSE_DOCUMENT_JOB_TYPE],
-        )?;
-        Ok(())
-    }
-
-    pub(crate) fn statement_coverage_today(&self) -> StoreResult<String> {
-        Ok(self
-            .connection
-            .query_row("SELECT date('now')", [], |row| row.get(0))?)
-    }
-
-    pub(crate) fn list_statement_coverage_prompts(
-        &self,
-        policies: &[StatementCoveragePolicy<'_>],
-        today: &str,
-    ) -> StoreResult<Vec<StatementCoveragePrompt>> {
-        if !valid_iso_date(today)
-            || policies
-                .iter()
-                .any(|policy| policy.cadence_months == 0 || policy.grace_days < 0)
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "invalid statement coverage policy or date",
-            )
-            .into());
-        }
-        let mut statement = self.connection.prepare(
-            "SELECT money_sources.provider_key, source_documents.money_source_id, \
-                    source_document_accounts.account_id, source_documents.document_type, \
-                    source_documents.statement_period_from, source_documents.statement_period_to \
-             FROM source_documents \
-             JOIN source_document_accounts \
-               ON source_document_accounts.source_document_id = source_documents.id \
-             JOIN money_sources ON money_sources.id = source_documents.money_source_id \
-             WHERE source_documents.document_type IS NOT NULL \
-               AND source_documents.statement_period_from IS NOT NULL \
-               AND source_documents.statement_period_to IS NOT NULL",
-        )?;
-        let rows = statement.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
-            ))
-        })?;
-        let mut periods = BTreeMap::<(String, String, String, String), Vec<CoveragePeriod>>::new();
-        for row in rows {
-            let (provider_key, money_source_id, account_id, document_type, from, to) = row?;
-            if policies.iter().any(|policy| {
-                policy.provider_key == provider_key && policy.document_type == document_type
-            }) {
-                periods
-                    .entry((provider_key, money_source_id, account_id, document_type))
-                    .or_default()
-                    .push(CoveragePeriod {
-                        statement_period_from: from,
-                        statement_period_to: to,
-                    });
-            }
-        }
-        let mut prompts = Vec::new();
-        for ((provider_key, money_source_id, account_id, document_type), periods) in &mut periods {
-            let policy = policies
-                .iter()
-                .find(|policy| {
-                    policy.provider_key == provider_key && policy.document_type == document_type
-                })
-                .expect("policy selected with the same provider and document type");
-            periods.sort_by(|left, right| {
-                left.statement_period_from
-                    .cmp(&right.statement_period_from)
-                    .then(left.statement_period_to.cmp(&right.statement_period_to))
-            });
-            periods.dedup_by(|left, right| {
-                left.statement_period_from == right.statement_period_from
-                    && left.statement_period_to == right.statement_period_to
-            });
-            for pair in periods.windows(2) {
-                let previous = &pair[0];
-                let next = &pair[1];
-                let previous_period_ends_month = is_month_end_iso(&previous.statement_period_to)
-                    .ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::InvalidData, "invalid statement period")
-                    })?;
-                let mut expected_from = add_months_iso(
-                    &previous.statement_period_from,
-                    policy.cadence_months,
-                    false,
-                )
-                .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidData, "invalid statement period")
-                })?;
-                let mut expected_to = add_months_iso(
-                    &previous.statement_period_to,
-                    policy.cadence_months,
-                    previous_period_ends_month,
-                )
-                .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidData, "invalid statement period")
-                })?;
-                while expected_from < next.statement_period_from {
-                    if !self.statement_coverage_is_suppressed(
-                        money_source_id,
-                        account_id,
-                        document_type,
-                        &expected_from,
-                        &expected_to,
-                        today,
-                    )? {
-                        prompts.push(StatementCoveragePrompt {
-                            account_id: account_id.clone(),
-                            document_type: document_type.clone(),
-                            money_source_id: money_source_id.clone(),
-                            statement_period_from: expected_from.clone(),
-                            statement_period_to: expected_to.clone(),
-                            status: StatementCoveragePromptStatus::ConfirmedMissing,
-                        });
-                    }
-                    expected_from = add_months_iso(&expected_from, policy.cadence_months, false)
-                        .ok_or_else(|| {
-                            io::Error::new(io::ErrorKind::InvalidData, "invalid statement period")
-                        })?;
-                    expected_to = add_months_iso(
-                        &expected_to,
-                        policy.cadence_months,
-                        previous_period_ends_month,
-                    )
-                    .ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::InvalidData, "invalid statement period")
-                    })?;
-                }
-            }
-            if periods.len() >= 2 {
-                let latest = periods.last().expect("length checked");
-                let latest_period_ends_month = is_month_end_iso(&latest.statement_period_to)
-                    .ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::InvalidData, "invalid statement period")
-                    })?;
-                let expected_from =
-                    add_months_iso(&latest.statement_period_from, policy.cadence_months, false)
-                        .ok_or_else(|| {
-                            io::Error::new(io::ErrorKind::InvalidData, "invalid statement period")
-                        })?;
-                let expected_to = add_months_iso(
-                    &latest.statement_period_to,
-                    policy.cadence_months,
-                    latest_period_ends_month,
-                )
-                .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidData, "invalid statement period")
-                })?;
-                let grace_end = self.add_days_iso(&expected_to, policy.grace_days)?;
-                if today > grace_end.as_str()
-                    && !self.statement_coverage_is_suppressed(
-                        money_source_id,
-                        account_id,
-                        document_type,
-                        &expected_from,
-                        &expected_to,
-                        today,
-                    )?
-                {
-                    prompts.push(StatementCoveragePrompt {
-                        account_id: account_id.clone(),
-                        document_type: document_type.clone(),
-                        money_source_id: money_source_id.clone(),
-                        statement_period_from: expected_from,
-                        statement_period_to: expected_to,
-                        status: StatementCoveragePromptStatus::LikelyMissing,
-                    });
-                }
-            }
-        }
-        Ok(prompts)
-    }
-
-    pub(crate) fn record_statement_coverage_decision(
-        &mut self,
-        input: &StatementCoverageDecisionInput<'_>,
-    ) -> StoreResult<()> {
-        if input.audit_id.is_empty()
-            || input.money_source_id.is_empty()
-            || input.account_id.is_empty()
-            || input.document_type.is_empty()
-            || !valid_iso_date(input.statement_period_from)
-            || !valid_iso_date(input.statement_period_to)
-            || input.statement_period_from > input.statement_period_to
-            || !valid_optional_date(input.remind_after)
-            || matches!(input.decision, StatementCoverageDecision::NotExpected)
-                && input.remind_after.is_some()
-            || matches!(input.decision, StatementCoverageDecision::RemindLater)
-                && input.remind_after.is_none()
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "invalid statement coverage decision",
-            )
-            .into());
-        }
-        let transaction = self.connection.transaction()?;
-        let account_matches_source: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1 AND money_source_id = ?2)",
-            params![input.account_id, input.money_source_id],
-            |row| row.get(0),
-        )?;
-        if !account_matches_source {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "statement coverage account does not belong to source",
-            )
-            .into());
-        }
-        let (decision, remind_after) = match input.decision {
-            StatementCoverageDecision::NotExpected => ("not_expected", None),
-            StatementCoverageDecision::RemindLater => {
-                let remind_after = input.remind_after.expect("validated remind date");
-                let future: bool = transaction.query_row(
-                    "SELECT date(?1) > date('now')",
-                    [remind_after],
-                    |row| row.get(0),
-                )?;
-                if !future {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "statement coverage reminder must be in the future",
-                    )
-                    .into());
-                }
-                ("remind_later", Some(remind_after))
-            }
-        };
-        let existing = transaction
-            .query_row(
-                "SELECT decision, remind_after FROM statement_coverage_decisions \
-                 WHERE money_source_id = ?1 AND account_id = ?2 AND document_type = ?3 \
-                   AND statement_period_from = ?4 AND statement_period_to = ?5",
-                params![
-                    input.money_source_id,
-                    input.account_id,
-                    input.document_type,
-                    input.statement_period_from,
-                    input.statement_period_to,
-                ],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
-            )
-            .optional()?;
-        if existing
-            .as_ref()
-            .is_some_and(|(existing_decision, existing_remind_after)| {
-                existing_decision == decision && existing_remind_after.as_deref() == remind_after
-            })
-        {
-            transaction.commit()?;
-            return Ok(());
-        }
-        transaction.execute(
-            "INSERT INTO statement_coverage_decisions( \
-               money_source_id, account_id, document_type, statement_period_from, \
-               statement_period_to, decision, remind_after \
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
-             ON CONFLICT(money_source_id, account_id, document_type, statement_period_from, statement_period_to) \
-             DO UPDATE SET decision = excluded.decision, remind_after = excluded.remind_after, \
-                           updated_at = CURRENT_TIMESTAMP",
+        let changed = self.connection.execute(
+            "UPDATE jobs SET \
+                 status = CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END, \
+                 result_json = NULL, \
+                 error_json = CASE WHEN attempts < max_attempts THEN NULL ELSE ?1 END, \
+                 blocked_reason = CASE WHEN attempts < max_attempts THEN NULL ELSE ?2 END, \
+                 lease_owner = NULL, lease_until = NULL, \
+                 finished_at = CASE WHEN attempts < max_attempts THEN NULL ELSE CURRENT_TIMESTAMP END, \
+                 updated_at = CURRENT_TIMESTAMP \
+             WHERE id = ?3 AND related_source_document_id = ?4 AND job_type = ?5 \
+               AND status = 'running' AND lease_owner = ?6",
             params![
-                input.money_source_id,
-                input.account_id,
-                input.document_type,
-                input.statement_period_from,
-                input.statement_period_to,
-                decision,
-                remind_after,
+                serde_json::json!({ "errorCode": reason }).to_string(),
+                reason,
+                claim.job_id,
+                claim.document_id,
+                PARSE_DOCUMENT_JOB_TYPE,
+                claim.claim_token,
             ],
         )?;
-        transaction.execute(
-            "INSERT INTO audit_log( \
-               id, entity_type, entity_id, action, actor, reason, policy_version \
-             ) VALUES (?1, 'statement_coverage', ?2, 'statement_coverage_decided', \
-                       'user', ?3, 'coverage-v1')",
-            params![
-                input.audit_id,
-                format!(
-                    "{}:{}:{}:{}:{}",
-                    input.money_source_id,
-                    input.account_id,
-                    input.document_type,
-                    input.statement_period_from,
-                    input.statement_period_to,
-                ),
-                decision,
-            ],
-        )?;
-        transaction.commit()?;
-        Ok(())
-    }
-
-    fn statement_coverage_is_suppressed(
-        &self,
-        money_source_id: &str,
-        account_id: &str,
-        document_type: &str,
-        statement_period_from: &str,
-        statement_period_to: &str,
-        today: &str,
-    ) -> StoreResult<bool> {
-        let decision = self
-            .connection
-            .query_row(
-                "SELECT decision, remind_after FROM statement_coverage_decisions \
-                 WHERE money_source_id = ?1 AND account_id = ?2 AND document_type = ?3 \
-                   AND statement_period_from = ?4 AND statement_period_to = ?5",
-                params![
-                    money_source_id,
-                    account_id,
-                    document_type,
-                    statement_period_from,
-                    statement_period_to,
-                ],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
-            )
-            .optional()?;
-        Ok(match decision {
-            Some((decision, _)) if decision == "not_expected" => true,
-            Some((decision, Some(remind_after))) if decision == "remind_later" => {
-                remind_after.as_str() > today
-            }
-            _ => false,
-        })
-    }
-
-    fn add_days_iso(&self, date: &str, days: i64) -> StoreResult<String> {
-        let modifier = format!("+{days} days");
-        Ok(self
-            .connection
-            .query_row("SELECT date(?1, ?2)", params![date, modifier], |row| {
-                row.get(0)
-            })?)
+        parse_job_update(changed)
     }
 
     pub fn delete_source_document(&mut self, document_id: &str, audit_id: &str) -> StoreResult<()> {
@@ -1370,6 +1108,21 @@ impl ManualImportStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    pub(crate) fn source_document_parse_status(
+        &self,
+        document_id: &str,
+    ) -> StoreResult<Option<(String, Option<String>)>> {
+        self.connection
+            .query_row(
+                "SELECT status, blocked_reason FROM jobs WHERE related_source_document_id = ?1 \
+                 AND job_type = ?2 ORDER BY created_at DESC, id DESC LIMIT 1",
+                params![document_id, PARSE_DOCUMENT_JOB_TYPE],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
     pub(crate) fn list_review_items(&self) -> StoreResult<Vec<ReviewItemSummary>> {
         let mut statement = self.connection.prepare(
             "SELECT review_items.id, external_records.id, external_records.version, \
@@ -1381,6 +1134,7 @@ impl ManualImportStore {
              LEFT JOIN accounts ON accounts.id = external_records.account_id \
              WHERE review_items.status = 'open' \
                AND external_records.status IN ('staged', 'review') \
+               AND (accounts.status IS NULL OR accounts.status <> 'dismissed') \
              ORDER BY external_records.posted_on, review_items.id",
         )?;
         let rows = statement.query_map([], review_item_summary_from_row)?;
@@ -1537,128 +1291,10 @@ impl ManualImportStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    pub(crate) fn list_account_confirmation_prompts(
+    pub(crate) fn source_document_read_plan(
         &self,
-    ) -> StoreResult<Vec<AccountConfirmationPrompt>> {
-        let mut statement = self.connection.prepare(
-            "SELECT money_sources.id, money_sources.display_name, accounts.id, \
-                    accounts.display_name, accounts.account_type, accounts.masked_identifier, \
-                    accounts.currency \
-             FROM accounts \
-             JOIN money_sources ON money_sources.id = accounts.money_source_id \
-             WHERE accounts.status = 'candidate' \
-             ORDER BY money_sources.display_name, money_sources.id, accounts.display_name, accounts.id",
-        )?;
-        let rows = statement.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                AccountConfirmationCandidate {
-                    account_id: row.get(2)?,
-                    display_name: row.get(3)?,
-                    account_type: row.get(4)?,
-                    masked_identifier: row.get(5)?,
-                    currency: row.get(6)?,
-                },
-            ))
-        })?;
-        let mut prompts: Vec<AccountConfirmationPrompt> = Vec::new();
-        for row in rows {
-            let (money_source_id, display_name, candidate) = row?;
-            match prompts.last_mut() {
-                Some(prompt) if prompt.money_source_id == money_source_id => {
-                    prompt.candidate_accounts.push(candidate);
-                }
-                _ => prompts.push(AccountConfirmationPrompt {
-                    candidate_accounts: vec![candidate],
-                    display_name,
-                    money_source_id,
-                }),
-            }
-        }
-        Ok(prompts)
-    }
-
-    pub(crate) fn confirm_candidate_accounts(
-        &mut self,
-        money_source_id: &str,
-        expected_candidate_account_ids: &[String],
-        audit_id: &str,
-    ) -> StoreResult<AccountConfirmationOutcome> {
-        let expected_ids = expected_candidate_account_ids
-            .iter()
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        if money_source_id.is_empty()
-            || audit_id.is_empty()
-            || expected_ids.is_empty()
-            || expected_ids.len() != expected_candidate_account_ids.len()
-            || expected_ids.iter().any(|account_id| account_id.is_empty())
-        {
-            return Ok(AccountConfirmationOutcome {
-                status: AccountConfirmationStatus::Conflict,
-            });
-        }
-
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let account_statuses = {
-            let mut statement = transaction.prepare(
-                "SELECT id, status FROM accounts WHERE money_source_id = ?1 ORDER BY id",
-            )?;
-            statement
-                .query_map([money_source_id], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })?
-                .collect::<Result<BTreeMap<_, _>, _>>()?
-        };
-        let candidate_ids = account_statuses
-            .iter()
-            .filter_map(|(account_id, status)| {
-                (status == "candidate").then_some(account_id.clone())
-            })
-            .collect::<BTreeSet<_>>();
-        if candidate_ids == expected_ids {
-            transaction.execute(
-                "UPDATE accounts SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP \
-                 WHERE money_source_id = ?1 AND status = 'candidate'",
-                [money_source_id],
-            )?;
-            transaction.execute(
-                "INSERT INTO audit_log( \
-                   id, entity_type, entity_id, action, actor, reason, source_ref, policy_version \
-                 ) VALUES (?1, 'money_source', ?2, 'candidate_accounts_confirmed', 'user', \
-                           'candidate_accounts_confirmed', ?3, ?4)",
-                params![
-                    audit_id,
-                    money_source_id,
-                    format!("candidate_accounts={}", expected_ids.len()),
-                    ACCOUNT_CONFIRMATION_POLICY_VERSION,
-                ],
-            )?;
-            transaction.commit()?;
-            return Ok(AccountConfirmationOutcome {
-                status: AccountConfirmationStatus::Confirmed,
-            });
-        }
-        if candidate_ids.is_empty()
-            && expected_ids.iter().all(|account_id| {
-                account_statuses
-                    .get(account_id)
-                    .is_some_and(|status| status == "confirmed")
-            })
-        {
-            return Ok(AccountConfirmationOutcome {
-                status: AccountConfirmationStatus::AlreadyConfirmed,
-            });
-        }
-        Ok(AccountConfirmationOutcome {
-            status: AccountConfirmationStatus::Conflict,
-        })
-    }
-
-    pub fn source_document_input(&self, document_id: &str) -> StoreResult<SourceDocumentFileInput> {
+        document_id: &str,
+    ) -> StoreResult<imports::SourceDocumentReadPlan> {
         let document = self
             .connection
             .query_row(
@@ -1693,13 +1329,12 @@ impl ManualImportStore {
                 "available source document has no encrypted locator",
             )
         })?;
-        let plaintext = self
-            .files
-            .open_in_memory(&self.master_key, &encrypted_locator)?;
-        Ok(SourceDocumentFileInput {
+        Ok(imports::SourceDocumentReadPlan {
+            encrypted_locator,
             file_sha256,
+            files: self.files.clone(),
+            master_key: self.master_key.clone(),
             mime_type,
-            plaintext,
         })
     }
 
@@ -1825,12 +1460,34 @@ impl ManualImportStore {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn apply_trusted_classification(
         &mut self,
         input: &TrustedDocumentClassification<'_>,
     ) -> StoreResult<SourceDocumentRoutingOutcome> {
+        self.apply_trusted_classification_with_parse_job(input, None)
+    }
+
+    pub(crate) fn apply_trusted_classification_for_parse_job(
+        &mut self,
+        input: &TrustedDocumentClassification<'_>,
+        claim: &ParseDocumentClaim,
+    ) -> StoreResult<SourceDocumentRoutingOutcome> {
+        self.apply_trusted_classification_with_parse_job(input, Some(claim))
+    }
+
+    fn apply_trusted_classification_with_parse_job(
+        &mut self,
+        input: &TrustedDocumentClassification<'_>,
+        parse_job: Option<&ParseDocumentClaim>,
+    ) -> StoreResult<SourceDocumentRoutingOutcome> {
         validate_classification(input)?;
         let transaction = self.connection.transaction()?;
+        if let Some(claim) = parse_job
+            && !parse_job_claimed(&transaction, claim)?
+        {
+            return Err(io::Error::other("parse job is no longer claimed").into());
+        }
         let existing_identity = transaction
             .query_row(
                 "SELECT money_source_id, semantic_document_key \
@@ -1968,13 +1625,49 @@ impl ManualImportStore {
         })
     }
 
-    pub(crate) fn persist_validated_structured_parse(
+    pub(crate) fn persist_validated_structured_parse_for_claimed_job(
         &mut self,
         document_id: &str,
         input: &ValidatedStructuredParseInput,
+        claim: &ParseDocumentClaim,
+        input_hash: &str,
+        output_hash: &str,
+    ) -> StoreResult<()> {
+        self.persist_validated_structured_parse_with_parse_job(
+            document_id,
+            input,
+            &claim.logical_run_key,
+            input_hash,
+            output_hash,
+            claim,
+        )
+    }
+
+    fn persist_validated_structured_parse_with_parse_job(
+        &mut self,
+        document_id: &str,
+        input: &ValidatedStructuredParseInput,
+        logical_run_key: &str,
+        input_hash: &str,
+        output_hash: &str,
+        parse_job: &ParseDocumentClaim,
     ) -> StoreResult<()> {
         validate_structured_parse_input(document_id, input)?;
+        if logical_run_key.is_empty()
+            || input_hash.is_empty()
+            || output_hash.is_empty()
+            || logical_run_key.len() > 256
+            || input_hash.len() > 128
+            || output_hash.len() > 128
+        {
+            return Err(
+                io::Error::new(io::ErrorKind::InvalidInput, "invalid parse run key").into(),
+            );
+        }
         let transaction = self.connection.transaction()?;
+        if !parse_job_claimed(&transaction, parse_job)? {
+            return Err(io::Error::other("parse job is no longer claimed").into());
+        }
         let document_exists: bool = transaction.query_row(
             "SELECT EXISTS(SELECT 1 FROM source_documents WHERE id = ?1)",
             [document_id],
@@ -1985,19 +1678,28 @@ impl ManualImportStore {
                 io::Error::new(io::ErrorKind::NotFound, "source document not found").into(),
             );
         }
-        let existing_profile = transaction
+        let existing_run = transaction
             .query_row(
-                "SELECT profile_json FROM parse_runs \
-                 WHERE source_document_id = ?1 AND normalization_profile_id = ?2",
-                params![document_id, input.normalization_profile_id],
-                |row| row.get::<_, String>(0),
+                "SELECT profile_json, input_hash, output_hash FROM parse_runs \
+                 WHERE source_document_id = ?1 AND logical_run_key = ?2",
+                params![document_id, logical_run_key],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
             )
             .optional()?;
-        if let Some(profile_json) = existing_profile {
-            if profile_json != input.profile_json {
+        if let Some((profile_json, existing_input_hash, existing_output_hash)) = existing_run {
+            if profile_json != input.profile_json
+                || existing_input_hash != input_hash
+                || existing_output_hash.as_deref() != Some(output_hash)
+            {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "normalization profile changed without a new profile id",
+                    "logical parse run changed",
                 )
                 .into());
             }
@@ -2007,13 +1709,17 @@ impl ManualImportStore {
         let parse_run_id = new_database_id("parse");
         transaction.execute(
             "INSERT INTO parse_runs( \
-               id, source_document_id, normalization_profile_id, profile_json, status \
-             ) VALUES (?1, ?2, ?3, ?4, 'validated')",
+               id, source_document_id, normalization_profile_id, logical_run_key, profile_json, \
+               input_hash, output_hash, status \
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'validated')",
             params![
                 parse_run_id,
                 document_id,
                 input.normalization_profile_id,
+                logical_run_key,
                 input.profile_json,
+                input_hash,
+                output_hash,
             ],
         )?;
         for record in &input.records {
@@ -2041,12 +1747,17 @@ impl ManualImportStore {
                     [&record.stable_record_key],
                 )?;
             }
+            let dismissed: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1 AND status = 'dismissed')",
+                [&record.account_id],
+                |row| row.get(0),
+            )?;
             transaction.execute(
                 "INSERT INTO external_records( \
                    id, parse_run_id, source_document_id, account_id, stable_record_key, version, \
                    status, record_type, event_type, posted_on, amount_value, currency, \
                    account_balance_delta, posting_status, raw_json, validation_json \
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'staged', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     new_database_id("record"),
                     parse_run_id,
@@ -2054,6 +1765,7 @@ impl ManualImportStore {
                     record.account_id,
                     record.stable_record_key,
                     version,
+                    if dismissed { "removed" } else { "staged" },
                     record.record_type,
                     record.event_type,
                     record.posted_on,
@@ -2147,6 +1859,16 @@ impl ManualImportStore {
             "UPDATE jobs SET lease_until = datetime('now', '-1 second') \
              WHERE related_source_document_id = ?1 AND job_type = 'reconcile_document'",
             [document_id],
+        )?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn expire_parse_document_lease_for_test(&self, job_id: &str) -> StoreResult<()> {
+        self.connection.execute(
+            "UPDATE jobs SET lease_until = datetime('now', '-1 second') \
+             WHERE id = ?1 AND job_type = 'parse_document'",
+            [job_id],
         )?;
         Ok(())
     }
@@ -2587,9 +2309,20 @@ impl ManualImportStore {
         self.connection.execute(
             "UPDATE jobs \
              SET status = 'queued', lease_owner = NULL, lease_until = NULL, updated_at = CURRENT_TIMESTAMP \
-             WHERE status = 'running' \
+             WHERE job_type IN (?1, ?2) AND status = 'running' \
                AND lease_until IS NOT NULL AND lease_until <= CURRENT_TIMESTAMP",
-            [],
+            params![COMMIT_REVIEW_BATCH_JOB_TYPE, RECONCILE_DOCUMENT_JOB_TYPE],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn recover_expired_parse_document_jobs(&mut self) -> StoreResult<()> {
+        self.connection.execute(
+            "UPDATE jobs \
+             SET status = 'queued', lease_owner = NULL, lease_until = NULL, updated_at = CURRENT_TIMESTAMP \
+             WHERE job_type = ?1 AND status = 'running' \
+               AND lease_until IS NOT NULL AND lease_until <= CURRENT_TIMESTAMP",
+            [PARSE_DOCUMENT_JOB_TYPE],
         )?;
         Ok(())
     }
@@ -3377,6 +3110,61 @@ impl ManualImportStore {
     }
 }
 
+fn parse_job_claimed(
+    transaction: &Transaction<'_>,
+    claim: &ParseDocumentClaim,
+) -> rusqlite::Result<bool> {
+    let input_json = transaction
+        .query_row(
+            "SELECT input_json FROM jobs WHERE id = ?1 AND job_type = ?2 \
+             AND related_source_document_id = ?3 AND status = 'running' \
+             AND lease_owner = ?4 AND lease_until > CURRENT_TIMESTAMP",
+            params![
+                claim.job_id,
+                PARSE_DOCUMENT_JOB_TYPE,
+                claim.document_id,
+                claim.claim_token,
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    Ok(input_json
+        .and_then(|input_json| serde_json::from_str::<ParseDocumentJobInput>(&input_json).ok())
+        .is_some_and(|input| input.logical_run_key == claim.logical_run_key))
+}
+
+fn parse_job_update(changed: usize) -> StoreResult<()> {
+    if changed != 1 {
+        return Err(io::Error::other("parse job is no longer claimed").into());
+    }
+    Ok(())
+}
+
+fn enqueue_parse_document(
+    transaction: &Transaction<'_>,
+    document_id: &str,
+    logical_run_key: &str,
+) -> rusqlite::Result<()> {
+    if document_id.is_empty() || logical_run_key.is_empty() {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    transaction.execute(
+        "INSERT INTO jobs(id, job_type, status, input_json, related_source_document_id) \
+         VALUES (?1, ?2, 'queued', ?3, ?4)",
+        params![
+            new_database_id("job"),
+            PARSE_DOCUMENT_JOB_TYPE,
+            serde_json::to_string(&ParseDocumentJobInput {
+                document_id: document_id.to_owned(),
+                logical_run_key: logical_run_key.to_owned(),
+            })
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+            document_id,
+        ],
+    )?;
+    Ok(())
+}
+
 fn enqueue_reconcile_document(
     transaction: &Transaction<'_>,
     document_id: &str,
@@ -3503,8 +3291,15 @@ fn valid_currency(value: &str) -> bool {
     value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_uppercase())
 }
 
-mod imports;
+mod accounts;
+#[cfg(test)]
+mod accounts_tests;
+mod coverage;
+#[cfg(test)]
+mod hardening_tests;
+pub(crate) mod imports;
 mod migrations;
+mod parse_jobs;
 mod rows;
 #[cfg(test)]
 mod tests;

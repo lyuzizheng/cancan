@@ -10,6 +10,9 @@ use std::{
 use zeroize::Zeroizing;
 
 #[cfg(target_os = "macos")]
+use std::os::darwin::fs::MetadataExt as DarwinMetadataExt;
+
+#[cfg(target_os = "macos")]
 use objc2::{rc::Retained, runtime::Bool};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{
@@ -31,6 +34,10 @@ pub(crate) struct FileIdentity {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FileSnapshot {
+    pub(crate) change_nanoseconds: i64,
+    pub(crate) change_seconds: i64,
+    pub(crate) creation_nanoseconds: i64,
+    pub(crate) creation_seconds: i64,
     pub(crate) identity: FileIdentity,
     pub(crate) size: u64,
     pub(crate) modified_nanoseconds: i64,
@@ -330,6 +337,10 @@ fn snapshot_metadata(metadata: &fs::Metadata) -> Result<FileSnapshot, ()> {
         return Err(());
     }
     Ok(FileSnapshot {
+        change_nanoseconds: metadata.ctime_nsec(),
+        change_seconds: metadata.ctime(),
+        creation_nanoseconds: creation_nanoseconds(metadata),
+        creation_seconds: creation_seconds(metadata),
         identity: FileIdentity {
             device: metadata.dev(),
             inode: metadata.ino(),
@@ -338,6 +349,26 @@ fn snapshot_metadata(metadata: &fs::Metadata) -> Result<FileSnapshot, ()> {
         modified_nanoseconds: metadata.mtime_nsec(),
         modified_seconds: metadata.mtime(),
     })
+}
+
+#[cfg(target_os = "macos")]
+fn creation_nanoseconds(metadata: &fs::Metadata) -> i64 {
+    metadata.st_birthtime_nsec()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn creation_nanoseconds(metadata: &fs::Metadata) -> i64 {
+    metadata.ctime_nsec()
+}
+
+#[cfg(target_os = "macos")]
+fn creation_seconds(metadata: &fs::Metadata) -> i64 {
+    metadata.st_birthtime()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn creation_seconds(metadata: &fs::Metadata) -> i64 {
+    metadata.ctime()
 }
 
 fn open_read_only(path: &Path) -> Result<fs::File, ()> {

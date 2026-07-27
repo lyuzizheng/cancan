@@ -1,4 +1,11 @@
 use super::*;
+use sha2::{Digest, Sha256};
+
+#[derive(Clone)]
+pub(super) struct ParseDocumentAttempt {
+    pub(super) claim: ParseDocumentClaim,
+    pub(super) vault_session_generation: u64,
+}
 
 impl VaultRuntime {
     pub(crate) fn configure_local_inbox(&self, root: &Path) -> Result<(), RuntimeError> {
@@ -99,65 +106,6 @@ impl VaultRuntime {
         self.local_inbox_status()
     }
 
-    pub(crate) fn list_statement_coverage_prompts(
-        &self,
-    ) -> Result<Vec<StatementCoveragePrompt>, RuntimeError> {
-        let store = self.store()?;
-        let store = store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        let today = store
-            .statement_coverage_today()
-            .map_err(|_| RuntimeError::new("coverage_unavailable"))?;
-        store
-            .list_statement_coverage_prompts(STATEMENT_COVERAGE_POLICIES, &today)
-            .map_err(|_| RuntimeError::new("coverage_unavailable"))
-    }
-
-    pub(crate) fn record_statement_coverage_decision(
-        &self,
-        request: &StatementCoverageDecisionRequest,
-    ) -> Result<(), RuntimeError> {
-        let mut store = self.store()?;
-        let store = store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        let today = store
-            .statement_coverage_today()
-            .map_err(|_| RuntimeError::new("coverage_decision_invalid"))?;
-        let is_current_prompt = store
-            .list_statement_coverage_prompts(STATEMENT_COVERAGE_POLICIES, &today)
-            .map_err(|_| RuntimeError::new("coverage_decision_invalid"))?
-            .iter()
-            .any(|prompt| {
-                prompt.account_id == request.account_id
-                    && prompt.document_type == request.document_type
-                    && prompt.money_source_id == request.money_source_id
-                    && prompt.statement_period_from == request.statement_period_from
-                    && prompt.statement_period_to == request.statement_period_to
-            });
-        if !is_current_prompt {
-            return Err(RuntimeError::new("coverage_decision_invalid"));
-        }
-        let decision = match request.action {
-            StatementCoverageDecisionAction::NotExpected => StatementCoverageDecision::NotExpected,
-            StatementCoverageDecisionAction::RemindLater => StatementCoverageDecision::RemindLater,
-        };
-        let audit_id = random_identifier("audit");
-        store
-            .record_statement_coverage_decision(&StatementCoverageDecisionInput {
-                account_id: &request.account_id,
-                audit_id: &audit_id,
-                decision,
-                document_type: &request.document_type,
-                money_source_id: &request.money_source_id,
-                remind_after: request.remind_after.as_deref(),
-                statement_period_from: &request.statement_period_from,
-                statement_period_to: &request.statement_period_to,
-            })
-            .map_err(|_| RuntimeError::new("coverage_decision_invalid"))
-    }
-
     pub(crate) fn rescan_local_inbox(&self) -> Result<LocalInboxScanSummary, RuntimeError> {
         self.require_unlocked()?;
         if !self.activate_local_inbox_from_bookmark()? {
@@ -178,16 +126,19 @@ impl VaultRuntime {
             };
             return Err(RuntimeError::new(code));
         }
-        let access = self
-            .inner
-            .local_inbox_access
-            .lock()
-            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
-        let root = access
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("local_inbox_reauthorization_required"))?;
-        let LocalInboxPaths { inbox, .. } = ensure_inbox_paths(root.root())
-            .map_err(|_| RuntimeError::new("local_inbox_setup_failed"))?;
+        let inbox = {
+            let access = self
+                .inner
+                .local_inbox_access
+                .lock()
+                .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+            let root = access
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new("local_inbox_reauthorization_required"))?;
+            let LocalInboxPaths { inbox, .. } = ensure_inbox_paths(root.root())
+                .map_err(|_| RuntimeError::new("local_inbox_setup_failed"))?;
+            inbox
+        };
         let tombstoned_hashes = {
             let store = self.store()?;
             store
@@ -211,7 +162,10 @@ impl VaultRuntime {
             };
             let path = entry.path();
             match first_snapshot_after_preflight(&path, &preflight) {
-                Ok(snapshot) => candidates.push((path, snapshot)),
+                Ok(snapshot) if !self.local_inbox_entry_is_current(&path, &snapshot)? => {
+                    candidates.push((path, snapshot));
+                }
+                Ok(_) => {}
                 Err(_) => summary.deferred += 1,
             }
         }
@@ -224,17 +178,19 @@ impl VaultRuntime {
                 continue;
             }
             let mut persisted = None;
-            let outcome =
-                capture_after_second_scan(&path, first_snapshot, &tombstoned_hashes, |bytes| {
-                    match self.register_local_inbox_capture(&path, bytes) {
-                        Ok(outcome) => {
-                            persisted = Some(outcome);
-                            Ok(())
-                        }
-                        Err(_) => Err(io::Error::other("local Inbox import failed")),
+            let outcome = capture_after_second_scan(
+                &path,
+                first_snapshot.clone(),
+                &tombstoned_hashes,
+                |bytes| match self.register_local_inbox_capture(&path, bytes) {
+                    Ok(outcome) => {
+                        persisted = Some(outcome);
+                        Ok(())
                     }
-                });
-            match outcome {
+                    Err(_) => Err(io::Error::other("local Inbox import failed")),
+                },
+            );
+            match &outcome {
                 CaptureOutcome::Captured { .. } => match persisted {
                     Some(outcome) => match outcome.status {
                         SourceDocumentImportStatus::Imported
@@ -251,6 +207,12 @@ impl VaultRuntime {
                 CaptureOutcome::Suppressed { .. } => summary.suppressed += 1,
                 CaptureOutcome::Deferred(_) => summary.deferred += 1,
             }
+            if matches!(
+                outcome,
+                CaptureOutcome::Captured { .. } | CaptureOutcome::Suppressed { .. }
+            ) {
+                self.record_local_inbox_entry_observation(&path, &first_snapshot)?;
+            }
         }
         *self
             .inner
@@ -258,6 +220,34 @@ impl VaultRuntime {
             .lock()
             .map_err(|_| RuntimeError::new("local_inbox_unavailable"))? = Some(summary.clone());
         Ok(summary)
+    }
+
+    fn local_inbox_entry_is_current(
+        &self,
+        path: &Path,
+        snapshot: &FileSnapshot,
+    ) -> Result<bool, RuntimeError> {
+        let entry_key = local_inbox_entry_key(path)?;
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .local_inbox_entry_is_current(&entry_key, snapshot)
+            .map_err(|_| RuntimeError::new("local_inbox_scan_failed"))
+    }
+
+    fn record_local_inbox_entry_observation(
+        &self,
+        path: &Path,
+        snapshot: &FileSnapshot,
+    ) -> Result<(), RuntimeError> {
+        let entry_key = local_inbox_entry_key(path)?;
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .record_local_inbox_entry_observation(&entry_key, snapshot)
+            .map_err(|_| RuntimeError::new("local_inbox_scan_failed"))
     }
 
     pub(super) fn register_local_inbox_capture(
@@ -276,64 +266,119 @@ impl VaultRuntime {
             document_id: &document_id,
             mime_type,
             original_filename: &original_filename,
+            #[cfg(test)]
             source_path,
         };
-        let mut store = self.store()?;
-        let store = store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        let outcome = store
-            .register_captured_import(&input, captured_bytes, None)
+        let source = ManualImportStore::prepare_source_bytes(mime_type, captured_bytes)
             .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?;
-        if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired {
+        let session_generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
+        let plan = {
+            let store = self.store()?;
             store
-                .enqueue_source_document_pipeline(&outcome.document_id)
-                .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?;
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .source_capture_plan(&input, &source, None)
+                .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?
+        };
+        let capture = match plan {
+            SourceCapturePlan::Capture(capture) => capture,
+            SourceCapturePlan::RestoreConfirmationRequired(outcome) => return Ok(outcome),
+        };
+        let stored = capture
+            .store_prepared(&source)
+            .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?;
+        if self.inner.vault_session_generation.load(Ordering::SeqCst) != session_generation {
+            return Err(RuntimeError::new("vault_locked"));
         }
-        Ok(outcome)
+        let result = {
+            let mut store = self.store()?;
+            store
+                .as_mut()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .persist_captured_import(&input, &stored, None)
+        };
+        match result {
+            Ok(outcome)
+                if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired =>
+            {
+                Ok(outcome)
+            }
+            Ok(outcome) => Ok(outcome),
+            Err(_) => Err(RuntimeError::new("local_inbox_import_failed")),
+        }
     }
 
-    pub(super) fn queued_local_inbox_parse_documents(&self) -> Result<Vec<String>, RuntimeError> {
-        let store = self.store()?;
-        store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .queued_parse_document_ids()
-            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
-    }
-
-    pub(super) fn start_local_inbox_parse(&self, document_id: &str) -> Result<bool, RuntimeError> {
+    pub(super) fn queued_local_inbox_parse_documents(
+        &self,
+    ) -> Result<Vec<ParseDocumentJob>, RuntimeError> {
         let mut store = self.store()?;
         store
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .start_parse_document(document_id)
+            .queued_parse_document_jobs()
             .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+    }
+
+    pub(super) fn enqueue_source_document_reparse(
+        &self,
+        document_id: &str,
+    ) -> Result<(), RuntimeError> {
+        if document_id.is_empty() {
+            return Err(RuntimeError::new("invalid_document_request"));
+        }
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .enqueue_source_document_pipeline(document_id)
+            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+    }
+
+    pub(super) fn start_local_inbox_parse(
+        &self,
+        job: &ParseDocumentJob,
+    ) -> Result<Option<ParseDocumentAttempt>, RuntimeError> {
+        let vault_session_generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
+        self.require_vault_session(vault_session_generation)?;
+        let mut store = self.store()?;
+        let claim = store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .start_parse_document_job(job)
+            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))?;
+        drop(store);
+        self.require_vault_session(vault_session_generation)?;
+        Ok(claim.map(|claim| ParseDocumentAttempt {
+            claim,
+            vault_session_generation,
+        }))
     }
 
     pub(super) fn block_local_inbox_parse(
         &self,
-        document_id: &str,
+        attempt: &ParseDocumentAttempt,
         reason: &'static str,
     ) -> Result<(), RuntimeError> {
+        self.require_vault_session(attempt.vault_session_generation)?;
         let mut store = self.store()?;
         store
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .block_parse_document(document_id, reason)
+            .block_parse_document_job(&attempt.claim, reason)
             .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
     }
 
     pub(super) fn fail_local_inbox_parse(
         &self,
-        document_id: &str,
+        attempt: &ParseDocumentAttempt,
         reason: &'static str,
     ) -> Result<(), RuntimeError> {
+        self.require_vault_session(attempt.vault_session_generation)?;
         let mut store = self.store()?;
         store
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .fail_parse_document(document_id, reason)
+            .fail_parse_document_job(&attempt.claim, reason)
             .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
     }
 
@@ -432,10 +477,21 @@ impl VaultRuntime {
     }
 
     pub(super) fn clear_local_inbox_access(&self) {
+        if let Ok(mut watcher) = self.inner.local_inbox_watcher.lock() {
+            *watcher = None;
+        }
         if let Ok(mut access) = self.inner.local_inbox_access.lock() {
             *access = None;
         }
     }
+}
+
+fn local_inbox_entry_key(path: &Path) -> Result<String, RuntimeError> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| RuntimeError::new("local_inbox_scan_failed"))?;
+    Ok(format!("{:x}", Sha256::digest(name.as_bytes())))
 }
 
 pub(super) async fn rescan_and_process_local_inbox(
@@ -448,88 +504,105 @@ pub(super) async fn rescan_and_process_local_inbox(
             .await
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
     };
-    process_queued_local_inbox_parses(app, runtime).await?;
+    schedule_queued_local_inbox_parses(app.clone(), runtime);
     Ok(summary)
+}
+
+pub(super) fn schedule_queued_local_inbox_parses(app: AppHandle, runtime: VaultRuntime) {
+    tauri::async_runtime::spawn(async move {
+        let _ = process_queued_local_inbox_parses(&app, runtime).await;
+    });
 }
 
 pub(super) async fn process_queued_local_inbox_parses(
     app: &AppHandle,
     runtime: VaultRuntime,
 ) -> Result<(), VaultCommandError> {
-    let document_ids = {
-        let runtime = runtime.clone();
-        tauri::async_runtime::spawn_blocking(move || runtime.queued_local_inbox_parse_documents())
-            .await
-            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
-    };
-    for document_id in document_ids {
-        let started = {
+    loop {
+        let document_ids = {
             let runtime = runtime.clone();
-            let document_id = document_id.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                runtime.start_local_inbox_parse(&document_id)
+                runtime.queued_local_inbox_parse_documents()
             })
             .await
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
         };
-        if !started {
-            continue;
+        if document_ids.is_empty() {
+            break;
         }
-        let input = {
-            let runtime = runtime.clone();
-            let document_id = document_id.clone();
-            tauri::async_runtime::spawn_blocking(move || runtime.normalization_input(&document_id))
+        for job in document_ids {
+            let attempt = {
+                let runtime = runtime.clone();
+                let job = job.clone();
+                tauri::async_runtime::spawn_blocking(move || runtime.start_local_inbox_parse(&job))
+                    .await
+                    .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
+            };
+            let Some(attempt) = attempt else {
+                continue;
+            };
+            let input = {
+                let runtime = runtime.clone();
+                let document_id = job.document_id.clone();
+                let vault_session_generation = attempt.vault_session_generation;
+                tauri::async_runtime::spawn_blocking(move || {
+                    runtime.normalization_input_for_vault_session(
+                        &document_id,
+                        vault_session_generation,
+                    )
+                })
                 .await
                 .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-        };
-        let input = match input {
-            Ok(input) => input,
-            Err(error) => {
-                let reason = if error.code == "statement_password_required" {
-                    "password_required"
-                } else {
-                    "parse_input_unavailable"
-                };
+            };
+            let input = match input {
+                Ok(input) => input,
+                Err(error) => {
+                    let reason = if error.code == "statement_password_required" {
+                        "password_required"
+                    } else {
+                        "parse_input_unavailable"
+                    };
+                    let runtime = runtime.clone();
+                    let attempt = attempt.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        runtime.block_local_inbox_parse(&attempt, reason)
+                    })
+                    .await
+                    .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
+                    continue;
+                }
+            };
+            let result = match run_normalizer_sidecar(app, &job.document_id, &input).await {
+                Ok(result) => result,
+                Err(_) => {
+                    let runtime = runtime.clone();
+                    let attempt = attempt.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        runtime.fail_local_inbox_parse(&attempt, "normalizer_failed")
+                    })
+                    .await
+                    .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
+                    continue;
+                }
+            };
+            let applied = {
                 let runtime = runtime.clone();
-                let document_id = document_id.clone();
+                let claim = attempt.claim.clone();
                 tauri::async_runtime::spawn_blocking(move || {
-                    runtime.block_local_inbox_parse(&document_id, reason)
+                    runtime.apply_normalizer_result_for_job(&claim, &input, result)
+                })
+                .await
+                .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+            };
+            if applied.is_err() {
+                let runtime = runtime.clone();
+                let attempt = attempt.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    runtime.fail_local_inbox_parse(&attempt, "classification_failed")
                 })
                 .await
                 .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
-                continue;
             }
-        };
-        let result = match run_normalizer_sidecar(app, &document_id, &input).await {
-            Ok(result) => result,
-            Err(_) => {
-                let runtime = runtime.clone();
-                let document_id = document_id.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    runtime.fail_local_inbox_parse(&document_id, "normalizer_failed")
-                })
-                .await
-                .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
-                continue;
-            }
-        };
-        let applied = {
-            let runtime = runtime.clone();
-            let document_id = document_id.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                runtime.apply_normalizer_result(&document_id, &input, result)
-            })
-            .await
-            .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-        };
-        if applied.is_err() {
-            let runtime = runtime.clone();
-            let document_id = document_id.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                runtime.fail_local_inbox_parse(&document_id, "classification_failed")
-            })
-            .await
-            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
         }
     }
     process_queued_document_reconciliations(runtime).await?;
@@ -586,8 +659,16 @@ pub(super) async fn resume_local_inbox_after_unlock(app: &AppHandle, runtime: Va
     .ok()
     .and_then(Result::ok);
     if status.is_some_and(|status| status.access_state == LocalInboxAccessState::Enabled) {
+        let _ = runtime.start_local_inbox_watcher(app.clone());
         let _ = rescan_and_process_local_inbox(app, runtime).await;
     }
+}
+
+pub(super) async fn resume_parse_document_jobs_after_unlock(
+    app: &AppHandle,
+    runtime: VaultRuntime,
+) {
+    let _ = process_queued_local_inbox_parses(app, runtime).await;
 }
 
 pub(super) async fn resume_document_reconciliations_after_unlock(runtime: VaultRuntime) {
@@ -624,6 +705,9 @@ pub(crate) async fn choose_local_inbox_root(
     if !configured {
         return Ok(None);
     }
+    runtime
+        .start_local_inbox_watcher(app.clone())
+        .map_err(VaultCommandError::from)?;
     rescan_and_process_local_inbox(&app, runtime.clone()).await?;
     run_runtime_task(move || runtime.local_inbox_status().map(Some)).await
 }
@@ -645,27 +729,26 @@ pub(crate) async fn disable_local_inbox(
 }
 
 #[tauri::command]
-pub(crate) async fn list_statement_coverage_prompts(
-    runtime: State<'_, VaultRuntime>,
-) -> Result<Vec<StatementCoveragePrompt>, VaultCommandError> {
-    let runtime = runtime.inner().clone();
-    run_runtime_task(move || runtime.list_statement_coverage_prompts()).await
-}
-
-#[tauri::command]
-pub(crate) async fn record_statement_coverage_decision(
-    request: StatementCoverageDecisionRequest,
-    runtime: State<'_, VaultRuntime>,
-) -> Result<(), VaultCommandError> {
-    let runtime = runtime.inner().clone();
-    run_runtime_task(move || runtime.record_statement_coverage_decision(&request)).await
-}
-
-#[tauri::command]
 pub(crate) async fn rescan_local_inbox(
     app: AppHandle,
     runtime: State<'_, VaultRuntime>,
 ) -> Result<LocalInboxScanSummary, VaultCommandError> {
     let runtime = runtime.inner().clone();
     rescan_and_process_local_inbox(&app, runtime).await
+}
+
+#[tauri::command]
+pub(crate) async fn reparse_source_document(
+    document_id: String,
+    app: AppHandle,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<(), VaultCommandError> {
+    if document_id.is_empty() {
+        return Err(VaultCommandError::new("invalid_document_request"));
+    }
+    let runtime = runtime.inner().clone();
+    let enqueue_runtime = runtime.clone();
+    run_runtime_task(move || enqueue_runtime.enqueue_source_document_reparse(&document_id)).await?;
+    schedule_queued_local_inbox_parses(app, runtime);
+    Ok(())
 }

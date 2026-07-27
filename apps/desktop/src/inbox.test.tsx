@@ -20,11 +20,13 @@ const enabledStatus: LocalInboxStatus = {
 const baseProps: InboxPanelProps = {
   busy: false,
   confirmingDisable: false,
+  error: null,
   onCancelDisable: () => undefined,
   onChoose: () => undefined,
   onConfirmDisable: () => undefined,
   onRequestDisable: () => undefined,
   onRescan: () => undefined,
+  onRetry: () => undefined,
   status: enabledStatus,
 };
 

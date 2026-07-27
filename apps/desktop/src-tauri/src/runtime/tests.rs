@@ -1,12 +1,13 @@
+use super::test_support::{statement_password_runtime, statement_password_state};
 use super::*;
-use crate::database::SourceDocumentImportStatus;
+use crate::database::{CandidateAccountDecision, SourceDocumentImportStatus};
 use crate::vault::open_recovery_file;
 #[cfg(target_os = "macos")]
 use crate::viewer::tests::{protected_pdf_fixture, synthetic_png_fixture};
 use std::{collections::HashMap, thread, time::Duration};
 
 #[derive(Default)]
-struct MemoryRememberedKeyStore {
+pub(super) struct MemoryRememberedKeyStore {
     secret: Mutex<Option<Vec<u8>>>,
 }
 
@@ -96,7 +97,7 @@ impl RememberedKeyStore for MalformedDeleteFailingRememberedKeyStore {
 }
 
 #[derive(Default)]
-struct MemoryStatementPasswordStore {
+pub(super) struct MemoryStatementPasswordStore {
     fail_delete: AtomicBool,
     fail_save: AtomicBool,
     secrets: Mutex<HashMap<String, Vec<u8>>>,
@@ -134,7 +135,7 @@ impl StatementPasswordStore for MemoryStatementPasswordStore {
 }
 
 #[derive(Default)]
-struct MemoryLocalInboxBookmarkStore {
+pub(super) struct MemoryLocalInboxBookmarkStore {
     bookmark: Mutex<Option<Vec<u8>>>,
 }
 
@@ -157,37 +158,6 @@ impl LocalInboxBookmarkStore for MemoryLocalInboxBookmarkStore {
         *self.bookmark.lock().map_err(|_| ())? = Some(bookmark.to_vec());
         Ok(())
     }
-}
-
-fn statement_password_runtime(
-    root: &Path,
-    statement_passwords: Arc<dyn StatementPasswordStore>,
-) -> VaultRuntime {
-    let runtime = VaultRuntime::with_secret_stores(
-        root.to_path_buf(),
-        Arc::new(MemoryRememberedKeyStore::default()),
-        statement_passwords,
-        Arc::new(MemoryLocalInboxBookmarkStore::default()),
-    );
-    runtime
-        .create(b"synthetic-vault-password")
-        .expect("create Vault");
-    runtime
-        .seed_money_source("source-dbs", "dbs", "DBS", "bank")
-        .expect("seed Money Source");
-    runtime
-}
-
-fn statement_password_state(
-    runtime: &VaultRuntime,
-) -> Option<crate::database::StatementPasswordState> {
-    runtime
-        .store()
-        .expect("active store")
-        .as_ref()
-        .expect("unlocked store")
-        .statement_password_state("source-dbs")
-        .expect("statement password state")
 }
 
 #[test]
@@ -246,31 +216,6 @@ fn local_inbox_bookmark_is_paused_while_locked_and_disable_removes_it() {
     assert!(bookmarks.load().expect("load bookmark").is_none());
 }
 
-#[test]
-fn rejects_coverage_decision_without_a_current_declared_prompt() {
-    let parent = tempfile::tempdir().expect("temporary app data");
-    let runtime = statement_password_runtime(
-        &parent.path().join("vault"),
-        Arc::new(MemoryStatementPasswordStore::default()),
-    );
-
-    assert_eq!(
-        runtime
-            .record_statement_coverage_decision(&StatementCoverageDecisionRequest {
-                account_id: "account-dbs".to_owned(),
-                action: StatementCoverageDecisionAction::NotExpected,
-                document_type: "account_statement".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-                remind_after: None,
-                statement_period_from: "2026-02-01".to_owned(),
-                statement_period_to: "2026-02-28".to_owned(),
-            })
-            .expect_err("empty provider policy has no current coverage prompt")
-            .code(),
-        "coverage_decision_invalid"
-    );
-}
-
 #[cfg(target_os = "macos")]
 #[test]
 fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
@@ -288,7 +233,10 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         .list_unassigned_source_documents()
         .expect("list protected statement");
     assert_eq!(documents[0].document_id, outcome.document_id);
-    assert_eq!(documents[0].document_status, "password_required");
+    assert_eq!(
+        documents[0].document_status,
+        SourceDocumentStatus::Processing
+    );
     assert_eq!(
         runtime
             .normalization_input(&outcome.document_id)
@@ -325,7 +273,7 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
             .list_unassigned_source_documents()
             .expect("list session-unlocked statement")[0]
             .document_status,
-        "protected_unlocked"
+        SourceDocumentStatus::Processing
     );
     let bundle = runtime
         .normalization_input(&outcome.document_id)
@@ -357,7 +305,7 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
             .list_unassigned_source_documents()
             .expect("list after session lock")[0]
             .document_status,
-        "password_required"
+        SourceDocumentStatus::Processing
     );
 
     runtime
@@ -391,7 +339,7 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
             .list_unassigned_source_documents()
             .expect("list saved-password statement")[0]
             .document_status,
-        "protected_unlocked"
+        SourceDocumentStatus::Processing
     );
 
     statement_passwords
@@ -510,7 +458,7 @@ fn fails_closed_when_a_pdf_cannot_be_inspected() {
             .list_unassigned_source_documents()
             .expect("list corrupt PDF")[0]
             .document_status,
-        "inspection_failed"
+        SourceDocumentStatus::Processing
     );
     assert_eq!(
         runtime
@@ -567,7 +515,7 @@ fn keeps_listing_other_documents_when_one_encrypted_blob_is_unreadable() {
             .find(|document| document.document_id == pdf_outcome.document_id)
             .expect("unreadable PDF row")
             .document_status,
-        "unavailable"
+        SourceDocumentStatus::Processing
     );
     assert_eq!(
         documents
@@ -575,7 +523,7 @@ fn keeps_listing_other_documents_when_one_encrypted_blob_is_unreadable() {
             .find(|document| document.document_id == csv_outcome.document_id)
             .expect("readable CSV row")
             .document_status,
-        "ready"
+        SourceDocumentStatus::Processing
     );
 }
 
@@ -2088,7 +2036,14 @@ fn review_and_account_confirmation_models_reject_a_locked_vault() {
     );
     assert_eq!(
         runtime
-            .confirm_candidate_accounts("source-dbs", &["account-1".to_owned()])
+            .decide_candidate_accounts(
+                "source-dbs",
+                "proposal-version",
+                &[CandidateAccountDecisionInput {
+                    account_id: "account-1".to_owned(),
+                    action: CandidateAccountDecision::Accept,
+                }],
+            )
             .expect_err("reject confirmation while locked")
             .code(),
         "vault_locked"
@@ -2150,7 +2105,7 @@ fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
 }
 
 #[test]
-fn persists_validated_records_and_reconciles_them_to_review_idempotently() {
+fn persists_validated_records_and_reconciles_an_explicit_parser_re_run() {
     let parent = tempfile::tempdir().expect("temporary app data");
     let source_path = parent.path().join("synthetic.csv");
     fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
@@ -2227,7 +2182,19 @@ fn persists_validated_records_and_reconciles_them_to_review_idempotently() {
     assert_eq!(failed.reconcile_status.as_deref(), Some("failed"));
 
     runtime
-        .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
+        .enqueue_source_document_reparse(&imported.document_id)
+        .expect("enqueue explicit parser re-run");
+    let reparse = runtime
+        .queued_local_inbox_parse_documents()
+        .expect("read explicit parser re-run")
+        .pop()
+        .expect("queued explicit parser re-run");
+    let attempt = runtime
+        .start_local_inbox_parse(&reparse)
+        .expect("claim explicit parser re-run")
+        .expect("explicit parser re-run claimed");
+    runtime
+        .apply_normalizer_result_for_job(&attempt.claim, &input, synthetic_normalizer_result())
         .expect("repeat same profile");
     assert_eq!(
         structured_parse_posting_status(
@@ -2264,26 +2231,15 @@ fn persists_validated_records_and_reconciles_them_to_review_idempotently() {
         .reconcile_document(&imported.document_id)
         .expect("move staged records to review");
 
-    runtime
-        .apply_normalizer_result(&imported.document_id, &input, synthetic_normalizer_result())
-        .expect("repeat after reconciliation");
-    assert!(
-        runtime
-            .start_document_reconciliation(&imported.document_id)
-            .expect("claim idempotent reconcile job")
-    );
-    runtime
-        .reconcile_document(&imported.document_id)
-        .expect("idempotent reconcile");
     assert_eq!(
         structured_parse_test_state(&runtime, &imported.document_id),
         crate::database::StructuredParseTestState {
-            balance_snapshots_without_amount: 4,
+            balance_snapshots_without_amount: 8,
             ledger_events: 0,
             open_review_items: 6,
-            parse_runs: 1,
+            parse_runs: 2,
             reconcile_status: Some("succeeded".to_owned()),
-            records: 6,
+            records: 12,
             staged_records: 0,
         }
     );
@@ -2411,21 +2367,20 @@ fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() 
     assert_eq!(fs::read(&hsbc_path).expect("read HSBC source"), hsbc_bytes);
     assert_eq!(fs::read(&dbs_path).expect("read DBS source"), dbs_bytes);
 
-    let mut parse_documents = runtime
+    let mut parse_jobs = runtime
         .queued_local_inbox_parse_documents()
         .expect("queue both imported statements");
-    parse_documents.sort();
-    assert_eq!(parse_documents.len(), 2);
+    parse_jobs.sort_by(|left, right| left.document_id.cmp(&right.document_id));
+    assert_eq!(parse_jobs.len(), 2);
     let mut hsbc_document_id = None;
     let mut dbs_document_id = None;
-    for document_id in &parse_documents {
-        assert!(
-            runtime
-                .start_local_inbox_parse(document_id)
-                .expect("claim local Inbox parse job")
-        );
+    for job in &parse_jobs {
+        let attempt = runtime
+            .start_local_inbox_parse(job)
+            .expect("claim local Inbox parse job")
+            .expect("local Inbox parse job claimed");
         let input = runtime
-            .normalization_input(document_id)
+            .normalization_input(&job.document_id)
             .expect("extract native PDF observation");
         assert_eq!(input.observations.len(), 1);
         let observation = &input.observations[0];
@@ -2434,19 +2389,19 @@ fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() 
         assert_eq!(observation.engine_version, "macos-page-string-v1");
 
         let routed = if observation.text.contains("provider=hsbc") {
-            hsbc_document_id = Some(document_id.clone());
+            hsbc_document_id = Some(job.document_id.clone());
             runtime
-                .apply_normalizer_result(
-                    document_id,
+                .apply_normalizer_result_for_job(
+                    &attempt.claim,
                     &input,
                     hsbc_bank_repayment_normalizer_result(),
                 )
                 .expect("apply exact HSBC profile and proposal")
         } else if observation.text.contains("provider=dbs") {
-            dbs_document_id = Some(document_id.clone());
+            dbs_document_id = Some(job.document_id.clone());
             runtime
-                .apply_normalizer_result(
-                    document_id,
+                .apply_normalizer_result_for_job(
+                    &attempt.claim,
                     &input,
                     dbs_card_repayment_normalizer_result(),
                 )
@@ -2505,6 +2460,7 @@ fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() 
         .iter()
         .map(|account| account.account_id.clone())
         .collect::<Vec<_>>();
+    let dbs_proposal_version = dbs_prompt.proposal_version.clone();
     let hsbc_prompt = prompts
         .iter()
         .find(|prompt| prompt.money_source_id == "source-hsbc-bank")
@@ -2523,16 +2479,37 @@ fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() 
         .iter()
         .map(|account| account.account_id.clone())
         .collect::<Vec<_>>();
+    let hsbc_proposal_version = hsbc_prompt.proposal_version.clone();
     assert_eq!(
         runtime
-            .confirm_candidate_accounts("source-dbs-card", &dbs_candidate_ids)
+            .decide_candidate_accounts(
+                "source-dbs-card",
+                &dbs_proposal_version,
+                &dbs_candidate_ids
+                    .iter()
+                    .map(|account_id| CandidateAccountDecisionInput {
+                        account_id: account_id.clone(),
+                        action: CandidateAccountDecision::Accept,
+                    })
+                    .collect::<Vec<_>>(),
+            )
             .expect("confirm exactly DBS card candidates")
             .status,
         crate::database::AccountConfirmationStatus::Confirmed
     );
     assert_eq!(
         runtime
-            .confirm_candidate_accounts("source-hsbc-bank", &hsbc_candidate_ids)
+            .decide_candidate_accounts(
+                "source-hsbc-bank",
+                &hsbc_proposal_version,
+                &hsbc_candidate_ids
+                    .iter()
+                    .map(|account_id| CandidateAccountDecisionInput {
+                        account_id: account_id.clone(),
+                        action: CandidateAccountDecision::Accept,
+                    })
+                    .collect::<Vec<_>>(),
+            )
             .expect("confirm exactly HSBC bank candidates")
             .status,
         crate::database::AccountConfirmationStatus::Confirmed
@@ -2650,7 +2627,7 @@ fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() 
             .rescan_local_inbox()
             .expect("repeat local Inbox scan"),
         LocalInboxScanSummary {
-            already_present: 2,
+            already_present: 0,
             deferred: 0,
             imported: 0,
             suppressed: 0,
@@ -3483,7 +3460,7 @@ fn extracts_native_pdf_and_csv_observations_without_creating_files() {
 }
 
 #[cfg(target_os = "macos")]
-fn protected_text_pdf() -> Vec<u8> {
+pub(super) fn protected_text_pdf() -> Vec<u8> {
     use objc2::{AllocAnyThread, rc::Retained};
     use objc2_foundation::{NSData, NSDictionary, NSString};
     use objc2_pdf_kit::{

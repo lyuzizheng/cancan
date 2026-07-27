@@ -5,7 +5,8 @@ import type {
   AccountConfirmationOutcome,
   AccountConfirmationPrompt,
   AcceptReviewRelationshipArgs,
-  ConfirmCandidateAccountsArgs,
+  CandidateAccountDecisionInput,
+  DecideCandidateAccountsArgs,
   EditReviewRecordArgs,
   EnqueueCommitReviewBatchArgs,
   GetReviewJobArgs,
@@ -15,7 +16,7 @@ import type {
   LocalInboxStatus,
   MoneyOverview,
   MoneySourceSummary,
-  NormalizeSourceDocumentArgs,
+  ReparseSourceDocumentArgs,
   PreviewSourceDocumentArgs,
   RecentActivitySummary,
   RemoveStatementPasswordArgs,
@@ -25,18 +26,15 @@ import type {
   ReviewJobSummary,
   ReviewMutationOutcome,
   RenderedDocumentPage,
-  RecordStatementCoverageDecisionArgs,
   RenderSourceDocumentPageArgs,
   RelationshipCandidateSummary,
   SavedStatementPasswordResult,
   SaveSourceDocumentCopyArgs,
   SourceDocumentImportOutcome,
   SourceDocumentPreview,
-  SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   DocumentStatementPasswordArgs,
-  StatementCoverageDecisionArgs,
-  StatementCoveragePrompt,
+  RestoreDismissedCandidateAccountArgs,
   StatementPasswordSourceSummary,
   TrySavedStatementPasswordArgs,
   UndoCommittedEventArgs,
@@ -67,9 +65,10 @@ export interface VaultApi {
     candidateRecordId: string,
     expectedCandidateVersion: number,
   ): Promise<ReviewMutationOutcome>;
-  confirmCandidateAccounts(
+  decideCandidateAccounts(
     moneySourceId: string,
-    expectedCandidateAccountIds: string[],
+    proposalVersion: string,
+    decisions: CandidateAccountDecisionInput[],
   ): Promise<AccountConfirmationOutcome>;
   createVault(password: string): Promise<VaultStatus>;
   chooseLocalInboxRoot(): Promise<LocalInboxStatus | null>;
@@ -88,7 +87,6 @@ export interface VaultApi {
   importSourceDocument(): Promise<SourceDocumentImportOutcome | null>;
   listMoneySources(): Promise<MoneySourceSummary[]>;
   listAccountConfirmationPrompts(): Promise<AccountConfirmationPrompt[]>;
-  listStatementCoveragePrompts(): Promise<StatementCoveragePrompt[]>;
   listRecentActivity(): Promise<RecentActivitySummary[]>;
   listRelationshipCandidates(
     reviewItemId: string,
@@ -100,15 +98,11 @@ export interface VaultApi {
   listUnassignedSourceDocuments(): Promise<SourceDocumentSummary[]>;
   lockVault(): Promise<VaultStatus>;
   localInboxStatus(): Promise<LocalInboxStatus>;
-  normalizeSourceDocument(
-    documentId: string,
-  ): Promise<SourceDocumentRoutingOutcome>;
   onVaultLocked(handler: () => void): Promise<() => void>;
   previewSourceDocument(documentId: string): Promise<SourceDocumentPreview>;
+  reparseSourceDocument(documentId: string): Promise<void>;
   rememberVaultOnThisMac(): Promise<void>;
-  recordStatementCoverageDecision(
-    decision: StatementCoverageDecisionArgs,
-  ): Promise<void>;
+  restoreDismissedCandidateAccount(accountId: string): Promise<AccountConfirmationOutcome>;
   removeReviewRecord(
     reviewItemId: string,
     expectedRecordVersion: number,
@@ -202,15 +196,25 @@ export function createVaultApi(
         args,
       );
     },
-    confirmCandidateAccounts: (moneySourceId, expectedCandidateAccountIds) => {
-      const args: ConfirmCandidateAccountsArgs = {
-        moneySourceId,
-        expectedCandidateAccountIds,
+    decideCandidateAccounts: (moneySourceId, proposalVersion, decisions) => {
+      const args: DecideCandidateAccountsArgs = {
+        request: { moneySourceId, proposalVersion, decisions },
       };
-      return call<AccountConfirmationOutcome, ConfirmCandidateAccountsArgs>(
-        "confirm_candidate_accounts",
+      return call<AccountConfirmationOutcome, DecideCandidateAccountsArgs>(
+        "decide_candidate_accounts",
         args,
       );
+    },
+    restoreDismissedCandidateAccount: (accountId) => {
+      const args: RestoreDismissedCandidateAccountArgs = { accountId };
+      return call<AccountConfirmationOutcome, RestoreDismissedCandidateAccountArgs>(
+        "restore_dismissed_candidate_account",
+        args,
+      );
+    },
+    reparseSourceDocument: (documentId) => {
+      const args: ReparseSourceDocumentArgs = { documentId };
+      return call<void, ReparseSourceDocumentArgs>("reparse_source_document", args);
     },
     enqueueCommitReviewBatch: (reviewItemIds) => {
       const args: EnqueueCommitReviewBatchArgs = { reviewItemIds };
@@ -243,13 +247,6 @@ export function createVaultApi(
     disableLocalInbox: () => call<LocalInboxStatus>("disable_local_inbox"),
     rescanLocalInbox: () =>
       call<LocalInboxScanSummary>("rescan_local_inbox"),
-    listStatementCoveragePrompts: () =>
-      call<StatementCoveragePrompt[]>("list_statement_coverage_prompts"),
-    recordStatementCoverageDecision: (decision) =>
-      call<void, RecordStatementCoverageDecisionArgs>(
-        "record_statement_coverage_decision",
-        { request: decision },
-      ),
     unlockVault: (password) => {
       const args: VaultPasswordArgs = { password };
       return call<VaultStatus, VaultPasswordArgs>("unlock_vault", args);
@@ -324,13 +321,6 @@ export function createVaultApi(
     },
     listUnassignedSourceDocuments: () =>
       call<SourceDocumentSummary[]>("list_unassigned_source_documents"),
-    normalizeSourceDocument: (documentId) => {
-      const args: NormalizeSourceDocumentArgs = { documentId };
-      return call<SourceDocumentRoutingOutcome, NormalizeSourceDocumentArgs>(
-        "normalize_source_document",
-        args,
-      );
-    },
     onVaultLocked: (handler) => subscribe("vault-locked", handler),
     previewSourceDocument: (documentId) => {
       const args: PreviewSourceDocumentArgs = { documentId };
@@ -418,10 +408,6 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t reach the local Inbox setup. Try again.";
     case "file_selection_failed":
       return "CanCan couldn’t use that folder choice. Try again.";
-    case "coverage_unavailable":
-      return "CanCan couldn’t load statement coverage. Try again.";
-    case "coverage_decision_invalid":
-      return "That prompt changed. CanCan reloaded the latest list.";
     case "account_confirmation_unavailable":
       return "CanCan couldn’t confirm those accounts. Try again.";
     case "invalid_account_confirmation_request":

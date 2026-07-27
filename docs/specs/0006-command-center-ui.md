@@ -171,7 +171,7 @@ list_review_items(status)
 explain_money_flow(chain_id)
 search_transactions(query)
 get_source_updated_at()
-list_missing_statements()
+analyse_statement_coverage(scope)
 ```
 
 Each feature adds one bounded capability contract instead of a generic source-data dump. The AI returns an advisory result with source references; it cannot mutate sources, review decisions, relationships, jobs, or ledger state except through an explicitly registered, host-validated, user-approved mutation capability.

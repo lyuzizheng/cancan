@@ -7,6 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "desktop:dev": "pnpm build:sidecar && tauri dev",
     "typecheck": "tsc --project tsconfig.json",
+    "generate:presentation-types": "cd src-tauri && CANCAN_WRITE_PRESENTATION_TYPES=1 cargo test --locked presentation_types::generated_presentation_types_are_current -- --exact",
+    "check:presentation-types": "cd src-tauri && cargo test --locked presentation_types::generated_presentation_types_are_current -- --exact",
     "check:rust": "pnpm build:sidecar && pnpm check:rust:prepared",
     "check:rust:prepared": "cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings",
     "test:rust": "pnpm build:sidecar && pnpm test:rust:prepared",

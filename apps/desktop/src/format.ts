@@ -51,6 +51,11 @@ export function formatLedgerDate(iso: string): string {
   return `${day} ${LEDGER_MONTHS[month - 1]} ${year}`;
 }
 
+export function isRealIsoDate(value: string): boolean {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 /** Renders the month of a host ISO date or month string, such as "June 2026". */
 export function formatLedgerMonth(iso: string): string {
   const match = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(iso);
@@ -155,21 +160,6 @@ export function batchGroupReasonLabel(reason: string | null): string {
   return BATCH_GROUP_REASON_LABELS[reason] ?? "check its details";
 }
 
-const COVERAGE_DOCUMENT_TYPE_LABELS: Record<string, string> = {
-  account_statement: "statement",
-  bank_statement: "bank statement",
-  credit_card_statement: "card statement",
-};
-
-export function coverageDocumentTypeLabel(documentType: string): string {
-  const known = COVERAGE_DOCUMENT_TYPE_LABELS[documentType];
-  if (known) {
-    return known;
-  }
-  const words = documentType.replaceAll("_", " ").trim();
-  return words.length === 0 ? "statement" : words;
-}
-
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   credit_card: "Credit card",
   deposit_account: "Bank account",
@@ -183,22 +173,6 @@ export function accountTypeLabel(accountType: string): string {
   }
   const words = accountType.replaceAll("_", " ").trim();
   return words.length === 0 ? "Account" : `${words[0]!.toUpperCase()}${words.slice(1)}`;
-}
-
-export function coveragePromptTitle(
-  prompt: {
-    documentType: string;
-    statementPeriodTo: string;
-    status: "confirmed_missing" | "likely_missing";
-  },
-  sourceName: string,
-): string {
-  const label = `${sourceName} ${formatLedgerMonth(prompt.statementPeriodTo)} ${
-    coverageDocumentTypeLabel(prompt.documentType)
-  }`;
-  return prompt.status === "confirmed_missing"
-    ? `${label} is missing`
-    : `${label} may be missing`;
 }
 
 /** Builds a calm plain-language sentence from a sanitized inbox scan summary. */

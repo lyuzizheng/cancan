@@ -4,8 +4,6 @@ import {
   accountTypeLabel,
   batchGroupReasonLabel,
   batchGroupStatusLabel,
-  coverageDocumentTypeLabel,
-  coveragePromptTitle,
   eventTypeLabel,
   formatCurrencyAmount,
   formatLedgerDate,
@@ -163,18 +161,6 @@ describe("localIsoToday", () => {
   });
 });
 
-describe("coverageDocumentTypeLabel", () => {
-  it("maps known document types and falls back to humanized words", () => {
-    expect(coverageDocumentTypeLabel("bank_statement")).toBe("bank statement");
-    expect(coverageDocumentTypeLabel("credit_card_statement")).toBe(
-      "card statement",
-    );
-    expect(coverageDocumentTypeLabel("account_statement")).toBe("statement");
-    expect(coverageDocumentTypeLabel("tax_form")).toBe("tax form");
-    expect(coverageDocumentTypeLabel("")).toBe("statement");
-  });
-});
-
 describe("accountTypeLabel", () => {
   it("maps known account types and capitalizes unknown ones", () => {
     expect(accountTypeLabel("deposit_account")).toBe("Bank account");
@@ -182,31 +168,6 @@ describe("accountTypeLabel", () => {
     expect(accountTypeLabel("manual_liability")).toBe("Liability");
     expect(accountTypeLabel("money_market")).toBe("Money market");
     expect(accountTypeLabel("")).toBe("Account");
-  });
-});
-
-describe("coveragePromptTitle", () => {
-  it("marks confirmed gaps as missing and likely gaps as maybe missing", () => {
-    expect(
-      coveragePromptTitle(
-        {
-          documentType: "bank_statement",
-          statementPeriodTo: "2026-06-30",
-          status: "confirmed_missing",
-        },
-        "DBS",
-      ),
-    ).toBe("DBS June 2026 bank statement is missing");
-    expect(
-      coveragePromptTitle(
-        {
-          documentType: "credit_card_statement",
-          statementPeriodTo: "2026-05-31",
-          status: "likely_missing",
-        },
-        "DBS",
-      ),
-    ).toBe("DBS May 2026 card statement may be missing");
   });
 });
 

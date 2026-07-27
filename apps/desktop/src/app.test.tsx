@@ -16,6 +16,7 @@ import {
 import { VaultGate } from "./vault-gate";
 
 const document: SourceDocumentSummary = {
+  attentionReason: null,
   byteSize: 42,
   documentId: "document-1",
   documentStatus: "ready",
@@ -36,6 +37,7 @@ const baseProps: SourcesViewProps = {
   deletingDocumentId: null,
   importing: false,
   inbox: null,
+  inboxError: null,
   inboxBusy: false,
   inboxConfirmingDisable: false,
   loadingDocuments: false,
@@ -48,6 +50,7 @@ const baseProps: SourcesViewProps = {
   onInboxConfirmDisable: () => undefined,
   onInboxRequestDisable: () => undefined,
   onInboxRescan: () => undefined,
+  onInboxRetry: () => undefined,
   onLock: () => undefined,
   onNormalize: () => undefined,
   onOpenUnlock: () => undefined,
@@ -129,7 +132,7 @@ describe("SourcesView", () => {
     expect(markup).toContain("Remember on this Mac");
     expect(markup).toContain("June statement.pdf");
     expect(markup).toContain("View document");
-    expect(markup).toContain("Check routing");
+    expect(markup).toContain("Re-run parser");
     expect(markup).toContain("Delete source file");
     expect(markup).toContain("Save a copy");
   });
@@ -194,7 +197,7 @@ describe("SourcesView", () => {
       unassignedDocuments: [document],
     });
 
-    expect(normalizing).toContain("Checking…");
+    expect(normalizing).toContain("Re-running…");
   });
 });
 

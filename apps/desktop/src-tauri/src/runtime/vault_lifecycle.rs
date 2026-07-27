@@ -35,6 +35,7 @@ impl VaultRuntime {
                 local_inbox_access: Mutex::new(None),
                 local_inbox_bookmarks,
                 local_inbox_last_scan: Mutex::new(None),
+                local_inbox_watcher: Mutex::new(None),
                 local_inbox_needs_attention: AtomicBool::new(false),
                 local_inbox_needs_reauthorization: AtomicBool::new(false),
                 remembered_keys,
@@ -352,6 +353,7 @@ pub(crate) async fn unlock_vault(
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
             .map_err(VaultCommandError::from)?;
     resume_review_jobs_after_unlock(&app, runtime.clone()).await;
+    resume_parse_document_jobs_after_unlock(&app, runtime.clone()).await;
     resume_document_reconciliations_after_unlock(runtime.clone()).await;
     resume_local_inbox_after_unlock(&app, runtime).await;
     Ok(status)
@@ -370,6 +372,7 @@ pub(crate) async fn unlock_vault_with_keychain(
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
             .map_err(VaultCommandError::from)?;
     resume_review_jobs_after_unlock(&app, runtime.clone()).await;
+    resume_parse_document_jobs_after_unlock(&app, runtime.clone()).await;
     resume_document_reconciliations_after_unlock(runtime.clone()).await;
     resume_local_inbox_after_unlock(&app, runtime).await;
     Ok(status)
