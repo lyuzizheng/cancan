@@ -13,14 +13,14 @@ const LIMITS = [
 // ceiling as the file shrinks; never raise it. The open decomposition decisions
 // live in docs/alignment-temp/alignment-progress.md.
 const EXEMPTIONS = new Map([
-  ["apps/desktop/src/app.tsx", 1750],
-  ["apps/desktop/src-tauri/src/database/mod.rs", 3550],
-  ["apps/desktop/src-tauri/src/runtime/documents.rs", 1000],
-  ["apps/desktop/src-tauri/src/runtime/review.rs", 950],
-  ["apps/desktop/src-tauri/src/runtime/tests.rs", 3650],
-  ["apps/desktop/src-tauri/src/source_observations.rs", 950],
-  ["apps/desktop/src-tauri/src/vault.rs", 900],
-  ["apps/desktop/src-tauri/src/viewer.rs", 1000],
+  ["apps/desktop/src/app.tsx", 1738],
+  ["apps/desktop/src-tauri/src/database/mod.rs", 3517],
+  ["apps/desktop/src-tauri/src/runtime/documents.rs", 939],
+  ["apps/desktop/src-tauri/src/runtime/review.rs", 842],
+  ["apps/desktop/src-tauri/src/runtime/tests.rs", 3597],
+  ["apps/desktop/src-tauri/src/source_observations.rs", 895],
+  ["apps/desktop/src-tauri/src/vault.rs", 862],
+  ["apps/desktop/src-tauri/src/viewer.rs", 960],
 ]);
 
 const files = execSync(

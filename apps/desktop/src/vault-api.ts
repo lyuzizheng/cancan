@@ -413,6 +413,8 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t prepare Inbox and Backups in that folder. CanCan never changes existing files.";
     case "local_inbox_reauthorization_required":
       return "Choose your Cancan folder again so CanCan can reach it.";
+    case "local_inbox_watch_failed":
+      return "CanCan couldn’t watch Inbox for new files. Choose the folder again or use Check now.";
     case "local_inbox_storage_failed":
     case "local_inbox_unavailable":
       return "CanCan couldn’t reach the local Inbox setup. Try again.";

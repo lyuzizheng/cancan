@@ -253,6 +253,9 @@ describe("Vault API", () => {
     expect(commandErrorMessage('{"code":"delete_source_failed"}')).toBe(
       "CanCan couldn’t finish removing this Vault file. Refresh its status before trying again.",
     );
+    expect(commandErrorMessage({ code: "local_inbox_watch_failed" })).toBe(
+      "CanCan couldn’t watch Inbox for new files. Choose the folder again or use Check now.",
+    );
     expect(commandErrorMessage("private backend detail")).toBe(
       "Couldn’t complete that request. Try again.",
     );

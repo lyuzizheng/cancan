@@ -48,7 +48,7 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex, MutexGuard, Weak,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
@@ -59,7 +59,7 @@ use tauri_plugin_shell::{
     ShellExt,
     process::{CommandChild, CommandEvent},
 };
-use tokio::time::{Instant, timeout_at};
+use tokio::time::{Instant, sleep, timeout_at};
 use zeroize::Zeroizing;
 
 const KEY_LEN: usize = 32;
@@ -447,6 +447,9 @@ struct RuntimeInner {
     local_inbox_last_scan: Mutex<Option<LocalInboxScanSummary>>,
     local_inbox_needs_attention: AtomicBool,
     local_inbox_needs_reauthorization: AtomicBool,
+    local_inbox_scan_pending: AtomicBool,
+    local_inbox_scan_scheduled: AtomicBool,
+    local_inbox_watcher: Mutex<Option<LocalInboxWatcher>>,
     remembered_keys: Arc<dyn RememberedKeyStore>,
     root: PathBuf,
     statement_passwords: Arc<dyn StatementPasswordStore>,
@@ -459,6 +462,7 @@ struct RuntimeInner {
 mod documents;
 mod error;
 mod inbox;
+mod inbox_watcher;
 mod keyring;
 mod review;
 mod sidecar;
@@ -469,6 +473,7 @@ mod vault_lifecycle;
 pub(crate) use documents::*;
 pub(crate) use error::*;
 pub(crate) use inbox::*;
+use inbox_watcher::LocalInboxWatcher;
 use keyring::*;
 pub(crate) use review::*;
 use sidecar::*;

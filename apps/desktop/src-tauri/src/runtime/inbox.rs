@@ -1,5 +1,7 @@
 use super::*;
 
+const LOCAL_INBOX_WATCH_DEBOUNCE: Duration = Duration::from_millis(250);
+
 impl VaultRuntime {
     pub(crate) fn configure_local_inbox(&self, root: &Path) -> Result<(), RuntimeError> {
         self.require_unlocked()?;
@@ -260,6 +262,39 @@ impl VaultRuntime {
         Ok(summary)
     }
 
+    fn start_local_inbox_watcher(&self, app: &AppHandle) -> Result<(), RuntimeError> {
+        let inbox = {
+            let access = self
+                .inner
+                .local_inbox_access
+                .lock()
+                .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+            let root = access
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new("local_inbox_reauthorization_required"))?;
+            ensure_inbox_paths(root.root())
+                .map_err(|_| RuntimeError::new("local_inbox_setup_failed"))?
+                .inbox
+        };
+        let app = app.clone();
+        let inner = Arc::downgrade(&self.inner);
+        let watcher = LocalInboxWatcher::start(&inbox, move || {
+            schedule_local_inbox_rescan(app.clone(), inner.clone());
+        })
+        .map_err(|_| {
+            self.inner
+                .local_inbox_needs_attention
+                .store(true, Ordering::SeqCst);
+            RuntimeError::new("local_inbox_watch_failed")
+        })?;
+        *self
+            .inner
+            .local_inbox_watcher
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))? = Some(watcher);
+        Ok(())
+    }
+
     pub(super) fn register_local_inbox_capture(
         &self,
         source_path: &Path,
@@ -432,10 +467,62 @@ impl VaultRuntime {
     }
 
     pub(super) fn clear_local_inbox_access(&self) {
+        if let Ok(mut watcher) = self.inner.local_inbox_watcher.lock() {
+            *watcher = None;
+        }
         if let Ok(mut access) = self.inner.local_inbox_access.lock() {
             *access = None;
         }
     }
+}
+
+fn schedule_local_inbox_rescan(app: AppHandle, inner: Weak<RuntimeInner>) {
+    let Some(inner) = inner.upgrade() else {
+        return;
+    };
+    inner.local_inbox_scan_pending.store(true, Ordering::SeqCst);
+    if inner
+        .local_inbox_scan_scheduled
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        let runtime = VaultRuntime { inner };
+        loop {
+            sleep(LOCAL_INBOX_WATCH_DEBOUNCE).await;
+            runtime
+                .inner
+                .local_inbox_scan_pending
+                .store(false, Ordering::SeqCst);
+            let _ = rescan_and_process_local_inbox(&app, runtime.clone()).await;
+            if runtime
+                .inner
+                .local_inbox_scan_pending
+                .swap(false, Ordering::SeqCst)
+            {
+                continue;
+            }
+            runtime
+                .inner
+                .local_inbox_scan_scheduled
+                .store(false, Ordering::SeqCst);
+            if runtime
+                .inner
+                .local_inbox_scan_pending
+                .swap(false, Ordering::SeqCst)
+                && runtime
+                    .inner
+                    .local_inbox_scan_scheduled
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+            {
+                continue;
+            }
+            break;
+        }
+    });
 }
 
 pub(super) async fn rescan_and_process_local_inbox(
@@ -586,6 +673,7 @@ pub(super) async fn resume_local_inbox_after_unlock(app: &AppHandle, runtime: Va
     .ok()
     .and_then(Result::ok);
     if status.is_some_and(|status| status.access_state == LocalInboxAccessState::Enabled) {
+        let _ = runtime.start_local_inbox_watcher(app);
         let _ = rescan_and_process_local_inbox(app, runtime).await;
     }
 }
@@ -624,6 +712,9 @@ pub(crate) async fn choose_local_inbox_root(
     if !configured {
         return Ok(None);
     }
+    runtime
+        .start_local_inbox_watcher(&app)
+        .map_err(VaultCommandError::from)?;
     rescan_and_process_local_inbox(&app, runtime.clone()).await?;
     run_runtime_task(move || runtime.local_inbox_status().map(Some)).await
 }

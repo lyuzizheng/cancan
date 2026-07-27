@@ -124,6 +124,27 @@ describe("App local inbox orchestration", () => {
       "Choose your Cancan folder again so CanCan can reach it.",
     );
   });
+
+  it("keeps finance data available when the optional inbox status fails", async () => {
+    const api = createApi({
+      listMoneySources: vi.fn(async () => [{
+        displayName: "Synthetic Bank",
+        moneySourceId: "money-source-1",
+        sourceType: "bank",
+      }]),
+      localInboxStatus: vi.fn(async (): Promise<LocalInboxStatus> => {
+        throw { code: "local_inbox_storage_failed" };
+      }),
+    });
+    await mount(api, "sources");
+
+    expect(container.textContent).toContain("Synthetic Bank");
+    expect(container.textContent).toContain("CanCan Inbox unavailable");
+    expect(container.textContent).toContain(
+      "CanCan couldn’t reach the local Inbox setup.",
+    );
+    expect(container.textContent).not.toContain("Something needs your attention");
+  });
 });
 
 describe("App attention orchestration", () => {

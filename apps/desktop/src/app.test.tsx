@@ -38,6 +38,7 @@ const baseProps: SourcesViewProps = {
   inbox: null,
   inboxBusy: false,
   inboxConfirmingDisable: false,
+  inboxError: null,
   loadingDocuments: false,
   normalizingDocumentId: null,
   notice: null,

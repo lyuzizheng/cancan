@@ -18,6 +18,7 @@ export interface SourcesViewProps {
   inbox: LocalInboxStatus | null;
   inboxBusy: boolean;
   inboxConfirmingDisable: boolean;
+  inboxError: string | null;
   loadingDocuments: boolean;
   normalizingDocumentId: string | null;
   notice: Notice | null;
@@ -105,16 +106,25 @@ export function SourcesView(props: SourcesViewProps) {
 
         {props.notice ? <Feedback {...props.notice} /> : null}
 
-        <InboxPanel
-          busy={props.inboxBusy}
-          confirmingDisable={props.inboxConfirmingDisable}
-          onCancelDisable={props.onInboxCancelDisable}
-          onChoose={props.onInboxChoose}
-          onConfirmDisable={props.onInboxConfirmDisable}
-          onRequestDisable={props.onInboxRequestDisable}
-          onRescan={props.onInboxRescan}
-          status={props.inbox}
-        />
+        {props.inboxError ? (
+          <Feedback
+            action={props.onRefresh}
+            body={props.inboxError}
+            title="CanCan Inbox unavailable"
+            tone="error"
+          />
+        ) : (
+          <InboxPanel
+            busy={props.inboxBusy}
+            confirmingDisable={props.inboxConfirmingDisable}
+            onCancelDisable={props.onInboxCancelDisable}
+            onChoose={props.onInboxChoose}
+            onConfirmDisable={props.onInboxConfirmDisable}
+            onRequestDisable={props.onInboxRequestDisable}
+            onRescan={props.onInboxRescan}
+            status={props.inbox}
+          />
+        )}
 
         <section className="source-panel" aria-labelledby="sources-heading">
           <div className="source-panel-heading">

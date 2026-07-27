@@ -104,6 +104,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [undoingEventId, setUndoingEventId] = useState<string | null>(null);
   const [moneySources, setMoneySources] = useState<MoneySourceSummary[]>([]);
   const [localInbox, setLocalInbox] = useState<LocalInboxStatus | null>(null);
+  const [localInboxError, setLocalInboxError] = useState<string | null>(null);
   const [inboxBusy, setInboxBusy] = useState(false);
   const [inboxConfirmingDisable, setInboxConfirmingDisable] = useState(false);
   const [coveragePrompts, setCoveragePrompts] = useState<
@@ -192,6 +193,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setUndoingEventId(null);
     setMoneySources([]);
     setLocalInbox(null);
+    setLocalInboxError(null);
     setInboxBusy(false);
     setInboxConfirmingDisable(false);
     setCoveragePrompts(null);
@@ -270,48 +272,52 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     const sessionId = vaultSessionId.current;
     const requestId = financeLoadRequestId.current + 1;
     financeLoadRequestId.current = requestId;
-    try {
+    const [financeResult, inboxResult] = await Promise.allSettled([
+      Promise.all([
+        api.listReviewItems(),
+        api.getMoneyOverview(),
+        api.listRecentActivity(),
+        api.listMoneySources(),
+        api.listStatementCoveragePrompts(),
+        api.listAccountConfirmationPrompts(),
+      ]),
+      api.localInboxStatus(),
+    ]);
+    if (
+      vaultSessionId.current !== sessionId
+      || financeLoadRequestId.current !== requestId
+    ) {
+      return;
+    }
+    if (financeResult.status === "fulfilled") {
       const [
         items,
         overview,
         activity,
         sources,
-        inbox,
         coverage,
         accounts,
-      ] = await Promise.all([
-        api.listReviewItems(),
-        api.getMoneyOverview(),
-        api.listRecentActivity(),
-        api.listMoneySources(),
-        api.localInboxStatus(),
-        api.listStatementCoveragePrompts(),
-        api.listAccountConfirmationPrompts(),
-      ]);
-      if (
-        vaultSessionId.current === sessionId
-        && financeLoadRequestId.current === requestId
-      ) {
-        setReviewItems(items);
-        setMoneyOverview(overview);
-        setRecentActivity(activity);
-        setMoneySources(sources);
-        setLocalInbox(inbox);
-        setCoveragePrompts(coverage);
-        setAccountPrompts(accounts);
-        setSelectedReviewIds((current) => new Set(
-          [...current].filter((id) =>
-            items.some((item) => item.reviewItemId === id)
-          ),
-        ));
-      }
-    } catch (nextError) {
-      if (
-        vaultSessionId.current === sessionId
-        && financeLoadRequestId.current === requestId
-      ) {
-        setError(commandErrorMessage(nextError));
-      }
+      ] = financeResult.value;
+      setReviewItems(items);
+      setMoneyOverview(overview);
+      setRecentActivity(activity);
+      setMoneySources(sources);
+      setCoveragePrompts(coverage);
+      setAccountPrompts(accounts);
+      setSelectedReviewIds((current) => new Set(
+        [...current].filter((id) =>
+          items.some((item) => item.reviewItemId === id)
+        ),
+      ));
+    } else {
+      setError(commandErrorMessage(financeResult.reason));
+    }
+    if (inboxResult.status === "fulfilled") {
+      setLocalInbox(inboxResult.value);
+      setLocalInboxError(null);
+    } else {
+      setLocalInbox(null);
+      setLocalInboxError(commandErrorMessage(inboxResult.reason));
     }
   }, [api]);
 
@@ -1646,6 +1652,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             inbox={localInbox}
             inboxBusy={inboxBusy}
             inboxConfirmingDisable={inboxConfirmingDisable}
+            inboxError={localInboxError}
             loadingDocuments={loadingDocuments}
             normalizingDocumentId={normalizingDocumentId}
             notice={notice}

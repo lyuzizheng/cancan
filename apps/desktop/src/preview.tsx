@@ -22,9 +22,9 @@ import type {
   StatementCoveragePrompt,
 } from "./command-contracts";
 import { coverageKey } from "./attention";
-import { InboxPanel } from "./inbox";
 import { OverviewView } from "./overview";
 import { ReviewView, type ReviewDetailState, type ReviewJobPanelState } from "./review";
+import { SourcesView } from "./sources-view";
 import { VaultSpine, type AppView } from "./vault-spine";
 
 const moneyOverview: MoneyOverview = {
@@ -224,7 +224,7 @@ const inboxReauth: LocalInboxStatus = {
 const noop = () => undefined;
 
 function navigate(view: AppView) {
-  const state = view === "sources" ? "review" : view;
+  const state = view === "sources" ? "sources-inbox-enabled" : view;
   window.location.search = `?state=${state}`;
 }
 
@@ -281,15 +281,41 @@ function Preview() {
         ? inboxReauth
         : inboxDisabled;
     content = (
-      <InboxPanel
+      <SourcesView
         busy={false}
-        confirmingDisable={false}
-        onCancelDisable={noop}
-        onChoose={noop}
-        onConfirmDisable={noop}
-        onRequestDisable={noop}
-        onRescan={noop}
-        status={status}
+        deletingDocumentId={null}
+        importing={false}
+        inbox={status}
+        inboxBusy={false}
+        inboxConfirmingDisable={false}
+        inboxError={null}
+        loadingDocuments={false}
+        normalizingDocumentId={null}
+        notice={null}
+        onDelete={noop}
+        onImport={noop}
+        onInboxCancelDisable={noop}
+        onInboxChoose={noop}
+        onInboxConfirmDisable={noop}
+        onInboxRequestDisable={noop}
+        onInboxRescan={noop}
+        onLock={noop}
+        onNormalize={noop}
+        onOpenUnlock={noop}
+        onRefresh={noop}
+        onRememberedChange={noop}
+        onSaveRecoveryFile={noop}
+        onSaveSourceCopy={noop}
+        onSelectMoneySource={noop}
+        onView={noop}
+        recoveryConfigured
+        rememberedOnThisMac={false}
+        savingCopyDocumentId={null}
+        savingRecoveryFile={false}
+        selectedMoneySourceId={null}
+        sourceDocuments={[{ documents: [], source: moneySources[0]! }]}
+        unassignedDocuments={[]}
+        updatingRemembered={false}
       />
     );
   } else {
