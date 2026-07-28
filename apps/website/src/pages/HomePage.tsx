@@ -31,7 +31,7 @@ export function HomePage() {
             <p className="lede">
               CanCan turns bank statements into a ledger you control — parsed locally,
               reviewed by you, and traceable back to the exact document every record
-              came from. No hosted account. No upload. No analytics.
+              came from. No hosted account. Nothing leaves your Mac by default. No analytics.
             </p>
             <div className="hero-actions">
               <a className="button-primary" href="/download/">Get the preview</a>
@@ -76,10 +76,10 @@ export function HomePage() {
                 <li>HSBC bank statements</li>
               </ul>
               <p>
-                Every parsed record waits for your review — nothing enters your
-                ledger automatically. Password-protected eStatements are a
-                first-class case: unlock once, and the password stays in your
-                macOS Keychain.
+                In current builds, every parsed record waits for your review —
+                nothing enters your ledger automatically. Password-protected
+                eStatements are a first-class case: unlock once, and the password
+                stays in your macOS Keychain.
               </p>
             </li>
             <li className="source-group">
@@ -125,7 +125,7 @@ export function HomePage() {
               follows iCloud Drive’s privacy, and is never modified.
             </p>
             <p>
-              Prefer manual control? Add files directly, drag them in, or use Open With.
+              Prefer manual control? Add files directly in the app.
               The Inbox is one intake channel, never a requirement.
             </p>
           </div>
@@ -136,16 +136,18 @@ export function HomePage() {
       <Reveal>
         <section className="feature is-flipped" aria-labelledby="review-heading">
           <div className="feature-copy">
-            <h2 id="review-heading">Review first. Always.</h2>
+            <h2 id="review-heading">Review first. Auto-add must earn it.</h2>
             <p>
-              Parsed records never jump straight into your books. A single Review queue lets
-              you check amounts and dates, edit what the parser missed, and link related
-              records — like a card repayment that appears on two statements — before adding
-              them as one event.
+              In the current build, nothing enters your books automatically. A single
+              Review queue lets you check amounts and dates, edit what the parser
+              missed, and link related records — like a card repayment that appears
+              on two statements — before adding them as one event.
             </p>
             <p>
-              Every add is explicit, every undo is typed, and nothing rewrites committed
-              history silently.
+              The preview adds automatic addition only for records that pass
+              independently qualified confidence gates; everything else still waits
+              for you. Every add is explicit, every undo is typed, and nothing
+              rewrites committed history silently.
             </p>
           </div>
           <Mockup variant="review" />
