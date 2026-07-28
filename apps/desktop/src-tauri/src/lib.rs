@@ -1,5 +1,7 @@
 mod database;
 mod local_inbox;
+#[cfg(test)]
+mod presentation_types;
 mod runtime;
 mod source_observations;
 mod system_lock;
@@ -7,18 +9,18 @@ mod vault;
 mod viewer;
 
 use runtime::{
-    VaultRuntime, accept_review_relationship, choose_local_inbox_root, confirm_candidate_accounts,
-    create_vault, delete_source_document, disable_local_inbox, edit_review_record,
+    VaultRuntime, accept_review_relationship, choose_local_inbox_root, create_vault,
+    decide_candidate_accounts, delete_source_document, disable_local_inbox, edit_review_record,
     enqueue_commit_review_batch, forget_vault_on_this_mac, get_money_overview, get_review_detail,
     get_review_job, import_source_document, list_account_confirmation_prompts, list_money_sources,
     list_recent_activity, list_relationship_candidates, list_review_items, list_source_documents,
-    list_statement_coverage_prompts, list_statement_password_sources,
-    list_unassigned_source_documents, local_inbox_status, lock_vault, normalize_source_document,
-    preview_source_document, record_statement_coverage_decision, remember_vault_on_this_mac,
-    remove_review_record, remove_statement_password, render_source_document_page,
-    rescan_local_inbox, save_recovery_file, save_source_document_copy,
-    try_saved_statement_password, undo_committed_event, unlock_source_document, unlock_vault,
-    unlock_vault_with_keychain, vault_access_status, vault_status,
+    list_statement_password_sources, list_unassigned_source_documents, local_inbox_status,
+    lock_vault, preview_source_document, remember_vault_on_this_mac, remove_review_record,
+    remove_statement_password, render_source_document_page, reparse_source_document,
+    rescan_local_inbox, restore_dismissed_candidate_account, save_recovery_file,
+    save_source_document_copy, try_saved_statement_password, undo_committed_event,
+    unlock_source_document, unlock_vault, unlock_vault_with_keychain, vault_access_status,
+    vault_status,
 };
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
@@ -73,8 +75,6 @@ pub fn run() {
             local_inbox_status,
             disable_local_inbox,
             rescan_local_inbox,
-            list_statement_coverage_prompts,
-            record_statement_coverage_decision,
             create_vault,
             unlock_vault,
             unlock_vault_with_keychain,
@@ -91,10 +91,11 @@ pub fn run() {
             delete_source_document,
             list_money_sources,
             list_account_confirmation_prompts,
-            confirm_candidate_accounts,
+            decide_candidate_accounts,
+            restore_dismissed_candidate_account,
             list_source_documents,
             list_unassigned_source_documents,
-            normalize_source_document,
+            reparse_source_document,
             render_source_document_page,
             preview_source_document,
             list_review_items,

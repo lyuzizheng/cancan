@@ -1,52 +1,27 @@
+import { useState } from "react";
+
 import type {
   AccountConfirmationPrompt,
-  MoneySourceSummary,
-  StatementCoveragePrompt,
+  CandidateAccountDecisionInput,
 } from "./command-contracts";
-import {
-  accountTypeLabel,
-  coveragePromptTitle,
-} from "./format";
-
-export interface RemindState {
-  date: string;
-  error: string | null;
-  key: string;
-  saving: boolean;
-}
-
-export function coverageKey(prompt: StatementCoveragePrompt): string {
-  return [
-    prompt.moneySourceId,
-    prompt.accountId,
-    prompt.documentType,
-    prompt.statementPeriodFrom,
-    prompt.statementPeriodTo,
-  ].join("|");
-}
+import { accountTypeLabel } from "./format";
 
 export interface AttentionSectionProps {
   accountPrompts: AccountConfirmationPrompt[];
   attentionBusyKey: string | null;
-  coveragePrompts: StatementCoveragePrompt[];
-  moneySources: MoneySourceSummary[];
-  onAddFile: () => void;
-  onCancelRemind: () => void;
-  onChangeRemindDate: (value: string) => void;
-  onConfirmAccounts: (prompt: AccountConfirmationPrompt) => void;
-  onNotExpected: (prompt: StatementCoveragePrompt) => void;
-  onSaveRemind: () => void;
-  onStartRemind: (prompt: StatementCoveragePrompt) => void;
-  remind: RemindState | null;
+  onDecideAccounts: (
+    prompt: AccountConfirmationPrompt,
+    decisions: CandidateAccountDecisionInput[],
+  ) => void;
+  onRestoreAccount: (accountId: string) => void;
 }
 
-/** Calm Command Center attention cards: missing statements and new accounts. */
 export function AttentionSection(props: AttentionSectionProps) {
-  const sourceNames = new Map(
-    props.moneySources.map((source) => [source.moneySourceId, source.displayName]),
+  const total = props.accountPrompts.reduce(
+    (count, prompt) => count + prompt.candidateAccounts.length,
+    0,
   );
-  const total = props.coveragePrompts.length + props.accountPrompts.length;
-  if (total === 0) {
+  if (props.accountPrompts.length === 0) {
     return null;
   }
   return (
@@ -56,34 +31,21 @@ export function AttentionSection(props: AttentionSectionProps) {
           <span className="panel-dot panel-dot-amber" aria-hidden="true" />
           Needs attention
         </h2>
-        <span className="attention-count" aria-label={`${total} to check`}>
-          {total}
-        </span>
+        {total > 0 ? (
+          <span className="attention-count" aria-label={`${total} to check`}>
+            {total}
+          </span>
+        ) : null}
       </div>
       <ul className="attention-card-list">
         {props.accountPrompts.map((prompt) => (
           <AccountConfirmationCard
             busy={props.attentionBusyKey !== null}
-            confirming={props.attentionBusyKey === `account:${prompt.moneySourceId}`}
+            deciding={props.attentionBusyKey === `account:${prompt.moneySourceId}`}
             key={prompt.moneySourceId}
-            onConfirm={() => props.onConfirmAccounts(prompt)}
+            onDecide={(decisions) => props.onDecideAccounts(prompt, decisions)}
+            onRestore={props.onRestoreAccount}
             prompt={prompt}
-          />
-        ))}
-        {props.coveragePrompts.map((prompt) => (
-          <CoverageCard
-            busy={props.attentionBusyKey !== null}
-            deciding={props.attentionBusyKey === coverageKey(prompt)}
-            key={coverageKey(prompt)}
-            onAddFile={props.onAddFile}
-            onCancelRemind={props.onCancelRemind}
-            onChangeRemindDate={props.onChangeRemindDate}
-            onNotExpected={() => props.onNotExpected(prompt)}
-            onSaveRemind={props.onSaveRemind}
-            onStartRemind={() => props.onStartRemind(prompt)}
-            prompt={prompt}
-            remind={props.remind?.key === coverageKey(prompt) ? props.remind : null}
-            sourceName={sourceNames.get(prompt.moneySourceId) ?? "A money source"}
           />
         ))}
       </ul>
@@ -93,149 +55,85 @@ export function AttentionSection(props: AttentionSectionProps) {
 
 function AccountConfirmationCard({
   busy,
-  confirming,
-  onConfirm,
-  prompt,
-}: {
-  busy: boolean;
-  confirming: boolean;
-  onConfirm: () => void;
-  prompt: AccountConfirmationPrompt;
-}) {
-  return (
-    <li className="attention-card">
-      <p className="attention-card-title">
-        CanCan found new accounts in your {prompt.displayName} statements
-      </p>
-      <p className="attention-card-copy">
-        Confirm these accounts are yours. Their records can then be added to your ledger.
-      </p>
-      <ul className="attention-candidate-list">
-        {prompt.candidateAccounts.map((account) => (
-          <li className="attention-candidate" key={account.accountId}>
-            <p>{account.displayName}</p>
-            <span>
-              {accountTypeLabel(account.accountType)}
-              {account.currency ? ` · ${account.currency}` : ""}
-              {account.maskedIdentifier ? ` · ${account.maskedIdentifier}` : ""}
-            </span>
-          </li>
-        ))}
-      </ul>
-      <div className="attention-card-actions">
-        <button
-          className="button button-primary"
-          disabled={busy}
-          onClick={onConfirm}
-          type="button"
-        >
-          {confirming ? "Confirming…" : "These are mine"}
-        </button>
-      </div>
-    </li>
-  );
-}
-
-function CoverageCard({
-  busy,
   deciding,
-  onAddFile,
-  onCancelRemind,
-  onChangeRemindDate,
-  onNotExpected,
-  onSaveRemind,
-  onStartRemind,
+  onDecide,
+  onRestore,
   prompt,
-  remind,
-  sourceName,
 }: {
   busy: boolean;
   deciding: boolean;
-  onAddFile: () => void;
-  onCancelRemind: () => void;
-  onChangeRemindDate: (value: string) => void;
-  onNotExpected: () => void;
-  onSaveRemind: () => void;
-  onStartRemind: () => void;
-  prompt: StatementCoveragePrompt;
-  remind: RemindState | null;
-  sourceName: string;
+  onDecide: (decisions: CandidateAccountDecisionInput[]) => void;
+  onRestore: (accountId: string) => void;
+  prompt: AccountConfirmationPrompt;
 }) {
+  const [choices, setChoices] = useState<Record<string, "accept" | "dismiss">>({});
+  const decisions = prompt.candidateAccounts.map((account) => ({
+    accountId: account.accountId,
+    action: choices[account.accountId] ?? "accept",
+  }));
   return (
     <li className="attention-card">
-      <p className="attention-card-title">
-        {coveragePromptTitle(prompt, sourceName)}
-      </p>
-      <p className="attention-card-copy">
-        Add the statement if you have it, or tell CanCan what to expect for this period.
-      </p>
-      {remind ? (
-        <form
-          className="attention-remind"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onSaveRemind();
-          }}
-        >
-          <label>
-            Remind after
-            <input
-              aria-label="Remind after"
-              disabled={remind.saving}
-              inputMode="numeric"
-              onChange={(event) => onChangeRemindDate(event.target.value)}
-              placeholder="2026-09-01"
-              value={remind.date}
-            />
-          </label>
-          <p className="attention-remind-hint">
-            Pick a future date. The prompt comes back after it.
+      {prompt.candidateAccounts.length > 0 ? (
+        <>
+          <p className="attention-card-title">
+            CanCan found new accounts in your {prompt.displayName} statements
           </p>
-          {remind.error ? (
-            <p className="attention-remind-error" role="alert">{remind.error}</p>
-          ) : null}
+          <p className="attention-card-copy">
+            Confirm each account or dismiss it. Dismissed records remain in history and stay out of review.
+          </p>
+          <ul className="attention-candidate-list">
+            {prompt.candidateAccounts.map((account) => (
+              <li className="attention-candidate" key={account.accountId}>
+                <p>{account.displayName}</p>
+                <span>
+                  {accountTypeLabel(account.accountType)}
+                  {account.currency ? ` · ${account.currency}` : ""}
+                  {account.maskedIdentifier ? ` · ${account.maskedIdentifier}` : ""}
+                </span>
+                <select
+                  aria-label={`Decision for ${account.displayName}`}
+                  disabled={busy}
+                  onChange={(event) => setChoices((current) => ({
+                    ...current,
+                    [account.accountId]: event.target.value as "accept" | "dismiss",
+                  }))}
+                  value={choices[account.accountId] ?? "accept"}
+                >
+                  <option value="accept">Accept</option>
+                  <option value="dismiss">Dismiss</option>
+                </select>
+              </li>
+            ))}
+          </ul>
           <div className="attention-card-actions">
-            <button className="button button-primary" disabled={remind.saving} type="submit">
-              {remind.saving ? "Saving…" : "Save reminder"}
-            </button>
             <button
-              className="button button-quiet"
-              disabled={remind.saving}
-              onClick={onCancelRemind}
+              className="button button-primary"
+              disabled={busy}
+              onClick={() => onDecide(decisions)}
               type="button"
             >
-              Cancel
+              {deciding ? "Saving…" : "Save choices"}
             </button>
           </div>
-        </form>
-      ) : (
-        <div className="attention-card-actions">
-          <button
-            className="button button-primary"
-            disabled={busy}
-            onClick={onAddFile}
-            type="button"
-          >
-            Add file
-          </button>
-          <button
-            className="button button-quiet"
-            disabled={busy}
-            onClick={onNotExpected}
-            type="button"
-          >
-            {deciding ? "Saving…" : "Not expected"}
-          </button>
-          <button
-            className="button button-quiet"
-            disabled={busy}
-            onClick={onStartRemind}
-            type="button"
-          >
-            Remind later
-          </button>
-        </div>
-      )}
+        </>
+      ) : null}
+      {prompt.dismissedAccounts.length > 0 ? (
+        <ul className="attention-candidate-list">
+          {prompt.dismissedAccounts.map((account) => (
+            <li className="attention-candidate" key={account.accountId}>
+              <p>{account.displayName} · dismissed</p>
+              <button
+                className="button button-quiet"
+                disabled={busy}
+                onClick={() => onRestore(account.accountId)}
+                type="button"
+              >
+                Restore
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </li>
   );
 }

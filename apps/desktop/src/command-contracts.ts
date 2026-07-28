@@ -33,32 +33,9 @@ export interface LocalInboxStatus {
   lastScan: LocalInboxScanSummary | null;
 }
 
-export interface StatementCoveragePrompt {
-  accountId: string;
-  documentType: string;
-  moneySourceId: string;
-  statementPeriodFrom: string;
-  statementPeriodTo: string;
-  status: "confirmed_missing" | "likely_missing";
-}
-
-export type StatementCoverageDecisionArgs = {
-  accountId: string;
-  action: "not_expected" | "remind_later";
-  documentType: string;
-  moneySourceId: string;
-  remindAfter?: string;
-  statementPeriodFrom: string;
-  statementPeriodTo: string;
-};
-
-export type RecordStatementCoverageDecisionArgs = {
-  request: StatementCoverageDecisionArgs;
-};
-
 export type VaultPasswordArgs = { password: string };
 
-export type NormalizeSourceDocumentArgs = { documentId: string };
+export type ReparseSourceDocumentArgs = { documentId: string };
 
 export type DeleteSourceDocumentArgs = { documentId: string };
 
@@ -90,54 +67,21 @@ export interface SourceDocumentImportOutcome {
   status: "imported" | "already_present" | "restored";
 }
 
-export interface SourceDocumentSummary {
-  byteSize: number;
-  documentId: string;
-  documentStatus:
-    | "inspection_failed"
-    | "password_required"
-    | "protected_unlocked"
-    | "ready"
-    | "unavailable";
-  fileState: "available" | "deleted" | "missing";
-  mimeType: "application/pdf" | "text/csv" | "image/png" | "image/jpeg";
-  originalFilename: string;
-  receivedAt: string;
-}
-
 export interface MoneySourceSummary {
   displayName: string;
   moneySourceId: string;
   sourceType: string;
 }
 
-export interface AccountConfirmationCandidate {
-  accountId: string;
-  accountType: string;
-  currency: string | null;
-  displayName: string;
-  maskedIdentifier: string | null;
-}
-
-export interface AccountConfirmationPrompt {
-  candidateAccounts: AccountConfirmationCandidate[];
-  displayName: string;
-  moneySourceId: string;
-}
-
-export type AccountConfirmationStatus =
-  | "already_confirmed"
-  | "confirmed"
-  | "conflict";
-
-export interface AccountConfirmationOutcome {
-  status: AccountConfirmationStatus;
-}
-
-export type ConfirmCandidateAccountsArgs = {
-  expectedCandidateAccountIds: string[];
-  moneySourceId: string;
+export type DecideCandidateAccountsArgs = {
+  request: {
+    decisions: CandidateAccountDecisionInput[];
+    moneySourceId: string;
+    proposalVersion: string;
+  };
 };
+
+export type RestoreDismissedCandidateAccountArgs = { accountId: string };
 
 export type ListSourceDocumentsArgs = { moneySourceId: string };
 
@@ -145,14 +89,6 @@ export interface StatementPasswordSourceSummary {
   displayName: string;
   hasSavedPassword: boolean;
   moneySourceId: string;
-}
-
-export interface SourceDocumentRoutingOutcome {
-  accountIds: string[];
-  documentId: string;
-  moneySourceId: string | null;
-  reason: string | null;
-  status: "routed" | "needs_attention";
 }
 
 export interface RenderedDocumentPage {
@@ -287,3 +223,15 @@ export type EnqueueCommitReviewBatchArgs = { reviewItemIds: string[] };
 export type GetReviewJobArgs = { jobId: string };
 
 export type UndoCommittedEventArgs = { eventId: string };
+import type { CandidateAccountDecisionInput } from "./generated/presentation-types";
+
+export type {
+  AccountConfirmationCandidate,
+  AccountConfirmationOutcome,
+  AccountConfirmationPrompt,
+  AccountConfirmationStatus,
+  CandidateAccountDecision,
+  CandidateAccountDecisionInput,
+  SourceDocumentStatus,
+  SourceDocumentSummary,
+} from "./generated/presentation-types";

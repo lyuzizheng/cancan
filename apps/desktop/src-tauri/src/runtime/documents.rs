@@ -6,10 +6,6 @@ impl VaultRuntime {
         source_path: &Path,
         restore_deleted_document_id: Option<&str>,
     ) -> Result<SourceDocumentImportOutcome, RuntimeError> {
-        let mut store = self.store()?;
-        let store = store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
         let (original_filename, mime_type) = source_document_metadata(source_path)?;
         let document_id = random_identifier("document");
         let audit_id = random_identifier("audit");
@@ -21,11 +17,46 @@ impl VaultRuntime {
             document_id: &document_id,
             mime_type,
             original_filename: &original_filename,
+            #[cfg(test)]
             source_path,
         };
-        store
-            .register_import(&input, restore_deleted_document_id)
-            .map_err(|_| RuntimeError::new("import_failed"))
+        let source = ManualImportStore::prepare_source_path(mime_type, source_path)
+            .map_err(|_| RuntimeError::new("import_failed"))?;
+        let session_generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
+        let plan = {
+            let store = self.store()?;
+            store
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .source_capture_plan(&input, &source, restore_deleted_document_id)
+                .map_err(|_| RuntimeError::new("import_failed"))?
+        };
+        let capture = match plan {
+            SourceCapturePlan::Capture(capture) => capture,
+            SourceCapturePlan::RestoreConfirmationRequired(outcome) => return Ok(outcome),
+        };
+        let stored = capture
+            .store_prepared(&source)
+            .map_err(|_| RuntimeError::new("import_failed"))?;
+        if self.inner.vault_session_generation.load(Ordering::SeqCst) != session_generation {
+            return Err(RuntimeError::new("vault_locked"));
+        }
+        let result = {
+            let mut store = self.store()?;
+            store
+                .as_mut()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .persist_captured_import(&input, &stored, restore_deleted_document_id)
+        };
+        match result {
+            Ok(outcome)
+                if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired =>
+            {
+                Ok(outcome)
+            }
+            Ok(outcome) => Ok(outcome),
+            Err(_) => Err(RuntimeError::new("import_failed")),
+        }
     }
 
     pub(crate) fn delete_source_document(&self, document_id: &str) -> Result<(), RuntimeError> {
@@ -69,6 +100,34 @@ impl VaultRuntime {
         Ok((mime_type, generation))
     }
 
+    fn source_document_read_plan(
+        &self,
+        document_id: &str,
+    ) -> Result<(SourceDocumentReadPlan, u64), RuntimeError> {
+        let generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
+        let plan = {
+            let store = self.store()?;
+            store
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .source_document_read_plan(document_id)
+                .map_err(|_| RuntimeError::new("document_unavailable"))?
+        };
+        Ok((plan, generation))
+    }
+
+    fn read_source_document(
+        &self,
+        document_id: &str,
+    ) -> Result<crate::database::SourceDocumentFileInput, RuntimeError> {
+        let (plan, generation) = self.source_document_read_plan(document_id)?;
+        let input = plan
+            .read()
+            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+        self.require_vault_session(generation)?;
+        Ok(input)
+    }
+
     pub(crate) fn save_source_document_copy(
         &self,
         document_id: &str,
@@ -80,17 +139,8 @@ impl VaultRuntime {
         }
         ensure_copy_outside_vault(&self.inner.root, destination)?;
         self.require_vault_session(session_generation)?;
-        // Keep the session mutex through the write so Vault lock cannot report
-        // success while the decrypted source buffer is still alive.
-        let store = self.store()?;
-        if self.inner.vault_session_generation.load(Ordering::SeqCst) != session_generation {
-            return Err(RuntimeError::new("vault_locked"));
-        }
-        let input = store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .source_document_input(document_id)
-            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+        let input = self.read_source_document(document_id)?;
+        self.require_vault_session(session_generation)?;
         write_export_atomically(destination, &input.plaintext)
             .map_err(|_| RuntimeError::new("source_copy_save_failed"))
     }
@@ -302,22 +352,13 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
     }
 
-    pub(crate) fn confirm_candidate_accounts(
+    pub(crate) fn decide_candidate_accounts(
         &self,
         money_source_id: &str,
-        expected_candidate_account_ids: &[String],
+        proposal_version: &str,
+        decisions: &[CandidateAccountDecisionInput],
     ) -> Result<AccountConfirmationOutcome, RuntimeError> {
-        if money_source_id.is_empty()
-            || expected_candidate_account_ids.is_empty()
-            || expected_candidate_account_ids
-                .iter()
-                .any(|account_id| account_id.is_empty())
-            || expected_candidate_account_ids
-                .iter()
-                .collect::<HashSet<_>>()
-                .len()
-                != expected_candidate_account_ids.len()
-        {
+        if money_source_id.is_empty() || proposal_version.is_empty() || decisions.is_empty() {
             return Err(RuntimeError::new("invalid_account_confirmation_request"));
         }
         let audit_id = random_identifier("audit");
@@ -325,7 +366,23 @@ impl VaultRuntime {
         store
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .confirm_candidate_accounts(money_source_id, expected_candidate_account_ids, &audit_id)
+            .decide_candidate_accounts(money_source_id, proposal_version, decisions, &audit_id)
+            .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
+    }
+
+    pub(crate) fn restore_dismissed_candidate_account(
+        &self,
+        account_id: &str,
+    ) -> Result<AccountConfirmationOutcome, RuntimeError> {
+        if account_id.is_empty() {
+            return Err(RuntimeError::new("invalid_account_confirmation_request"));
+        }
+        let audit_id = random_identifier("audit");
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .restore_dismissed_candidate_account(account_id, &audit_id)
             .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
     }
 
@@ -350,32 +407,30 @@ impl VaultRuntime {
         store: &ManualImportStore,
         document: SourceDocumentView,
     ) -> Result<SourceDocumentSummary, RuntimeError> {
-        let document_status = if document.file_state != "available" {
-            "unavailable"
-        } else if document.mime_type != "application/pdf" {
-            "ready"
+        let parse_status = store
+            .source_document_parse_status(&document.document_id)
+            .map_err(|_| RuntimeError::new("list_documents_failed"))?;
+        let (document_status, attention_reason) = if document.file_state == "deleted" {
+            (SourceDocumentStatus::FileDeleted, None)
+        } else if document.file_state == "missing" {
+            (SourceDocumentStatus::Missing, None)
+        } else if parse_status
+            .as_ref()
+            .is_some_and(|(status, _)| matches!(status.as_str(), "queued" | "running"))
+        {
+            (SourceDocumentStatus::Processing, None)
+        } else if let Some((status, reason)) =
+            parse_status.filter(|(status, _)| matches!(status.as_str(), "blocked" | "failed"))
+        {
+            (
+                SourceDocumentStatus::NeedsAttention,
+                reason.or(Some(status)),
+            )
         } else {
-            match store.source_document_input(&document.document_id) {
-                Ok(input) => match pdf_access(&input.plaintext, None) {
-                    Ok(PdfAccess::Ready) => "ready",
-                    Ok(PdfAccess::PasswordRequired) => {
-                        let passwords = self.document_passwords()?;
-                        let password = passwords
-                            .get(&document.document_id)
-                            .map(|value| value.as_slice());
-                        match password
-                            .and_then(|password| pdf_access(&input.plaintext, Some(password)).ok())
-                        {
-                            Some(PdfAccess::Ready) => "protected_unlocked",
-                            _ => "password_required",
-                        }
-                    }
-                    Err(_) => "inspection_failed",
-                },
-                Err(_) => "unavailable",
-            }
+            (SourceDocumentStatus::Ready, None)
         };
         Ok(SourceDocumentSummary {
+            attention_reason,
             byte_size: document.byte_size,
             document_status,
             document_id: document.document_id,
@@ -416,34 +471,39 @@ impl VaultRuntime {
         if document_id.is_empty() || money_source_id.is_empty() {
             return Err(RuntimeError::new("invalid_document_request"));
         }
-        let store = self.store()?;
-        let store = store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        ensure_statement_password_source(store, money_source_id)?;
-        self.reconcile_statement_passwords(store)?;
-        let Some(state) = store
-            .statement_password_state(money_source_id)
-            .map_err(|_| RuntimeError::new("invalid_source_request"))?
-        else {
-            return Ok(SavedStatementPasswordResult::Unavailable);
+        let secret_storage_key = {
+            let store = self.store()?;
+            let store = store
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            ensure_statement_password_source(store, money_source_id)?;
+            self.reconcile_statement_passwords(store)?;
+            let Some(state) = store
+                .statement_password_state(money_source_id)
+                .map_err(|_| RuntimeError::new("invalid_source_request"))?
+            else {
+                return Ok(SavedStatementPasswordResult::Unavailable);
+            };
+            if state.status != StatementPasswordStatus::Saved {
+                return Err(RuntimeError::new("statement_password_state_invalid"));
+            }
+            state.secret_storage_key
         };
-        if state.status != StatementPasswordStatus::Saved {
-            return Err(RuntimeError::new("statement_password_state_invalid"));
-        }
         let Some(password) = self
             .inner
             .statement_passwords
-            .load(&state.secret_storage_key)
+            .load(&secret_storage_key)
             .map_err(|_| RuntimeError::new("statement_password_load_failed"))?
         else {
             return Ok(SavedStatementPasswordResult::Unavailable);
         };
-        if !statement_password_unlocks(store, document_id, &password)? {
+        let input = self.read_source_document(document_id)?;
+        if !statement_password_unlocks(&input, &password)? {
             return Ok(SavedStatementPasswordResult::Invalid);
         }
         self.document_passwords()?
             .insert(document_id.to_owned(), password);
+        self.resume_password_blocked_parse_document_job(document_id)?;
         Ok(SavedStatementPasswordResult::Unlocked)
     }
 
@@ -460,39 +520,66 @@ impl VaultRuntime {
         if password.is_empty() {
             return Err(RuntimeError::new("statement_password_required"));
         }
-        let store = self.store()?;
-        let store = store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        ensure_statement_password_source(store, money_source_id)?;
-        if !statement_password_unlocks(store, document_id, password)? {
+        {
+            let store = self.store()?;
+            let store = store
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            ensure_statement_password_source(store, money_source_id)?;
+        }
+        let input = self.read_source_document(document_id)?;
+        if !statement_password_unlocks(&input, password)? {
             return Err(RuntimeError::new("statement_password_invalid"));
         }
         if update_saved_password {
+            let store = self.store()?;
+            let store = store
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
             self.save_statement_password_in_store(store, money_source_id, password)?;
         }
         self.document_passwords()?
             .insert(document_id.to_owned(), Zeroizing::new(password.to_vec()));
+        self.resume_password_blocked_parse_document_job(document_id)?;
         Ok(())
     }
 
+    fn resume_password_blocked_parse_document_job(
+        &self,
+        document_id: &str,
+    ) -> Result<(), RuntimeError> {
+        let mut store = self.store()?;
+        store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .requeue_password_blocked_parse_document_job(document_id)
+            .map_err(|_| RuntimeError::new("parse_resume_failed"))?;
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub(super) fn normalization_input(
         &self,
         document_id: &str,
-    ) -> Result<ExtractionBundle, RuntimeError> {
-        let store = self.store()?;
-        let input = store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .source_document_input(document_id)
-            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+    ) -> Result<ExtractedDocument, RuntimeError> {
+        let vault_session_generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
+        self.normalization_input_for_vault_session(document_id, vault_session_generation)
+    }
+
+    pub(super) fn normalization_input_for_vault_session(
+        &self,
+        document_id: &str,
+        vault_session_generation: u64,
+    ) -> Result<ExtractedDocument, RuntimeError> {
+        self.require_vault_session(vault_session_generation)?;
+        let input = self.read_source_document(document_id)?;
         let password = if input.mime_type == "application/pdf" {
             let passwords = self.document_passwords()?;
             passwords.get(document_id).cloned()
         } else {
             None
         };
-        extract_bundle(
+        let bundle = extract_bundle(
             document_id,
             &input.file_sha256,
             &input.mime_type,
@@ -505,6 +592,11 @@ impl VaultRuntime {
             } else {
                 RuntimeError::new("normalizer_failed")
             }
+        })?;
+        self.require_vault_session(vault_session_generation)?;
+        Ok(ExtractedDocument {
+            bundle,
+            vault_session_generation,
         })
     }
 
@@ -516,14 +608,7 @@ impl VaultRuntime {
         if document_id.is_empty() || page_number == 0 {
             return Err(RuntimeError::new("invalid_document_request"));
         }
-        // Keep the session mutex through rendering so Vault lock cannot report success
-        // while this decrypted page buffer is still alive.
-        let store = self.store()?;
-        let input = store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .source_document_input(document_id)
-            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+        let input = self.read_source_document(document_id)?;
         match input.mime_type.as_str() {
             "application/pdf" => {
                 let passwords = self.document_passwords()?;
@@ -546,14 +631,7 @@ impl VaultRuntime {
         if document_id.is_empty() {
             return Err(RuntimeError::new("invalid_document_request"));
         }
-        // Keep the session mutex through preview extraction so Vault lock cannot
-        // report success while this decrypted buffer is still alive.
-        let store = self.store()?;
-        let input = store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .source_document_input(document_id)
-            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+        let input = self.read_source_document(document_id)?;
         if input.mime_type != "text/csv" {
             return Err(RuntimeError::new("viewer_unsupported"));
         }
@@ -615,13 +693,9 @@ pub(super) fn bounded_text_preview(plaintext: &[u8]) -> SourceDocumentPreview {
 }
 
 pub(super) fn statement_password_unlocks(
-    store: &ManualImportStore,
-    document_id: &str,
+    input: &crate::database::SourceDocumentFileInput,
     password: &[u8],
 ) -> Result<bool, RuntimeError> {
-    let input = store
-        .source_document_input(document_id)
-        .map_err(|_| RuntimeError::new("document_unavailable"))?;
     if input.mime_type != "application/pdf" {
         return Err(RuntimeError::new("viewer_unsupported"));
     }
@@ -670,11 +744,19 @@ pub(crate) async fn list_statement_password_sources(
 pub(crate) async fn try_saved_statement_password(
     document_id: String,
     money_source_id: String,
+    app: AppHandle,
     runtime: State<'_, VaultRuntime>,
 ) -> Result<SavedStatementPasswordResult, VaultCommandError> {
     let runtime = runtime.inner().clone();
-    run_runtime_task(move || runtime.try_saved_statement_password(&document_id, &money_source_id))
-        .await
+    let try_runtime = runtime.clone();
+    let result = run_runtime_task(move || {
+        try_runtime.try_saved_statement_password(&document_id, &money_source_id)
+    })
+    .await?;
+    if result == SavedStatementPasswordResult::Unlocked {
+        schedule_queued_local_inbox_parses(app, runtime);
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -683,19 +765,23 @@ pub(crate) async fn unlock_source_document(
     money_source_id: String,
     password: String,
     update_saved_password: bool,
+    app: AppHandle,
     runtime: State<'_, VaultRuntime>,
 ) -> Result<(), VaultCommandError> {
     let runtime = runtime.inner().clone();
+    let unlock_runtime = runtime.clone();
     let password = Zeroizing::new(password);
     run_runtime_task(move || {
-        runtime.unlock_source_document(
+        unlock_runtime.unlock_source_document(
             &document_id,
             &money_source_id,
             password.as_bytes(),
             update_saved_password,
         )
     })
-    .await
+    .await?;
+    schedule_queued_local_inbox_parses(app, runtime);
+    Ok(())
 }
 
 #[tauri::command]
@@ -758,10 +844,12 @@ pub(crate) async fn import_source_document(
     runtime: State<'_, VaultRuntime>,
 ) -> Result<Option<SourceDocumentImportOutcome>, VaultCommandError> {
     let runtime = runtime.inner().clone();
-    tauri::async_runtime::spawn_blocking(
+    let import_runtime = runtime.clone();
+    let import_app = app.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(
         move || -> Result<Option<SourceDocumentImportOutcome>, RuntimeError> {
-        runtime.require_unlocked()?;
-        let selected = app
+        import_runtime.require_unlocked()?;
+        let selected = import_app
             .dialog()
             .file()
             .set_title("Import a statement")
@@ -773,11 +861,11 @@ pub(crate) async fn import_source_document(
         let path = selected
             .into_path()
             .map_err(|_| RuntimeError::new("file_selection_failed"))?;
-        let outcome = runtime.import_selected_document(&path, None)?;
+        let outcome = import_runtime.import_selected_document(&path, None)?;
         if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired {
             return Ok(Some(outcome));
         }
-        let restore = app
+        let restore = import_app
             .dialog()
             .message(
                 "This exact file was previously deleted from CanCan's Vault. Restore it to the existing document entry?",
@@ -792,14 +880,18 @@ pub(crate) async fn import_source_document(
         if !restore {
             return Ok(None);
         }
-        runtime
+        import_runtime
             .import_selected_document(&path, Some(&outcome.document_id))
             .map(Some)
         },
     )
     .await
     .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-    .map_err(Into::into)
+    .map_err(VaultCommandError::from)?;
+    if outcome.is_some() {
+        schedule_queued_local_inbox_parses(app, runtime);
+    }
+    Ok(outcome)
 }
 
 #[tauri::command]
@@ -844,37 +936,6 @@ pub(crate) async fn list_unassigned_source_documents(
 }
 
 #[tauri::command]
-pub(crate) async fn normalize_source_document(
-    document_id: String,
-    app: AppHandle,
-    runtime: State<'_, VaultRuntime>,
-) -> Result<SourceDocumentRoutingOutcome, VaultCommandError> {
-    if document_id.is_empty() {
-        return Err(VaultCommandError::new("invalid_document_request"));
-    }
-    let runtime = runtime.inner().clone();
-    let input = {
-        let runtime = runtime.clone();
-        let document_id = document_id.clone();
-        tauri::async_runtime::spawn_blocking(move || runtime.normalization_input(&document_id))
-            .await
-            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
-    };
-    let result = run_normalizer_sidecar(&app, &document_id, &input)
-        .await
-        .map_err(VaultCommandError::from)?;
-    let apply_runtime = runtime.clone();
-    let outcome = tauri::async_runtime::spawn_blocking(move || {
-        apply_runtime.apply_normalizer_result(&document_id, &input, result)
-    })
-    .await
-    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-    .map_err(VaultCommandError::from)?;
-    process_queued_document_reconciliations(runtime).await?;
-    Ok(outcome)
-}
-
-#[tauri::command]
 pub(crate) async fn list_source_documents(
     money_source_id: String,
     runtime: State<'_, VaultRuntime>,
@@ -894,35 +955,6 @@ pub(crate) async fn render_source_document_page(
     }
     let runtime = runtime.inner().clone();
     run_runtime_task(move || runtime.render_source_document_page(&document_id, page_number)).await
-}
-
-#[tauri::command]
-pub(crate) async fn list_money_sources(
-    runtime: State<'_, VaultRuntime>,
-) -> Result<Vec<MoneySourceSummary>, VaultCommandError> {
-    let runtime = runtime.inner().clone();
-    run_runtime_task(move || runtime.list_money_sources()).await
-}
-
-#[tauri::command]
-pub(crate) async fn list_account_confirmation_prompts(
-    runtime: State<'_, VaultRuntime>,
-) -> Result<Vec<AccountConfirmationPrompt>, VaultCommandError> {
-    let runtime = runtime.inner().clone();
-    run_runtime_task(move || runtime.list_account_confirmation_prompts()).await
-}
-
-#[tauri::command]
-pub(crate) async fn confirm_candidate_accounts(
-    money_source_id: String,
-    expected_candidate_account_ids: Vec<String>,
-    runtime: State<'_, VaultRuntime>,
-) -> Result<AccountConfirmationOutcome, VaultCommandError> {
-    let runtime = runtime.inner().clone();
-    run_runtime_task(move || {
-        runtime.confirm_candidate_accounts(&money_source_id, &expected_candidate_account_ids)
-    })
-    .await
 }
 
 #[tauri::command]

@@ -34,7 +34,6 @@ describe("Vault API", () => {
       "list_relationship_candidates",
       "list_review_items",
       "list_source_documents",
-      "list_statement_coverage_prompts",
       "list_statement_password_sources",
       "list_unassigned_source_documents",
     ]);
@@ -69,16 +68,6 @@ describe("Vault API", () => {
     await api.localInboxStatus();
     await api.disableLocalInbox();
     await api.rescanLocalInbox();
-    await api.listStatementCoveragePrompts();
-    await api.recordStatementCoverageDecision({
-      accountId: "account-1",
-      action: "remind_later",
-      documentType: "account_statement",
-      moneySourceId: "source-dbs",
-      remindAfter: "2026-08-01",
-      statementPeriodFrom: "2026-07-01",
-      statementPeriodTo: "2026-07-31",
-    });
     await api.unlockVault("password");
     await api.unlockVaultWithKeychain();
     await api.rememberVaultOnThisMac();
@@ -99,12 +88,16 @@ describe("Vault API", () => {
     await api.importSourceDocument();
     await api.listMoneySources();
     await api.listAccountConfirmationPrompts();
-    await api.confirmCandidateAccounts("source-dbs", ["account-1", "account-2"]);
+    await api.decideCandidateAccounts("source-dbs", "proposal-version-1", [
+      { accountId: "account-1", action: "accept" },
+      { accountId: "account-2", action: "dismiss" },
+    ]);
+    await api.restoreDismissedCandidateAccount("account-2");
     await api.listSourceDocuments("source-dbs");
     await api.listUnassignedSourceDocuments();
     const removeVaultLockListener = await api.onVaultLocked(() => undefined);
     removeVaultLockListener();
-    await api.normalizeSourceDocument("document-1");
+    await api.reparseSourceDocument("document-1");
     await api.renderSourceDocumentPage("document-1", 2);
     await api.previewSourceDocument("document-1");
 
@@ -151,21 +144,6 @@ describe("Vault API", () => {
       ["local_inbox_status", undefined],
       ["disable_local_inbox", undefined],
       ["rescan_local_inbox", undefined],
-      ["list_statement_coverage_prompts", undefined],
-      [
-        "record_statement_coverage_decision",
-        {
-          request: {
-            accountId: "account-1",
-            action: "remind_later",
-            documentType: "account_statement",
-            moneySourceId: "source-dbs",
-            remindAfter: "2026-08-01",
-            statementPeriodFrom: "2026-07-01",
-            statementPeriodTo: "2026-07-31",
-          },
-        },
-      ],
       ["unlock_vault", { password: "password" }],
       ["unlock_vault_with_keychain", undefined],
       ["remember_vault_on_this_mac", undefined],
@@ -193,15 +171,22 @@ describe("Vault API", () => {
       ["list_money_sources", undefined],
       ["list_account_confirmation_prompts", undefined],
       [
-        "confirm_candidate_accounts",
+        "decide_candidate_accounts",
         {
-          moneySourceId: "source-dbs",
-          expectedCandidateAccountIds: ["account-1", "account-2"],
+          request: {
+            decisions: [
+              { accountId: "account-1", action: "accept" },
+              { accountId: "account-2", action: "dismiss" },
+            ],
+            moneySourceId: "source-dbs",
+            proposalVersion: "proposal-version-1",
+          },
         },
       ],
+      ["restore_dismissed_candidate_account", { accountId: "account-2" }],
       ["list_source_documents", { moneySourceId: "source-dbs" }],
       ["list_unassigned_source_documents", undefined],
-      ["normalize_source_document", { documentId: "document-1" }],
+      ["reparse_source_document", { documentId: "document-1" }],
       ["render_source_document_page", { documentId: "document-1", pageNumber: 2 }],
       ["preview_source_document", { documentId: "document-1" }],
     ]);
@@ -237,6 +222,12 @@ describe("Vault API", () => {
     );
     expect(commandErrorMessage('{"code":"normalizer_failed"}')).toBe(
       "CanCan could not finish the secure document check. Try again.",
+    );
+    expect(commandErrorMessage('{"code":"parse_already_running"}')).toBe(
+      "The parser is already running for this document.",
+    );
+    expect(commandErrorMessage('{"code":"parse_resume_failed"}')).toBe(
+      "CanCan couldn’t resume parsing this statement. Try again.",
     );
     expect(commandErrorMessage('{"code":"document_unavailable"}')).toBe(
       "This file is no longer available.",

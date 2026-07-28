@@ -16,27 +16,6 @@ pub(super) fn valid_iso_date(value: &str) -> bool {
     parse_iso_date(value).is_some()
 }
 
-pub(super) fn add_months_iso(value: &str, months: u32, preserve_month_end: bool) -> Option<String> {
-    let (year, month, day) = parse_iso_date(value)?;
-    let total_months = i64::from(year) * 12 + i64::from(month - 1) + i64::from(months);
-    let target_year = i32::try_from(total_months.div_euclid(12)).ok()?;
-    let target_month = u32::try_from(total_months.rem_euclid(12) + 1).ok()?;
-    let target_month_days = days_in_month(target_year, target_month)?;
-    let target_day = if preserve_month_end {
-        target_month_days
-    } else {
-        day.min(target_month_days)
-    };
-    Some(format!(
-        "{target_year:04}-{target_month:02}-{target_day:02}"
-    ))
-}
-
-pub(super) fn is_month_end_iso(value: &str) -> Option<bool> {
-    let (year, month, day) = parse_iso_date(value)?;
-    Some(day == days_in_month(year, month)?)
-}
-
 pub(super) fn parse_iso_date(value: &str) -> Option<(i32, u32, u32)> {
     let bytes = value.as_bytes();
     if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {

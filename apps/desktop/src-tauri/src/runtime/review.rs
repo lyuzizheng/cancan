@@ -1,4 +1,5 @@
 use super::*;
+use sha2::{Digest, Sha256};
 
 impl VaultRuntime {
     pub(crate) fn list_review_items(&self) -> Result<Vec<ReviewItemSummary>, RuntimeError> {
@@ -256,12 +257,61 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("review_unavailable"))
     }
 
+    #[cfg(test)]
     pub(super) fn apply_normalizer_result(
         &self,
         document_id: &str,
         extraction_bundle: &ExtractionBundle,
         result: NormalizerResult,
     ) -> Result<SourceDocumentRoutingOutcome, RuntimeError> {
+        let claim = {
+            let mut store = self.store()?;
+            let store = store
+                .as_mut()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            let job = store
+                .queued_parse_document_jobs()
+                .map_err(|_| RuntimeError::new("classification_failed"))?
+                .into_iter()
+                .find(|job| job.document_id == document_id)
+                .ok_or_else(|| RuntimeError::new("classification_failed"))?;
+            store
+                .start_parse_document_job(&job)
+                .map_err(|_| RuntimeError::new("classification_failed"))?
+                .ok_or_else(|| RuntimeError::new("classification_failed"))?
+        };
+        self.apply_normalizer_result_with_job(document_id, &claim, extraction_bundle, None, result)
+    }
+
+    pub(super) fn apply_normalizer_result_for_job(
+        &self,
+        claim: &ParseDocumentClaim,
+        extraction: &ExtractedDocument,
+        result: NormalizerResult,
+    ) -> Result<SourceDocumentRoutingOutcome, RuntimeError> {
+        self.apply_normalizer_result_with_job(
+            &claim.document_id,
+            claim,
+            &extraction.bundle,
+            Some(extraction.vault_session_generation),
+            result,
+        )
+    }
+
+    fn apply_normalizer_result_with_job(
+        &self,
+        document_id: &str,
+        parse_job: &ParseDocumentClaim,
+        extraction_bundle: &ExtractionBundle,
+        vault_session_generation: Option<u64>,
+        result: NormalizerResult,
+    ) -> Result<SourceDocumentRoutingOutcome, RuntimeError> {
+        let output_hash = format!(
+            "{:x}",
+            Sha256::digest(
+                serde_json::to_vec(&result).map_err(|_| RuntimeError::new("normalizer_failed"))?,
+            )
+        );
         let (profile, proposal) = match result {
             NormalizerResult::Classified { profile, proposal } => (*profile, proposal),
             NormalizerResult::NeedsAttention { reason } => {
@@ -270,15 +320,17 @@ impl VaultRuntime {
                 } else {
                     "classification_uncertain"
                 };
-                return self.finish_normalizer_outcome(
-                    document_id,
+                return self.finish_normalizer_outcome_with_job(
+                    parse_job,
+                    vault_session_generation,
                     SourceDocumentRoutingOutcome::needs_attention(document_id, reason),
                 );
             }
         };
         let Some(statement_id) = proposal.document.statement_id.as_deref() else {
-            return self.finish_normalizer_outcome(
-                document_id,
+            return self.finish_normalizer_outcome_with_job(
+                parse_job,
+                vault_session_generation,
                 SourceDocumentRoutingOutcome::needs_attention(
                     document_id,
                     "classification_uncertain",
@@ -286,8 +338,9 @@ impl VaultRuntime {
             );
         };
         if !valid_normalization_profile(&profile, &proposal, extraction_bundle) {
-            return self.finish_normalizer_outcome(
-                document_id,
+            return self.finish_normalizer_outcome_with_job(
+                parse_job,
+                vault_session_generation,
                 SourceDocumentRoutingOutcome::needs_attention(
                     document_id,
                     "normalization_profile_invalid",
@@ -295,8 +348,9 @@ impl VaultRuntime {
             );
         }
         if !valid_profiled_proposal(&proposal) {
-            return self.finish_normalizer_outcome(
-                document_id,
+            return self.finish_normalizer_outcome_with_job(
+                parse_job,
+                vault_session_generation,
                 SourceDocumentRoutingOutcome::needs_attention(
                     document_id,
                     "classification_uncertain",
@@ -343,43 +397,65 @@ impl VaultRuntime {
                 .as_ref()
                 .and_then(|period| period.to.as_deref()),
         };
-        let mut store = self.store()?;
-        let store = store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        let outcome = store
-            .apply_trusted_classification(&classification)
-            .map_err(|_| RuntimeError::new("classification_failed"))?;
-        if outcome.status != crate::database::SourceDocumentRoutingStatus::Routed {
+        self.require_parse_vault_session(vault_session_generation)?;
+        let outcome = {
+            let mut store = self.store()?;
             store
-                .finish_parse_document(document_id, &outcome)
-                .map_err(|_| RuntimeError::new("classification_failed"))?;
-            return Ok(outcome);
+                .as_mut()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .apply_trusted_classification_for_parse_job(&classification, parse_job)
+                .map_err(|_| RuntimeError::new("classification_failed"))?
+        };
+        if outcome.status != crate::database::SourceDocumentRoutingStatus::Routed {
+            return self.finish_normalizer_outcome_with_job(
+                parse_job,
+                vault_session_generation,
+                outcome,
+            );
         }
         let parse = validated_structured_parse_input(&proposal, &profile, &outcome.account_ids)
             .ok_or_else(|| RuntimeError::new("normalizer_failed"))?;
-        store
-            .persist_validated_structured_parse(document_id, &parse)
-            .map_err(|_| RuntimeError::new("classification_failed"))?;
-        store
-            .finish_parse_document(document_id, &outcome)
-            .map_err(|_| RuntimeError::new("classification_failed"))?;
-        Ok(outcome)
+        self.require_parse_vault_session(vault_session_generation)?;
+        {
+            let mut store = self.store()?;
+            store
+                .as_mut()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .persist_validated_structured_parse_for_claimed_job(
+                    document_id,
+                    &parse,
+                    parse_job,
+                    &extraction_bundle.file_sha256,
+                    &output_hash,
+                )
+                .map_err(|_| RuntimeError::new("classification_failed"))?;
+        }
+        self.finish_normalizer_outcome_with_job(parse_job, vault_session_generation, outcome)
     }
 
-    pub(super) fn finish_normalizer_outcome(
+    fn finish_normalizer_outcome_with_job(
         &self,
-        document_id: &str,
+        parse_job: &ParseDocumentClaim,
+        vault_session_generation: Option<u64>,
         outcome: SourceDocumentRoutingOutcome,
     ) -> Result<SourceDocumentRoutingOutcome, RuntimeError> {
+        self.require_parse_vault_session(vault_session_generation)?;
         let mut store = self.store()?;
         let store = store
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        store
-            .finish_parse_document(document_id, &outcome)
-            .map_err(|_| RuntimeError::new("classification_failed"))?;
+        finish_parse_job(store, parse_job, &outcome)?;
         Ok(outcome)
+    }
+
+    fn require_parse_vault_session(
+        &self,
+        vault_session_generation: Option<u64>,
+    ) -> Result<(), RuntimeError> {
+        if let Some(vault_session_generation) = vault_session_generation {
+            self.require_vault_session(vault_session_generation)?;
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -397,6 +473,16 @@ impl VaultRuntime {
             .seed_money_source(id, provider_key, display_name, source_type)
             .map_err(|_| RuntimeError::new("seed_failed"))
     }
+}
+
+fn finish_parse_job(
+    store: &mut ManualImportStore,
+    parse_job: &ParseDocumentClaim,
+    outcome: &SourceDocumentRoutingOutcome,
+) -> Result<(), RuntimeError> {
+    store
+        .finish_parse_document_job(parse_job, outcome)
+        .map_err(|_| RuntimeError::new("classification_failed"))
 }
 
 pub(super) fn review_conflict(reason: &'static str) -> ReviewMutationOutcome {
@@ -785,57 +871,4 @@ pub(crate) async fn get_review_job(
 ) -> Result<Option<ReviewJobSummary>, VaultCommandError> {
     let runtime = runtime.inner().clone();
     run_runtime_task(move || runtime.review_job(&job_id)).await
-}
-
-#[tauri::command]
-pub(crate) async fn undo_committed_event(
-    event_id: String,
-    app: AppHandle,
-    runtime: State<'_, VaultRuntime>,
-) -> Result<UndoOutcome, VaultCommandError> {
-    let runtime = runtime.inner().clone();
-    let event = {
-        let runtime = runtime.clone();
-        let event_id = event_id.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            runtime.committed_review_event_for_reversal(&event_id)
-        })
-        .await
-        .map_err(|_| VaultCommandError::new("runtime_unavailable"))??
-    };
-    let Some(event) = event else {
-        return Err(VaultCommandError::new("undo_unavailable"));
-    };
-    let result = run_review_core_sidecar(
-        &app,
-        "prepare_review_reversal",
-        &ReversalPreparationInput {
-            event_date: &event.event_date,
-            event: &event,
-        },
-    )
-    .await
-    .map_err(VaultCommandError::from)?;
-    let reversal = match result {
-        ReviewCoreResult::Ready {
-            event: ReviewCoreReadyEvent::Reversal(event),
-        } => event,
-        ReviewCoreResult::Ready {
-            event: ReviewCoreReadyEvent::Relationship(_),
-        }
-        | ReviewCoreResult::Candidates { .. } => {
-            return Err(VaultCommandError::new("review_core_failed"));
-        }
-        ReviewCoreResult::Review { reasons } => {
-            let _ = reasons;
-            return Err(VaultCommandError::new("review_core_failed"));
-        }
-    };
-    tauri::async_runtime::spawn_blocking(move || {
-        runtime.persist_review_reversal(&event_id, &reversal)
-    })
-    .await
-    .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-    .map_err(|_| VaultCommandError::new("undo_unavailable"))?
-    .ok_or_else(|| VaultCommandError::new("undo_unavailable"))
 }

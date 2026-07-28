@@ -1,5 +1,45 @@
 use super::*;
 
+pub(crate) struct SourceCapture {
+    pub(super) files: FileVault,
+    pub(super) master_key: Zeroizing<[u8; KEY_LEN]>,
+    pub(super) replace_existing: bool,
+}
+
+impl SourceCapture {
+    pub(crate) fn store_prepared(&self, source: &PreparedSource) -> StoreResult<StoredFile> {
+        Ok(self
+            .files
+            .store_prepared(&self.master_key, source, self.replace_existing)?)
+    }
+}
+
+pub(crate) enum SourceCapturePlan {
+    Capture(SourceCapture),
+    RestoreConfirmationRequired(SourceDocumentImportOutcome),
+}
+
+pub(crate) struct SourceDocumentReadPlan {
+    pub(super) encrypted_locator: String,
+    pub(super) file_sha256: String,
+    pub(super) files: FileVault,
+    pub(super) master_key: Zeroizing<[u8; KEY_LEN]>,
+    pub(super) mime_type: String,
+}
+
+impl SourceDocumentReadPlan {
+    pub(crate) fn read(self) -> StoreResult<SourceDocumentFileInput> {
+        let plaintext = self
+            .files
+            .open_in_memory(&self.master_key, &self.encrypted_locator)?;
+        Ok(SourceDocumentFileInput {
+            file_sha256: self.file_sha256,
+            mime_type: self.mime_type,
+            plaintext,
+        })
+    }
+}
+
 pub(super) fn find_exact_document(
     connection: &Connection,
     file_sha256: &str,
@@ -90,11 +130,25 @@ pub(super) fn persist_import(
     connection: &mut Connection,
     input: &SourceDocumentImport<'_>,
     stored: &StoredFile,
+    restore_deleted_document_id: Option<&str>,
 ) -> rusqlite::Result<SourceDocumentImportOutcome> {
     let transaction = connection.transaction()?;
     let existing = find_exact_document(&transaction, &stored.file_sha256)?;
+    match (existing.as_ref(), restore_deleted_document_id) {
+        (Some(existing), None) if existing.file_state == "deleted" => {
+            return Ok(SourceDocumentImportOutcome {
+                document_id: existing.document_id.clone(),
+                status: SourceDocumentImportStatus::RestoreConfirmationRequired,
+            });
+        }
+        (Some(existing), Some(expected_document_id))
+            if existing.file_state == "deleted" && existing.document_id == expected_document_id => {
+        }
+        (_, Some(_)) => return Err(rusqlite::Error::InvalidQuery),
+        _ => {}
+    }
     let (document_id, status) = if let Some(existing) = existing {
-        let status = if existing.file_state == "available" && !stored.created {
+        let status = if existing.file_state == "available" {
             SourceDocumentImportStatus::AlreadyPresent
         } else {
             transaction.execute(
@@ -143,6 +197,12 @@ pub(super) fn persist_import(
             input.audit_policy_version,
         ],
     )?;
+    if matches!(
+        status,
+        SourceDocumentImportStatus::Imported | SourceDocumentImportStatus::Restored
+    ) {
+        enqueue_parse_document(&transaction, &document_id, &new_database_id("parse-run"))?;
+    }
     transaction.commit()?;
     Ok(SourceDocumentImportOutcome {
         document_id,

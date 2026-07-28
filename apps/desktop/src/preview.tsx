@@ -14,14 +14,11 @@ import type {
   AccountConfirmationPrompt,
   LocalInboxStatus,
   MoneyOverview,
-  MoneySourceSummary,
   RecentActivitySummary,
   RelationshipCandidateSummary,
   ReviewItemDetail,
   ReviewItemSummary,
-  StatementCoveragePrompt,
 } from "./command-contracts";
-import { coverageKey } from "./attention";
 import { InboxPanel } from "./inbox";
 import { OverviewView } from "./overview";
 import { ReviewView, type ReviewDetailState, type ReviewJobPanelState } from "./review";
@@ -146,29 +143,6 @@ const finishedJob: ReviewJobPanelState = {
   status: "done",
 };
 
-const moneySources: MoneySourceSummary[] = [
-  { displayName: "DBS", moneySourceId: "source-dbs", sourceType: "bank" },
-];
-
-const coveragePrompts: StatementCoveragePrompt[] = [
-  {
-    accountId: "account-dbs",
-    documentType: "bank_statement",
-    moneySourceId: "source-dbs",
-    statementPeriodFrom: "2026-06-01",
-    statementPeriodTo: "2026-06-30",
-    status: "confirmed_missing",
-  },
-  {
-    accountId: "account-card",
-    documentType: "credit_card_statement",
-    moneySourceId: "source-dbs",
-    statementPeriodFrom: "2026-06-01",
-    statementPeriodTo: "2026-06-30",
-    status: "likely_missing",
-  },
-];
-
 const accountPrompts: AccountConfirmationPrompt[] = [
   {
     candidateAccounts: [
@@ -187,8 +161,10 @@ const accountPrompts: AccountConfirmationPrompt[] = [
         maskedIdentifier: "•••• 5678",
       },
     ],
+    dismissedAccounts: [],
     displayName: "DBS",
     moneySourceId: "source-dbs",
+    proposalVersion: "proposal-version-1",
   },
 ];
 
@@ -241,32 +217,17 @@ function Preview() {
       <OverviewView
         accountPrompts={withAttention ? accountPrompts : []}
         attentionBusyKey={null}
-        coveragePrompts={withAttention ? coveragePrompts : []}
         loading={false}
         moneyOverview={empty ? { assets: [], liabilities: [] } : moneyOverview}
-        moneySources={moneySources}
         notice={null}
-        onAddFile={noop}
-        onCancelRemind={noop}
-        onChangeRemindDate={noop}
-        onConfirmAccounts={noop}
-        onCoverageNotExpected={noop}
+        onDecideAccounts={noop}
         onLock={noop}
         onOpenReview={() => navigate("review")}
         onOpenSources={() => navigate("sources")}
         onRefresh={noop}
-        onSaveRemind={noop}
-        onStartRemind={noop}
+        onRestoreAccount={noop}
         onUndo={noop}
         recentActivity={empty ? [] : recentActivity}
-        remind={withAttention
-          ? {
-              date: "2026-08-15",
-              error: null,
-              key: coverageKey(coveragePrompts[0]!),
-              saving: false,
-            }
-          : null}
         reviewCount={empty ? 0 : reviewItems.length}
         undoingEventId={null}
       />
@@ -284,11 +245,13 @@ function Preview() {
       <InboxPanel
         busy={false}
         confirmingDisable={false}
+        error={null}
         onCancelDisable={noop}
         onChoose={noop}
         onConfirmDisable={noop}
         onRequestDisable={noop}
         onRescan={noop}
+        onRetry={noop}
         status={status}
       />
     );

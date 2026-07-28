@@ -1,19 +1,19 @@
+use crate::database::imports::{SourceCapturePlan, SourceDocumentReadPlan};
 use crate::{
     database::{
-        AccountConfirmationOutcome, AccountConfirmationPrompt, ClaimedReviewBatch,
-        CommitReviewGroup, CorePreparedReversalEvent, CorePreparedReviewEvent, CoreReviewRecord,
-        DATABASE_FILE_NAME, ManualImportStore, MoneyOverview, RecentActivitySummary,
-        RelationshipCandidateSummary, ReviewBatchGroupOutcome, ReviewBatchGroupStatus,
-        ReviewItemDetail, ReviewItemSummary, ReviewJobSummary, ReviewMutationOutcome,
-        ReviewMutationStatus, ReviewRelationshipCandidateInput, SourceDocumentImport,
-        SourceDocumentImportOutcome, SourceDocumentImportStatus, SourceDocumentRoutingOutcome,
-        SourceDocumentView, StatementCoverageDecision, StatementCoverageDecisionInput,
-        StatementCoveragePolicy, StatementCoveragePrompt, StatementPasswordStatus,
-        TrustedAccountCandidate, TrustedDocumentClassification, UndoOutcome,
-        ValidatedExternalRecordInput, ValidatedStructuredParseInput,
+        AccountConfirmationOutcome, AccountConfirmationPrompt, CandidateAccountDecisionInput,
+        ClaimedReviewBatch, CommitReviewGroup, CorePreparedReversalEvent, CorePreparedReviewEvent,
+        CoreReviewRecord, DATABASE_FILE_NAME, ManualImportStore, MoneyOverview, ParseDocumentClaim,
+        ParseDocumentJob, RecentActivitySummary, RelationshipCandidateSummary,
+        ReviewBatchGroupOutcome, ReviewBatchGroupStatus, ReviewItemDetail, ReviewItemSummary,
+        ReviewJobSummary, ReviewMutationOutcome, ReviewMutationStatus,
+        ReviewRelationshipCandidateInput, SourceDocumentImport, SourceDocumentImportOutcome,
+        SourceDocumentImportStatus, SourceDocumentRoutingOutcome, SourceDocumentView,
+        StatementPasswordStatus, TrustedAccountCandidate, TrustedDocumentClassification,
+        UndoOutcome, ValidatedExternalRecordInput, ValidatedStructuredParseInput,
     },
     local_inbox::{
-        AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureOutcome,
+        AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureOutcome, FileSnapshot,
         LocalInboxPaths, NativePreflight, SETTLE_INTERVAL, SystemNativePreflight, authorize_root,
         capture_after_second_scan, ensure_inbox_paths, first_snapshot_after_preflight,
         resolve_root_bookmark,
@@ -46,6 +46,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, Write},
+    ops::Deref,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, MutexGuard,
@@ -76,10 +77,6 @@ const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const NORMALIZER_MAX_MESSAGE_BYTES: usize = 256 * 1024;
-// The shipped synthetic normalizer models an on-demand export, so it has no
-// statement cadence. Real provider packages must add an explicit declaration;
-// CanCan never infers cadence from filenames or prior dates.
-const STATEMENT_COVERAGE_POLICIES: &[StatementCoveragePolicy<'static>] = &[];
 // A CSV preview returns at most the first lines of the decrypted text. A small
 // CSV may appear in full, but the renderer never receives raw original-file
 // bytes or unbounded content. The caps keep IPC bounded while giving enough
@@ -87,6 +84,20 @@ const STATEMENT_COVERAGE_POLICIES: &[StatementCoveragePolicy<'static>] = &[];
 const PREVIEW_MAX_LINES: usize = 200;
 const PREVIEW_MAX_BYTES: usize = 32 * 1024;
 type DocumentPasswordSessions = HashMap<String, Zeroizing<Vec<u8>>>;
+
+#[derive(Debug)]
+pub(super) struct ExtractedDocument {
+    pub(super) bundle: ExtractionBundle,
+    pub(super) vault_session_generation: u64,
+}
+
+impl Deref for ExtractedDocument {
+    type Target = ExtractionBundle;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bundle
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -141,30 +152,24 @@ pub(crate) struct LocalInboxStatus {
     last_scan: Option<LocalInboxScanSummary>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum StatementCoverageDecisionAction {
-    NotExpected,
-    RemindLater,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct StatementCoverageDecisionRequest {
-    account_id: String,
-    action: StatementCoverageDecisionAction,
-    document_type: String,
-    money_source_id: String,
-    remind_after: Option<String>,
-    statement_period_from: String,
-    statement_period_to: String,
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) enum SourceDocumentStatus {
+    FileDeleted,
+    Missing,
+    NeedsAttention,
+    Processing,
+    Ready,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct SourceDocumentSummary {
+    attention_reason: Option<String>,
     byte_size: u64,
-    document_status: &'static str,
+    document_status: SourceDocumentStatus,
     document_id: String,
     file_state: String,
     mime_type: String,
@@ -197,7 +202,7 @@ pub(crate) struct SourceDocumentPreview {
     truncated: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerAccount {
     account_type: String,
@@ -207,7 +212,7 @@ struct NormalizerAccount {
     provider_account_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerDocument {
     document_type: String,
@@ -216,14 +221,14 @@ struct NormalizerDocument {
     statement_period: Option<NormalizerStatementPeriod>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerStatementPeriod {
     from: Option<String>,
     to: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", tag = "status", deny_unknown_fields)]
 enum NormalizerResult {
     Classified {
@@ -280,7 +285,7 @@ enum NormalizerProfileExtractionKind {
     TableCell,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerProposal {
     accounts: Vec<NormalizerAccount>,
@@ -291,7 +296,7 @@ struct NormalizerProposal {
     status: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerMoney {
     currency: String,
@@ -306,7 +311,7 @@ struct NormalizerRecordValidation {
     schema_valid: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NormalizerRecord {
     account_balance_delta: Option<NormalizerMoney>,
@@ -445,6 +450,7 @@ struct RuntimeInner {
     local_inbox_access: Mutex<Option<AuthorizedRoot>>,
     local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
     local_inbox_last_scan: Mutex<Option<LocalInboxScanSummary>>,
+    local_inbox_watcher: Mutex<Option<notify::RecommendedWatcher>>,
     local_inbox_needs_attention: AtomicBool,
     local_inbox_needs_reauthorization: AtomicBool,
     remembered_keys: Arc<dyn RememberedKeyStore>,
@@ -456,22 +462,31 @@ struct RuntimeInner {
     vault_session_generation: AtomicU64,
 }
 
+mod accounts;
 mod documents;
 mod error;
+#[cfg(test)]
+mod hardening_tests;
 mod inbox;
+mod inbox_watcher;
 mod keyring;
 mod review;
 mod sidecar;
 #[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;
+mod undo;
 mod vault_lifecycle;
 
+pub(crate) use accounts::*;
 pub(crate) use documents::*;
 pub(crate) use error::*;
 pub(crate) use inbox::*;
 use keyring::*;
 pub(crate) use review::*;
 use sidecar::*;
+pub(crate) use undo::*;
 pub(crate) use vault_lifecycle::*;
 
 impl VaultRuntime {

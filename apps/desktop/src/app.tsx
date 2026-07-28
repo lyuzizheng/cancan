@@ -3,18 +3,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   AccountConfirmationPrompt,
+  CandidateAccountDecisionInput,
   EditReviewRecordArgs,
   LocalInboxStatus,
   MoneyOverview,
-  RecentActivitySummary,
   RelationshipCandidateSummary,
   ReviewItemSummary,
   ReviewJobSummary,
   SourceDocumentSummary,
-  MoneySourceSummary,
-  StatementCoveragePrompt,
+  RecentActivitySummary,
 } from "./command-contracts";
-import { coverageKey, type RemindState } from "./attention";
 import {
   DocumentPreview,
   DocumentUnlock,
@@ -24,13 +22,8 @@ import {
   type DocumentViewerState,
 } from "./document-modals";
 import { Feedback, type Notice } from "./feedback";
-import {
-  formatLedgerDate,
-  localInboxScanSummaryText,
-  localIsoToday,
-  reviewConflictMessage,
-} from "./format";
-import { importNotice, routingNotice } from "./notices";
+import { isRealIsoDate, localInboxScanSummaryText, reviewConflictMessage } from "./format";
+import { importNotice } from "./notices";
 import { OverviewView } from "./overview";
 import {
   ReviewView,
@@ -57,7 +50,6 @@ const REVIEW_JOB_MAX_POLLS = 50;
 
 const UNSIGNED_DECIMAL = /^(0|[1-9]\d*)(\.\d+)?$/;
 const SIGNED_DECIMAL = /^-?(0|[1-9]\d*)(\.\d+)?$/;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [vaultStatus, setVaultStatus] = useState<VaultScreenStatus>("loading");
@@ -102,18 +94,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     null,
   );
   const [undoingEventId, setUndoingEventId] = useState<string | null>(null);
-  const [moneySources, setMoneySources] = useState<MoneySourceSummary[]>([]);
   const [localInbox, setLocalInbox] = useState<LocalInboxStatus | null>(null);
+  const [localInboxError, setLocalInboxError] = useState<string | null>(null);
   const [inboxBusy, setInboxBusy] = useState(false);
   const [inboxConfirmingDisable, setInboxConfirmingDisable] = useState(false);
-  const [coveragePrompts, setCoveragePrompts] = useState<
-    StatementCoveragePrompt[] | null
-  >(null);
   const [accountPrompts, setAccountPrompts] = useState<
     AccountConfirmationPrompt[] | null
   >(null);
   const [attentionBusyKey, setAttentionBusyKey] = useState<string | null>(null);
-  const [remind, setRemind] = useState<RemindState | null>(null);
   const viewerRequestId = useRef(0);
   const previewRequestId = useRef(0);
   const unlockRequestId = useRef(0);
@@ -190,14 +178,12 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setMoneyOverview(null);
     setRecentActivity(null);
     setUndoingEventId(null);
-    setMoneySources([]);
     setLocalInbox(null);
+    setLocalInboxError(null);
     setInboxBusy(false);
     setInboxConfirmingDisable(false);
-    setCoveragePrompts(null);
     setAccountPrompts(null);
     setAttentionBusyKey(null);
-    setRemind(null);
     setBusy(false);
     return nextSessionId;
   }, [clearViewer, clearPreview, stopReviewJobPolling]);
@@ -271,21 +257,25 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     const requestId = financeLoadRequestId.current + 1;
     financeLoadRequestId.current = requestId;
     try {
-      const [
-        items,
-        overview,
-        activity,
-        sources,
-        inbox,
-        coverage,
-        accounts,
-      ] = await Promise.all([
+      const inbox = api.localInboxStatus();
+      void inbox.then(
+        (status) => {
+          if (vaultSessionId.current === sessionId && financeLoadRequestId.current === requestId) {
+            setLocalInbox(status);
+            setLocalInboxError(null);
+          }
+        },
+        (nextError) => {
+          if (vaultSessionId.current === sessionId && financeLoadRequestId.current === requestId) {
+            setLocalInbox(null);
+            setLocalInboxError(commandErrorMessage(nextError));
+          }
+        },
+      );
+      const [items, overview, activity, accounts] = await Promise.all([
         api.listReviewItems(),
         api.getMoneyOverview(),
         api.listRecentActivity(),
-        api.listMoneySources(),
-        api.localInboxStatus(),
-        api.listStatementCoveragePrompts(),
         api.listAccountConfirmationPrompts(),
       ]);
       if (
@@ -295,9 +285,6 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setReviewItems(items);
         setMoneyOverview(overview);
         setRecentActivity(activity);
-        setMoneySources(sources);
-        setLocalInbox(inbox);
-        setCoveragePrompts(coverage);
         setAccountPrompts(accounts);
         setSelectedReviewIds((current) => new Set(
           [...current].filter((id) =>
@@ -638,14 +625,13 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const normalizeDocument = (documentId: string) => {
     setNormalizingDocumentId(documentId);
     void run(async () => {
-      const outcome = await api.normalizeSourceDocument(documentId);
-      const source = sourceDocuments.find(
-        (entry) => entry.source.moneySourceId === outcome.moneySourceId,
-      )?.source;
-      setNotice(routingNotice(outcome, source));
-      await loadDocuments(
-        outcome.status === "routed" ? outcome.moneySourceId : undefined,
-      );
+      await api.reparseSourceDocument(documentId);
+      setNotice({
+        body: "CanCan queued a new parser run. The source status will update when it finishes.",
+        tone: "success",
+        title: "Parser re-run started",
+      });
+      await loadDocuments();
     }).finally(() => setNormalizingDocumentId(null));
   };
 
@@ -1015,7 +1001,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       patch.amountValue = amountValue;
     }
     if (postedOn !== (state.summary.postedOn ?? "")) {
-      if (!ISO_DATE.test(postedOn) || !isRealIsoDate(postedOn)) {
+      if (!isRealIsoDate(postedOn)) {
         setReviewEditError("Date must use the YYYY-MM-DD format, such as 2026-07-19.");
         return;
       }
@@ -1321,6 +1307,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         return;
       }
       setLocalInbox(status);
+      setLocalInboxError(null);
       setInboxConfirmingDisable(false);
       setNotice({
         body: "New statements you save to Inbox are added for you. The folder stays outside your encrypted Vault.",
@@ -1353,6 +1340,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       setLocalInbox((current) => current === null
         ? current
         : { ...current, lastScan: summary });
+      setLocalInboxError(null);
       setNotice({
         body: localInboxScanSummaryText(summary),
         tone: "success",
@@ -1382,6 +1370,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         return;
       }
       setLocalInbox(status);
+      setLocalInboxError(null);
       setInboxConfirmingDisable(false);
       setNotice({
         body: "Your Cancan folder and its files stay untouched. You can choose it again anytime.",
@@ -1399,51 +1388,40 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   };
 
-  const decideCoverage = async (
-    prompt: StatementCoveragePrompt,
-    action: "not_expected" | "remind_later",
-    remindAfter?: string,
+  const decideAccounts = async (
+    prompt: AccountConfirmationPrompt,
+    decisions: CandidateAccountDecisionInput[],
   ) => {
     if (attentionBusyKey !== null) {
       return;
     }
     const sessionId = vaultSessionId.current;
-    setAttentionBusyKey(coverageKey(prompt));
+    setAttentionBusyKey(`account:${prompt.moneySourceId}`);
     try {
-      await api.recordStatementCoverageDecision({
-        accountId: prompt.accountId,
-        action,
-        documentType: prompt.documentType,
-        moneySourceId: prompt.moneySourceId,
-        ...(remindAfter === undefined ? {} : { remindAfter }),
-        statementPeriodFrom: prompt.statementPeriodFrom,
-        statementPeriodTo: prompt.statementPeriodTo,
-      });
+      const outcome = await api.decideCandidateAccounts(prompt.moneySourceId, prompt.proposalVersion, decisions);
       if (vaultSessionId.current !== sessionId) {
         return;
       }
-      setRemind(null);
-      setNotice(action === "not_expected"
-        ? {
-            body: "CanCan won’t ask about that period again.",
-            tone: "success",
-            title: "Got it",
-          }
-        : {
-            body: `CanCan will ask again after ${formatLedgerDate(remindAfter ?? "")}.`,
-            tone: "success",
-            title: "Reminder saved",
-          });
+      if (outcome.status === "conflict") {
+        setNotice({
+          body: "CanCan reloaded the latest account list. Check it and save your choices again.",
+          tone: "attention",
+          title: "That account list changed",
+        });
+      } else {
+        setNotice({
+          body: outcome.status === "already_confirmed" ? "These account choices were already saved." : "Accepted accounts can enter review. Dismissed records remain in history.",
+          tone: "success",
+          title: outcome.status === "already_confirmed" ? "Account choices already saved" : "Account choices saved",
+        });
+      }
       await loadFinanceData();
     } catch (nextError) {
       if (vaultSessionId.current === sessionId) {
-        setRemind((current) => current === null
-          ? current
-          : { ...current, saving: false });
         setNotice({
           body: commandErrorMessage(nextError),
           tone: "attention",
-          title: "Couldn’t save that",
+          title: "Couldn’t save those account choices",
         });
         await loadFinanceData();
       }
@@ -1454,81 +1432,36 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   };
 
-  const startRemind = (prompt: StatementCoveragePrompt) => {
-    setRemind({ date: "", error: null, key: coverageKey(prompt), saving: false });
-  };
-
-  const saveRemind = () => {
-    const state = remind;
-    if (!state || state.saving || attentionBusyKey !== null) {
-      return;
-    }
-    const prompt = coveragePrompts?.find(
-      (candidate) => coverageKey(candidate) === state.key,
-    );
-    if (!prompt) {
-      setRemind(null);
-      return;
-    }
-    const date = state.date.trim();
-    if (!ISO_DATE.test(date) || !isRealIsoDate(date)) {
-      setRemind((current) => current === null
-        ? current
-        : { ...current, error: "Date must use the YYYY-MM-DD format, such as 2026-09-01." });
-      return;
-    }
-    if (date <= localIsoToday()) {
-      setRemind((current) => current === null
-        ? current
-        : { ...current, error: "Pick a future date." });
-      return;
-    }
-    setRemind({ ...state, date, saving: true });
-    void decideCoverage(prompt, "remind_later", date);
-  };
-
-  const confirmAccounts = async (prompt: AccountConfirmationPrompt) => {
+  const restoreAccount = async (accountId: string) => {
     if (attentionBusyKey !== null) {
       return;
     }
     const sessionId = vaultSessionId.current;
-    setAttentionBusyKey(`account:${prompt.moneySourceId}`);
+    setAttentionBusyKey(`restore:${accountId}`);
     try {
-      const outcome = await api.confirmCandidateAccounts(
-        prompt.moneySourceId,
-        prompt.candidateAccounts.map((account) => account.accountId),
-      );
+      const outcome = await api.restoreDismissedCandidateAccount(accountId);
       if (vaultSessionId.current !== sessionId) {
         return;
       }
-      if (outcome.status === "conflict") {
-        setNotice({
-          body: "CanCan reloaded the latest account list. Check it and confirm again.",
-          tone: "attention",
-          title: "That account list changed",
-        });
-      } else {
-        setNotice(outcome.status === "already_confirmed"
-          ? {
-              body: "Those accounts were already confirmed.",
-              tone: "success",
-              title: "Already confirmed",
-            }
-          : {
-              body: "Their records can now be added to your ledger.",
-              tone: "success",
-              title: "Accounts confirmed",
-            });
-      }
+      setNotice(outcome.status === "restored"
+        ? {
+            body: "The account is back in review with its latest records.",
+            tone: "success",
+            title: "Account restored",
+          }
+        : {
+            body: "CanCan reloaded the latest account list.",
+            tone: "attention",
+            title: "That account changed",
+          });
       await loadFinanceData();
     } catch (nextError) {
       if (vaultSessionId.current === sessionId) {
         setNotice({
           body: commandErrorMessage(nextError),
           tone: "attention",
-          title: "Couldn’t confirm those accounts",
+          title: "Couldn’t restore that account",
         });
-        await loadFinanceData();
       }
     } finally {
       if (vaultSessionId.current === sessionId) {
@@ -1583,27 +1516,17 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           <OverviewView
             accountPrompts={accountPrompts ?? []}
             attentionBusyKey={attentionBusyKey}
-            coveragePrompts={coveragePrompts ?? []}
             loading={moneyOverview === null && recentActivity === null}
             moneyOverview={moneyOverview}
-            moneySources={moneySources}
             notice={notice}
-            onAddFile={() => navigate("sources")}
-            onCancelRemind={() => setRemind(null)}
-            onChangeRemindDate={(value) => setRemind((current) => current === null
-              ? current
-              : { ...current, date: value, error: null })}
-            onConfirmAccounts={(prompt) => void confirmAccounts(prompt)}
-            onCoverageNotExpected={(prompt) => void decideCoverage(prompt, "not_expected")}
+            onDecideAccounts={(prompt, decisions) => void decideAccounts(prompt, decisions)}
             onLock={() => void requestVaultLock()}
             onOpenReview={() => navigate("review")}
             onOpenSources={() => navigate("sources")}
             onRefresh={() => void refreshVaultStatus()}
-            onSaveRemind={saveRemind}
-            onStartRemind={startRemind}
+            onRestoreAccount={(accountId) => void restoreAccount(accountId)}
             onUndo={undoCommittedEvent}
             recentActivity={recentActivity}
-            remind={remind}
             reviewCount={reviewItems?.length ?? null}
             undoingEventId={undoingEventId}
           />
@@ -1644,6 +1567,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             deletingDocumentId={deletingDocumentId}
             importing={importing}
             inbox={localInbox}
+            inboxError={localInboxError}
             inboxBusy={inboxBusy}
             inboxConfirmingDisable={inboxConfirmingDisable}
             loadingDocuments={loadingDocuments}
@@ -1656,6 +1580,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onInboxConfirmDisable={() => void disableInbox()}
             onInboxRequestDisable={() => setInboxConfirmingDisable(true)}
             onInboxRescan={() => void rescanInbox()}
+            onInboxRetry={() => void loadFinanceData()}
             onLock={() => void requestVaultLock()}
             onNormalize={normalizeDocument}
             onOpenUnlock={openDocumentUnlock}
@@ -1722,9 +1647,4 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       ) : null}
     </AppShell>
   );
-}
-
-function isRealIsoDate(value: string): boolean {
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }

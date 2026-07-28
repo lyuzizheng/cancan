@@ -95,7 +95,7 @@ CanCan may ship useful default search rules or official connector setup for supp
 
 Documents discovered through a source channel still pass provider/document classification. If a document matches the configured provider and exposes multiple child accounts, parsing and staging continue and the detected accounts become candidates under that Money Source. Discovery must not stop merely because the child accounts were not entered manually first.
 
-First-seen accounts continue through parsing and staging without interruption. Before the first commit, show one compact confirmation such as `We found 3 accounts`. Confirmation changes those candidates to confirmed accounts; later qualified records may use them without repeating the setup.
+First-seen accounts continue through parsing and staging without interruption. Before the first commit, show one compact review such as `We found 3 accounts`. The user can accept or reject each presentation-safe candidate in that review instead of accepting the exact set as one all-or-nothing decision. Accepted candidates become confirmed accounts and later high-confidence records may reuse those identities without repeating setup. Rejected candidates follow the dismissed lifecycle below.
 
 ## Evidence assignment
 
@@ -128,7 +128,7 @@ account_type
 display_name
 masked_identifier nullable
 currency nullable
-status = candidate | confirmed | archived | merged
+status = candidate | confirmed | dismissed | archived | merged
 merged_into_account_id nullable
 raw_identity_json nullable
 first_seen_at
@@ -145,7 +145,11 @@ money_source_id + provider_key + provider_account_id
 
 The stable provider ID is private vault data and is never used as display copy. `masked_identifier` is presentation only and must not auto-resolve identity by itself.
 
-When a supported document does not expose a stable provider account ID, preserve its small provider-defined normalized identity projection in `raw_identity_json`. Reuse requires exact equality of that projection under the same Money Source/provider and exactly one matching account. Account type, currency, or masked identifier may be inputs to the projection, but that visible composite alone is not sufficient. If the provider cannot define a projection that reliably distinguishes its supported accounts, the result remains a candidate/review rather than resolving a confirmed account automatically. The user confirms a new candidate once before first commit. Multiple candidates or conflicts require review; never guess or auto-merge.
+When a supported document does not expose a stable provider account ID, preserve its small provider-defined normalized identity projection in `raw_identity_json`. Reuse requires exact equality of that projection under the same Money Source/provider and exactly one matching account. Account type, currency, or masked identifier may be inputs to the projection, but that visible composite alone is not sufficient. If the provider cannot define a projection that reliably distinguishes its supported accounts, the result remains a candidate/review rather than resolving a confirmed account automatically. The user decides each new candidate once before its first commit. Multiple candidates or conflicts require review; never guess, auto-confirm, or auto-merge.
+
+The host validates the current candidate-set version before applying one submitted batch of per-candidate decisions. A stale batch writes nothing. Records tied only to accepted candidates may continue through the normal commit policy.
+
+Rejecting a candidate appends one audited decision against that candidate and proposal version, projects the account to `dismissed`, and hides that candidate plus each uncommitted current record projection whose resolved account is that candidate from ordinary Review and automatic commit. A matched peer owned by an accepted account is not dismissed merely because it referenced the rejected record. The source document, parse run, bounded raw record versions, validation evidence, and audit history remain intact; rejection is not evidence deletion. Re-running the same evidence or the same normalization profile reuses the dismissed identity and does not recreate an active candidate. An explicit user restore returns the account candidate and all of its latest uncommitted current record projections to Review together; superseded versions remain history and are not reactivated. A materially different provider identity projection may create a new candidate. Accepted candidates in the same batch are independent of rejected ones. The renderer never receives the stable provider account ID or raw private identity projection.
 
 Do not introduce a separate identifier table, keyed digests, identifier strength levels, or encryption-key-version coupling until a real supported provider requires more than this contract. That extension must arrive with provider fixtures and resolver tests, not as speculative schema.
 
@@ -156,8 +160,9 @@ Resolve in this order:
 ```text
 1. exact verified provider account ID -> existing account
 2. exact provider-defined normalized identity projection with exactly one match -> existing account or candidate requiring one confirmation
-3. no exact match -> create a new candidate
-4. multiple exact matches or conflicting provider IDs -> review; never guess or auto-merge
+3. exact match to a dismissed identity -> remain dismissed unless the user explicitly restores it
+4. no exact match -> create a new candidate
+5. multiple exact matches or conflicting provider IDs -> review; never guess or auto-merge
 ```
 
 The provider parser emits the stable provider ID or bounded identity inputs; a single resolver owns matching and candidate creation. Re-running the same source evidence is idempotent.
@@ -251,7 +256,8 @@ If it identifies multiple child containers, create or update distinct account ca
 - Capture channels may defer source/account selection; trusted classification routes to one configured Money Source and the existing account resolver handles child accounts.
 - A supported provider can ship default Gmail rules or an official API connector without allowing arbitrary providers.
 - Matching documents continue through parsing when they reveal multiple child-account candidates.
-- First-seen accounts require one compact confirmation before their first commit, not before parsing.
+- First-seen accounts require one compact per-candidate accept/reject review before their first commit, not before parsing.
+- Rejecting a candidate dismisses only that candidate and its uncommitted current projections, preserves source/parse/record/audit evidence, remains idempotent across reparse, and restores the account plus its latest current projections to Review in one explicit action.
 - Account identity prefers a stable provider account ID; bounded candidate inputs require confirmation and never use display names or masked suffixes alone as automatic identity.
 - Rename preserves identity; merge and archive behavior are explicit, audited, and do not rewrite committed ledger legs.
 - Source type, account or container type, and instrument type are distinct.

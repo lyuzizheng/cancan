@@ -4,11 +4,13 @@ import { localInboxScanSummaryText } from "./format";
 export interface InboxPanelProps {
   busy: boolean;
   confirmingDisable: boolean;
+  error: string | null;
   onCancelDisable: () => void;
   onChoose: () => void;
   onConfirmDisable: () => void;
   onRequestDisable: () => void;
   onRescan: () => void;
+  onRetry: () => void;
   status: LocalInboxStatus | null;
 }
 
@@ -20,7 +22,7 @@ export interface InboxPanelProps {
 export function InboxPanel(props: InboxPanelProps) {
   const status = props.status;
   const attention = status?.accessState === "needs_attention"
-    || status?.accessState === "needs_reauthorization";
+    || status?.accessState === "needs_reauthorization" || props.error !== null;
   return (
     <section className="inbox-panel" aria-labelledby="inbox-heading">
       <div className="inbox-panel-heading">
@@ -33,7 +35,19 @@ export function InboxPanel(props: InboxPanelProps) {
         </h2>
       </div>
 
-      {status === null ? (
+      {props.error !== null ? (
+        <div className="inbox-body" role="alert">
+          <p className="inbox-title">CanCan Inbox couldn’t be checked</p>
+          <p className="inbox-copy">{props.error}</p>
+          <div className="inbox-actions">
+            <button className="button button-quiet" disabled={props.busy} onClick={props.onRetry} type="button">
+              {props.busy ? "Checking…" : "Retry"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {status === null && props.error === null ? (
         <p className="panel-status" role="status">Checking CanCan Inbox…</p>
       ) : null}
 

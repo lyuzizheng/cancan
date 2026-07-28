@@ -11,7 +11,6 @@ import type {
   LocalInboxStatus,
   MoneyOverview,
   MoneySourceSummary,
-  StatementCoveragePrompt,
   RecentActivitySummary,
   RelationshipCandidateSummary,
   ReviewItemDetail,
@@ -22,7 +21,6 @@ import type {
   RenderedDocumentPage,
   SavedStatementPasswordResult,
   SourceDocumentPreview,
-  SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   UndoOutcome,
   VaultAccessStatus,
@@ -110,15 +108,6 @@ export const inboxEnabled: LocalInboxStatus = {
   lastScan: null,
 };
 
-export const coveragePrompt: StatementCoveragePrompt = {
-  accountId: "account-dbs",
-  documentType: "bank_statement",
-  moneySourceId: "money-source-1",
-  statementPeriodFrom: "2026-06-01",
-  statementPeriodTo: "2026-06-30",
-  status: "confirmed_missing",
-};
-
 export const accountConfirmationPrompt: AccountConfirmationPrompt = {
   candidateAccounts: [
     {
@@ -136,8 +125,10 @@ export const accountConfirmationPrompt: AccountConfirmationPrompt = {
       maskedIdentifier: null,
     },
   ],
+  dismissedAccounts: [],
   displayName: "Synthetic Bank",
   moneySourceId: "money-source-1",
+  proposalVersion: "proposal-version-1",
 };
 
 export const reviewCandidate: RelationshipCandidateSummary = {
@@ -154,6 +145,7 @@ export function sourceDocument(
   overrides: Partial<SourceDocumentSummary> = {},
 ): SourceDocumentSummary {
   return {
+    attentionReason: null,
     byteSize: 42,
     documentId: "document-1",
     documentStatus: "ready",
@@ -176,11 +168,11 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     chooseLocalInboxRoot: vi.fn(
       async (): Promise<LocalInboxStatus | null> => null,
     ),
-    confirmCandidateAccounts: vi.fn(
-      async (): Promise<AccountConfirmationOutcome> => ({ status: "confirmed" }),
-    ),
     createVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     deleteSourceDocument: vi.fn(async (): Promise<boolean> => true),
+    decideCandidateAccounts: vi.fn(
+      async (): Promise<AccountConfirmationOutcome> => ({ status: "updated" }),
+    ),
     disableLocalInbox: vi.fn(async (): Promise<LocalInboxStatus> => inboxDisabled),
     editReviewRecord: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
       reason: null,
@@ -219,22 +211,12 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => []),
     listSourceDocuments: vi.fn(async (): Promise<SourceDocumentSummary[]> => []),
-    listStatementCoveragePrompts: vi.fn(async () => []),
     listStatementPasswordSources: vi.fn(async () => []),
     listUnassignedSourceDocuments: vi.fn(
       async (): Promise<SourceDocumentSummary[]> => [],
     ),
     localInboxStatus: vi.fn(async (): Promise<LocalInboxStatus> => inboxDisabled),
     lockVault: vi.fn(async (): Promise<VaultStatus> => "locked"),
-    normalizeSourceDocument: vi.fn(
-      async (documentId: string): Promise<SourceDocumentRoutingOutcome> => ({
-        accountIds: [],
-        documentId,
-        moneySourceId: null,
-        reason: "classification_uncertain",
-        status: "needs_attention",
-      }),
-    ),
     onVaultLocked: vi.fn(async () => () => undefined),
     previewSourceDocument: vi.fn(
       async (): Promise<SourceDocumentPreview> => ({
@@ -244,8 +226,11 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
         truncated: false,
       }),
     ),
-    recordStatementCoverageDecision: vi.fn(async (): Promise<void> => undefined),
+    reparseSourceDocument: vi.fn(async (): Promise<void> => undefined),
     rememberVaultOnThisMac: vi.fn(async (): Promise<void> => undefined),
+    restoreDismissedCandidateAccount: vi.fn(
+      async (): Promise<AccountConfirmationOutcome> => ({ status: "restored" }),
+    ),
     removeReviewRecord: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
       reason: null,
       recordVersion: null,
@@ -370,22 +355,6 @@ export async function enterInput(selector: string, value: string) {
   });
 }
 
-export async function enterRemindDate(value: string) {
-  const input = container.querySelector<HTMLInputElement>(
-    ".attention-remind input[aria-label=\"Remind after\"]",
-  );
-  expect(input).not.toBeNull();
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )?.set;
-  expect(setter).toBeDefined();
-  await act(async () => {
-    setter!.call(input, value);
-    input!.dispatchEvent(new Event("input", { bubbles: true }));
-    await settle();
-  });
-}
 
 export async function enterField(label: string, value: string) {
   const input = [...container.querySelectorAll<HTMLInputElement>(".review-edit-grid input")]

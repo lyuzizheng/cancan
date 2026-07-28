@@ -82,7 +82,7 @@ impl PreparedSource {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct FileVault {
     root: PathBuf,
 }

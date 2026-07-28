@@ -9,7 +9,6 @@ import type {
   SavedStatementPasswordResult,
   SourceDocumentImportOutcome,
   SourceDocumentPreview,
-  SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
   VaultAccessStatus,
   VaultStatus,
@@ -96,6 +95,28 @@ describe("App manual import orchestration", () => {
       otherMoneySource.moneySourceId,
     );
     expect(container.textContent).toContain(availableDocument.originalFilename);
+  });
+
+  it("queues a parser re-run for ready routed evidence and guards processing evidence", async () => {
+    const api = createApi({
+      listMoneySources: vi.fn(async () => [moneySource]),
+      listSourceDocuments: vi.fn(async () => [
+        sourceDocument({ documentId: "routed" }),
+        sourceDocument({ documentId: "processing", documentStatus: "processing" }),
+      ]),
+    });
+
+    await mount(api, "sources");
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        `[aria-label="View documents for ${moneySource.displayName}"]`,
+      )!.click();
+      await settle();
+    });
+
+    expect(button("Parser unavailable").disabled).toBe(true);
+    await click("Re-run parser");
+    expect(api.reparseSourceDocument).toHaveBeenCalledWith("routed");
   });
 
   it("does not leave a failed Money Source selection in a loading state", async () => {
@@ -345,7 +366,10 @@ describe("App manual import orchestration", () => {
 
   it("tries a source-scoped saved password before offering use-once or verified replacement", async () => {
     let unlocked = false;
-    const protectedDocument = sourceDocument({ documentStatus: "password_required" });
+    const protectedDocument = sourceDocument({
+      attentionReason: "password_required",
+      documentStatus: "needs_attention",
+    });
     const unlockSourceDocument = vi.fn(
       async (
         _documentId: string,
@@ -366,7 +390,7 @@ describe("App manual import orchestration", () => {
         moneySourceId: "source-dbs",
       }]),
       listUnassignedSourceDocuments: vi.fn(async () => [
-        unlocked ? sourceDocument({ documentStatus: "protected_unlocked" }) : protectedDocument,
+        unlocked ? sourceDocument() : protectedDocument,
       ]),
       trySavedStatementPassword: vi.fn(async () => "invalid" as const),
       unlockSourceDocument,
@@ -374,7 +398,7 @@ describe("App manual import orchestration", () => {
 
     await mount(api, "sources");
     expect(container.textContent).toContain("Needs attention");
-    expect(container.textContent).not.toContain("Check routing");
+    expect(container.textContent).not.toContain("Re-run parser");
     expect(container.textContent).toContain("Delete source file");
     await click("Unlock");
 
@@ -415,9 +439,9 @@ describe("App manual import orchestration", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).toContain("Statement unlocked");
     expect(container.textContent).toContain("View document");
-    expect(container.textContent).not.toContain("Routing remains unavailable");
-    await click("Check routing");
-    expect(api.normalizeSourceDocument).toHaveBeenCalledWith("document-1");
+    expect(container.textContent).not.toContain("Parser remains unavailable");
+    await click("Re-run parser");
+    expect(api.reparseSourceDocument).toHaveBeenCalledWith("document-1");
   });
 
   it("reports a saved-password unlock as routeable for the Vault session", async () => {
@@ -430,7 +454,8 @@ describe("App manual import orchestration", () => {
       }]),
       listUnassignedSourceDocuments: vi.fn(async () => [
         sourceDocument({
-          documentStatus: unlocked ? "protected_unlocked" : "password_required",
+          attentionReason: unlocked ? null : "password_required",
+          documentStatus: unlocked ? "ready" : "needs_attention",
         }),
       ]),
       trySavedStatementPassword: vi.fn(async () => {
@@ -445,9 +470,9 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain(
       "This statement is ready to view and route for this Vault session.",
     );
-    expect(container.textContent).not.toContain("Routing remains unavailable");
-    await click("Check routing");
-    expect(api.normalizeSourceDocument).toHaveBeenCalledWith("document-1");
+    expect(container.textContent).not.toContain("Parser remains unavailable");
+    await click("Re-run parser");
+    expect(api.reparseSourceDocument).toHaveBeenCalledWith("document-1");
   });
 
   it("maps technical document statuses to the canonical primary row states", async () => {
@@ -455,17 +480,19 @@ describe("App manual import orchestration", () => {
       listUnassignedSourceDocuments: vi.fn(async () => [
         sourceDocument({
           documentId: "protected",
-          documentStatus: "protected_unlocked",
+          documentStatus: "ready",
           originalFilename: "Protected.pdf",
         }),
         sourceDocument({
           documentId: "inspection-failed",
-          documentStatus: "inspection_failed",
+          attentionReason: "inspection_failed",
+          documentStatus: "needs_attention",
           originalFilename: "Corrupt.pdf",
         }),
         sourceDocument({
           documentId: "unavailable",
-          documentStatus: "unavailable",
+          documentStatus: "missing",
+          fileState: "missing",
           originalFilename: "Unavailable.pdf",
         }),
       ]),
@@ -490,7 +517,10 @@ describe("App manual import orchestration", () => {
         moneySourceId: "source-dbs",
       }]),
       listUnassignedSourceDocuments: vi.fn(async () => [
-        sourceDocument({ documentStatus: "password_required" }),
+        sourceDocument({
+          attentionReason: "password_required",
+          documentStatus: "needs_attention",
+        }),
       ]),
       trySavedStatementPassword: vi.fn(async () => "unavailable" as const),
     });
@@ -517,7 +547,10 @@ describe("App manual import orchestration", () => {
     const api = createApi({
       listStatementPasswordSources: listSources,
       listUnassignedSourceDocuments: vi.fn(async () => [
-        sourceDocument({ documentStatus: "password_required" }),
+        sourceDocument({
+          attentionReason: "password_required",
+          documentStatus: "needs_attention",
+        }),
       ]),
     });
 
@@ -541,7 +574,10 @@ describe("App manual import orchestration", () => {
         moneySourceId: "source-dbs",
       }]),
       listUnassignedSourceDocuments: vi.fn(async () => [
-        sourceDocument({ documentStatus: "password_required" }),
+        sourceDocument({
+          attentionReason: "password_required",
+          documentStatus: "needs_attention",
+        }),
       ]),
       onVaultLocked: vi.fn(async (handler) => {
         notifyLocked = handler;
@@ -566,128 +602,87 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).not.toContain("Statement unlocked");
   });
 
-  it("routes only available evidence, keeps ambiguous evidence unassigned, and locks the Vault", async () => {
-    const firstRouting = deferred<SourceDocumentRoutingOutcome>();
+  it("queues a parser re-run only for available evidence", async () => {
+    const reparse = deferred<void>();
     let documents = [
       availableDocument,
-      sourceDocument({ documentId: "deleted", fileState: "deleted" }),
-      sourceDocument({ documentId: "missing", fileState: "missing" }),
+      sourceDocument({
+        documentId: "deleted",
+        documentStatus: "file_deleted",
+        fileState: "deleted",
+      }),
+      sourceDocument({
+        documentId: "missing",
+        documentStatus: "missing",
+        fileState: "missing",
+      }),
     ];
-    let routedDocuments: SourceDocumentSummary[] = [];
-    const routed: SourceDocumentRoutingOutcome = {
-      accountIds: ["account-1"],
-      documentId: availableDocument.documentId,
-      moneySourceId: "money-source-1",
-      reason: null,
-      status: "routed",
-    };
-    const routingOutcomes = [firstRouting.promise, Promise.resolve(routed)];
-    const normalizeSourceDocument = vi.fn((documentId: string) => {
-      const outcome = routingOutcomes.shift()!;
-      if (routingOutcomes.length === 0) {
-        documents = [];
-        routedDocuments = [availableDocument];
-      }
-      return outcome.then((result) => ({ ...result, documentId }));
-    });
     const api = createApi({
-      listMoneySources: vi.fn(async () => [moneySource]),
-      listSourceDocuments: vi.fn(async () => routedDocuments),
       listUnassignedSourceDocuments: vi.fn(async () => documents),
-      normalizeSourceDocument,
+      reparseSourceDocument: vi.fn(() => reparse.promise),
     });
 
     await mount(api, "sources");
-    const unavailable = buttons("Routing unavailable");
+    const unavailable = buttons("Parser unavailable");
     expect(unavailable).toHaveLength(2);
     expect(unavailable.every((element) => element.disabled)).toBe(true);
     await act(async () => {
       unavailable.forEach((element) => element.click());
       await settle();
     });
-    expect(api.normalizeSourceDocument).not.toHaveBeenCalled();
+    expect(api.reparseSourceDocument).not.toHaveBeenCalled();
 
-    await click("Check routing");
-    expect(api.normalizeSourceDocument).toHaveBeenCalledWith("document-1");
-    expect(button("Checking…").disabled).toBe(true);
+    await click("Re-run parser");
+    expect(api.reparseSourceDocument).toHaveBeenCalledWith("document-1");
+    expect(button("Re-running…").disabled).toBe(true);
     expect(button("Add file").textContent).toBe("Add file");
     expect(button("Add file").disabled).toBe(true);
 
     await act(async () => {
-      firstRouting.resolve({
-        accountIds: [],
-        documentId: availableDocument.documentId,
-        moneySourceId: null,
-        reason: "classification_uncertain",
-        status: "needs_attention",
-      });
+      documents = [sourceDocument({ documentStatus: "processing" })];
+      reparse.resolve();
+      await settle();
       await settle();
     });
-    expect(container.textContent).toContain(
-      "CanCan could not match this evidence uniquely",
-    );
-
-    await click("Check routing");
-    expect(container.textContent).toContain("Evidence routed");
-    expect(container.textContent).toContain(
-      "CanCan matched this evidence to Synthetic Bank.",
-    );
-    expect(container.textContent).toContain("Synthetic Bank");
-    expect(container.textContent).toContain(availableDocument.originalFilename);
-    expect(container.textContent).toContain("No evidence needs your attention.");
-
-    await click("Lock Vault");
-    expect(api.lockVault).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain("Unlock your Vault");
+    expect(container.textContent).toContain("Parser re-run started");
+    expect(container.textContent).toContain("Processing");
   });
 
   it("does not let an older same-session refresh restore stale unassigned evidence", async () => {
     const staleUnassigned = deferred<SourceDocumentSummary[]>();
-    const routing = deferred<SourceDocumentRoutingOutcome>();
+    const reparse = deferred<void>();
     const listUnassignedSourceDocuments = vi
       .fn<() => Promise<SourceDocumentSummary[]>>()
       .mockResolvedValueOnce([availableDocument])
       .mockImplementationOnce(() => staleUnassigned.promise)
       .mockResolvedValueOnce([]);
-    const listSourceDocuments = vi
-      .fn<() => Promise<SourceDocumentSummary[]>>()
-      .mockResolvedValue([availableDocument]);
     const api = createApi({
-      listMoneySources: vi.fn(async () => [moneySource]),
-      listSourceDocuments,
       listUnassignedSourceDocuments,
-      normalizeSourceDocument: vi.fn(() => routing.promise),
+      reparseSourceDocument: vi.fn(() => reparse.promise),
     });
 
     await mount(api, "sources");
-    await click("Check routing");
+    await click("Re-run parser");
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
       await settle();
     });
     await act(async () => {
-      routing.resolve({
-        accountIds: ["account-1"],
-        documentId: availableDocument.documentId,
-        moneySourceId: moneySource.moneySourceId,
-        reason: null,
-        status: "routed",
-      });
+      reparse.resolve();
       await settle();
     });
 
-    expect(container.textContent).toContain("Synthetic Bank");
     expect(container.textContent).toContain("No evidence needs your attention.");
-    expect(buttons("Check routing")).toHaveLength(0);
+    expect(buttons("Re-run parser")).toHaveLength(0);
 
     await act(async () => {
       staleUnassigned.resolve([availableDocument]);
       await settle();
     });
 
-    expect(container.querySelectorAll(".evidence-row")).toHaveLength(1);
+    expect(container.querySelectorAll(".evidence-row")).toHaveLength(0);
     expect(container.textContent).toContain("No evidence needs your attention.");
-    expect(buttons("Check routing")).toHaveLength(0);
+    expect(buttons("Re-run parser")).toHaveLength(0);
   });
 
   it("does not restore source or document names after refresh confirms the Vault is locked", async () => {
@@ -931,7 +926,10 @@ describe("App manual import orchestration", () => {
   });
 
   it("deletes an available source file and keeps its tombstone visible", async () => {
-    const deletedDocument = sourceDocument({ fileState: "deleted" });
+    const deletedDocument = sourceDocument({
+      documentStatus: "file_deleted",
+      fileState: "deleted",
+    });
     const listUnassignedSourceDocuments = vi
       .fn<() => Promise<SourceDocumentSummary[]>>()
       .mockResolvedValueOnce([availableDocument])
@@ -949,7 +947,7 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain("File deleted");
     expect(container.textContent).not.toContain("Delete source file");
     expect(container.textContent).toContain("View unavailable");
-    expect(container.textContent).toContain("Routing unavailable");
+    expect(container.textContent).toContain("Parser unavailable");
   });
 
   it("reports a saved source copy but keeps cancellation silent", async () => {
@@ -1020,7 +1018,10 @@ describe("App manual import orchestration", () => {
   });
 
   it("shows the deleted tombstone when storage removal fails after the decision commits", async () => {
-    const deletedDocument = sourceDocument({ fileState: "deleted" });
+    const deletedDocument = sourceDocument({
+      documentStatus: "file_deleted",
+      fileState: "deleted",
+    });
     const listUnassignedSourceDocuments = vi
       .fn<() => Promise<SourceDocumentSummary[]>>()
       .mockResolvedValueOnce([availableDocument])

@@ -102,25 +102,24 @@ edge-case statement
 duplicate/repayment/reconciliation scenario
 ```
 
-Initial MVP document types:
+First-preview source/profile target:
 
 ```text
 DBS bank statement
 DBS credit card statement
-UOB bank statement
-UOB credit card statement
-Wise PDF/CSV/export
+HSBC source support through whichever real package/profile first passes review-only gates
+UOB source support through whichever real package/profile first passes review-only gates
 ```
 
-HSBC bank statements may be used as review-only fixtures for the DBS-card repayment scenario. That fixture work does not add HSBC to the initial MVP supported-provider list.
+DBS Bank and DBS Card are different child accounts and document profiles under one DBS Money Source, not separate Money Sources. HSBC and UOB are also first-preview source targets, but neither needs a fixed Bank/Card matrix and a profile may launch Review-only. An empty Source definition is not support: each advertised source needs at least one real package/profile with deterministic fixtures and review-only runtime evidence. CPF and additional providers are desirable follow-ons but do not block the first preview unless explicitly added to the release slice.
 
 Additional samples for password-protected PDFs are required once locked-PDF handling is implemented.
 
-## Auto-commit qualification gate
+## Auto-commit confidence-calibration gate
 
-The three-fixture baseline is enough to begin parser development, not enough to grant auto-commit eligibility.
+The three-fixture baseline is enough to begin parser development, not enough to calibrate an auto-commit confidence threshold.
 
-Each complete normalization profile must qualify independently. Its identity includes:
+Each complete normalization profile calibrates independently. Its identity includes:
 
 ```text
 provider + document type
@@ -130,34 +129,36 @@ provider + document type
 + AI provider/model version
 ```
 
-Each profile must qualify with:
+Before a profile can auto-commit, its evidence must include:
 
 ```text
-at least 100 labeled representative record cases across normal and edge-case statements
+representative labeled record cases across normal and edge-case statements
 deterministic expected classification, account mapping, normalized fields, and eligibility outcome
-zero incorrect auto-commit-eligible outcomes in the qualification suite
-at least 20 user-confirmed shadow candidates from local use before live auto-commit
+zero incorrect auto-commit-eligible outcomes in the accepted calibration suite
+user-confirmed shadow candidates from local use before live auto-commit
 zero incorrect account mappings or financial fields among those shadow candidates
 ```
 
-Qualification cases must cover every event type that the package can emit and must include:
+The owner has replaced the fixed `100 labeled + 20 shadow` rule with profile-specific evidence and explicit release approval. There is no universal minimum case count. Each calibration report must describe its representative and held-out coverage, confidence behavior, shadow outcomes, and observed false-eligibility result; it cannot ship with an incorrect auto-commit-eligible outcome or an uncalibrated model self-score. Exact package/document threshold values and the final calibration statistics/report format remain unresolved.
+
+Calibration cases must cover every event type that the package can emit and must include:
 
 ```text
-exact opening-to-closing snapshot reconciliation
-one-minor-unit or one-smallest-quantity residual that must fail eligibility
+exact opening-to-closing snapshot reconciliation when the profile/event contract supplies snapshots
+one-minor-unit or one-smallest-quantity residual that must fail eligibility for a snapshot-gated profile/event
 missing and duplicate rows
 mixed documents where semantic-only ambiguities remain in Review
 cross-account, FX, or trade cases when the package supports them
 field-confidence calibration on held-out labeled cases
 ```
 
-Very-high confidence is package-specific and field-level. Set its calibration so the qualification set produces zero incorrect eligible fields/records; never substitute a raw LLM self-score or one global threshold.
+High confidence is package/document-specific and field-level. The model returns confidence and evidence per required field; the host uses the weakest required-field confidence plus event guardrails, then applies the calibrated threshold and every accepted deterministic hard gate. Optional fields cannot average away a weak required field, and one global threshold or confidence alone is insufficient.
 
-The 100 cases may be distributed across synthetic, redacted, and private statement fixtures. Private cases stay local and must never be uploaded to CI or logs.
+Representative calibration cases may be distributed across synthetic, redacted, and private statement fixtures. Private cases stay local and must never be uploaded to CI or logs.
 
-Shadow mode performs the complete eligibility decision but creates review suggestions instead of committed events. User decisions are recorded as qualification evidence.
+Shadow mode performs the complete eligibility decision but creates review suggestions instead of committed events. User decisions are recorded as confidence-calibration and hard-gate evidence.
 
-Any classifier prompt, extraction prompt, parser skill, normalizer runtime, tool contract, structured schema, validator, extraction/OCR engine, model, canonical mapping, or eligibility-rule version change revokes the affected profile's qualification. The user-level auto-commit toggle remains enabled, but records from the changed profile fall back to shadow/review until it qualifies again.
+Any classifier prompt, extraction prompt, parser skill, normalizer runtime, tool contract, structured schema, validator, extraction/OCR engine, model, canonical mapping, or eligibility-rule version change invalidates the affected profile's confidence calibration. The user-level auto-commit toggle remains enabled, but records from the changed profile fall back to shadow/review until its calibration and hard-gate evidence pass again.
 
 ## Expected output contract
 
@@ -269,11 +270,11 @@ model/tool steps, latency, token use, and estimated cost
 runtime errors, cancellation, and repair success
 ```
 
-An agentic runtime is adopted only when it demonstrates a material accuracy or recovery advantage that justifies its additional complexity. Framework popularity or a successful happy-path demo is not qualification evidence.
+An agentic runtime is adopted only when it demonstrates a material accuracy or recovery advantage that justifies its additional complexity. Framework popularity or a successful happy-path demo is not evaluation evidence.
 
 ## Runtime and packaging evidence
 
-The 2026-07-14 disposable evidence slice ran ToolLoopAgent and Pi Agent Core with the same mock model, fixed tools, fixture, structured proposal, validation feedback, cancellation, and budget limits. Both produced the same accepted proposal as single-pass, but required four or five model steps instead of one. Single-pass is therefore selected until real qualification fixtures demonstrate a material agentic accuracy or recovery advantage.
+The 2026-07-14 disposable evidence slice ran ToolLoopAgent and Pi Agent Core with the same mock model, fixed tools, fixture, structured proposal, validation feedback, cancellation, and budget limits. Both produced the same accepted proposal as single-pass, but required four or five model steps instead of one. Single-pass is therefore selected until real evaluation fixtures demonstrate a material agentic accuracy or recovery advantage.
 
 The spike also verified the Node/Tauri execution boundary:
 
@@ -376,10 +377,44 @@ Spam/Trash, display-name spoof, sender-domain mismatch, and failed/missing authe
 email-first and statement-first convergence to one canonical ledger event
 late corroborating evidence against an already committed event, with unchanged legs/allocations and one atomic audit entry
 ambiguous/different-amount notification matches remaining in Review
-statement coverage gaps, provider grace period, locked/failed statement state, and notification email exclusion
 ```
 
 These are mocked local/Gmail fixtures. CI must not require a live mailbox, sync provider, iCloud account, phone, bank app, or real statement.
+
+The Phase 2 macOS Finder Share slice adds native packaged tests for:
+
+```text
+single and bounded multi-file Share > CanCan handoff
+running, launched, locked, and cancelled app states
+unsupported type and over-limit rejection
+shared Add/capture idempotency and Processing/Needs attention projection
+bounded App Group staging while closed/locked, with private protection, no-backup/no-index behavior, atomic handoff, success/cancel/expiry cleanup, and crash recovery
+no Vault key, parser, database, source registry, or durable job queue in the extension/service
+signed/notarized package registration on each supported macOS architecture
+```
+
+The separate `statement-coverage` slice adds deterministic mocked-AI fixtures for:
+
+```text
+bounded source-analysis API authority and redaction
+one Money Source/account/document-type scope per invocation
+accepted statement-period and processing-state inputs
+one bounded follow-up snippet request, at most three documents, two pages per document, and 8,000 extracted characters total
+cross-scope, over-count, over-page, over-character, second-request, and full-document rejection
+AI proposals that cite only supplied source/account/document/period references
+host rejection of fabricated, stale, or out-of-scope references
+scheduled-job retry and idempotency after its trigger policy is accepted
+source/account/period/processing changes marking a scope due
+no-daemon startup/unlock catch-up only when the scope is due and lacks a successful evaluation for the current local day
+exact-period No statement this period suppression without suppressing future periods
+Remind later disappearance and reappearance after the validated future date
+```
+
+Coverage CI uses no live model, provider account, or cloud source.
+
+## Hosted required-check integrity
+
+A required hosted check must actually start and pass before normal merge. A no-start result caused by billing, spending limits, runner availability, or account configuration is infrastructure failure, not application-test evidence and not an automatic waiver. Local verification may diagnose the revision and support a separately recorded maintainer exception, but it does not silently replace the normal required-check gate.
 
 ## Snapshot testing policy
 
@@ -424,16 +459,24 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - `fixtures-private/` is ignored by Git.
 - Fixture policy distinguishes private, redacted, and synthetic samples.
 - Each supported document type has a target fixture minimum.
-- Auto-commit qualification requires 100 labeled record cases, 20 confirmed shadow candidates, and zero incorrect eligible outcomes per complete normalization profile.
-- Qualification covers every supported event type, exact snapshot closure, residual failures, duplicate/missing rows, and field-level held-out calibration.
-- Any behavior-changing parser skill, prompt, schema, validator, agent runtime, tool contract, extraction/OCR, or model change revokes only the affected profile's qualification and falls back to shadow mode.
+- Auto-commit requires a package/document-specific structured AI-confidence threshold plus every accepted deterministic hard gate; confidence alone is insufficient.
+- Calibration covers every supported event type, snapshot closure/residual failures where the profile contract uses that gate, duplicate/missing rows, per-required-field held-out confidence, and shadow outcomes. It uses no universal labeled/shadow count; exact package/document thresholds and calibration statistics/report format remain blocked.
+- Any behavior-changing parser skill, prompt, schema, validator, agent runtime, tool contract, extraction/OCR, or model change invalidates only the affected profile's calibration and falls back to shadow mode.
 - Expected outputs are versioned and assertion-oriented.
 - LLM-dependent tests are deterministic in CI.
 - Document-agent contract, recorded-loop, adversarial, budget, cancellation, and single-pass comparison tests are required before production adoption.
-- Single-pass is selected by the shared disposable runtime/packaging evidence; any later ToolLoopAgent or Pi Agent Core adoption requires material qualification-fixture evidence.
+- Single-pass is selected by the shared disposable runtime/packaging evidence; any later ToolLoopAgent or Pi Agent Core adoption requires material evaluation-fixture evidence.
 - DB reset cannot target a real vault by default.
 - UI changes require visual inspection once UI exists.
 - Every implementation slice declares deterministic test evidence and shares its generated context with testing/review.
-- Local inbox, email-notification, cross-channel reconciliation, and statement-coverage behavior has deterministic fixtures without live cloud accounts.
+- Local Inbox, email-notification, and cross-channel reconciliation behavior has deterministic fixtures without live cloud accounts. The later statement-coverage slice uses a mocked AI capability and capability-specific bounded input fixtures rather than a live model or cloud account.
+- Phase 2 Finder Share intake proves bounded protected App Group handoff/cleanup into the existing Add/capture path without duplicating Vault/parser/source-registry/job ownership.
 - Later application CI gates are added only with real scripts and implementations.
 - The foundation application CI invokes real typecheck, unit-test, Rust-check, web-build, and Tauri debug-build commands.
+- Required hosted checks must start and pass for normal merge; infrastructure no-start results are never represented as green code evidence.
+- Presentation-safe Rust-to-TypeScript generated types have a deterministic drift gate; handwritten semantic wrappers and current React state remain outside code generation.
+- Generated Rust-to-TypeScript files are committed; native CI builds the sidecar and runs the focused Rust test that compares generated output with the committed file.
+- Add/capture integration covers failure before blob durability, failure or rollback of the atomic source-registration/parse-job transaction, success before asynchronous parsing completes, and later parse failure without losing the captured source.
+- Migration integration upgrades an existing `0007_local_inbox.sql` database through the appended hardening migration without editing history or losing a dogfood Vault.
+- Long OCR/extraction/sidecar tests prove unrelated bounded store reads remain responsive and stale post-work writes fail their version/idempotency validation.
+- Per-candidate account fixtures cover mixed accept/reject, all-or-nothing stale-batch rejection, dismissed projection hiding, same-profile reparse idempotency, one-action restore of the account plus latest current projections, superseded versions remaining hidden, and preserved source/parse/record/audit evidence.

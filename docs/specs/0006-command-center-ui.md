@@ -130,7 +130,7 @@ Recommended priority:
 2. Top overview: native totals, timestamps, vault/backup health
 3. Main stream: money source activity and recent flows
 4. Source snapshots: tailored status per source type
-5. Insight: monthly/weekly summary or deterministic missing-statement prompt
+5. Insight: source-backed monthly/weekly summary; missing-statement insight only after the separate statement-coverage capability is enabled
 6. Compact review status: needs review, failed jobs, suggested links
 7. Lower section: detailed Needs Review / New Evidence / Failed Jobs
 ```
@@ -160,7 +160,7 @@ The global `Add` action accepts files without asking for source/account first. U
 
 ## AI Assistant direction
 
-Future assistant should access data through backend APIs/skills, not direct database or filesystem access.
+The Phase 2 renderer, assistant, app-internal AI features, internal scheduled jobs, full first-party AI CLI, and external-agent tools share the host-owned backend capability interface in `0019-ai-capability-platform-and-cli.md`. Its target catalog covers every existing user-facing read plus host-validated edit/link/commit/delete/restore outcomes. Tauri/in-process/socket/tool layers are adapters over that interface. AI accesses data through registered purpose-specific product capabilities, not direct database or filesystem access.
 
 Assistant tools should be narrow:
 
@@ -171,8 +171,14 @@ list_review_items(status)
 explain_money_flow(chain_id)
 search_transactions(query)
 get_source_updated_at()
-list_missing_statements()
+analyse_statement_coverage(scope)
 ```
+
+Each feature adds one bounded capability contract instead of a generic source-data dump. The AI returns an advisory result with source references; it cannot mutate sources, review decisions, relationships, jobs, or ledger state except through an explicitly registered, host-validated, user-approved mutation capability.
+
+## Data loading and failure isolation
+
+Core unlocked views must remain usable when an optional capability fails. Overview, Review, Activity, and Sources load independently from Local Inbox status, statement coverage, future Gmail, backup, and AI insight. An optional capability error stays in its owning module with a retry/action and does not reject or clear an otherwise successful core finance refresh. Do not silently swallow the failure or turn every view into one all-or-nothing request.
 
 ## Review surface
 
@@ -213,4 +219,6 @@ Kimi may generate a Figma prototype when it materially helps renderer craft, or 
 - Empty states guide the user to add files, choose an Inbox folder, or optionally configure Gmail after creating sources.
 - Evidence documents are reached through Source detail rather than a standalone Library sidebar item.
 - AI Assistant is represented as a future-ready surface/tool entry, but cannot bypass safety boundaries.
+- Background AI features use narrow read APIs and advisory outputs rather than direct source/database/filesystem authority.
+- Failure in an optional capability does not blank or stale an otherwise successful core finance view.
 - Deferred safety/setup work appears as a compact actionable `To do` banner list rather than blocking onboarding.

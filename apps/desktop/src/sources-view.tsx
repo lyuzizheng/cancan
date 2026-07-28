@@ -16,6 +16,7 @@ export interface SourcesViewProps {
   deletingDocumentId: string | null;
   importing: boolean;
   inbox: LocalInboxStatus | null;
+  inboxError: string | null;
   inboxBusy: boolean;
   inboxConfirmingDisable: boolean;
   loadingDocuments: boolean;
@@ -28,6 +29,7 @@ export interface SourcesViewProps {
   onInboxConfirmDisable: () => void;
   onInboxRequestDisable: () => void;
   onInboxRescan: () => void;
+  onInboxRetry: () => void;
   onLock: () => void;
   onNormalize: (documentId: string) => void;
   onOpenUnlock: (document: SourceDocumentSummary) => void;
@@ -108,11 +110,13 @@ export function SourcesView(props: SourcesViewProps) {
         <InboxPanel
           busy={props.inboxBusy}
           confirmingDisable={props.inboxConfirmingDisable}
+          error={props.inboxError}
           onCancelDisable={props.onInboxCancelDisable}
           onChoose={props.onInboxChoose}
           onConfirmDisable={props.onInboxConfirmDisable}
           onRequestDisable={props.onInboxRequestDisable}
           onRescan={props.onInboxRescan}
+          onRetry={props.onInboxRetry}
           status={props.inbox}
         />
 
@@ -156,7 +160,7 @@ export function SourcesView(props: SourcesViewProps) {
                 <p className="panel-status">No routed documents yet.</p>
               ) : null}
               {selected && documents && documents.length > 0 ? (
-                <EvidenceDocumentGroups documents={documents} props={props} showRouting={false} />
+                <EvidenceDocumentGroups documents={documents} props={props} />
               ) : null}
               </section>
             );
@@ -175,7 +179,7 @@ export function SourcesView(props: SourcesViewProps) {
             <p className="panel-status">No evidence needs your attention.</p>
           ) : null}
           {props.unassignedDocuments.length > 0 ? (
-            <EvidenceDocumentGroups documents={props.unassignedDocuments} props={props} showRouting />
+            <EvidenceDocumentGroups documents={props.unassignedDocuments} props={props} />
           ) : null}
         </section>
       </section>
@@ -186,11 +190,9 @@ export function SourcesView(props: SourcesViewProps) {
 function EvidenceDocumentGroups({
   documents,
   props,
-  showRouting,
 }: {
   documents: SourceDocumentSummary[];
   props: SourcesViewProps;
-  showRouting: boolean;
 }) {
   return groupEvidenceByMonth(documents).map((group) => (
     <section className="evidence-group" key={group.key}>
@@ -202,15 +204,14 @@ function EvidenceDocumentGroups({
       </p>
       <ul className="evidence-list">
         {group.documents.map((document) => {
-          const passwordRequired = document.documentStatus === "password_required";
-          const protectedUnlocked = document.documentStatus === "protected_unlocked";
+          const passwordRequired = document.documentStatus === "needs_attention"
+            && document.attentionReason === "password_required";
           const fileAvailable = document.fileState === "available";
-          const viewingAvailable = fileAvailable
-            && (document.documentStatus === "ready" || protectedUnlocked);
+          const viewingAvailable = fileAvailable && !passwordRequired;
           const routingAvailable = fileAvailable
-            && (document.documentStatus === "ready" || protectedUnlocked);
-          const attentionRequired = passwordRequired
-            || document.documentStatus === "inspection_failed";
+            && (document.documentStatus === "ready" || document.documentStatus === "needs_attention")
+            && !passwordRequired;
+          const attentionRequired = document.documentStatus === "needs_attention";
           const deleting = props.deletingDocumentId === document.documentId;
           const normalizing = props.normalizingDocumentId === document.documentId;
           const savingCopy = props.savingCopyDocumentId === document.documentId;
@@ -221,7 +222,7 @@ function EvidenceDocumentGroups({
                 <p>{document.originalFilename}</p>
                 <span className="evidence-meta">{evidenceMeta(document)}</span>
               </div>
-              <p className={`doc-status doc-status-${attentionRequired ? "attention" : document.fileState}`}>
+              <p className={`doc-status doc-status-${document.documentStatus === "processing" ? "processing" : attentionRequired ? "attention" : document.fileState}`}>
                 <span className="doc-status-dot" aria-hidden="true" />
                 {documentStatusLabel(document)}
               </p>
@@ -235,9 +236,9 @@ function EvidenceDocumentGroups({
                     {!viewingAvailable ? "View unavailable" : "View document"}
                   </button>
                 )}
-                {showRouting && !passwordRequired && document.documentStatus !== "inspection_failed" ? (
+                {!passwordRequired ? (
                   <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
-                    {!routingAvailable ? "Routing unavailable" : normalizing ? "Checking…" : "Check routing"}
+                    {!routingAvailable ? "Parser unavailable" : normalizing ? "Re-running…" : "Re-run parser"}
                   </button>
                 ) : null}
                 {fileAvailable ? (
@@ -263,22 +264,18 @@ function sourceTypeLabel(sourceType: string) {
   return sourceType.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
-function fileStateLabel(fileState: SourceDocumentSummary["fileState"]) {
-  return fileState === "available" ? "Ready" : fileState === "deleted" ? "File deleted" : "Missing";
-}
-
 function documentStatusLabel(document: SourceDocumentSummary) {
   switch (document.documentStatus) {
-    case "password_required":
+    case "needs_attention":
       return "Needs attention";
-    case "protected_unlocked":
-      return "Ready";
-    case "inspection_failed":
-      return "Needs attention";
-    case "unavailable":
+    case "processing":
+      return "Processing";
+    case "file_deleted":
+      return "File deleted";
+    case "missing":
       return "Missing";
-    default:
-      return fileStateLabel(document.fileState);
+    case "ready":
+      return "Ready";
   }
 }
 

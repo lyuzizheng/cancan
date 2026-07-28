@@ -10,11 +10,10 @@ import type {
 } from "./command-contracts";
 import {
   accountConfirmationPrompt,
+  availableDocument,
   click,
   container,
-  coveragePrompt,
   createApi,
-  enterRemindDate,
   inboxDisabled,
   inboxEnabled,
   installAppHarness,
@@ -25,6 +24,29 @@ import {
 installAppHarness();
 
 describe("App local inbox orchestration", () => {
+  it("keeps finance data visible when Inbox status fails and retries that module", async () => {
+    const localInboxStatus = vi.fn()
+      .mockRejectedValueOnce({ code: "local_inbox_storage_failed" })
+      .mockResolvedValue(inboxDisabled);
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [availableDocument]),
+      localInboxStatus,
+    });
+
+    await mount(api, "sources");
+
+    expect(container.textContent).toContain("CanCan Inbox couldn’t be checked");
+    expect(container.textContent).toContain(availableDocument.originalFilename);
+    await click("Retry");
+    await act(async () => {
+      await settle();
+    });
+
+    expect(localInboxStatus).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("Add statements without opening CanCan");
+    expect(container.textContent).toContain(availableDocument.originalFilename);
+  });
+
   it("turns the inbox on from Sources and reloads finance data", async () => {
     const api = createApi({
       chooseLocalInboxRoot: vi.fn(async (): Promise<LocalInboxStatus> => inboxEnabled),
@@ -40,7 +62,6 @@ describe("App local inbox orchestration", () => {
 
     expect(api.chooseLocalInboxRoot).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("CanCan Inbox is on");
-    expect(container.textContent).toContain("New statements you save to Inbox are added for you");
     expect(api.listRecentActivity).toHaveBeenCalledTimes(2);
   });
 
@@ -97,15 +118,15 @@ describe("App local inbox orchestration", () => {
     expect(api.disableLocalInbox).not.toHaveBeenCalled();
 
     await click("Keep");
-    expect(container.textContent).toContain("Check now");
-    expect(container.textContent).not.toContain("Turn off CanCan Inbox?");
-
+    expect(container.textContent).not.toContain(
+      "Turn off CanCan Inbox? Your folder and files stay untouched.",
+    );
+    expect(container.textContent).toContain("Turn off");
     await click("Turn off");
     await click("Turn off");
 
     expect(api.disableLocalInbox).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("CanCan Inbox is off");
-    expect(container.textContent).toContain("Choose Cancan folder");
   });
 
   it("shows the host's plain-language error when a rescan is refused", async () => {
@@ -119,108 +140,14 @@ describe("App local inbox orchestration", () => {
 
     await click("Check now");
 
-    expect(container.textContent).toContain("Something needs your attention");
     expect(container.textContent).toContain(
       "Choose your Cancan folder again so CanCan can reach it.",
     );
   });
 });
 
-describe("App attention orchestration", () => {
-  it("records a not-expected decision and reloads the prompts", async () => {
-    const api = createApi({
-      listStatementCoveragePrompts: vi.fn()
-        .mockResolvedValueOnce([coveragePrompt])
-        .mockResolvedValue([]),
-    });
-    await mount(api);
-
-    expect(container.textContent).toContain("Needs attention");
-    expect(container.textContent).toContain("June 2026 bank statement is missing");
-    await click("Not expected");
-    await act(async () => {
-      await settle();
-      await settle();
-    });
-
-    expect(api.recordStatementCoverageDecision).toHaveBeenCalledWith({
-      accountId: "account-dbs",
-      action: "not_expected",
-      documentType: "bank_statement",
-      moneySourceId: "money-source-1",
-      statementPeriodFrom: "2026-06-01",
-      statementPeriodTo: "2026-06-30",
-    });
-    expect(container.textContent).toContain("CanCan won’t ask about that period again.");
-    expect(container.textContent).not.toContain("June 2026 bank statement is missing");
-  });
-
-  it("blocks a reminder that is not in the future", async () => {
-    const api = createApi({
-      listStatementCoveragePrompts: vi.fn(async () => [coveragePrompt]),
-    });
-    await mount(api);
-
-    await click("Remind later");
-    await enterRemindDate("2020-01-01");
-    await click("Save reminder");
-
-    expect(api.recordStatementCoverageDecision).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("Pick a future date.");
-  });
-
-  it("records a reminder for a future date", async () => {
-    const api = createApi({
-      listStatementCoveragePrompts: vi.fn()
-        .mockResolvedValueOnce([coveragePrompt])
-        .mockResolvedValue([]),
-    });
-    await mount(api);
-
-    await click("Remind later");
-    await enterRemindDate("2099-01-01");
-    await click("Save reminder");
-    await act(async () => {
-      await settle();
-      await settle();
-    });
-
-    expect(api.recordStatementCoverageDecision).toHaveBeenCalledWith({
-      accountId: "account-dbs",
-      action: "remind_later",
-      documentType: "bank_statement",
-      moneySourceId: "money-source-1",
-      remindAfter: "2099-01-01",
-      statementPeriodFrom: "2026-06-01",
-      statementPeriodTo: "2026-06-30",
-    });
-    expect(container.textContent).toContain("Reminder saved");
-    expect(container.textContent).toContain("CanCan will ask again after 1 Jan 2099.");
-  });
-
-  it("explains a stale coverage decision and reloads", async () => {
-    const api = createApi({
-      listStatementCoveragePrompts: vi.fn(async () => [coveragePrompt]),
-      recordStatementCoverageDecision: vi.fn(async (): Promise<void> => {
-        throw { code: "coverage_decision_invalid" };
-      }),
-    });
-    await mount(api);
-
-    await click("Not expected");
-    await act(async () => {
-      await settle();
-      await settle();
-    });
-
-    expect(container.textContent).toContain("Couldn’t save that");
-    expect(container.textContent).toContain(
-      "That prompt changed. CanCan reloaded the latest list.",
-    );
-    expect(api.listStatementCoveragePrompts).toHaveBeenCalledTimes(2);
-  });
-
-  it("confirms candidate accounts and reloads", async () => {
+describe("App candidate-account decisions", () => {
+  it("saves one decision for every current candidate and reloads", async () => {
     const api = createApi({
       listAccountConfirmationPrompts: vi.fn()
         .mockResolvedValueOnce([accountConfirmationPrompt])
@@ -228,60 +155,78 @@ describe("App attention orchestration", () => {
     });
     await mount(api);
 
-    expect(container.textContent).toContain(
-      "CanCan found new accounts in your Synthetic Bank statements",
-    );
-    await click("These are mine");
+    await click("Save choices");
     await act(async () => {
       await settle();
       await settle();
     });
 
-    expect(api.confirmCandidateAccounts).toHaveBeenCalledWith(
+    expect(api.decideCandidateAccounts).toHaveBeenCalledWith(
       "money-source-1",
-      ["account-dbs", "account-card"],
+      "proposal-version-1",
+      [
+        { accountId: "account-dbs", action: "accept" },
+        { accountId: "account-card", action: "accept" },
+      ],
     );
-    expect(container.textContent).toContain("Accounts confirmed");
-    expect(container.textContent).not.toContain("CanCan found new accounts");
+    expect(container.textContent).toContain("Account choices saved");
   });
 
-  it("explains a conflicting account confirmation without hiding the prompt", async () => {
+  it("restores a dismissed account explicitly", async () => {
+    const prompt = {
+      ...accountConfirmationPrompt,
+      candidateAccounts: [],
+      dismissedAccounts: [accountConfirmationPrompt.candidateAccounts[0]!],
+    };
     const api = createApi({
-      confirmCandidateAccounts: vi.fn(
+      listAccountConfirmationPrompts: vi.fn(async () => [prompt]),
+    });
+    await mount(api);
+
+    await click("Restore");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(api.restoreDismissedCandidateAccount).toHaveBeenCalledWith("account-dbs");
+    expect(container.textContent).toContain("Account restored");
+  });
+
+  it("keeps the prompt when the candidate set changed", async () => {
+    const api = createApi({
+      decideCandidateAccounts: vi.fn(
         async (): Promise<AccountConfirmationOutcome> => ({ status: "conflict" }),
       ),
       listAccountConfirmationPrompts: vi.fn(async () => [accountConfirmationPrompt]),
     });
     await mount(api);
 
-    await click("These are mine");
+    await click("Save choices");
     await act(async () => {
       await settle();
       await settle();
     });
 
     expect(container.textContent).toContain("That account list changed");
-    expect(container.textContent).toContain(
-      "CanCan found new accounts in your Synthetic Bank statements",
-    );
+    expect(container.textContent).toContain("CanCan found new accounts");
   });
 
-  it("clears inbox and attention state when the Vault locks", async () => {
+  it("reports an idempotent account decision without claiming a new save", async () => {
     const api = createApi({
-      listStatementCoveragePrompts: vi.fn(async () => [coveragePrompt]),
-      localInboxStatus: vi.fn(async (): Promise<LocalInboxStatus> => inboxEnabled),
+      decideCandidateAccounts: vi.fn(
+        async (): Promise<AccountConfirmationOutcome> => ({ status: "already_confirmed" }),
+      ),
+      listAccountConfirmationPrompts: vi.fn(async () => [accountConfirmationPrompt]),
     });
     await mount(api);
 
-    expect(container.textContent).toContain("Needs attention");
-    await click("Lock Vault");
+    await click("Save choices");
     await act(async () => {
       await settle();
       await settle();
     });
 
-    expect(container.textContent).toContain("Unlock your Vault");
-    expect(container.textContent).not.toContain("Needs attention");
-    expect(container.textContent).not.toContain("June 2026 bank statement is missing");
+    expect(container.textContent).toContain("Account choices already saved");
   });
 });

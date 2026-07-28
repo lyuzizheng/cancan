@@ -6,14 +6,14 @@ Define when records can auto-commit, when they require review, and how reconcili
 
 ## Implementation blocker
 
-The auto-commit rule and document-normalizer runtime selection are accepted. The synthetic core flow may exercise the policy with deterministic mocked proposals; live normalization still waits for its upstream Vault/Gmail slices, and auto-commit qualification still requires the fixture and shadow gates in the [implementation sequence](../agent/implementation-slices.md) plus its active alignment blockers. Do not weaken the accepted gates to work around those boundaries.
+The owner selected structured per-field AI confidence plus the deterministic hard gates below as the auto-commit direction. Exact package/document thresholds and calibration statistics remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not implement auto-commit, reuse the old full-profile qualification rule by inertia, average away a weak required field, or treat model confidence alone as authority until that focused decision closes.
 
 ## MVP user setting
 
 Expose one setting:
 
 ```text
-Automatically add qualified records = On | Off
+Automatically add high-confidence records = On | Off
 ```
 
 Recommended default is `On`. Turning it off sends otherwise eligible records to Review.
@@ -21,43 +21,53 @@ Recommended default is `On`. Turning it off sends otherwise eligible records to 
 Submission behavior:
 
 ```text
-On  -> every record that passes all qualification gates commits without a pre-submit checkbox; all other records remain in Review
+On  -> every record that passes the accepted AI-confidence threshold and every deterministic hard gate commits without a pre-submit checkbox; all other records remain in Review
 Off -> staged records appear in a checkbox list with none selected by default; the user may select any subset, all, or none and choose Add selected
 ```
 
 Turning automatic addition off does not weaken validation. A selected record still must satisfy the normal commit invariants; selection is user intent, not permission to create an invalid ledger event.
 
-Do not expose confidence numbers, provider allowlists, parser qualification internals, or a three-state policy selector in normal settings. [ADR 0002](../adr/0002-agent-is-advisor-not-ledger-owner.md) owns the accepted AI authority boundary.
+Do not expose confidence numbers, provider allowlists, parser calibration internals, or a three-state policy selector in normal settings. [ADR 0002](../adr/0002-agent-is-advisor-not-ledger-owner.md) owns the accepted AI authority boundary.
 
 Exact SHA-256 duplicate reuse always applies as import idempotency under `0004-parser-contract.md`; it is not an auto-commit setting and cannot be disabled through this toggle.
 
-## Qualified document baseline
+## High-confidence auto-commit baseline
 
-A record can be considered for auto-commit only if all are true:
+These safety invariants are already non-negotiable:
 
 ```text
 user auto-commit toggle is enabled
 evidence arrived through a user-authorized channel or explicit import, and trusted classification resolved a configured Money Source
 AI classifier selected the configured supported provider and document type
 provider package deterministic fingerprints and schema checks passed
-the complete provider/document normalization profile is currently qualified
 schema_valid = true
-every event-type-required financial field is grounded to a validated raw source record
+event-type-required amount, date, native unit, account, and direction fields are grounded to one coherent validated raw source record
 deterministic_validation_passed = true
-account/container identity is resolved for commit
-not an exact/probable duplicate, partial allocation, or warning case
-every required field has package-calibrated very-high confidence
-the affected reconciliation window closes exactly against source-backed snapshots
-all event-type-required legs and evidence are present
+account/container identity is confirmed for commit
+exact artifact/record/commit idempotency finds no prior committed effect
+the constructed event and every required leg balance under exact decimal/native-unit invariants
+the source is present, authorized, and not deleted, locked, or invalid
 ```
 
-All financial event types may qualify, including repayments, transfers, FX, trades, refunds, withdrawals, interest, and fees. There is no document-type shortcut and no permanently trusted event-type list.
+These additional eligibility gates are accepted:
 
-Do not use raw LLM self-reported confidence or one global numeric threshold. Each complete normalization profile calibrates required-field confidence against its labeled qualification fixtures. A record is `very-high confidence` only when every event-type-required field meets that profile's accepted calibration, is grounded to its validated raw source record, and has no competing parse or mapping.
+```text
+any probable duplicate beyond exact identity remains in Review
+any warning or competing parse for a record remains in Review
+partial or grouped allocation remains in Review
+exact source-backed snapshot reconciliation applies only when the selected profile/event contract provides and requires those snapshots
+every event type still satisfies its own deterministic evidence and balanced-leg invariants
+```
 
-## Exact reconciliation-window gate
+All financial event types may become eligible, including repayments, transfers, FX, trades, refunds, withdrawals, interest, and fees. There is no document-type shortcut and no permanently trusted event-type list.
+
+The model returns confidence for each required normalized field together with its evidence reference. The host validates shape/range and evidence, then uses the minimum confidence across the event's required fields plus its event guardrails to determine record eligibility; optional-field confidence cannot compensate for a weak required field. The host applies the package/document threshold and every deterministic hard gate. One global threshold across all providers and document types is excluded. Exact threshold values and calibration statistics remain blocked.
+
+## Exact reconciliation-window rule
 
 A reconciliation window is the source-backed interval between accepted opening and closing observations for every affected account, currency, or instrument scope.
+
+When a profile/event contract declares and can ground this gate, the following arithmetic is mandatory. A profile that does not provide the required source-backed snapshots is evaluated without this gate; it does not manufacture opening or closing observations.
 
 Use exact decimal/native-unit arithmetic:
 
@@ -78,7 +88,7 @@ a statement without sufficient source-backed opening/closing observations cannot
 the user auto-commit toggle must still be enabled
 ```
 
-Snapshot closure is necessary but not sufficient: each committed record must also pass its own provider-package, field-confidence, event-invariant, identity, duplicate, and evidence gates.
+When snapshot reconciliation is selected for the profile/event contract, snapshot closure is necessary but not sufficient: each committed record must also pass its own provider-package, field-confidence, event-invariant, identity, duplicate, and evidence gates.
 
 A source-backed balance, position, or valuation observation may be accepted as a non-posting anchor without a prior opening observation when all of its own gates pass. It establishes a boundary; it does not make earlier postings auto-committable unless a complete opening-to-closing window exists.
 
@@ -140,7 +150,7 @@ Match in this order:
 3. otherwise Review; never guess between multiple candidates
 ```
 
-A qualified posted statement row plus its source-backed snapshot window is the normal posting authority. The email remains earlier evidence and may be shown as `Pending from email` until the relationship is proven. Amount changes caused by tips, FX, reversed holds, or other provider behavior do not auto-link unless that provider package has an explicit qualified rule and fixtures.
+A validated posted statement row plus its source-backed snapshot window is the normal posting authority. The email remains earlier evidence and may be shown as `Pending from email` until the relationship is proven. Amount changes caused by tips, FX, reversed holds, or other provider behavior do not auto-link unless that provider package has an explicit validated rule and fixtures.
 
 When the relationship is accepted before commit, existing many-to-many `match_edges` link both external records to one canonical ledger event. If the statement event is already committed when the email arrives, the Gmail slice uses the role-aware schema extension owned by `0002-database-schema.md`: in one transaction, append one confirmed `corroborating_evidence` edge without allocation value, resolve the new external record/review item, and append its audit entry. It creates no new ledger event and cannot change any ledger leg, financial allocation, or prior edge. The current synthetic-core trigger does not yet permit this late insert and must not be bypassed.
 
@@ -208,16 +218,22 @@ The result reports each selected group as committed, already committed, stale, o
 
 Relationship discovery is an internal indexed SQLite query, not an external API or AI decision. Starting from one current record, search the provider/event-type-owned bounded date window across all imported historical periods in both directions. A statement-month boundary never limits the query.
 
-A relationship recommendation requires compatible native unit, distinct resolved accounts, one unique qualified candidate, and an event-specific signed-effect predicate:
+A relationship recommendation requires compatible native unit, distinct resolved accounts, one unique validated candidate, and an event-specific signed-effect predicate:
 
 ```text
 same-currency transfer -> exact equal magnitude; outgoing account decreases and incoming account increases
 credit-card repayment  -> exact equal magnitude; cash decreases and card liability decreases
 ```
 
-These effects come from the canonical signed `accountBalanceDelta`, never directly from a source Debit/Credit label. For the first production rule set, same-currency transfers allow at most three calendar days and credit-card repayments allow at most seven calendar days. The canonical event date is the cash/outgoing account record's `postedOn`. These windows only produce Review recommendations; they never authorize auto-commit. Multiple candidates, partial allocations, unmatched remainders, or a missing qualified rule remain in Review.
+These effects come from the canonical signed `accountBalanceDelta`, never directly from a source Debit/Credit label. For the first production rule set, same-currency transfers allow at most three calendar days and credit-card repayments allow at most seven calendar days. The canonical event date is the cash/outgoing account record's `postedOn`. These windows only produce Review recommendations; they never authorize auto-commit. Multiple candidates, partial allocations, unmatched remainders, or a missing validated rule remain in Review.
 
 This permits an outgoing HSBC payment to find the corresponding DBS credit-card side even when the two rows arrive in different statement months or import order. Two uncommitted sides can form one canonical event before commit. If a candidate is already represented by a committed financial event, the system never inserts or resizes an allocation on that event; an accepted correction appends the event-type-specific reversal and replacement under `0013-ledger-assets-valuation.md`.
+
+The accepted product direction extends repayment review beyond the implemented exact one-to-one same-currency rule. It must eventually handle partial repayments, multiple payments contributing to one card balance movement, and cross-currency repayments. There is no arbitrary amount tolerance: every difference must be represented explicitly as an allocated payment, fee, FX leg, or unmatched remainder.
+
+AI may propose the exact grouping/allocation and a concise explanation. The default Review card presents that explanation and one explicit accept action; exact rows, amounts, currencies, fees, FX evidence, and remainder stay available in progressive disclosure. The deterministic host validates the complete allocation before presenting or accepting it. A proposal that does not balance under the accepted rules stays in Review, and neither AI nor one-click confirmation grants auto-link or auto-commit authority.
+
+The allocation unit, FX evidence/rate ownership, fee/remainder treatment, and candidate search bounds remain unresolved. The current exact same-currency seven-day rule remains the only active production recommendation; do not approximate the broader direction with float comparison, a percentage tolerance, or a hidden residual.
 
 ### Presentation-safe host contract
 
@@ -258,21 +274,22 @@ Kimi integrates the renderer against the frozen host contracts. Completion requi
 
 ## Acceptance criteria
 
-- MVP exposes one default-on `Automatically add qualified records` toggle.
-- With automatic addition on, qualified records commit without a pre-submit checkbox; with it off, Review starts with no staged records selected and supports subset/all/none selection through `Add selected`.
+- MVP exposes one default-on `Automatically add high-confidence records` toggle.
+- With automatic addition on, records passing the accepted AI-confidence threshold plus every hard gate commit without a pre-submit checkbox; with it off, Review starts with no staged records selected and supports subset/all/none selection through `Add selected`.
 - Exact duplicate reuse is mandatory ingestion idempotency, not a user-selectable auto-commit level.
-- Any financial event type may auto-commit only after every accepted record-level and reconciliation-window gate passes.
+- Any financial event type may auto-commit only after every hard gate selected for its accepted provider/document/event contract passes.
 - Normal settings do not expose numeric confidence, parser controls, or a three-state policy selector.
-- Provider/package calibration and deterministic checks, not raw LLM confidence or a global threshold, decide very-high confidence.
-- Exact source-backed snapshot closure is required for every affected native-unit scope, without residuals or missing financial fields.
-- A qualified non-posting observation may establish the first anchor, but cannot retroactively validate an incomplete earlier posting window.
+- Structured model confidence, its package/document threshold, and deterministic checks jointly decide eligibility; confidence alone and one global threshold are insufficient.
+- Whenever the profile/event contract selects snapshot reconciliation, every affected native-unit scope closes exactly without residuals or missing financial fields; profiles without the required source-backed snapshots do not use that gate.
+- An otherwise eligible non-posting observation may establish the first anchor, but cannot retroactively validate an incomplete earlier posting window.
 - A mixed document may auto-commit individually eligible records while semantic-only ambiguities remain in Review; financial gaps block the window.
 - Auto-committed records appear quietly in Recent Activity with one-click reversal-backed Undo.
 - Exact duplicate handling is auditable.
 - Partial and one-to-many matches remain simple in normal UI and block auto-commit.
 - Two bank-side records can link to one canonical transfer event and be discovered from either side.
 - Historical relationship search crosses statement-month boundaries through a bounded deterministic provider/event-type rule and never guesses between multiple candidates.
-- A transaction email and posted statement row remain separate evidence but can link to one canonical event through deterministic provider ID or one unique qualified fallback match.
+- Repayment review is intended to support host-validated AI proposals for partial, grouped, and cross-currency cases with explicit fees/FX/remainders and no arbitrary tolerance, but those cases remain blocked from implementation and automatic action until their allocation and FX contracts are accepted.
+- A transaction email and posted statement row remain separate evidence but can link to one canonical event through deterministic provider ID or one unique validated fallback match.
 - Late email evidence attaches to a committed event only through an append-only audited corroboration edge; it never changes committed allocations or ledger legs.
 - Transaction notifications never satisfy statement snapshot closure or create duplicate income, spending, or balance impact.
 - Repayments do not double-count spending.

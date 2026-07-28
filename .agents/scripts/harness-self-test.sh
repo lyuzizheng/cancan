@@ -284,7 +284,7 @@ expect_failure "ready slice retains blockers" env CANCAN_ROOT="$TEST_ROOT" "$TES
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-sed 's/| qualified-auto-commit | blocked |/| qualified-auto-commit | ready |/' "$manifest.bak" > "$manifest"
+sed 's/| high-confidence-auto-commit | blocked |/| high-confidence-auto-commit | ready |/' "$manifest.bak" > "$manifest"
 expect_failure "ready slice has incomplete dependency" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
@@ -519,6 +519,11 @@ expect_failure "native application CI gains renderer-wide trigger" env CANCAN_RO
 mv "$native_workflow.bak" "$native_workflow"
 
 cp "$native_workflow" "$native_workflow.bak"
+grep -v '^      - apps/desktop/src/generated/presentation-types[.]ts$' "$native_workflow.bak" > "$native_workflow"
+expect_failure "native application CI loses generated type drift trigger" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$native_workflow.bak" "$native_workflow"
+
+cp "$native_workflow" "$native_workflow.bak"
 sed "s/github.event.pull_request.draft == false/true/" "$native_workflow.bak" > "$native_workflow"
 expect_failure "native application CI runs for draft PRs" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$native_workflow.bak" "$native_workflow"
@@ -558,8 +563,27 @@ expect_failure "standalone Rust test loses sidecar preparation" env CANCAN_ROOT=
 mv "$desktop_package.bak" "$desktop_package"
 
 cp "$desktop_package" "$desktop_package.bak"
-sed 's/pnpm build:sidecar && pnpm test:rust:prepared/pnpm build:sidecar && pnpm build:sidecar && pnpm test:rust:prepared/' "$desktop_package.bak" > "$desktop_package"
+ruby -rjson -e '
+  path = ARGV.fetch(0)
+  package = JSON.parse(File.read(path))
+  command = package.fetch("scripts").fetch("verify:native")
+  package["scripts"]["verify:native"] = command.sub(
+    "pnpm build:sidecar",
+    "pnpm build:sidecar && pnpm build:sidecar"
+  )
+  File.write(path, JSON.pretty_generate(package) + "\n")
+' "$desktop_package"
 expect_failure "native gate rebuilds the sidecar" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+mv "$desktop_package.bak" "$desktop_package"
+
+cp "$desktop_package" "$desktop_package.bak"
+ruby -rjson -e '
+  path = ARGV.fetch(0)
+  package = JSON.parse(File.read(path))
+  package["scripts"]["check:presentation-types"] = "pnpm check:presentation-types:prepared"
+  File.write(path, JSON.pretty_generate(package) + "\n")
+' "$desktop_package"
+expect_failure "standalone presentation check loses sidecar preparation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 mv "$desktop_package.bak" "$desktop_package"
 
 tauri_config="$TEST_ROOT/apps/desktop/src-tauri/tauri.conf.json"

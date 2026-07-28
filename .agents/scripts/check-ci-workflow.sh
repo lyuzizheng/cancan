@@ -165,6 +165,7 @@ end
 
 native_paths = [
   "apps/desktop/src-tauri/**",
+  "apps/desktop/src/generated/presentation-types.ts",
   "apps/desktop/package.json",
   "packages/ai/**",
   "packages/parsers/**",
@@ -405,7 +406,13 @@ end
 
 desktop_package = JSON.parse(File.read("apps/desktop/package.json"))
 desktop_scripts = desktop_package.fetch("scripts", {})
-%w[check:rust:prepared test:rust:prepared build:desktop:prepared].each do |name|
+%w[
+  generate:presentation-types:prepared
+  check:presentation-types:prepared
+  check:rust:prepared
+  test:rust:prepared
+  build:desktop:prepared
+].each do |name|
   command = desktop_scripts[name]
   abort "Desktop #{name} must use Cargo.lock" unless command.is_a?(String) && command.include?("--locked")
 end
@@ -415,6 +422,8 @@ unless desktop_scripts.fetch("test:rust:prepared").include?("cargo test")
 end
 
 standalone_prepared = {
+  "generate:presentation-types" => "generate:presentation-types:prepared",
+  "check:presentation-types" => "check:presentation-types:prepared",
   "test:rust" => "test:rust:prepared",
   "check:rust" => "check:rust:prepared",
   "build:desktop" => "build:desktop:prepared"
@@ -427,8 +436,8 @@ standalone_prepared.each do |name, prepared|
 end
 
 {
-  "verify:native" => %w[test:rust:prepared check:rust:prepared build:desktop:prepared],
-  "verify" => %w[check:rust:prepared build:desktop:prepared]
+  "verify:native" => %w[check:presentation-types:prepared test:rust:prepared check:rust:prepared build:desktop:prepared],
+  "verify" => %w[check:presentation-types:prepared check:rust:prepared build:desktop:prepared]
 }.each do |name, gates|
   command = desktop_scripts.fetch(name)
   abort "Desktop #{name} must build the sidecar exactly once" unless command.scan("pnpm build:sidecar").length == 1
@@ -437,7 +446,13 @@ end
   end
 end
 
-%w[test:rust:prepared check:rust:prepared build:desktop:prepared].each do |name|
+%w[
+  generate:presentation-types:prepared
+  check:presentation-types:prepared
+  test:rust:prepared
+  check:rust:prepared
+  build:desktop:prepared
+].each do |name|
   if desktop_scripts.fetch(name).include?("build:sidecar")
     abort "Desktop #{name} must reuse the orchestrator's prepared sidecar"
   end

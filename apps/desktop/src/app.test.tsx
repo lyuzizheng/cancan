@@ -3,11 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import type {
   MoneySourceSummary,
-  SourceDocumentRoutingOutcome,
   SourceDocumentSummary,
 } from "./command-contracts";
 import { DocumentViewer } from "./document-modals";
-import { importNotice, routingNotice } from "./notices";
+import { importNotice } from "./notices";
 import {
   SourcesView,
   parseReceivedAt,
@@ -16,6 +15,7 @@ import {
 import { VaultGate } from "./vault-gate";
 
 const document: SourceDocumentSummary = {
+  attentionReason: null,
   byteSize: 42,
   documentId: "document-1",
   documentStatus: "ready",
@@ -36,6 +36,7 @@ const baseProps: SourcesViewProps = {
   deletingDocumentId: null,
   importing: false,
   inbox: null,
+  inboxError: null,
   inboxBusy: false,
   inboxConfirmingDisable: false,
   loadingDocuments: false,
@@ -48,6 +49,7 @@ const baseProps: SourcesViewProps = {
   onInboxConfirmDisable: () => undefined,
   onInboxRequestDisable: () => undefined,
   onInboxRescan: () => undefined,
+  onInboxRetry: () => undefined,
   onLock: () => undefined,
   onNormalize: () => undefined,
   onOpenUnlock: () => undefined,
@@ -129,7 +131,7 @@ describe("SourcesView", () => {
     expect(markup).toContain("Remember on this Mac");
     expect(markup).toContain("June statement.pdf");
     expect(markup).toContain("View document");
-    expect(markup).toContain("Check routing");
+    expect(markup).toContain("Re-run parser");
     expect(markup).toContain("Delete source file");
     expect(markup).toContain("Save a copy");
   });
@@ -165,6 +167,26 @@ describe("SourcesView", () => {
     expect(markup).toContain("1 document");
   });
 
+  it("keeps available processing and failed evidence viewable", () => {
+    const processing = {
+      ...document,
+      documentId: "processing-document",
+      documentStatus: "processing" as const,
+      originalFilename: "Processing.pdf",
+    };
+    const failed = {
+      ...document,
+      attentionReason: "classification_failed",
+      documentId: "failed-document",
+      documentStatus: "needs_attention" as const,
+      originalFilename: "Failed.pdf",
+    };
+    const markup = render({ unassignedDocuments: [processing, failed] });
+
+    expect(markup).toContain("doc-status doc-status-processing");
+    expect(markup.match(/View document/g)).toHaveLength(2);
+  });
+
   it("treats SQLite import timestamps as UTC", () => {
     const receivedAt = "2026-07-19 00:00:00";
     const markup = render({
@@ -194,7 +216,7 @@ describe("SourcesView", () => {
       unassignedDocuments: [document],
     });
 
-    expect(normalizing).toContain("Checking…");
+    expect(normalizing).toContain("Re-running…");
   });
 });
 
@@ -231,29 +253,5 @@ describe("manual-import feedback", () => {
     ["restored", "Evidence restored"],
   ] as const)("maps %s import status to a clear outcome", (status, title) => {
     expect(importNotice(status).title).toBe(title);
-  });
-
-  it("confirms routing without inventing a Money Source name", () => {
-    const routed: SourceDocumentRoutingOutcome = {
-      accountIds: ["account-1"],
-      documentId: document.documentId,
-      moneySourceId: "source-1",
-      reason: null,
-      status: "routed",
-    };
-    const attention: SourceDocumentRoutingOutcome = {
-      ...routed,
-      moneySourceId: null,
-      reason: "classification_uncertain",
-      status: "needs_attention",
-    };
-
-    expect(routingNotice(routed, source)).toEqual({
-      body: "CanCan matched this evidence to Synthetic Bank.",
-      title: "Evidence routed",
-      tone: "success",
-    });
-    expect(routingNotice(attention).title).toBe("Needs attention");
-    expect(routingNotice(attention).body).not.toContain(attention.reason!);
   });
 });

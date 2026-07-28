@@ -9,6 +9,7 @@ on:
       - ready_for_review
     paths:
       - apps/desktop/src-tauri/**
+      - apps/desktop/src/generated/presentation-types.ts
       - apps/desktop/package.json
       - packages/ai/**
       - packages/parsers/**

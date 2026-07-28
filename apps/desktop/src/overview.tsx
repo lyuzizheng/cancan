@@ -1,12 +1,11 @@
 import type {
   AccountConfirmationPrompt,
+  CandidateAccountDecisionInput,
   MoneyOverview,
   MoneyOverviewAmount,
-  MoneySourceSummary,
   RecentActivitySummary,
-  StatementCoveragePrompt,
 } from "./command-contracts";
-import { AttentionSection, type RemindState } from "./attention";
+import { AttentionSection } from "./attention";
 import { Feedback, type Notice } from "./feedback";
 import {
   eventTypeLabel,
@@ -17,25 +16,20 @@ import {
 export interface OverviewViewProps {
   accountPrompts: AccountConfirmationPrompt[];
   attentionBusyKey: string | null;
-  coveragePrompts: StatementCoveragePrompt[];
   loading: boolean;
   moneyOverview: MoneyOverview | null;
-  moneySources: MoneySourceSummary[];
   notice: Notice | null;
-  onAddFile: () => void;
-  onCancelRemind: () => void;
-  onChangeRemindDate: (value: string) => void;
-  onConfirmAccounts: (prompt: AccountConfirmationPrompt) => void;
-  onCoverageNotExpected: (prompt: StatementCoveragePrompt) => void;
+  onDecideAccounts: (
+    prompt: AccountConfirmationPrompt,
+    decisions: CandidateAccountDecisionInput[],
+  ) => void;
   onLock: () => void;
   onOpenReview: () => void;
   onOpenSources: () => void;
   onRefresh: () => void;
-  onSaveRemind: () => void;
-  onStartRemind: (prompt: StatementCoveragePrompt) => void;
+  onRestoreAccount: (accountId: string) => void;
   onUndo: (eventId: string) => void;
   recentActivity: RecentActivitySummary[] | null;
-  remind: RemindState | null;
   reviewCount: number | null;
   undoingEventId: string | null;
 }
@@ -68,16 +62,8 @@ export function OverviewView(props: OverviewViewProps) {
         <AttentionSection
           accountPrompts={props.accountPrompts}
           attentionBusyKey={props.attentionBusyKey}
-          coveragePrompts={props.coveragePrompts}
-          moneySources={props.moneySources}
-          onAddFile={props.onAddFile}
-          onCancelRemind={props.onCancelRemind}
-          onChangeRemindDate={props.onChangeRemindDate}
-          onConfirmAccounts={props.onConfirmAccounts}
-          onNotExpected={props.onCoverageNotExpected}
-          onSaveRemind={props.onSaveRemind}
-          onStartRemind={props.onStartRemind}
-          remind={props.remind}
+          onDecideAccounts={props.onDecideAccounts}
+          onRestoreAccount={props.onRestoreAccount}
         />
 
         <section className="money-panel" aria-labelledby="money-overview-heading">

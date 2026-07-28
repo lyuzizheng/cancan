@@ -45,7 +45,6 @@ Use a small set of coarse jobs first:
 
 ```text
 gmail_sync_rule
-source_document_ingest
 delete_source_file
 parse_document
 reconcile_document
@@ -56,7 +55,7 @@ restore_vault
 
 ### `gmail_sync_rule`
 
-Runs one Gmail search rule.
+Runs one Gmail search rule under its connected mailbox.
 
 Can internally perform:
 
@@ -70,32 +69,11 @@ file hash dedupe
 source_document creation
 ```
 
-It should checkpoint cursor/history/processed message ids in `step_state_json` or sync-state tables so it can resume without duplicate imports.
+It should checkpoint cursor/history/processed message ids in mailbox-and-rule-scoped sync state so it can resume without duplicate imports. A Vault may connect multiple mailboxes and a Money Source may own rules in more than one mailbox, but this does not create mailbox-specific or source-specific parse job types.
 
-Attachment and provider-approved transaction-message evidence both enter the existing source-document ingest/parse chain. Do not add one job type per email shape. Gmail overlap retries use mailbox/message identity, while artifact SHA-256 and financial record identity remain separate idempotency layers.
+Attachment and provider-approved transaction-message evidence both enter the existing source capture plus coarse `parse_document` flow. Do not add one job type per email shape, mailbox, Money Source, or provider. Gmail overlap retries use mailbox/message identity, while artifact SHA-256 and financial record identity remain separate idempotency layers.
 
-### `source_document_ingest`
-
-Prepares a source document and initial source observations for parsing.
-
-Can internally perform:
-
-```text
-file validation
-mime detection
-password-protected PDF detection
-password unlock when a saved secret exists
-native text extraction
-structured table extraction
-initial input-quality assessment
-job-scoped extraction bundle creation
-```
-
-If the PDF is locked and no saved password works, the job becomes `blocked` with `blocked_reason = password_required`.
-
-The saved password scope is the related Money Source. A failed saved password never loops blindly: the user chooses a session-only password or replaces that Money Source's saved Keychain secret.
-
-The user-authorized CanCan root's `Inbox` child does not require a durable job merely to notice directory contents. Startup/unlock/manual scans and filesystem-change hints discover readable candidates; each candidate then enters the existing durable ingest job. A cloud placeholder, partial write, or unreadable file is deferred and retried by a later scan without modifying the source folder. A hash already represented by a user-deleted tombstone is a successful suppressed outcome, not a restore job; only explicit user intent starts restoration.
+Only one `gmail_sync_rule` job runs at a time across the unlocked Vault, regardless of mailbox or rule. Disconnect disables the mailbox's rules, cancels its queued sync jobs, and makes a running sync stop at the next safe boundary before another remote fetch or capture. Retry/backoff releases the single Gmail worker so another queued rule may run.
 
 ### `delete_source_file`
 
@@ -126,11 +104,20 @@ Before this path is considered implemented, integration tests must bind repeated
 
 ### `parse_document`
 
-Turns a source document plus job-scoped observations into a validated structured proposal and staged external records.
+Owns the complete coarse source-processing run from an already captured encrypted source document to validated staged records. Validation, protected-document inspection, extraction, normalization, grounding, and staging are internal steps, not separate durable jobs.
+
+An explicit user `Add` succeeds once encrypted Vault capture is durable and one database transaction has committed both the source-document registry row and its queued `parse_document` job. Parsing then proceeds asynchronously. Capture, source registration, or job-enqueue failure must not report Add success. A later parse failure is a truthful document/job state, not a retroactive failure of the completed capture.
 
 Can internally perform:
 
 ```text
+file validation
+mime detection
+password-protected PDF detection
+password unlock when a saved secret exists
+native text extraction
+structured table extraction
+initial input-quality assessment
 provider/document skill selection
 bounded AI normalization through single-pass or document-agent runtime
 conditional OCR/page-region/tool requests
@@ -141,7 +128,15 @@ parse_run creation
 external_record staging
 ```
 
-AI retries must create or preserve distinct parse run history. Do not silently overwrite previous model/prompt/input/output metadata.
+If the PDF is locked and no saved password works, this job becomes `blocked` with `blocked_reason = password_required`. The saved password scope is the related Money Source. A failed saved password never loops blindly: the user chooses a session-only password or replaces that Money Source's saved Keychain secret.
+
+Extraction observations remain job-scoped and in memory for the parse attempt. Do not persist unrestricted plaintext in logs or generic job JSON. A restart repeats the idempotent parse job from the encrypted source rather than inventing a second durable ingest job or a sensitive extraction-bundle handoff.
+
+Long file reads, extraction, decode, OCR, sidecar/model calls, and hashing run outside the shared store mutex. The worker holds the lock only to claim/snapshot bounded state and to validate and transactionally apply a result; a stale version or idempotency claim rejects the write. This keeps unrelated Vault/status/read commands responsive without inventing a second store or a parallel job system.
+
+The user-authorized CanCan root's `Inbox` child does not require a durable job merely to notice directory contents. Startup/unlock/manual scans and filesystem-change hints discover and capture stable candidates; each captured source then enters `parse_document`. A cloud placeholder, partial write, or unreadable file is deferred and retried by a later scan without modifying the source folder. A hash already represented by a user-deleted tombstone is a successful suppressed outcome, not a restore job; only explicit user intent starts restoration.
+
+An automatic retry resumes the same logical parse run and idempotency key. An explicit user `Re-run parser` action creates a new parse run even when the normalization profile is unchanged. Every run preserves its input/output hashes and model/prompt/runtime metadata; changed output creates versioned review evidence rather than silently overwriting or ignoring the prior result.
 
 The document agent receives only the current parse job and the fixed parser tools from `0004-parser-contract.md`. Step/submission budget exhaustion, invalid structured completion, and ungrounded required evidence become explicit parse outcomes rather than hidden retries.
 
@@ -161,6 +156,12 @@ transaction-notification to posted-statement candidate detection
 ```
 
 Ambiguous links should not auto-commit.
+
+### Future internal source-analysis jobs
+
+Features such as statement coverage may use a recurring internal durable job after their capability contract is accepted under `0019-ai-capability-platform-and-cli.md`. One job invokes the capability for exactly one Money Source/account/document-type scope, validates every source/snippet reference, and stores a bounded advisory result. Accepted source/account/statement-period or processing-state changes mark that scope due. Startup/unlock runs a due scope only when no successful evaluation exists for the current local calendar day.
+
+Routine runs are implementation plumbing rather than a normal user-visible Job card. CanCan does not add a background daemon or generic always-on cron service: scheduled work runs while the Desktop app is available, and startup/unlock catches up due work idempotently. This does not authorize an unrestricted source dump, direct AI database/filesystem access, or financial mutation. Cancellation, consent, payload, retention, cost, confidence/explanation, and failure surface belong to the owning feature slice.
 
 ### `commit_review_batch`
 
@@ -429,7 +430,13 @@ Full DAG features can be added later if needed, but the MVP should stay easy for
 - Password-protected PDFs become blocked, not failed.
 - Blocked jobs have user-facing action surfaces.
 - Gmail sync reruns do not duplicate attachments or source documents.
+- Gmail rule sync is globally serial across mailboxes, disconnect stops further capture and deletes the token, and reconnect resumes retained rule/cursor identity without duplicate imports.
 - AI parse retries preserve parse history.
+- Explicit user reparses create a distinct parse run even when the profile is unchanged; automatic retries preserve one logical run.
+- Source processing produces one truthful coarse `parse_document` history; it does not create a second succeeded ingest row for internal capture/extraction steps.
+- Explicit Add reports success only after encrypted capture plus the atomic source-registration/parse-job transaction are durable; parsing is asynchronous and its later state is reported separately.
+- Protected-document blocking, extraction, normalization, grounding, and staging remain restart-safe internal steps of `parse_document`.
+- Long extraction/OCR/sidecar work occurs outside the store mutex, while bounded claims and validated transactional writes remain inside it.
 - Commit jobs do not duplicate ledger events when retried.
 - Backup runs as a job and reports progress/errors.
 - Source-file deletion converges idempotently on a tombstone, never breaks evidence navigation, and never changes committed ledger events.

@@ -41,259 +41,6 @@ fn lists_only_safe_money_source_display_fields_in_stable_order() {
     );
 }
 
-fn seed_candidate_account(
-    store: &ManualImportStore,
-    account_id: &str,
-    money_source_id: &str,
-    display_name: &str,
-    account_type: &str,
-    masked_identifier: Option<&str>,
-    currency: Option<&str>,
-) {
-    store
-        .connection
-        .execute(
-            "INSERT INTO accounts( \
-               id, money_source_id, provider_key, provider_account_id, account_type, \
-               display_name, masked_identifier, currency, status, raw_identity_json \
-             ) VALUES (?1, ?2, 'synthetic', ?3, ?4, ?5, ?6, ?7, 'candidate', ?8)",
-            params![
-                account_id,
-                money_source_id,
-                format!("private-{account_id}"),
-                account_type,
-                display_name,
-                masked_identifier,
-                currency,
-                format!(r#"{{"providerAccountId":"private-{account_id}"}}"#),
-            ],
-        )
-        .expect("seed candidate account");
-}
-
-#[test]
-fn lists_pending_account_confirmations_without_private_identity_fields() {
-    let root = tempfile::tempdir().expect("temporary Vault");
-    let store = open_store(root.path());
-    store
-        .seed_money_source("source-alpha", "alpha", "Alpha Bank", "bank")
-        .expect("seed source");
-    seed_candidate_account(
-        &store,
-        "candidate-dbs",
-        "source-dbs",
-        "Everyday",
-        "deposit_account",
-        Some("••001"),
-        Some("SGD"),
-    );
-    seed_candidate_account(
-        &store,
-        "candidate-alpha",
-        "source-alpha",
-        "Savings",
-        "deposit_account",
-        None,
-        Some("USD"),
-    );
-    seed_candidate_account(
-        &store,
-        "confirmed-dbs",
-        "source-dbs",
-        "Confirmed",
-        "deposit_account",
-        None,
-        Some("SGD"),
-    );
-    store
-        .connection
-        .execute(
-            "UPDATE accounts SET status = 'confirmed' WHERE id = 'confirmed-dbs'",
-            [],
-        )
-        .expect("confirm fixture account");
-
-    let prompts = store
-        .list_account_confirmation_prompts()
-        .expect("list pending confirmations");
-
-    assert_eq!(
-        prompts,
-        vec![
-            AccountConfirmationPrompt {
-                candidate_accounts: vec![AccountConfirmationCandidate {
-                    account_id: "candidate-alpha".to_owned(),
-                    account_type: "deposit_account".to_owned(),
-                    currency: Some("USD".to_owned()),
-                    display_name: "Savings".to_owned(),
-                    masked_identifier: None,
-                }],
-                display_name: "Alpha Bank".to_owned(),
-                money_source_id: "source-alpha".to_owned(),
-            },
-            AccountConfirmationPrompt {
-                candidate_accounts: vec![AccountConfirmationCandidate {
-                    account_id: "candidate-dbs".to_owned(),
-                    account_type: "deposit_account".to_owned(),
-                    currency: Some("SGD".to_owned()),
-                    display_name: "Everyday".to_owned(),
-                    masked_identifier: Some("••001".to_owned()),
-                }],
-                display_name: "DBS".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-            },
-        ]
-    );
-    let serialized = serde_json::to_string(&prompts).expect("serialize safe prompts");
-    assert!(!serialized.contains("providerAccountId"));
-    assert!(!serialized.contains("providerKey"));
-    assert!(!serialized.contains("rawIdentityJson"));
-    assert!(!serialized.contains("private-candidate-dbs"));
-}
-
-#[test]
-fn confirms_the_exact_candidate_set_once() {
-    let root = tempfile::tempdir().expect("temporary Vault");
-    let mut store = open_store(root.path());
-    seed_candidate_account(
-        &store,
-        "candidate-one",
-        "source-dbs",
-        "Everyday",
-        "deposit_account",
-        Some("••001"),
-        Some("SGD"),
-    );
-    seed_candidate_account(
-        &store,
-        "candidate-two",
-        "source-dbs",
-        "Savings",
-        "deposit_account",
-        Some("••002"),
-        Some("SGD"),
-    );
-    let expected = vec!["candidate-two".to_owned(), "candidate-one".to_owned()];
-
-    assert_eq!(
-        store
-            .confirm_candidate_accounts("source-dbs", &expected, "audit-confirm-accounts")
-            .expect("confirm exact candidate set"),
-        AccountConfirmationOutcome {
-            status: AccountConfirmationStatus::Confirmed,
-        }
-    );
-    let statuses = store
-        .connection
-        .prepare("SELECT status FROM accounts WHERE id IN (?1, ?2) ORDER BY id")
-        .expect("prepare account status query")
-        .query_map(["candidate-one", "candidate-two"], |row| {
-            row.get::<_, String>(0)
-        })
-        .expect("query account statuses")
-        .collect::<Result<Vec<_>, _>>()
-        .expect("collect account statuses");
-    assert_eq!(statuses, vec!["confirmed", "confirmed"]);
-    let audit_count: i64 = store
-        .connection
-        .query_row(
-            "SELECT count(*) FROM audit_log \
-             WHERE entity_id = 'source-dbs' AND action = 'candidate_accounts_confirmed'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("count confirmation audits");
-    assert_eq!(audit_count, 1);
-
-    assert_eq!(
-        store
-            .confirm_candidate_accounts("source-dbs", &expected, "audit-repeat")
-            .expect("repeat confirmation"),
-        AccountConfirmationOutcome {
-            status: AccountConfirmationStatus::AlreadyConfirmed,
-        }
-    );
-    let repeated_audit_count: i64 = store
-        .connection
-        .query_row(
-            "SELECT count(*) FROM audit_log \
-             WHERE entity_id = 'source-dbs' AND action = 'candidate_accounts_confirmed'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("count repeated confirmation audits");
-    assert_eq!(repeated_audit_count, 1);
-}
-
-#[test]
-fn rejects_a_stale_candidate_confirmation_without_writing() {
-    let root = tempfile::tempdir().expect("temporary Vault");
-    let mut store = open_store(root.path());
-    seed_candidate_account(
-        &store,
-        "candidate-one",
-        "source-dbs",
-        "Everyday",
-        "deposit_account",
-        Some("••001"),
-        Some("SGD"),
-    );
-    seed_candidate_account(
-        &store,
-        "candidate-two",
-        "source-dbs",
-        "Savings",
-        "deposit_account",
-        Some("••002"),
-        Some("SGD"),
-    );
-    let expected = store
-        .list_account_confirmation_prompts()
-        .expect("list confirmation prompt")[0]
-        .candidate_accounts
-        .iter()
-        .map(|candidate| candidate.account_id.clone())
-        .collect::<Vec<_>>();
-    seed_candidate_account(
-        &store,
-        "candidate-new",
-        "source-dbs",
-        "New account",
-        "deposit_account",
-        Some("••003"),
-        Some("SGD"),
-    );
-
-    assert_eq!(
-        store
-            .confirm_candidate_accounts("source-dbs", &expected, "audit-stale")
-            .expect("reject stale confirmation"),
-        AccountConfirmationOutcome {
-            status: AccountConfirmationStatus::Conflict,
-        }
-    );
-    let candidate_count: i64 = store
-        .connection
-        .query_row(
-            "SELECT count(*) FROM accounts \
-             WHERE money_source_id = 'source-dbs' AND status = 'candidate'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("count unchanged candidates");
-    let audit_count: i64 = store
-        .connection
-        .query_row(
-            "SELECT count(*) FROM audit_log \
-             WHERE entity_id = 'source-dbs' AND action = 'candidate_accounts_confirmed'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("count confirmation audits");
-    assert_eq!(candidate_count, 3);
-    assert_eq!(audit_count, 0);
-}
-
 fn import<'a>(
     source_path: &'a Path,
     document_id: &'a str,
@@ -397,9 +144,6 @@ fn source_document_pipeline_queues_reconciliation_only_after_parse_succeeds() {
         )
         .expect("import source");
 
-    store
-        .enqueue_source_document_pipeline("document-local-inbox")
-        .expect("enqueue pipeline");
     let initial_jobs = store
         .connection
         .prepare(
@@ -415,20 +159,21 @@ fn source_document_pipeline_queues_reconciliation_only_after_parse_succeeds() {
         .expect("read jobs");
     assert_eq!(
         initial_jobs,
-        vec![
-            ("parse_document".to_owned(), "queued".to_owned()),
-            ("source_document_ingest".to_owned(), "succeeded".to_owned()),
-        ]
+        vec![("parse_document".to_owned(), "queued".to_owned())]
     );
 
-    assert!(
-        store
-            .start_parse_document("document-local-inbox")
-            .expect("start parse")
-    );
+    let job = store
+        .queued_parse_document_jobs()
+        .expect("read queued parse job")
+        .pop()
+        .expect("queued parse job");
+    let claim = store
+        .start_parse_document_job(&job)
+        .expect("start parse")
+        .expect("claim parse job");
     store
-        .finish_parse_document(
-            "document-local-inbox",
+        .finish_parse_document_job(
+            &claim,
             &SourceDocumentRoutingOutcome {
                 account_ids: vec!["account-dbs".to_owned()],
                 document_id: "document-local-inbox".to_owned(),
@@ -439,8 +184,8 @@ fn source_document_pipeline_queues_reconciliation_only_after_parse_succeeds() {
         )
         .expect("finish parse");
     store
-        .finish_parse_document(
-            "document-local-inbox",
+        .finish_parse_document_job(
+            &claim,
             &SourceDocumentRoutingOutcome {
                 account_ids: vec!["account-dbs".to_owned()],
                 document_id: "document-local-inbox".to_owned(),
@@ -449,7 +194,7 @@ fn source_document_pipeline_queues_reconciliation_only_after_parse_succeeds() {
                 status: SourceDocumentRoutingStatus::Routed,
             },
         )
-        .expect("repeat completion");
+        .expect_err("reject completion after the parse lease is released");
     let final_jobs = store
         .connection
         .prepare(
@@ -468,13 +213,12 @@ fn source_document_pipeline_queues_reconciliation_only_after_parse_succeeds() {
         vec![
             ("parse_document".to_owned(), "succeeded".to_owned()),
             ("reconcile_document".to_owned(), "queued".to_owned()),
-            ("source_document_ingest".to_owned(), "succeeded".to_owned()),
         ]
     );
 }
 
 #[test]
-fn explicit_reenqueue_retries_only_failed_parse_jobs_with_attempts_left() {
+fn automatically_retries_failed_parse_jobs_with_the_same_logical_run_until_exhausted() {
     let root = tempfile::tempdir().expect("temporary Vault");
     let source_path = root.path().join("statement.pdf");
     fs::write(&source_path, b"%PDF transient sidecar failure").expect("write fixture");
@@ -482,277 +226,113 @@ fn explicit_reenqueue_retries_only_failed_parse_jobs_with_attempts_left() {
     store
         .register_import(&import(&source_path, "document-retry", "audit-retry"), None)
         .expect("import source");
-    store
-        .enqueue_source_document_pipeline("document-retry")
-        .expect("enqueue pipeline");
-    assert!(
-        store
-            .start_parse_document("document-retry")
-            .expect("start first parse")
-    );
-    store
-        .fail_parse_document("document-retry", "normalizer_failed")
-        .expect("fail transient parse");
-    store
-        .connection
-        .execute(
-            "UPDATE jobs \
-             SET error_json = '{\"code\":\"normalizer_failed\"}', result_json = '{}', \
-                 lease_owner = 'failed-worker', lease_until = CURRENT_TIMESTAMP \
-             WHERE related_source_document_id = ?1 AND job_type = ?2",
-            params!["document-retry", PARSE_DOCUMENT_JOB_TYPE],
-        )
-        .expect("seed terminal parse fields");
+    let first_job = store
+        .queued_parse_document_jobs()
+        .expect("read initial parse job")
+        .pop()
+        .expect("initial parse job");
 
+    let first_claim = store
+        .start_parse_document_job(&first_job)
+        .expect("start first parse")
+        .expect("claim first parse");
     store
-        .enqueue_source_document_pipeline("document-retry")
-        .expect("explicit re-enqueue retries transient failure");
+        .fail_parse_document_job(&first_claim, "normalizer_failed")
+        .expect("requeue transient parse failure");
     let retry_state: (String, i64, bool) = store
         .connection
         .query_row(
             "SELECT status, attempts, \
                     result_json IS NULL AND error_json IS NULL AND blocked_reason IS NULL \
                     AND lease_owner IS NULL AND lease_until IS NULL AND finished_at IS NULL \
-             FROM jobs WHERE related_source_document_id = ?1 AND job_type = ?2",
-            params!["document-retry", PARSE_DOCUMENT_JOB_TYPE],
+             FROM jobs WHERE id = ?1",
+            [&first_job.job_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .expect("read re-queued parse");
     assert_eq!(retry_state, ("queued".to_owned(), 1, true));
-    assert!(
-        store
-            .start_parse_document("document-retry")
-            .expect("retry parse")
-    );
-    let retry_attempts: i64 = store
+    let retry_job = store
+        .queued_parse_document_jobs()
+        .expect("read retry parse job")
+        .pop()
+        .expect("retry parse job");
+    assert_eq!(retry_job.job_id, first_job.job_id);
+    assert_eq!(retry_job.logical_run_key, first_job.logical_run_key);
+    let retry_claim = store
+        .start_parse_document_job(&retry_job)
+        .expect("retry parse")
+        .expect("claim retry parse");
+    store
+        .fail_parse_document_job(&retry_claim, "normalizer_failed")
+        .expect("requeue second parse failure");
+    let final_claim = store
+        .start_parse_document_job(&retry_job)
+        .expect("final retry")
+        .expect("claim final retry");
+    store
+        .fail_parse_document_job(&final_claim, "normalizer_failed")
+        .expect("record exhausted failure");
+    let terminal: (String, i64, String) = store
         .connection
         .query_row(
-            "SELECT attempts FROM jobs \
-             WHERE related_source_document_id = ?1 AND job_type = ?2",
-            params!["document-retry", PARSE_DOCUMENT_JOB_TYPE],
-            |row| row.get(0),
+            "SELECT status, attempts, blocked_reason FROM jobs WHERE id = ?1",
+            [&retry_job.job_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
-        .expect("read retry attempts");
-    assert_eq!(retry_attempts, 2);
-
-    for (status, attempts) in [("blocked", 2), ("succeeded", 2), ("failed", 3)] {
-        store
-            .connection
-            .execute(
-                "UPDATE jobs SET status = ?1, attempts = ?2 \
-                 WHERE related_source_document_id = ?3 AND job_type = ?4",
-                params![status, attempts, "document-retry", PARSE_DOCUMENT_JOB_TYPE],
-            )
-            .expect("seed ineligible parse state");
-        store
-            .enqueue_source_document_pipeline("document-retry")
-            .expect("explicit re-enqueue leaves ineligible state alone");
-        let actual: (String, i64) = store
-            .connection
-            .query_row(
-                "SELECT status, attempts FROM jobs \
-                 WHERE related_source_document_id = ?1 AND job_type = ?2",
-                params!["document-retry", PARSE_DOCUMENT_JOB_TYPE],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .expect("read ineligible parse state");
-        assert_eq!(actual, (status.to_owned(), attempts));
-    }
-}
-
-fn seed_coverage_statement(
-    store: &mut ManualImportStore,
-    document_id: &str,
-    period_from: &str,
-    period_to: &str,
-) {
-    store
-        .connection
-        .execute(
-            "INSERT INTO source_documents( \
-               id, money_source_id, file_sha256, semantic_document_key, original_filename, \
-               mime_type, byte_size, encrypted_locator, file_state, document_type, \
-               statement_period_from, statement_period_to \
-             ) VALUES (?1, 'source-dbs', ?2, ?3, ?4, 'application/pdf', 1, ?5, \
-                       'available', 'account_statement', ?6, ?7)",
-            params![
-                document_id,
-                format!("{document_id:0<64}"),
-                format!("dbs:checking:{period_from}"),
-                format!("{document_id}.pdf"),
-                format!("files/{document_id}.ccenv"),
-                period_from,
-                period_to,
-            ],
-        )
-        .expect("seed coverage document");
-    store
-        .connection
-        .execute(
-            "INSERT INTO source_document_accounts(source_document_id, account_id) \
-             VALUES (?1, 'account-dbs')",
-            [document_id],
-        )
-        .expect("link coverage account");
-}
-
-#[test]
-fn derives_monthly_coverage_gaps_and_idempotent_user_decisions() {
-    let root = tempfile::tempdir().expect("temporary Vault");
-    let mut store = open_store(root.path());
-    store
-        .connection
-        .execute(
-            "INSERT INTO accounts( \
-               id, money_source_id, provider_key, provider_account_id, account_type, \
-               display_name, currency, status \
-             ) VALUES ('account-dbs', 'source-dbs', 'dbs', 'checking-001', \
-                       'deposit_account', 'DBS checking', 'SGD', 'confirmed')",
-            [],
-        )
-        .expect("seed coverage account");
-    seed_coverage_statement(&mut store, "document-january", "2026-01-01", "2026-01-31");
-    seed_coverage_statement(&mut store, "document-march", "2026-03-01", "2026-03-31");
-    let policy = [StatementCoveragePolicy {
-        cadence_months: 1,
-        document_type: "account_statement",
-        grace_days: 7,
-        provider_key: "dbs",
-    }];
-    let prompts = store
-        .list_statement_coverage_prompts(&policy, "2026-05-10")
-        .expect("derive coverage prompts");
+        .expect("read terminal retry state");
     assert_eq!(
-        prompts,
-        vec![
-            StatementCoveragePrompt {
-                account_id: "account-dbs".to_owned(),
-                document_type: "account_statement".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-                statement_period_from: "2026-02-01".to_owned(),
-                statement_period_to: "2026-02-28".to_owned(),
-                status: StatementCoveragePromptStatus::ConfirmedMissing,
-            },
-            StatementCoveragePrompt {
-                account_id: "account-dbs".to_owned(),
-                document_type: "account_statement".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-                statement_period_from: "2026-04-01".to_owned(),
-                statement_period_to: "2026-04-30".to_owned(),
-                status: StatementCoveragePromptStatus::LikelyMissing,
-            },
-        ]
-    );
-
-    let not_expected = StatementCoverageDecisionInput {
-        account_id: "account-dbs",
-        audit_id: "audit-coverage-february",
-        decision: StatementCoverageDecision::NotExpected,
-        document_type: "account_statement",
-        money_source_id: "source-dbs",
-        remind_after: None,
-        statement_period_from: "2026-02-01",
-        statement_period_to: "2026-02-28",
-    };
-    store
-        .record_statement_coverage_decision(&not_expected)
-        .expect("record not expected");
-    store
-        .record_statement_coverage_decision(&not_expected)
-        .expect("repeat not expected");
-    let audits: i64 = store
-        .connection
-        .query_row(
-            "SELECT count(*) FROM audit_log \
-             WHERE action = 'statement_coverage_decided' AND entity_id LIKE '%:2026-02-01:2026-02-28'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("count coverage audits");
-    assert_eq!(audits, 1);
-
-    let remind_later = StatementCoverageDecisionInput {
-        account_id: "account-dbs",
-        audit_id: "audit-coverage-april",
-        decision: StatementCoverageDecision::RemindLater,
-        document_type: "account_statement",
-        money_source_id: "source-dbs",
-        remind_after: Some("2099-01-01"),
-        statement_period_from: "2026-04-01",
-        statement_period_to: "2026-04-30",
-    };
-    store
-        .record_statement_coverage_decision(&remind_later)
-        .expect("record reminder");
-    assert!(
-        store
-            .list_statement_coverage_prompts(&policy, "2026-05-10")
-            .expect("derive suppressed prompts")
-            .is_empty()
-    );
-    assert_eq!(
-        store
-            .list_statement_coverage_prompts(&policy, "2100-01-01")
-            .expect("derive reappeared prompts"),
-        vec![StatementCoveragePrompt {
-            account_id: "account-dbs".to_owned(),
-            document_type: "account_statement".to_owned(),
-            money_source_id: "source-dbs".to_owned(),
-            statement_period_from: "2026-04-01".to_owned(),
-            statement_period_to: "2026-04-30".to_owned(),
-            status: StatementCoveragePromptStatus::LikelyMissing,
-        }]
+        terminal,
+        ("failed".to_owned(), 3, "normalizer_failed".to_owned())
     );
 }
 
 #[test]
-fn keeps_month_end_when_multiple_monthly_periods_are_missing() {
+fn explicit_reparse_creates_a_new_parse_job_and_logical_run() {
     let root = tempfile::tempdir().expect("temporary Vault");
+    let source_path = root.path().join("statement.pdf");
+    fs::write(&source_path, b"%PDF explicit reparse").expect("write fixture");
     let mut store = open_store(root.path());
     store
-        .connection
-        .execute(
-            "INSERT INTO accounts( \
-               id, money_source_id, provider_key, provider_account_id, account_type, \
-               display_name, currency, status \
-             ) VALUES ('account-dbs', 'source-dbs', 'dbs', 'checking-001', \
-                       'deposit_account', 'DBS checking', 'SGD', 'confirmed')",
-            [],
+        .register_import(
+            &import(&source_path, "document-reparse", "audit-reparse"),
+            None,
         )
-        .expect("seed coverage account");
-    seed_coverage_statement(&mut store, "document-january", "2026-01-01", "2026-01-31");
-    seed_coverage_statement(&mut store, "document-april", "2026-04-01", "2026-04-30");
-    let policy = [StatementCoveragePolicy {
-        cadence_months: 1,
-        document_type: "account_statement",
-        grace_days: 7,
-        provider_key: "dbs",
-    }];
+        .expect("import source");
+    let first = store
+        .queued_parse_document_jobs()
+        .expect("read initial parse job")
+        .pop()
+        .expect("initial parse job");
+    let first_claim = store
+        .start_parse_document_job(&first)
+        .expect("claim initial parse")
+        .expect("initial parse claimed");
+    store
+        .finish_parse_document_job(
+            &first_claim,
+            &SourceDocumentRoutingOutcome::needs_attention(
+                "document-reparse",
+                "classification_uncertain",
+            ),
+        )
+        .expect("finish initial parse");
 
-    let prompts = store
-        .list_statement_coverage_prompts(&policy, "2026-04-01")
-        .expect("derive missing periods");
-    assert_eq!(
-        prompts,
-        vec![
-            StatementCoveragePrompt {
-                account_id: "account-dbs".to_owned(),
-                document_type: "account_statement".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-                statement_period_from: "2026-02-01".to_owned(),
-                statement_period_to: "2026-02-28".to_owned(),
-                status: StatementCoveragePromptStatus::ConfirmedMissing,
-            },
-            StatementCoveragePrompt {
-                account_id: "account-dbs".to_owned(),
-                document_type: "account_statement".to_owned(),
-                money_source_id: "source-dbs".to_owned(),
-                statement_period_from: "2026-03-01".to_owned(),
-                statement_period_to: "2026-03-31".to_owned(),
-                status: StatementCoveragePromptStatus::ConfirmedMissing,
-            },
-        ]
+    assert!(
+        store
+            .enqueue_source_document_pipeline("document-reparse")
+            .expect("enqueue explicit reparse")
     );
+    assert!(
+        !store
+            .enqueue_source_document_pipeline("document-reparse")
+            .expect("reject duplicate active reparse")
+    );
+    let jobs = store
+        .queued_parse_document_jobs()
+        .expect("read queued parse jobs");
+
+    assert_eq!(jobs.len(), 1);
+    assert_ne!(jobs[0].logical_run_key, first.logical_run_key);
 }
 
 #[test]
@@ -825,6 +405,14 @@ fn migrates_existing_document_relationships_to_pending_semantic_identity() {
         )
         .expect("preserve parse relationship");
     assert_eq!(source_document_id, "document-existing");
+    let parse_identity: (String, String) = connection
+        .query_row(
+            "SELECT logical_run_key, input_hash FROM parse_runs WHERE id = 'parse-existing'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("migrate parse identity");
+    assert_eq!(parse_identity, ("parse-existing".to_owned(), String::new()));
     assert!(
         connection
             .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
@@ -894,9 +482,9 @@ fn migrates_existing_document_relationships_to_pending_semantic_identity() {
     let invalid = [Migration {
         version: 99,
         sql: "INSERT INTO parse_runs( \
-                id, source_document_id, normalization_profile_id, profile_json, status \
+                id, source_document_id, normalization_profile_id, logical_run_key, profile_json, input_hash, status \
               ) VALUES ( \
-                'parse-invalid', 'missing-document', 'profile-v1', '{}', 'failed' \
+                'parse-invalid', 'missing-document', 'profile-v1', 'parse-invalid', '{}', '', 'failed' \
               )",
         foreign_keys_off: true,
     }];
@@ -1276,8 +864,8 @@ fn imports_deduplicates_groups_and_restores_source_documents() {
         .connection
         .execute(
             "INSERT INTO parse_runs( \
-               id, source_document_id, normalization_profile_id, profile_json, status \
-             ) VALUES ('parse-first', ?1, 'profile-v1', '{}', 'succeeded')",
+               id, source_document_id, normalization_profile_id, logical_run_key, profile_json, input_hash, status \
+             ) VALUES ('parse-first', ?1, 'profile-v1', 'parse-first', '{}', '', 'succeeded')",
             [&first_document.document_id],
         )
         .expect("seed retained parse relationship");
@@ -1493,7 +1081,7 @@ fn missing_storage_is_not_recorded_as_a_user_deletion() {
 }
 
 #[test]
-fn removes_a_new_encrypted_file_when_the_database_transaction_fails() {
+fn defers_unreferenced_file_cleanup_until_the_next_vault_open() {
     let root = tempfile::tempdir().expect("temporary Vault");
     let source_path = root.path().join("statement.pdf");
     fs::write(&source_path, b"%PDF rollback statement").expect("write fixture");
@@ -1526,7 +1114,11 @@ fn removes_a_new_encrypted_file_when_the_database_transaction_fails() {
         .expect("count rolled-back documents");
     assert_eq!(rows, 0);
     let files = root.path().join("files");
+    assert_eq!(fs::read_dir(&files).expect("files directory").count(), 1);
+    drop(store);
+    let reopened = open_store(root.path());
     assert_eq!(fs::read_dir(files).expect("files directory").count(), 0);
+    drop(reopened);
 }
 
 #[test]
@@ -1823,8 +1415,8 @@ fn seed_review_repayment(store: &mut ManualImportStore, card_first: bool) {
             .connection
             .execute(
                 "INSERT INTO parse_runs( \
-                   id, source_document_id, normalization_profile_id, profile_json, status \
-                 ) VALUES (?1, ?2, 'synthetic-review-v1', '{}', 'validated')",
+                   id, source_document_id, normalization_profile_id, logical_run_key, profile_json, input_hash, status \
+                 ) VALUES (?1, ?2, 'synthetic-review-v1', ?1, '{}', '', 'validated')",
                 params![format!("parse-{id}"), id],
             )
             .expect("seed parse run");
