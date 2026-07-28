@@ -189,7 +189,7 @@ The presentation-safe Rust command surface generates its TypeScript request/resp
 
 ## Implemented workspace and application gates
 
-The production workspace currently contains `apps/desktop`, `packages/core`, `packages/db`, `packages/parsers`, and `packages/ui`. The synthetic core slice implements pure financial preparation rules, the canonical proposal/grounding boundary, and a slice-owned SQLite migration/repository used only by deterministic tests. The desktop shell imports the reusable UI package and still exposes no network, vault, secret, database, or Tauri command capability.
+The production workspace currently contains `apps/desktop`, `apps/website`, `packages/core`, `packages/db`, `packages/parsers`, and `packages/ui`. The synthetic core slice implements pure financial preparation rules, the canonical proposal/grounding boundary, and a slice-owned SQLite migration/repository used only by deterministic tests. The desktop shell imports the reusable UI package and still exposes no network, vault, secret, database, or Tauri command capability. The website package implements the static public surface from `0018`: React views prerendered to plain static HTML per route, with a deterministic dist check covering internal links, accessibility structure, and required disclosures; it has no backend, analytics, or tracking.
 
 Root commands are real package scripts:
 
@@ -201,13 +201,15 @@ pnpm test:synthetic-core
 pnpm check:rust
 pnpm test:rust
 pnpm build:web
+pnpm build:website
+pnpm check:website
 pnpm build:desktop
 pnpm verify:fast
 pnpm verify:native
 pnpm verify
 ```
 
-`pnpm verify` remains the local application gate. Pull requests and `main` run the typecheck, production unit tests, and web build through `pnpm verify:fast` on Linux. A separate macOS workflow runs `pnpm verify:native` only for native desktop, sidecar/parser, migration, dependency, and pinned-toolchain inputs; it skips draft pull requests and can be invoked manually. The native gate uses frozen pnpm and Cargo lockfiles, restores only Cargo registry/git/target cache data, builds the sidecar once, and retains privileged Rust security/data-integrity tests, clippy, and the Tauri desktop build without charging renderer-only changes for a macOS runner. Standalone Rust and desktop-build commands remain self-contained. Production packages remain forbidden from importing the disposable spike.
+`pnpm verify` remains the local application gate. Pull requests and `main` run the typecheck, production unit tests, the desktop web build, and the static-website build plus its content gate through `pnpm verify:fast` on Linux. `pnpm check:website` builds the site and then checks the emitted `dist/` for working internal links, required disclosures, and accessibility structure. A separate macOS workflow runs `pnpm verify:native` only for native desktop, sidecar/parser, migration, dependency, and pinned-toolchain inputs; it skips draft pull requests and can be invoked manually. The native gate uses frozen pnpm and Cargo lockfiles, restores only Cargo registry/git/target cache data, builds the sidecar once, and retains privileged Rust security/data-integrity tests, clippy, and the Tauri desktop build without charging renderer-only changes for a macOS runner. Standalone Rust and desktop-build commands remain self-contained. Production packages remain forbidden from importing the disposable spike.
 
 ## Acceptance criteria
 

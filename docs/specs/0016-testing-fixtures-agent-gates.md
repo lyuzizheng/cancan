@@ -355,6 +355,8 @@ pnpm test:synthetic-core
 pnpm check:rust
 pnpm test:rust
 pnpm build:web
+pnpm build:website
+pnpm check:website
 pnpm build:desktop
 pnpm verify
 ```
@@ -446,7 +448,7 @@ UI screenshots can be useful artifacts, but visual review and targeted assertion
 
 ## Application CI design stance
 
-The production skeleton and package scripts now exist. `.github/workflows/application.yml` runs repository preflight and `pnpm verify:fast` on Linux with frozen pnpm resolution for application pull requests and `main`. `.github/workflows/application-native.yml` runs repository preflight and `pnpm verify:native` with the pinned macOS toolchain and frozen pnpm/Cargo resolution only for ready native, sidecar/parser, migration, dependency, or toolchain changes, with manual dispatch available. The native Rust gate restores bounded Cargo cache data and builds the sidecar once before executing privileged encrypted-file, SQLCipher, import rollback, tombstone assertions, clippy, and the desktop build in authoritative CI; standalone commands remain self-contained. The root TypeScript unit gate excludes `spikes/**`; disposable spike tests run only through their isolated package/workflow gates and dependencies. The production TypeScript unit-test gate includes the synthetic core's safe-reset, repeatable-migration, deterministic parser, exact reconciliation, review, commit, read-model, and relationship integration tests; `pnpm test:synthetic-core` exposes the same focused subset locally. The docs-harness CI remains outside this spec's ownership.
+The production skeleton and package scripts now exist. `.github/workflows/application.yml` runs repository preflight and `pnpm verify:fast` on Linux with frozen pnpm resolution for application pull requests and `main`. The fast gate includes the static website: `pnpm check:website` builds the site and runs deterministic link, required-disclosure, and accessibility-structure checks over the emitted `dist/`, so public-surface regressions fail the same fast path as application regressions. `.github/workflows/application-native.yml` runs repository preflight and `pnpm verify:native` with the pinned macOS toolchain and frozen pnpm/Cargo resolution only for ready native, sidecar/parser, migration, dependency, or toolchain changes, with manual dispatch available. The native Rust gate restores bounded Cargo cache data and builds the sidecar once before executing privileged encrypted-file, SQLCipher, import rollback, tombstone assertions, clippy, and the desktop build in authoritative CI; standalone commands remain self-contained. The root TypeScript unit gate excludes `spikes/**`; disposable spike tests run only through their isolated package/workflow gates and dependencies. The production TypeScript unit-test gate includes the synthetic core's safe-reset, repeatable-migration, deterministic parser, exact reconciliation, review, commit, read-model, and relationship integration tests; `pnpm test:synthetic-core` exposes the same focused subset locally. The docs-harness CI remains outside this spec's ownership.
 
 Later slices extend these existing gate categories with their own migrations, repositories, parser fixtures, and builds rather than creating duplicate CI paths. Gates that do not exist yet are added only when their owning behavior exists, including:
 

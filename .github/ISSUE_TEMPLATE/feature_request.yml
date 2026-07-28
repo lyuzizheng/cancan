@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose an implementation-ready improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Early-stage ideas and open design questions are better discussed first in [Discussions → Ideas](https://github.com/lyuzizheng/cancan/discussions). File this form when the proposal is concrete enough to implement.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this solve for you? What can you not do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should CanCan do? Describe the behavior, not just the UI. Note where it touches local-first, privacy, or evidence-traceability guarantees.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered (optional)
+      description: Workarounds you use today, or other approaches you considered.
+    validations:
+      required: false
