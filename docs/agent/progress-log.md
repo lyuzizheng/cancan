@@ -6,6 +6,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Added one evidence-based external setup checklist for the owner-controlled domain, public contacts, Cloudflare, Apple Developer, Google OAuth, GitHub visibility, signing, updater recovery, and dual-architecture release gates. It records what can proceed while Kimi owns the website writer lane, what must wait for a named checkpoint, and which legal/account/key-custody actions remain owner-only without duplicating the canonical release or Gmail contracts.
 - Addressed the PR46 privacy/financial-authority review: Gmail OAuth remains connected for local capture, but Gmail-derived AI transfer now requires mailbox capability consent bound to the current provider recipient and retention disclosure; skipped AI setup or a changed recipient/disclosure disables transfer until mailbox-level re-consent, without prompting per rule.
 - Separated auto-commit threshold tuning from qualification evidence. Each profile selects and freezes its threshold on calibration/tuning data, then must show zero incorrect eligible outcomes on a separate untouched held-out set and a later post-freeze shadow cohort before owner approval; tuning on either qualification cohort invalidates it.
 - Closed the grouped public/Gmail/auto-commit design round. Public identity is `CanCan`/`cancan`/`cancan.money` under Apache-2.0 with the founding owner as initial maintainer and release approver; intended `support@cancan.money` and `security@cancan.money` contacts remain unprovisioned external setup.
