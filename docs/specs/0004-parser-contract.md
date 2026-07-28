@@ -369,7 +369,7 @@ provider + document type
 
 Changing any behavior-relevant component creates a new profile. A new profile does not inherit the prior profile's confidence threshold evidence; it returns to Review/shadow behavior until the accepted calibration and hard-gate evidence for that profile passes.
 
-Each profile chooses its required-field minimum threshold from its own representative held-out and user-confirmed shadow evidence. There is no global numeric default and no threshold may be copied from another profile. The profile's release report records the exact threshold and owner approval.
+Each profile chooses its required-field minimum threshold from a profile-specific labeled calibration/tuning set. The threshold is frozen before qualification against a separate untouched held-out set and a later user-confirmed shadow cohort. Held-out or shadow outcomes used for qualification cannot also select or tune the threshold. There is no global numeric default and no threshold may be copied from another profile. The profile's release report records the exact threshold, dataset separation, qualification results, and owner approval.
 
 ## Normalizer runtime and execution environment
 

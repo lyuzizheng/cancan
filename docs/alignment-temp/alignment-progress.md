@@ -14,7 +14,7 @@ blocked       external evidence, feasibility work, or implementation is required
 
 | Area | Status | Decision still required | Canonical home after decision |
 | --- | --- | --- | --- |
-| Public Gmail verification evidence | blocked | The local-app-only OAuth boundary, independent attachment/body capability switches, one authorization per mailbox, direct configured-AI transfer disclosure, and no repeated rule-level prompt are accepted. Before public Gmail promotion, provision and validate the `cancan.money` production Desktop OAuth client, provider-specific retention wording, Limited Use compatibility, website/privacy contacts, and Google's required verification against the running multi-mailbox flow | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md`, `docs/specs/0018-app-updates-open-source-release.md` |
+| Public Gmail verification evidence | blocked | The local-app-only OAuth boundary, independent attachment/body capability switches, provider-fingerprint-bound mailbox consent, re-consent when the AI recipient/disclosure changes, direct configured-AI transfer disclosure, and no repeated rule-level prompt are accepted. Before public Gmail promotion, provision and validate the `cancan.money` production Desktop OAuth client, provider-specific retention wording, Limited Use compatibility, website/privacy contacts, and Google's required verification against the running multi-mailbox flow | `docs/specs/0003-gmail-collector.md`, `docs/specs/0007-first-run-onboarding.md`, `docs/specs/0018-app-updates-open-source-release.md` |
 
 ## P1: required before the affected implementation slice
 

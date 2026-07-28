@@ -6,7 +6,7 @@ Define when records can auto-commit, when they require review, and how reconcili
 
 ## Implementation authority gate
 
-The owner selected structured per-field AI confidence plus the deterministic hard gates below. Each complete package/document profile must derive and record its own required-field minimum threshold from representative held-out and shadow evidence, produce the accepted calibration report, show zero incorrect eligible outcomes, and receive explicit owner approval before it may auto-commit. Do not reuse the old full-profile qualification rule by inertia, average away a weak required field, copy a threshold between profiles, or treat model confidence alone as authority.
+The owner selected structured per-field AI confidence plus the deterministic hard gates below. Each complete package/document profile selects and records its required-field minimum threshold from a profile-specific calibration/tuning set, then qualifies that frozen threshold against a separate untouched held-out set and later shadow cohort. It must produce the accepted report, show zero incorrect eligible outcomes in both qualification stages, and receive explicit owner approval before it may auto-commit. Do not tune on qualification evidence, reuse the old full-profile rule by inertia, average away a weak required field, copy a threshold between profiles, or treat model confidence alone as authority.
 
 ## MVP user setting
 
@@ -63,7 +63,7 @@ All financial event types may become eligible, including repayments, transfers, 
 
 The model returns confidence for each required normalized field together with its evidence reference. The host validates shape/range and evidence, then uses the minimum confidence across the event's required fields plus its event guardrails to determine record eligibility; optional-field confidence cannot compensate for a weak required field. The host applies the profile's documented package/document threshold and every deterministic hard gate. One global threshold across all providers and document types is excluded.
 
-The calibration report is the authority record. It identifies the complete normalization profile and exact threshold; describes representative and held-out case composition; reports eligible, Review, and error counts; reports required-field confidence distributions and the weakest eligible cases; lists shadow outcomes; records the count and explanation of every incorrect eligible outcome; and records owner approval. A report with any incorrect eligible outcome cannot qualify the profile.
+The calibration report is the authority record. It identifies the complete normalization profile and exact frozen threshold; distinguishes calibration/tuning, untouched held-out qualification, and post-freeze shadow cohorts; describes their case composition; reports eligible, Review, and error counts; reports required-field confidence distributions and the weakest eligible cases; lists shadow outcomes; records the count and explanation of every incorrect eligible outcome; and records owner approval. A report with reused tuning/qualification cases or any incorrect eligible outcome cannot qualify the profile. Changing the threshold after a qualification result requires a new untouched held-out set and later shadow cohort.
 
 ## Exact reconciliation-window rule
 

@@ -125,7 +125,7 @@ Saving the recovery file is recommended but may be deferred. Deferring it does n
 
 ## Network and telemetry boundary
 
-MVP has no CanCan-owned application backend. Network access is capability-scoped and performed directly by the local client only after the user enables or configures that capability. Gmail OAuth authorization and tokens are received and held only by the local desktop app; matched evidence may still travel directly to a separately configured AI provider when the mailbox authorization permits it.
+MVP has no CanCan-owned application backend. Network access is capability-scoped and performed directly by the local client only after the user enables or configures that capability. Gmail OAuth authorization and tokens are received and held only by the local desktop app; matched evidence may still travel directly to a separately configured AI provider only while the mailbox's consent matches the current provider recipient/disclosure.
 
 User-visible network capabilities may include:
 
@@ -164,9 +164,9 @@ Text recognition: local or configured OCR service
 AI structuring: text-only or multimodal normalizer
 ```
 
-The app chooses native text, OCR, both, or original page evidence using the accepted parser input-planning rules. The normal onboarding flow does not ask users to choose an OCR provider or a normalizer architecture. The product disclosure rule is accepted: connecting each Gmail mailbox includes one explicit disclosure/authorization for read access and configured-AI processing across that mailbox's enabled rules; no repeated rule-level authorization is required. Public copy still requires provider-specific retention facts and verification against the running flow.
+The app chooses native text, OCR, both, or original page evidence using the accepted parser input-planning rules. The normal onboarding flow does not ask users to choose an OCR provider or a normalizer architecture. The product disclosure rule is accepted: Google OAuth grants the local app mailbox read access, while configured-AI processing requires one mailbox consent bound to the current provider recipient and retention disclosure across that mailbox's enabled rules. AI setup skipped means no Gmail-derived AI transfer. A changed provider recipient/disclosure invalidates that consent without disconnecting Gmail; no repeated rule-level authorization is required. Public copy still requires provider-specific retention facts and verification against the running flow.
 
-The future dedicated cloud-image OCR capability is separately disclosed and explicitly opt-in. Its manually imported cloud OCR payload/config and transport contract is owned by [`0004-parser-contract.md`](./0004-parser-contract.md). The reusable executor may perform the accepted request through an injected fetch boundary, but none of the user flow exists yet: Keychain or environment loading, Settings, Tauri/sidecar/UI wiring, disclosure UI, and the opt-in local smoke test remain unimplemented. That transport checkpoint alone does not authorize a live provider call or Gmail upload; the connected mailbox's authorization does.
+The future dedicated cloud-image OCR capability is separately disclosed and explicitly opt-in. Its manually imported cloud OCR payload/config and transport contract is owned by [`0004-parser-contract.md`](./0004-parser-contract.md). The reusable executor may perform the accepted request through an injected fetch boundary, but none of the user flow exists yet: Keychain or environment loading, Settings, Tauri/sidecar/UI wiring, disclosure UI, and the opt-in local smoke test remain unimplemented. That transport checkpoint alone does not authorize a live provider call or Gmail upload; the connected mailbox's current provider-bound consent does.
 
 ## Gmail setup decision
 
@@ -174,7 +174,7 @@ Gmail MVP uses official Gmail API with Desktop OAuth Authorization Code Flow + P
 
 Computer-use/browser automation is not the primary Gmail architecture. It may be reconsidered later for non-Gmail bank portals or as an experimental fallback.
 
-Gmail setup is not the first or required ingestion step. Onboarding should lead with `Add a file`, then offer the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) and one or more Gmail mailboxes as optional convenience channels. The one-time mailbox disclosure must cover attachment and provider-approved transaction-body processing; rules select what CanCan actually reads and retains, but do not trigger repeated authorization prompts. A Money Source may then add different rules against any connected mailbox; those rules still converge on the shared parser job.
+Gmail setup is not the first or required ingestion step. Onboarding should lead with `Add a file`, then offer the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) and one or more Gmail mailboxes as optional convenience channels. The mailbox disclosure independently covers attachment and provider-approved transaction-body processing for the named AI recipient/disclosure; rules select what CanCan actually reads and retains, but do not trigger repeated authorization prompts. A changed provider recipient/disclosure requires mailbox-level re-consent before another AI transfer. A Money Source may then add different rules against any connected mailbox; those rules still converge on the shared parser job.
 
 ## Protected statement passwords
 
@@ -251,7 +251,7 @@ Open app
 - User may defer saving the recovery file, with an accurate persistent `Not configured` state and a later save action.
 - MVP does not ask for base currency.
 - AI setup is prominent, may be skipped, and remains accurately resumable without a repeated blocking modal.
-- Gmail setup can add multiple mailbox-scoped OAuth connections, records one truthful read/AI-processing authorization per mailbox, and does not repeat consent for each later rule.
+- Gmail setup can add multiple mailbox-scoped OAuth connections, records provider-fingerprint-bound AI-processing consent per mailbox, disables transfer when AI is absent or the recipient/disclosure changes, and does not repeat consent for each later rule.
 - Gmail setup uses local-first Desktop OAuth + PKCE loopback flow.
 - The first useful import does not require Gmail or a source/account preselection; optional CanCan-root setup links to the canonical `Inbox`/`Backups` contract and explains that the source folder remains outside the encrypted Vault.
 - Transaction-notification email body capture is separately disclosed and enabled from attachment collection.
