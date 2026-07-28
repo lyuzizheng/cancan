@@ -4,9 +4,9 @@ export function DocsPage() {
       <div className="page-lede">
         <h1>CanCan documentation</h1>
         <p className="lede">
-          Help for the capabilities that actually ship. CanCan is in pre-1.0
-          preview; behavior is documented honestly as it exists in the current
-          build.
+          Help for the current pre-release build and the first-preview behavior
+          still being completed. Each section distinguishes what exists now from
+          what remains pending.
         </p>
       </div>
 
@@ -21,18 +21,25 @@ export function DocsPage() {
       <h2 id="evidence">Adding evidence</h2>
       <ul>
         <li><strong>Add file</strong> in Sources to import statement PDFs, CSVs, PNGs, or JPEGs. CanCan saves a verified copy into your Vault before parsing.</li>
-        <li><strong>CanCan Inbox</strong>: choose your Cancan folder in iCloud Drive once, then save statements to its Inbox child — CanCan checks on unlock, when files change, and when you ask. The folder is never modified, and the sibling Backups folder is never read for statements.</li>
+        <li><strong>CanCan Inbox</strong>: choose your Cancan folder in iCloud Drive once. CanCan creates or reuses only its Inbox and Backups children, reads statements only from Inbox, and never modifies, moves, or deletes the source files you place there.</li>
         <li>Documents show truthful states — Ready, Processing, Needs attention, File deleted — so you always know what is happening.</li>
       </ul>
 
       <h2 id="statement-sources">Supported statement sources</h2>
       <ul>
-        <li><strong>DBS bank statements</strong> and <strong>DBS credit-card statements</strong> — parsed locally; every record waits in Review before it can be added.</li>
-        <li><strong>HSBC bank statements</strong> — the same local, review-first handling.</li>
+        <li><strong>DBS bank statements</strong> and <strong>DBS credit-card statements</strong> — supported in the current build; every parsed record waits in Review before it can be added.</li>
+        <li><strong>HSBC bank statements</strong> — the same review-first handling.</li>
         <li><strong>UOB statements</strong> — targeted for the first public preview; no parser exists yet, so they are not listed as supported.</li>
         <li><strong>Password-protected eStatements</strong> from any source — CanCan unlocks them locally, and you may save one password per Money Source in your macOS Keychain.</li>
         <li>Bank not listed? Request it on <a href="https://github.com/lyuzizheng/cancan/discussions">GitHub Discussions</a>. A source is listed only after a real parser profile exists for it — newer sources may stay Review-only while their automatic-add confidence is calibrated.</li>
       </ul>
+      <p>
+        In the first public preview, CanCan performs capture, encryption,
+        extraction, validation, and ledger writes locally. Structured parsing
+        uses the AI provider you configure directly from the local app. Live
+        provider setup is not exposed in the current pre-release build yet;
+        capture and document viewing continue while AI-dependent parsing waits.
+      </p>
 
       <h2 id="sources">Money Sources</h2>
       <p>

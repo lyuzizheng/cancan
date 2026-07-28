@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug. This form is for **reproducible problems** — usage questions belong in [Discussions → Questions](https://github.com/lyuzizheng/cancan/discussions), and security issues must **never** be filed publicly (see [SECURITY.md](../SECURITY.md)).
+        Thanks for taking the time to report a bug. This form is for **reproducible problems** — usage questions belong in [Discussions → Questions](https://github.com/lyuzizheng/cancan/discussions), and security issues must **never** be filed publicly (see [SECURITY.md](https://github.com/lyuzizheng/cancan/blob/main/SECURITY.md)).
 
         **Never include real financial data, account numbers, statement files, or secrets in this report.** Redact or use synthetic examples.
   - type: input

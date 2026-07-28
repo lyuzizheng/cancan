@@ -2,24 +2,6 @@ import type { ReactNode } from "react";
 
 export type Route = "home" | "download" | "privacy" | "security" | "docs" | "not-found";
 
-export function routeFromPath(pathname: string): Route {
-  const path = pathname.replace(/\/+$/, "") || "/";
-  switch (path) {
-    case "/":
-      return "home";
-    case "/download":
-      return "download";
-    case "/privacy":
-      return "privacy";
-    case "/security":
-      return "security";
-    case "/docs":
-      return "docs";
-    default:
-      return "not-found";
-  }
-}
-
 const NAV_ITEMS: { href: string; label: string; route: Route }[] = [
   { href: "/", label: "Overview", route: "home" },
   { href: "/download/", label: "Download", route: "download" },

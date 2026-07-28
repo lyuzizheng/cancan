@@ -4,18 +4,18 @@ export function PrivacyPage() {
       <div className="page-lede">
         <h1>Privacy at CanCan</h1>
         <p className="lede">
-          CanCan is local-first: your documents, ledger, and secrets stay on your
-          Mac. This page describes how the app and this website handle data,
-          including the Google API Services User Data Policy disclosures required
-          for Gmail connection.
+          CanCan stores your documents, ledger, and secrets locally on your Mac.
+          Optional connections go directly from the local app under your consent.
+          This page describes those data paths, including the Google API Services
+          User Data Policy disclosures required for Gmail connection.
         </p>
       </div>
 
-      <h2 id="local-first">Your data stays on your Mac</h2>
+      <h2 id="local-first">Your Vault is local</h2>
       <ul>
         <li>Documents and financial data live in a SQLCipher-encrypted Vault on your Mac, unlocked only by your password.</li>
         <li>Secrets — Vault keys, statement passwords, OAuth tokens — are stored in the macOS Keychain, never in plain files.</li>
-        <li>Statements are parsed locally. Operational logs are local-only, redacted, retained for 30 days, and exported only by you.</li>
+        <li>Capture, encryption, extraction, validation, and ledger writes happen locally. Structured parsing uses the AI provider you configure, as disclosed below.</li>
         <li>CanCan has no hosted backend, no account system, and no sync service. There is nothing to breach on our side because nothing leaves your Mac by default.</li>
         <li>Neither the app nor this website collects analytics, behavioral telemetry, or tracking data. Crash reporting is separate, opt-in, and off by default.</li>
       </ul>
@@ -40,7 +40,8 @@ export function PrivacyPage() {
         <li>
           <strong>Attachment ingestion</strong> — statement attachments (PDF,
           CSV, images) matching your rules are downloaded into your Vault as
-          evidence. This works with no AI provider configured at all.
+          evidence. Capture works with no AI provider configured; processing
+          those attachments into records waits until one is configured.
         </li>
         <li>
           <strong>Transaction-email body ingestion</strong> — a separately
@@ -68,12 +69,17 @@ export function PrivacyPage() {
 
       <h2 id="ai">Optional AI processing</h2>
       <p>
-        Statement parsing can use an AI provider you configure yourself
-        (bring-your-own-key). Only evidence selected by an enabled rule travels,
-        directly from your Mac to that provider, under the mailbox-level consent
-        described above. Your provider keys live only in your local OS secret
-        store. With AI setup skipped, nothing is sent anywhere — attachments
-        still arrive, and parsing stays local and deterministic.
+        Structured statement parsing requires an AI provider you configure
+        yourself (bring-your-own-key). For files you add directly or through
+        CanCan Inbox, the local app sends the evidence needed by the selected
+        parser directly to that provider under the provider disclosure you
+        approve. Gmail-derived evidence has an additional boundary: only evidence
+        matching an enabled rule may travel, and only while that mailbox’s
+        capability consent matches the current provider and disclosure. Your
+        provider keys live only in your local OS secret store. If you skip AI
+        setup, no evidence is sent: local capture, encryption, and document
+        browsing still work, while AI-dependent parsing waits until you configure
+        a provider.
       </p>
 
       <h2 id="contact">Contact</h2>

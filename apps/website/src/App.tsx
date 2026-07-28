@@ -1,4 +1,4 @@
-import { Layout, routeFromPath, type Route } from "./components/Layout";
+import { Layout, type Route } from "./components/Layout";
 import { DocsPage } from "./pages/DocsPage";
 import { DownloadPage } from "./pages/DownloadPage";
 import { HomePage } from "./pages/HomePage";
@@ -7,7 +7,7 @@ import { PrivacyPage } from "./pages/PrivacyPage";
 import { SecurityPage } from "./pages/SecurityPage";
 import "./styles/site.css";
 
-export { routeFromPath, type Route };
+export type { Route };
 
 const PAGES = {
   docs: DocsPage,

@@ -5,7 +5,7 @@
   "type": "module",
   "description": "CanCan static public website (Cloudflare Pages), pre-rendered at build",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "pnpm build && vite preview --host 127.0.0.1 --port 1443",
     "typecheck": "tsc --project tsconfig.json",
     "build": "vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr && node scripts/prerender.mjs",
     "check": "node scripts/check.mjs",

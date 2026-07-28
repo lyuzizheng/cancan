@@ -712,19 +712,6 @@ code {
   padding-top: 14px;
 }
 
-/* ---------- Reveal motion ---------- */
-
-.reveal-armed {
-  opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 240ms var(--ease-precision), transform 240ms var(--ease-precision);
-}
-
-.reveal-armed.reveal-on {
-  opacity: 1;
-  transform: none;
-}
-
 /* ---------- Footer ---------- */
 
 .site-footer {
@@ -861,8 +848,4 @@ code {
     transition-duration: 0.01ms !important;
   }
 
-  .reveal-armed {
-    opacity: 1;
-    transform: none;
-  }
 }

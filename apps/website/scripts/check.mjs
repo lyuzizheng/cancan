@@ -91,6 +91,18 @@ function checkHtml(path) {
   if (!/class="skip-link"/.test(html)) {
     fail(`${rel}: missing the skip link`);
   }
+  if (/<script[\s>]/i.test(html)) {
+    fail(`${rel}: runtime scripts are not allowed on the static public site`);
+  }
+  for (const phrase of [
+    "folder is never modified",
+    "parsing stays local and deterministic",
+    "stale sources are marked",
+  ]) {
+    if (html.toLowerCase().includes(phrase)) {
+      fail(`${rel}: contains superseded public claim "${phrase}"`);
+    }
+  }
 
   const svgTags = html.match(/<svg[^>]*>/gi) ?? [];
   for (const svg of svgTags) {
@@ -146,6 +158,17 @@ function checkHtml(path) {
   for (const phrase of REQUIRED_CONTENT[rel] ?? []) {
     if (!html.toLowerCase().includes(phrase.toLowerCase())) {
       fail(`${rel}: missing required content "${phrase}"`);
+    }
+  }
+  if (rel === "privacy/index.html") {
+    for (const phrase of [
+      "Structured statement parsing requires an AI provider",
+      "AI-dependent parsing waits",
+      "only evidence matching an enabled rule may travel",
+    ]) {
+      if (!html.toLowerCase().includes(phrase.toLowerCase())) {
+        fail(`${rel}: missing AI data-path disclosure "${phrase}"`);
+      }
     }
   }
 }

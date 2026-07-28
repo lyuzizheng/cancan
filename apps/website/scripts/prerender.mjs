@@ -1,7 +1,7 @@
 /**
  * Pre-renders every route into a real static HTML file after `vite build`
- * (client) and `vite build --ssr` have run. The site stays fully readable
- * without JavaScript; hydration only adds progressive enhancement.
+ * (styles) and `vite build --ssr` have run. React is a build-time authoring
+ * layer; the deployed pages contain HTML and CSS with no runtime JavaScript.
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

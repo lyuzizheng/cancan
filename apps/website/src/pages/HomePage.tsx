@@ -1,5 +1,4 @@
 import { Mockup } from "../components/Mockup";
-import { Reveal } from "../components/Reveal";
 
 const FLOW_STEPS = [
   {
@@ -7,7 +6,7 @@ const FLOW_STEPS = [
     title: "Collect",
   },
   {
-    body: "Statements are read locally into structured records, with the exact parser version recorded next to every run.",
+    body: "For the first public preview, CanCan extracts evidence locally, then asks the AI provider you configure to propose structured records. The exact parser and runtime versions stay recorded with every run.",
     title: "Parse",
   },
   {
@@ -29,9 +28,10 @@ export function HomePage() {
             <p className="hero-eyebrow">Local-first finance · macOS</p>
             <h1>Your financial evidence, kept on your Mac.</h1>
             <p className="lede">
-              CanCan turns bank statements into a ledger you control — parsed locally,
-              reviewed by you, and traceable back to the exact document every record
-              came from. No hosted account. Nothing leaves your Mac by default. No analytics.
+              CanCan turns bank statements into a ledger you control — processed by
+              the local app, reviewed by you, and traceable back to the exact document
+              every record came from. No hosted account. Nothing leaves your Mac by
+              default. No analytics.
             </p>
             <div className="hero-actions">
               <a className="button-primary" href="/download/">Get the preview</a>
@@ -49,23 +49,20 @@ export function HomePage() {
         </div>
       </section>
 
-      <Reveal>
-        <section className="flow" aria-labelledby="flow-heading">
-          <h2 id="flow-heading">From statement to ledger in four calm steps</h2>
-          <ol className="flow-steps">
-            {FLOW_STEPS.map((step, index) => (
-              <li className="flow-step" key={step.title}>
-                <span className="flow-index" aria-hidden="true">{`0${index + 1}`}</span>
-                <h3>{step.title}</h3>
-                <p>{step.body}</p>
-              </li>
-            ))}
-          </ol>
-        </section>
-      </Reveal>
+      <section className="flow" aria-labelledby="flow-heading">
+        <h2 id="flow-heading">From statement to ledger in four calm steps</h2>
+        <ol className="flow-steps">
+          {FLOW_STEPS.map((step, index) => (
+            <li className="flow-step" key={step.title}>
+              <span className="flow-index" aria-hidden="true">{`0${index + 1}`}</span>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
 
-      <Reveal>
-        <section className="sources" aria-labelledby="sources-heading">
+      <section className="sources" aria-labelledby="sources-heading">
           <h2 id="sources-heading">Statement sources, honestly listed</h2>
           <ul className="source-groups">
             <li className="source-group">
@@ -89,8 +86,9 @@ export function HomePage() {
                 <li>Gmail statement attachments — pending Google’s verification</li>
               </ul>
               <p>
-                Gmail imports only the attachments you choose, directly from your
-                Mac, and becomes publicly available after Google verifies the app.
+                Gmail imports only attachments matching rules you enable, directly
+                from your Mac, and becomes publicly available after Google verifies
+                the app.
               </p>
             </li>
             <li className="source-group">
@@ -111,18 +109,17 @@ export function HomePage() {
             Multi-currency is first-class: each account keeps its own currency —
             SGD, USD, and more. No forced base currency, no exchange-rate guesses.
           </p>
-        </section>
-      </Reveal>
+      </section>
 
-      <Reveal>
-        <section className="feature" aria-labelledby="inbox-heading">
+      <section className="feature" aria-labelledby="inbox-heading">
           <div className="feature-copy">
             <h2 id="inbox-heading">Add statements without opening the app</h2>
             <p>
               Save a statement to the <code>Cancan/Inbox</code> folder in iCloud Drive and it
               is waiting in CanCan the next time you open the app. CanCan only ever looks at
-              the Inbox child of that folder — your folder stays outside the encrypted Vault,
-              follows iCloud Drive’s privacy, and is never modified.
+              the Inbox child of that folder. It creates or reuses only the <code>Inbox</code>{" "}
+              and <code>Backups</code> children, and never modifies, moves, or deletes the
+              statement files you place there.
             </p>
             <p>
               Prefer manual control? Add files directly in the app.
@@ -130,11 +127,9 @@ export function HomePage() {
             </p>
           </div>
           <Mockup variant="sources" />
-        </section>
-      </Reveal>
+      </section>
 
-      <Reveal>
-        <section className="feature is-flipped" aria-labelledby="review-heading">
+      <section className="feature is-flipped" aria-labelledby="review-heading">
           <div className="feature-copy">
             <h2 id="review-heading">Review first. Auto-add must earn it.</h2>
             <p>
@@ -151,25 +146,21 @@ export function HomePage() {
             </p>
           </div>
           <Mockup variant="review" />
-        </section>
-      </Reveal>
+      </section>
 
-      <Reveal>
-        <section className="feature" aria-labelledby="overview-heading">
+      <section className="feature" aria-labelledby="overview-heading">
           <div className="feature-copy">
             <h2 id="overview-heading">A money picture that cites its sources</h2>
             <p>
               The Money Overview shows balances per account and currency, derived from your
-              own evidence. Freshness is visible, stale sources are marked, and there is no
+              own evidence, with the date behind each balance kept visible. There is no
               aggregator account in the middle holding your data.
             </p>
           </div>
           <Mockup variant="command" />
-        </section>
-      </Reveal>
+      </section>
 
-      <Reveal>
-        <section className="principles" aria-labelledby="principles-heading">
+      <section className="principles" aria-labelledby="principles-heading">
           <h2 id="principles-heading">Local-first, verifiably</h2>
           <ul className="principle-list">
             <li>
@@ -185,11 +176,9 @@ export function HomePage() {
               <p>Neither the app nor this website collects analytics or behavioral data. Crash reporting is separate, opt-in, and off by default.</p>
             </li>
           </ul>
-        </section>
-      </Reveal>
+      </section>
 
-      <Reveal>
-        <section className="roadmap" aria-labelledby="preview-heading">
+      <section className="roadmap" aria-labelledby="preview-heading">
           <h2 id="preview-heading">The first preview, honestly scoped</h2>
           <p>
             The first public release is a pre-1.0 preview, not a stability promise. It ships
@@ -207,8 +196,7 @@ export function HomePage() {
             Follow along on <a href="https://github.com/lyuzizheng/cancan">GitHub</a> —
             development, specs, and releases all happen in the open.
           </p>
-        </section>
-      </Reveal>
+      </section>
     </>
   );
 }
