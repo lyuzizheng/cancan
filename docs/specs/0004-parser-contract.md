@@ -10,7 +10,7 @@ The AI normalizer may be a single structured-generation call or a small capabili
 
 The parser evidence and normalized-data contract is accepted. The product may implement it without inventing OCR, evidence, date, or sign semantics.
 
-Single-pass structured normalization in the bundled Node sidecar is selected for initial production implementation. Production credential delivery/redaction remains an owning-slice gate. Raw full-text retention remains owned by the separate sensitive-data-lifecycle blocker; the source-file deletion behavior below is accepted.
+Single-pass structured normalization in the bundled Node sidecar is selected for initial production implementation. Production credential delivery/redaction remains an owning-slice gate. Full extraction text is job-scoped and transient; the source-file deletion behavior below is accepted.
 
 ## Pipeline
 
@@ -156,6 +156,8 @@ Canonical email-message evidence uses bounded `message_field` observations from 
 The current manual-import producer and bundled worker accept only `native_text`, `ocr_text`, and `table_cell`. `document_region` and `message_field` remain canonical future observation kinds but must be rejected by that executable boundary until their owning producer and validation path land.
 
 These observations are job-scoped validation inputs. They are not persisted as a field-claim graph or dedicated page/row/column schema. Durable record-level source context is the bounded `raw` object defined below. This spec does not authorize permanent raw full-document text retention.
+
+The full extraction bundle is discarded when the parse attempt ends. Durable storage is limited to the encrypted source artifact, bounded validated per-record `raw` objects, validation summaries, and the minimum provider-selected fields or bounded text in a canonical transaction-email evidence envelope. CanCan does not retain a generic full-document extraction or search index for debugging or future reparsing; a reparse reads the encrypted source again.
 
 ## Document-agent contract
 
@@ -366,6 +368,8 @@ provider + document type
 ```
 
 Changing any behavior-relevant component creates a new profile. A new profile does not inherit the prior profile's confidence threshold evidence; it returns to Review/shadow behavior until the accepted calibration and hard-gate evidence for that profile passes.
+
+Each profile chooses its required-field minimum threshold from its own representative held-out and user-confirmed shadow evidence. There is no global numeric default and no threshold may be copied from another profile. The profile's release report records the exact threshold and owner approval.
 
 ## Normalizer runtime and execution environment
 

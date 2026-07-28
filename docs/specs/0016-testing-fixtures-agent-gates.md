@@ -139,7 +139,9 @@ user-confirmed shadow candidates from local use before live auto-commit
 zero incorrect account mappings or financial fields among those shadow candidates
 ```
 
-The owner has replaced the fixed `100 labeled + 20 shadow` rule with profile-specific evidence and explicit release approval. There is no universal minimum case count. Each calibration report must describe its representative and held-out coverage, confidence behavior, shadow outcomes, and observed false-eligibility result; it cannot ship with an incorrect auto-commit-eligible outcome or an uncalibrated model self-score. Exact package/document threshold values and the final calibration statistics/report format remain unresolved.
+The owner has replaced the fixed `100 labeled + 20 shadow` rule with profile-specific evidence and explicit release approval. There is no universal minimum case count or global threshold. Each profile derives its required-field minimum from its own representative held-out and user-confirmed shadow evidence; no threshold is inherited or copied between profiles.
+
+The calibration report must identify the complete profile and exact threshold; describe representative and held-out case composition; report eligible, Review, and error counts; show required-field confidence distributions and the weakest eligible cases; list shadow outcomes; record the count and explanation of every incorrect eligible outcome; and record explicit owner approval. An uncalibrated model self-score or any incorrect auto-commit-eligible outcome keeps the profile in shadow/Review.
 
 Calibration cases must cover every event type that the package can emit and must include:
 
@@ -460,7 +462,7 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - Fixture policy distinguishes private, redacted, and synthetic samples.
 - Each supported document type has a target fixture minimum.
 - Auto-commit requires a package/document-specific structured AI-confidence threshold plus every accepted deterministic hard gate; confidence alone is insufficient.
-- Calibration covers every supported event type, snapshot closure/residual failures where the profile contract uses that gate, duplicate/missing rows, per-required-field held-out confidence, and shadow outcomes. It uses no universal labeled/shadow count; exact package/document thresholds and calibration statistics/report format remain blocked.
+- Calibration covers every supported event type, snapshot closure/residual failures where the profile contract uses that gate, duplicate/missing rows, per-required-field held-out confidence, and shadow outcomes. It uses no universal labeled/shadow count or global threshold; each profile records its evidenced threshold and accepted report, shows zero incorrect eligible outcomes, and receives explicit owner approval.
 - Any behavior-changing parser skill, prompt, schema, validator, agent runtime, tool contract, extraction/OCR, or model change invalidates only the affected profile's calibration and falls back to shadow mode.
 - Expected outputs are versioned and assertion-oriented.
 - LLM-dependent tests are deterministic in CI.

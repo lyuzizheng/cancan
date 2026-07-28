@@ -6,6 +6,11 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Closed the grouped public/Gmail/auto-commit design round. Public identity is `CanCan`/`cancan`/`cancan.money` under Apache-2.0 with the founding owner as initial maintainer and release approver; intended `support@cancan.money` and `security@cancan.money` contacts remain unprovisioned external setup.
+- Set the Phase 1 floor to macOS 14, one `0.x Preview` update channel with an off-by-default check and manual action, owner-held Apple identity, CI-held Tauri updater secret plus encrypted offline recovery, immutable published artifacts, and new-version correction/revocation behavior.
+- Accepted local-app-only Gmail OAuth custody with independent attachment and provider-approved-body capability switches, no per-rule re-prompt, direct configured-AI disclosure, and no CanCan Gmail backend. AI setup may be skipped and resumed without a repeated blocking onboarding modal.
+- Fixed sensitive-data lifecycle and observability: full extraction remains job-scoped, durable record/email evidence stays bounded, local redacted operational logs retain 30 days, export is explicit, and crash reporting is separate opt-in/default-off.
+- Closed the auto-commit design blocker without inventing one global confidence number. Each complete profile derives an exact required-field floor from representative held-out and shadow evidence, reports the accepted statistics, permits zero incorrect eligible outcomes, and requires explicit owner approval.
 - Addressed the PR45 review round: kept Linux `verify:fast` free of Rust-native dependencies, made standalone presentation checks prepare their sidecar while the macOS native gate reuses one prepared build, made committed generated-type edits trigger that native gate, and aligned the canonical drift-gate description with the Rust generated-string comparison test.
 - Made unlock schedule queued parsing without waiting for the backlog, recovered interrupted commit and reconcile jobs on Vault reopen, blocked deterministic apply-stage rejections instead of retrying them blindly, rejected concurrent explicit reparses, and made concurrent same-file capture report `AlreadyPresent` without a duplicate parse job.
 - Made available processing/non-password-attention evidence viewable, kept password-blocked evidence behind Unlock, surfaced watcher startup and background-rescan failures through Local Inbox status, treated watcher errors as rescan wake-ups, and restored truthful account/inbox feedback assertions.
@@ -47,8 +52,9 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Push the locally reviewed post-PR41 implementation to its draft PR. When GitHub billing/spending-limit state permits jobs to start, require the hosted checks to pass before marking the slice complete; do not treat the current infrastructure no-start as green evidence.
-- Do not ask another product grill for the CI-only checkpoint. Before public/Gmail work, ask one grouped round for identity, OAuth verification/disclosure, first-run optionality, security observability, release/signing/update authority, and exact confidence thresholds/reporting. Ask repayment allocation/FX only when that slice starts. Before Phase 2 Finder/AI capability work, ask about staged-plaintext protection/expiry, CLI approval persistence/audit retention, assistant state, and remaining coverage provider/cost/confidence rules.
+- PR45 has merged the locally reviewed post-PR41 implementation. Its PR and post-merge hosted jobs still ended before executing steps under the repository billing/spending-limit condition; require those hosted gates to actually run and pass before marking the slice complete.
+- The public/Gmail design round is complete. `public-project-surface`, `gmail-onboarding`, and `high-confidence-auto-commit` have no remaining product-design blocker but stay dependency-blocked until `post-pr41-hardening` has hosted green evidence. Start the Kimi-led public surface first after that checkpoint; do not treat planned external accounts or contacts as provisioned.
+- Ask repayment allocation/FX only when that slice starts. Before Phase 2 Finder/AI capability work, ask about staged-plaintext protection/expiry, CLI approval persistence/audit retention, assistant state, and remaining coverage provider/cost/confidence rules.
 
 ## 2026-07-26
 

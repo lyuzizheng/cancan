@@ -4,15 +4,19 @@
 
 Define how CanCan ships frequent app and provider-parser updates through a classic fully open-source GitHub release flow without breaking local vaults or silently changing committed financial facts.
 
-## Implementation blocker
+## Release provisioning checkpoint
 
-Minimum supported macOS version, project license, public identity/domain/contacts, signing/notarization identities, updater-key custody, update channels, release approval policy, and whether parser packages may ever update independently remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md).
+The product identity and release policy below are accepted. Public promotion remains blocked until the domain, contacts, Cloudflare project, Apple signing/notarization identity, Tauri updater key and recovery copy, production Google project, dual-architecture evidence, and release credentials are actually provisioned and verified. Documentation must distinguish intended ownership from completed external setup.
 
-Do not implement an unsigned updater, remote prompt/config download, or platform-specific release pipeline by inference.
+Do not implement an unsigned updater, remote prompt/config download, or independently delivered parser package by inference.
 
 ## Stable decisions
 
 - CanCan is a fully open-source application.
+- The public identity is `CanCan`, the repository slug is `cancan`, and the canonical domain is `cancan.money`.
+- `support@cancan.money` and `security@cancan.money` are the intended public contacts; they are not treated as live until provisioned and verified.
+- Once provisioned, the founding owner controls the Cloudflare account/zone and privacy-policy publication; the founding owner already holds initial project-governance authority.
+- The project uses the Apache License 2.0. The founding owner is the initial sole maintainer and release approver; additional maintainers require an explicit governance update.
 - The public Git repository, version tags, source history, build workflow, and GitHub Releases are the canonical release record.
 - App versions use semantic versioning.
 - A release is traceable from artifact to immutable source tag and CI run.
@@ -41,7 +45,7 @@ Both architectures must pass the same Vault, SQLCipher, Keychain, sidecar, parse
 
 The release pipeline may later choose separate architecture artifacts or one universal macOS artifact. That packaging choice is not part of the platform-support decision and must be validated before release rather than inferred here.
 
-The minimum supported macOS version is still a release compatibility decision. Do not infer it from the current developer machine or GitHub runner image.
+The minimum supported version is macOS 14 Sonoma for both architectures. CI runner selection and packaging metadata must enforce the same floor rather than inheriting the current developer machine.
 
 Windows is a Phase 2 port. Phase 2 must separately define supported Windows versions and architectures, installer/update format, code signing, OS secret storage, filesystem semantics, and equivalent Vault/security tests. Do not add Windows-specific production branches, dependencies, CI, or release claims during Phase 1 unless a focused Phase 2 slice is explicitly started.
 
@@ -126,9 +130,9 @@ Route work deliberately:
 - Issues are for reproducible bugs and implementation-ready accepted work. Templates collect version, operating system, reproduction, expected/actual behavior, and redacted diagnostics without financial data or secrets.
 - Security reports use GitHub private vulnerability reporting or the private route in `SECURITY.md`, never a public issue.
 - Pull requests should be small, linked to an issue/spec when behavior changes, include tests/evidence, and pass the same harness as `main`.
-- Maintainers triage labels and unanswered Discussions on a documented cadence; exact ownership and service expectations wait for named maintainers.
+- The founding owner sets and documents the initial triage cadence and service expectations; adding another maintainer requires an explicit governance update.
 
-The project license and governance authority must be chosen before these files become normative. Use GitHub's native templates rather than maintaining a second intake system.
+These files are normative under Apache-2.0 and the founding-owner governance defined above. Use GitHub's native templates rather than maintaining a second intake system.
 
 Reference: [GitHub issue and pull request templates](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/about-issue-and-pull-request-templates).
 
@@ -165,7 +169,7 @@ migration/compatibility notes
 
 For Phase 1, release evidence must identify whether each artifact targets macOS `arm64`, macOS `x86_64`, or a validated universal binary. Passing on one architecture does not qualify the other.
 
-Publish binaries from CI, not an unrecorded developer-machine build. A platform artifact must not be advertised as supported when its required signing or compatibility gate did not pass. Whether to enable GitHub's immutable release protection is part of the unresolved release policy; use it only if it fits the finalized approval, correction, and revocation workflow. Public repositories can add artifact attestations and SBOM attestations to improve supply-chain verification.
+Publish binaries from CI, not an unrecorded developer-machine build. A platform artifact must not be advertised as supported when its required signing or compatibility gate did not pass. Published tags and artifacts follow the accepted immutable correction/revocation policy; enabling GitHub's optional immutable-release protection is a provisioning choice only and must preserve that policy. Public repositories can add artifact attestations and SBOM attestations to improve supply-chain verification.
 
 References:
 
@@ -190,9 +194,11 @@ compatibility or migration warning
 install now / remind later
 ```
 
-Do not force an update silently. Security-critical update policy and the exact alpha/beta channel label remain unresolved. The first public channel is nevertheless pre-1.0 and must not imply provider stability or auto-commit eligibility beyond calibrated profiles that pass every accepted hard gate.
+Keep one `0.x Preview` channel. Setup exposes one update-check switch, off by default; manual checking is always available. Do not add alpha/beta channel routing. Do not force an update silently. A security-critical update receives a prominent explanation and still offers `Install now` or `Remind later`.
 
 ADR 0001 is accepted, so implementation may use the Tauri signed updater with GitHub-hosted artifacts and `latest.json`. The updater signing public key may be embedded in the app; the private key and password must remain release secrets. Back up the private key through a documented offline recovery path because losing it prevents signed updates to installed clients.
+
+The founding owner is the initial sole human release approver. Once provisioned, the owner must hold the Apple Developer signing identity; the Tauri updater private key and password must live in protected CI release secrets with one encrypted offline recovery copy controlled by the owner. Published source tags and release artifacts are immutable; a correction ships as a new version, while a security incident may revoke or withdraw an affected artifact with a public explanation.
 
 Reference: [Tauri updater signing and GitHub release metadata](https://v2.tauri.app/plugin/updater/).
 
@@ -265,7 +271,7 @@ Tauri CLI 2.11.4 (project-local)
 
 When upgrading, verify the new upstream releases, update every pin in one patch, and run the setup simulation, a real repeat setup, application gates, preflight, harness self-test, and independent semantic review.
 
-The development-only Tauri identifier is `dev.cancan.desktop`, the app version is `0.0.0`, bundling is disabled, and the generated icon is provisional. These values exist only to make the local debug build real; they do not resolve the public identity, release version, platform support, signing, or packaging blockers above.
+The development-only Tauri identifier is `dev.cancan.desktop`, the app version is `0.0.0`, bundling is disabled, and the generated icon is provisional. These values exist only to make the local debug build real. The public identifier uses the reversed `cancan.money` namespace with the `cancan` app slug; the exact packaged identifier is frozen with signing/notarization setup rather than by the development identifier.
 
 References:
 
@@ -298,7 +304,7 @@ BYO-AI provider keys belong only in the user's local OS secret store. They are n
 - Parser updates are versioned, confidence-calibrated independently, and cannot silently rewrite committed facts.
 - MVP does not download unsigned parser/prompt/config updates.
 - Older incompatible apps refuse mutation and explain the required version.
-- Tauri updater work remains gated on finalized signing-key custody, release channels, supported operating systems, and release approval.
+- Tauri updater work follows the accepted single-channel, owner-approved key-custody policy and remains gated on actual credential provisioning and recovery proof.
 - Static public pages deploy to preview and production environments without adding an application backend or analytics.
 - GitHub community files route support, bugs, contributions, and private security reports without asking users to expose financial data.
 - A release is not promoted until its public website/privacy claims, supported platforms, license, signing, updater-key recovery, and approval owner are complete.

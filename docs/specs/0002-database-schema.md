@@ -134,7 +134,7 @@ date-only fields remain date-only rather than receiving an invented timezone
 no generic assumptions_json column is added for speculative inference
 ```
 
-The parser validates the raw record against job-scoped native/OCR/table observations before persistence. The raw record and validation summary are the durable audit context; optional location values are UI hints, not independently queried financial facts. Deleting the source file does not delete these bounded record-level facts. Retention of raw full-document extraction remains governed by the separate sensitive-data-lifecycle blocker.
+The parser validates the raw record against job-scoped native/OCR/table observations before persistence. The raw record and validation summary are the durable audit context; optional location values are UI hints, not independently queried financial facts. Deleting the source file does not delete these bounded record-level facts. Full-document extraction is job-scoped and transient; it is not a durable database or search-index payload.
 
 ## Index policy
 

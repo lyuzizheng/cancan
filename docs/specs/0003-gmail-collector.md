@@ -4,9 +4,9 @@
 
 Collect supported statement attachments and transaction-notification evidence from one or more user-authorized Gmail mailboxes while preserving local-first behavior.
 
-## Implementation blocker
+## Public verification checkpoint
 
-Public OAuth verification, provider retention, Limited Use compatibility, and final one-time per-mailbox Gmail-to-AI disclosure wording remain open in the [active alignment register](../alignment-temp/alignment-progress.md). The mailbox-level authorization and payload boundary below are accepted, but do not claim public Gmail availability or submit verification until the real multi-mailbox data flow and public identity are reviewable.
+The mailbox authorization and payload boundary are accepted. Implementation may use mocked Gmail fixtures and a separate development/test Google Cloud project, but public Gmail availability remains blocked until the production OAuth client, `cancan.money` disclosures, provider-specific retention facts, Limited Use compatibility, and Google's required verification are proven against the running multi-mailbox flow.
 
 ## MVP decision
 
@@ -19,6 +19,8 @@ Do not use AI computer-use/browser automation as the primary Gmail architecture.
 ## Local-first OAuth architecture
 
 CanCan should not proxy Gmail data through a CanCan server.
+
+Only the local CanCan desktop app receives and retains the OAuth authorization and tokens. CanCan has no hosted OAuth proxy or Gmail backend. When the user separately configures an AI provider, only evidence selected by an enabled rule may travel directly from the local app to that provider under the mailbox authorization described below.
 
 Flow:
 
@@ -251,6 +253,15 @@ store file hash and source document metadata
 Do not store full email body by default unless needed for evidence/parser behavior or explicitly enabled.
 
 Connecting one mailbox requires one explicit mailbox-level authorization that accurately describes Gmail read access, the configured AI provider, and the allowed attachment/body processing. After that authorization, CanCan may read messages needed by any enabled rule for that mailbox and may send the complete matched attachment or provider-approved body required by the selected parser to the configured AI provider without asking again per rule. The product still executes user-configured queries instead of bulk-ingesting the mailbox, and AI payloads never include OAuth tokens, statement passwords, unrelated messages, or messages outside an enabled rule. Revoking or disconnecting the mailbox removes this live authority; already captured local evidence follows the normal retained-evidence lifecycle.
+
+The one-time mailbox screen presents two independent local-app capabilities:
+
+```text
+Statement and export attachments
+Provider-approved transaction-email bodies
+```
+
+Each enabled capability explains that the local app holds the Google authorization, matched evidence is stored in the encrypted local Vault, CanCan runs no Gmail backend, and matched evidence may be sent directly to the user's configured AI provider under that provider's disclosed retention terms. Enabling body processing is not implied by attachment access. Once enabled, neither capability prompts again for each search rule.
 
 ### Send to yourself
 

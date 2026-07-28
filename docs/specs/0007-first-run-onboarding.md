@@ -6,9 +6,9 @@ Define the first-launch experience and startup sequence for CanCan.
 
 The first-run experience must communicate technology, safety, and local ownership while staying practical.
 
-## Implementation blocker
+## Implementation boundary
 
-First-run optionality and final one-time per-mailbox Gmail/cloud-AI disclosure wording remain unresolved in the [active alignment register](../alignment-temp/alignment-progress.md). The simple password/Keychain/recovery-file model, multiple mailbox connections, and mailbox-level authorization before Gmail-derived data reaches cloud AI are accepted; exact cryptographic claims still depend on validated implementation evidence.
+AI and Gmail setup are optional during first run. Exact cryptographic claims still depend on validated implementation evidence, and public Gmail claims remain gated by the production verification checkpoint in `0003`.
 
 ## Experience goal
 
@@ -73,7 +73,7 @@ Welcome / product promise
 -> Create local vault
 -> Choose vault password / local key setup
 -> Save the recovery file now, or choose `Skip for now` and continue with recovery visibly not configured
--> AI provider setup
+-> AI provider setup or `Skip for now`
 -> Add a first file or choose a supported Money Source
 -> Detect and confirm/create the Money Source plus sub-account(s) as evidence arrives
 -> Optionally authorize the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) or connect one or more Gmail mailboxes using repeated Desktop OAuth + PKCE loopback
@@ -83,6 +83,8 @@ Welcome / product promise
 ```
 
 MVP should not ask the user to choose a base currency. CanCan should render native values and source-provided valuations in the Money Overview.
+
+Skipping AI never blocks Vault creation, local evidence capture, or document browsing. Setup review, Settings, and the Command Center `To do` list keep AI accurately `Not configured`; a parser-dependent action may offer a contextual setup CTA, but onboarding does not return as a repeated blocking modal.
 
 ## Local-first and encryption story
 
@@ -123,7 +125,7 @@ Saving the recovery file is recommended but may be deferred. Deferring it does n
 
 ## Network and telemetry boundary
 
-MVP has no CanCan-owned application backend. Network access is capability-scoped and performed directly by the local client only after the user enables or configures that capability.
+MVP has no CanCan-owned application backend. Network access is capability-scoped and performed directly by the local client only after the user enables or configures that capability. Gmail OAuth authorization and tokens are received and held only by the local desktop app; matched evidence may still travel directly to a separately configured AI provider when the mailbox authorization permits it.
 
 User-visible network capabilities may include:
 
@@ -149,6 +151,7 @@ Rules:
 
 - app should be usable enough to create a vault, create sources, and browse source documents without custom AI;
 - parser-quality features should clearly explain when AI setup is needed;
+- AI setup may be skipped without losing the local-first product path and resumes from Setup, Settings, the `To do` list, or a contextual parser CTA;
 - user-owned provider settings are the current supported path for privacy, cost transparency, and control;
 - Vercel AI SDK may be used behind CanCan-owned adapters.
 
@@ -161,7 +164,7 @@ Text recognition: local or configured OCR service
 AI structuring: text-only or multimodal normalizer
 ```
 
-The app chooses native text, OCR, both, or original page evidence using the accepted parser input-planning rules. The normal onboarding flow does not ask users to choose an OCR provider or a normalizer architecture. Final cloud-data disclosure wording remains blocked, but the product rule is accepted: connecting each Gmail mailbox includes one explicit disclosure/authorization for read access and configured-AI processing across that mailbox's enabled rules; no repeated rule-level authorization is required.
+The app chooses native text, OCR, both, or original page evidence using the accepted parser input-planning rules. The normal onboarding flow does not ask users to choose an OCR provider or a normalizer architecture. The product disclosure rule is accepted: connecting each Gmail mailbox includes one explicit disclosure/authorization for read access and configured-AI processing across that mailbox's enabled rules; no repeated rule-level authorization is required. Public copy still requires provider-specific retention facts and verification against the running flow.
 
 The future dedicated cloud-image OCR capability is separately disclosed and explicitly opt-in. Its manually imported cloud OCR payload/config and transport contract is owned by [`0004-parser-contract.md`](./0004-parser-contract.md). The reusable executor may perform the accepted request through an injected fetch boundary, but none of the user flow exists yet: Keychain or environment loading, Settings, Tauri/sidecar/UI wiring, disclosure UI, and the opt-in local smoke test remain unimplemented. That transport checkpoint alone does not authorize a live provider call or Gmail upload; the connected mailbox's authorization does.
 
@@ -247,7 +250,7 @@ Open app
 - User can create a vault and reach first evidence capture without source/account preselection; a supported Money Source is confirmed or created before first commit.
 - User may defer saving the recovery file, with an accurate persistent `Not configured` state and a later save action.
 - MVP does not ask for base currency.
-- AI setup is prominent and its current state is visible; whether setup may be skipped follows the unresolved first-run optionality decision.
+- AI setup is prominent, may be skipped, and remains accurately resumable without a repeated blocking modal.
 - Gmail setup can add multiple mailbox-scoped OAuth connections, records one truthful read/AI-processing authorization per mailbox, and does not repeat consent for each later rule.
 - Gmail setup uses local-first Desktop OAuth + PKCE loopback flow.
 - The first useful import does not require Gmail or a source/account preselection; optional CanCan-root setup links to the canonical `Inbox`/`Backups` contract and explains that the source folder remains outside the encrypted Vault.
