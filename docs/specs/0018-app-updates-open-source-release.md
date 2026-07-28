@@ -18,6 +18,7 @@ Do not implement an unsigned updater, remote prompt/config download, or independ
 - Once provisioned, the founding owner controls the Cloudflare account/zone and privacy-policy publication; the founding owner already holds initial project-governance authority.
 - The project uses the Apache License 2.0. The founding owner is the initial sole maintainer and release approver; additional maintainers require an explicit governance update.
 - The public Git repository, version tags, source history, build workflow, and GitHub Releases are the canonical release record.
+- GitHub Releases is the only binary/update artifact source. Direct download, the Tauri in-app updater, and an optional Homebrew Cask reuse one approved CI build/version and its release-owned installers, updater archives, signatures, and metadata.
 - App versions use semantic versioning.
 - A release is traceable from artifact to immutable source tag and CI run.
 - MVP does not require a proprietary CanCan update backend.
@@ -171,6 +172,8 @@ For Phase 1, release evidence must identify whether each artifact targets macOS 
 
 Publish binaries from CI, not an unrecorded developer-machine build. A platform artifact must not be advertised as supported when its required signing or compatibility gate did not pass. Published tags and artifacts follow the accepted immutable correction/revocation policy; enabling GitHub's optional immutable-release protection is a provisioning choice only and must preserve that policy. Public repositories can add artifact attestations and SBOM attestations to improve supply-chain verification.
 
+The first `0.x Preview` versions are ordinary published GitHub Releases with honest Preview product copy, not a separate GitHub prerelease channel. This keeps one release selector and lets the updater resolve the approved release through GitHub's `releases/latest` asset path. A draft release is never update-visible.
+
 References:
 
 - [Tauri distribution overview](https://v2.tauri.app/distribute/)
@@ -196,11 +199,39 @@ install now / remind later
 
 Keep one `0.x Preview` channel. Setup exposes one update-check switch, off by default; manual checking is always available. Do not add alpha/beta channel routing. Do not force an update silently. A security-critical update receives a prominent explanation and still offers `Install now` or `Remind later`.
 
-ADR 0001 is accepted, so implementation may use the Tauri signed updater with GitHub-hosted artifacts and `latest.json`. The updater signing public key may be embedded in the app; the private key and password must remain release secrets. Back up the private key through a documented offline recovery path because losing it prevents signed updates to installed clients.
+When automatic checks are enabled, check at most once per successful local day and do not show UI when no update exists. Manual checking bypasses that cadence. The update sheet shows the current and target version, release notes, known download size, restart requirement, and compatibility/migration warning before `Install and restart` or `Remind later`.
+
+ADR 0001 is accepted, so implementation uses the Tauri signed updater with GitHub-hosted updater artifacts and `latest.json`. CI generates the platform updater archives, signatures, and `latest.json` from the same approved app build after signing/notarization; they remain on the draft release until human approval publishes that release. The app embeds the updater public key and uses the static GitHub `releases/latest/download/latest.json` endpoint; it does not query mutable remote config or a CanCan update server.
+
+Apple Developer ID signing/notarization and the Tauri updater signature are separate required checks. Apple establishes the distributed app bundle's platform identity; the updater signature authorizes the archive to an installed CanCan client. HTTPS, a GitHub Release, or a Homebrew SHA-256 does not replace either check.
 
 The founding owner is the initial sole human release approver. Once provisioned, the owner must hold the Apple Developer signing identity; the Tauri updater private key and password must live in protected CI release secrets with one encrypted offline recovery copy controlled by the owner. Published source tags and release artifacts are immutable; a correction ships as a new version, while a security incident may revoke or withdraw an affected artifact with a public explanation.
 
 Reference: [Tauri updater signing and GitHub release metadata](https://v2.tauri.app/plugin/updater/).
+
+## Homebrew Cask distribution
+
+Homebrew is an optional installation and upgrade entry, not CanCan's update authority or a second release pipeline.
+
+Initial distribution may use a project-owned tap. A later official `homebrew-cask` submission is a discoverability improvement and does not change the artifact or trust model.
+
+The Cask must:
+
+```text
+use a concrete semantic version, never version :latest
+reference the matching versioned macOS artifact from GitHub Releases
+pin its published SHA-256
+declare auto_updates true because CanCan provides a real in-app installer
+install the same bundle identifier and version used by direct download and the updater
+```
+
+Users may update through CanCan or `brew upgrade --cask`; both paths converge on the same signed/notarized app version. The release workflow updates the Cask only after the corresponding GitHub Release is public. Homebrew metadata, tap automation, or checksum verification must never publish, rebuild, resign, or substitute a different application artifact.
+
+References:
+
+- [Homebrew Cask Cookbook](https://docs.brew.sh/Cask-Cookbook)
+- [Homebrew self-updating Cask behavior](https://docs.brew.sh/FAQ)
+- [Homebrew project-owned taps](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap)
 
 ## Provider-parser delivery
 
@@ -301,6 +332,10 @@ BYO-AI provider keys belong only in the user's local OS secret store. They are n
 - Every published app artifact traces to a public immutable source tag and GitHub Actions run.
 - Releases include checksums, signatures where required, notes, and compatibility information.
 - Update artifacts are signature-verified and are not silently forced.
+- GitHub Releases is the single artifact source for direct download, the Tauri updater, and the optional Homebrew Cask.
+- One ordinary `0.x Preview` GitHub Release supplies the signed `latest.json` metadata; CanCan does not add alpha/beta routing or a second update service.
+- Homebrew uses a concrete version and checksum for the same release artifact, declares the real in-app updater, and never owns a separate build or signing path.
+- macOS platform signing/notarization and Tauri updater signing both pass; GitHub hosting and Homebrew checksums do not replace either boundary.
 - Parser updates are versioned, confidence-calibrated independently, and cannot silently rewrite committed facts.
 - MVP does not download unsigned parser/prompt/config updates.
 - Older incompatible apps refuse mutation and explain the required version.
