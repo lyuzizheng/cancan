@@ -134,12 +134,16 @@ Before a profile can auto-commit, its evidence must include:
 ```text
 representative labeled record cases across normal and edge-case statements
 deterministic expected classification, account mapping, normalized fields, and eligibility outcome
-zero incorrect auto-commit-eligible outcomes in the accepted calibration suite
-user-confirmed shadow candidates from local use before live auto-commit
+profile-specific calibration/tuning cases used to select and freeze the threshold
+separate untouched held-out qualification cases not used for threshold selection
+zero incorrect auto-commit-eligible outcomes in the untouched held-out set
+user-confirmed shadow candidates collected after the threshold is frozen
 zero incorrect account mappings or financial fields among those shadow candidates
 ```
 
-The owner has replaced the fixed `100 labeled + 20 shadow` rule with profile-specific evidence and explicit release approval. There is no universal minimum case count. Each calibration report must describe its representative and held-out coverage, confidence behavior, shadow outcomes, and observed false-eligibility result; it cannot ship with an incorrect auto-commit-eligible outcome or an uncalibrated model self-score. Exact package/document threshold values and the final calibration statistics/report format remain unresolved.
+The owner has replaced the fixed `100 labeled + 20 shadow` rule with profile-specific evidence and explicit release approval. There is no universal minimum case count or global threshold. Each profile selects its required-field minimum from its own labeled calibration/tuning set, freezes it, and then qualifies it against separate untouched held-out evidence followed by a user-confirmed shadow cohort. No threshold is inherited or copied between profiles.
+
+The calibration report must identify the complete profile and exact frozen threshold; separately describe calibration/tuning, untouched held-out qualification, and post-freeze shadow case composition; report eligible, Review, and error counts; show required-field confidence distributions and the weakest eligible cases; list shadow outcomes; record the count and explanation of every incorrect eligible outcome; and record explicit owner approval. An uncalibrated model self-score, reused tuning/qualification evidence, or any incorrect auto-commit-eligible outcome keeps the profile in shadow/Review. Changing the threshold after qualification requires a new untouched held-out set and later shadow cohort.
 
 Calibration cases must cover every event type that the package can emit and must include:
 
@@ -149,14 +153,14 @@ one-minor-unit or one-smallest-quantity residual that must fail eligibility for 
 missing and duplicate rows
 mixed documents where semantic-only ambiguities remain in Review
 cross-account, FX, or trade cases when the package supports them
-field-confidence calibration on held-out labeled cases
+field-confidence threshold selection on calibration/tuning cases plus untouched held-out qualification
 ```
 
 High confidence is package/document-specific and field-level. The model returns confidence and evidence per required field; the host uses the weakest required-field confidence plus event guardrails, then applies the calibrated threshold and every accepted deterministic hard gate. Optional fields cannot average away a weak required field, and one global threshold or confidence alone is insufficient.
 
 Representative calibration cases may be distributed across synthetic, redacted, and private statement fixtures. Private cases stay local and must never be uploaded to CI or logs.
 
-Shadow mode performs the complete eligibility decision but creates review suggestions instead of committed events. User decisions are recorded as confidence-calibration and hard-gate evidence.
+Shadow mode performs the complete eligibility decision with the frozen threshold but creates review suggestions instead of committed events. User decisions are recorded as qualification and hard-gate evidence; that shadow cohort cannot be reused to tune the threshold and still count as qualification.
 
 Any classifier prompt, extraction prompt, parser skill, normalizer runtime, tool contract, structured schema, validator, extraction/OCR engine, model, canonical mapping, or eligibility-rule version change invalidates the affected profile's confidence calibration. The user-level auto-commit toggle remains enabled, but records from the changed profile fall back to shadow/review until its calibration and hard-gate evidence pass again.
 
@@ -460,7 +464,7 @@ Do not add live Gmail, live LLM, real bank, or real statement dependencies to CI
 - Fixture policy distinguishes private, redacted, and synthetic samples.
 - Each supported document type has a target fixture minimum.
 - Auto-commit requires a package/document-specific structured AI-confidence threshold plus every accepted deterministic hard gate; confidence alone is insufficient.
-- Calibration covers every supported event type, snapshot closure/residual failures where the profile contract uses that gate, duplicate/missing rows, per-required-field held-out confidence, and shadow outcomes. It uses no universal labeled/shadow count; exact package/document thresholds and calibration statistics/report format remain blocked.
+- Calibration covers every supported event type, snapshot closure/residual failures where the profile contract uses that gate, duplicate/missing rows, per-required-field confidence, and shadow outcomes. It uses no universal count or global threshold; each profile selects a threshold on calibration/tuning data, qualifies it on separate untouched held-out and post-freeze shadow evidence, shows zero incorrect eligible outcomes, and receives explicit owner approval.
 - Any behavior-changing parser skill, prompt, schema, validator, agent runtime, tool contract, extraction/OCR, or model change invalidates only the affected profile's calibration and falls back to shadow mode.
 - Expected outputs are versioned and assertion-oriented.
 - LLM-dependent tests are deterministic in CI.

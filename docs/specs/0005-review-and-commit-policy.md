@@ -4,9 +4,9 @@
 
 Define when records can auto-commit, when they require review, and how reconciliation avoids double-counting.
 
-## Implementation blocker
+## Implementation authority gate
 
-The owner selected structured per-field AI confidence plus the deterministic hard gates below as the auto-commit direction. Exact package/document thresholds and calibration statistics remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Do not implement auto-commit, reuse the old full-profile qualification rule by inertia, average away a weak required field, or treat model confidence alone as authority until that focused decision closes.
+The owner selected structured per-field AI confidence plus the deterministic hard gates below. Each complete package/document profile selects and records its required-field minimum threshold from a profile-specific calibration/tuning set, then qualifies that frozen threshold against a separate untouched held-out set and later shadow cohort. It must produce the accepted report, show zero incorrect eligible outcomes in both qualification stages, and receive explicit owner approval before it may auto-commit. Do not tune on qualification evidence, reuse the old full-profile rule by inertia, average away a weak required field, copy a threshold between profiles, or treat model confidence alone as authority.
 
 ## MVP user setting
 
@@ -61,7 +61,9 @@ every event type still satisfies its own deterministic evidence and balanced-leg
 
 All financial event types may become eligible, including repayments, transfers, FX, trades, refunds, withdrawals, interest, and fees. There is no document-type shortcut and no permanently trusted event-type list.
 
-The model returns confidence for each required normalized field together with its evidence reference. The host validates shape/range and evidence, then uses the minimum confidence across the event's required fields plus its event guardrails to determine record eligibility; optional-field confidence cannot compensate for a weak required field. The host applies the package/document threshold and every deterministic hard gate. One global threshold across all providers and document types is excluded. Exact threshold values and calibration statistics remain blocked.
+The model returns confidence for each required normalized field together with its evidence reference. The host validates shape/range and evidence, then uses the minimum confidence across the event's required fields plus its event guardrails to determine record eligibility; optional-field confidence cannot compensate for a weak required field. The host applies the profile's documented package/document threshold and every deterministic hard gate. One global threshold across all providers and document types is excluded.
+
+The calibration report is the authority record. It identifies the complete normalization profile and exact frozen threshold; distinguishes calibration/tuning, untouched held-out qualification, and post-freeze shadow cohorts; describes their case composition; reports eligible, Review, and error counts; reports required-field confidence distributions and the weakest eligible cases; lists shadow outcomes; records the count and explanation of every incorrect eligible outcome; and records owner approval. A report with reused tuning/qualification cases or any incorrect eligible outcome cannot qualify the profile. Changing the threshold after a qualification result requires a new untouched held-out set and later shadow cohort.
 
 ## Exact reconciliation-window rule
 

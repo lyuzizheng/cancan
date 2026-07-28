@@ -8,7 +8,7 @@ The job engine exists to make long-running local-first finance workflows reliabl
 
 ## Implementation blocker
 
-The source-file deletion and restore-to-new-path crash outcomes are accepted and validated by the [Vault security evidence](../../spikes/vault-security-validation/EVIDENCE.md). Production job wiring must still prove its durable idempotency key and cancellation boundaries in the owning implementation slice; the disposable spike did not model a persisted `jobs` row or user cancellation. Log/error redaction and crash-report consent remain open in the [active alignment register](../alignment-temp/alignment-progress.md). Backup scheduling, migration, and portability remain later `backup-release` concerns and do not block the source-deletion path in manual import.
+The source-file deletion and restore-to-new-path crash outcomes are accepted and validated by the [Vault security evidence](../../spikes/vault-security-validation/EVIDENCE.md). Production job wiring must still prove its durable idempotency key and cancellation boundaries in the owning implementation slice; the disposable spike did not model a persisted `jobs` row or user cancellation. Backup scheduling, migration, and portability remain later `backup-release` concerns and do not block the source-deletion path in manual import.
 
 ## Stable decisions
 
@@ -20,6 +20,16 @@ The source-file deletion and restore-to-new-path crash outcomes are accepted and
 - App startup must recover interrupted jobs.
 - Password-protected PDFs use `blocked` state, not `failed`.
 - Backup operations run through the same job engine.
+- Redacted operational logs are local-only, retained for 30 days, and exported only through an explicit user action.
+- Crash reporting is independent explicit opt-in and defaults off.
+
+## Operational diagnostics boundary
+
+Durable operational logs may contain timestamps, stable static error codes, job type/state, retry count, duration, app/runtime version, and redacted component context. They must not contain document or email content, extracted text, raw financial fields, amounts, filenames or filesystem paths, mailbox addresses, OAuth tokens, API keys, statement passwords, model request/response bodies, or unbounded identifiers that reveal those values.
+
+The app deletes operational log entries older than 30 days. A user-initiated diagnostic export applies the same redaction and previews the included categories before writing the file. CanCan sends no logs automatically.
+
+Crash reporting is a separate capability in Setup review and Settings. It is off by default, requires explicit opt-in, and uses the same prohibited-data boundary. Enabling crash reporting never enables analytics or behavioral telemetry.
 
 ## Coarse-grained job principle
 

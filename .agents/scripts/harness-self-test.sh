@@ -259,7 +259,7 @@ expect_failure "slice references missing spec" env CANCAN_ROOT="$TEST_ROOT" "$TE
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-awk 'BEGIN {changed=0} !changed && /Public project identity and website launch/ {sub(/Public project identity and website launch/, "Missing public-project blocker"); changed=1} {print}' "$manifest.bak" > "$manifest"
+awk 'BEGIN {changed=0} !changed && /Public release provisioning/ {sub(/Public release provisioning/, "Missing public-release blocker"); changed=1} {print}' "$manifest.bak" > "$manifest"
 expect_failure "slice references missing blocker" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
@@ -289,7 +289,7 @@ expect_failure "ready slice has incomplete dependency" env CANCAN_ROOT="$TEST_RO
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-sed 's/, Security observability and sensitive-data lifecycle | connectors/ | connectors/' "$manifest.bak" > "$manifest"
+sed 's/, Public Gmail verification evidence, Backup operations and portability/, Backup operations and portability/' "$manifest.bak" > "$manifest"
 expect_failure "sensitive slice loses safety blocker" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
