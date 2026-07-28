@@ -25,6 +25,15 @@ export function DocsPage() {
         <li>Documents show truthful states — Ready, Processing, Needs attention, File deleted — so you always know what is happening.</li>
       </ul>
 
+      <h2 id="statement-sources">Supported statement sources</h2>
+      <ul>
+        <li><strong>DBS bank statements</strong> and <strong>DBS credit-card statements</strong> — parsed locally; every record waits in Review before it can be added.</li>
+        <li><strong>HSBC bank statements</strong> — the same local, review-first handling.</li>
+        <li><strong>UOB statements</strong> — targeted for the first public preview; no parser exists yet, so they are not listed as supported.</li>
+        <li><strong>Password-protected eStatements</strong> from any source — CanCan unlocks them locally, and you may save one password per Money Source in your macOS Keychain.</li>
+        <li>Bank not listed? Request it on <a href="https://github.com/lyuzizheng/cancan/discussions">GitHub Discussions</a>. A source is listed only after a real parser profile exists for it — newer sources may stay Review-only while their automatic-add confidence is calibrated.</li>
+      </ul>
+
       <h2 id="sources">Money Sources</h2>
       <p>
         Documents are routed to Money Sources (your bank, card, or wallet).

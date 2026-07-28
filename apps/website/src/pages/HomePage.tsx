@@ -38,7 +38,9 @@ export function HomePage() {
               <a className="button-quiet" href="/docs/">Read the docs</a>
             </div>
             <p className="status-line">
-              First public preview in preparation · macOS 14 or later · Open source, Apache-2.0
+              <span className="status-item">First public preview in preparation ·</span>{" "}
+              <span className="status-item">macOS 14 or later ·</span>{" "}
+              <span className="status-item">Open source, Apache-2.0</span>
             </p>
           </div>
           <div className="hero-stage">
@@ -59,6 +61,56 @@ export function HomePage() {
               </li>
             ))}
           </ol>
+        </section>
+      </Reveal>
+
+      <Reveal>
+        <section className="sources" aria-labelledby="sources-heading">
+          <h2 id="sources-heading">Statement sources, honestly listed</h2>
+          <ul className="source-groups">
+            <li className="source-group">
+              <h3><span className="point point-emerald" aria-hidden="true" />In the current build — review-first</h3>
+              <ul className="source-list">
+                <li>DBS bank statements</li>
+                <li>DBS credit-card statements</li>
+                <li>HSBC bank statements</li>
+              </ul>
+              <p>
+                Every parsed record waits for your review — nothing enters your
+                ledger automatically. Password-protected eStatements are a
+                first-class case: unlock once, and the password stays in your
+                macOS Keychain.
+              </p>
+            </li>
+            <li className="source-group">
+              <h3><span className="point point-amber" aria-hidden="true" />Coming with the first preview</h3>
+              <ul className="source-list">
+                <li>UOB statements</li>
+                <li>Gmail statement attachments — pending Google’s verification</li>
+              </ul>
+              <p>
+                Gmail imports only the attachments you choose, directly from your
+                Mac, and becomes publicly available after Google verifies the app.
+              </p>
+            </li>
+            <li className="source-group">
+              <h3><span className="point" aria-hidden="true" />The listing rule</h3>
+              <p>
+                A bank appears here only after a real parser profile exists for
+                it — never on a wishlist. Automatic add stays off for every
+                source until its confidence is separately qualified. Coverage
+                grows from what the project actually uses, then from your requests.
+              </p>
+              <p>
+                Using POSB, OCBC, Standard Chartered, Citibank, or Wise?{" "}
+                <a href="https://github.com/lyuzizheng/cancan/discussions">Tell us what you use</a>.
+              </p>
+            </li>
+          </ul>
+          <p className="sources-note">
+            Multi-currency is first-class: each account keeps its own currency —
+            SGD, USD, and more. No forced base currency, no exchange-rate guesses.
+          </p>
         </section>
       </Reveal>
 

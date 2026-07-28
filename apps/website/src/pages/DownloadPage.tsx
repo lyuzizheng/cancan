@@ -4,9 +4,9 @@ export function DownloadPage() {
       <div className="page-lede">
         <h1>Download CanCan</h1>
         <p className="lede">
-          CanCan for macOS is distributed exclusively through GitHub Releases —
-          the same signed artifacts serve direct download, the in-app updater,
-          and the optional Homebrew Cask.
+          CanCan for macOS will be distributed exclusively through GitHub
+          Releases — the same signed artifacts serve direct download, the in-app
+          updater, and the optional Homebrew Cask.
         </p>
       </div>
 
@@ -33,6 +33,10 @@ export function DownloadPage() {
         <div className="meta-row">
           <dt>Version line</dt>
           <dd>One <code>0.x Preview</code> channel — no alpha/beta tracks, honest preview copy</dd>
+        </div>
+        <div className="meta-row">
+          <dt>Statement sources</dt>
+          <dd>DBS and HSBC in the current build, UOB coming with the first preview — the full honest list is on the <a href="/#sources-heading">overview page</a> and in the <a href="/docs/#statement-sources">docs</a>.</dd>
         </div>
       </dl>
 
