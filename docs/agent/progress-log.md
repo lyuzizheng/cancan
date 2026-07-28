@@ -6,6 +6,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Recorded the owner's 2026-07-28 maintainer exception under the `0016` hosted-check policy: PR45 is merged, complete local gates and independent review remain the accepted revision evidence, and billing/spending-limit jobs with zero executed steps remain explicitly non-green. This exception permits local successor work without claiming hosted validation.
 - Addressed the PR46 privacy/financial-authority review: Gmail OAuth remains connected for local capture, but Gmail-derived AI transfer now requires mailbox capability consent bound to the current provider recipient and retention disclosure; skipped AI setup or a changed recipient/disclosure disables transfer until mailbox-level re-consent, without prompting per rule.
 - Separated auto-commit threshold tuning from qualification evidence. Each profile selects and freezes its threshold on calibration/tuning data, then must show zero incorrect eligible outcomes on a separate untouched held-out set and a later post-freeze shadow cohort before owner approval; tuning on either qualification cohort invalidates it.
 - Closed the grouped public/Gmail/auto-commit design round. Public identity is `CanCan`/`cancan`/`cancan.money` under Apache-2.0 with the founding owner as initial maintainer and release approver; intended `support@cancan.money` and `security@cancan.money` contacts remain unprovisioned external setup.
@@ -55,8 +56,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- PR45 has merged the locally reviewed post-PR41 implementation. Its PR and post-merge hosted jobs still ended before executing steps under the repository billing/spending-limit condition; require those hosted gates to actually run and pass before marking the slice complete.
-- The public/Gmail design round is complete. `public-project-surface`, `gmail-onboarding`, and `high-confidence-auto-commit` have no remaining product-design blocker but stay dependency-blocked until `post-pr41-hardening` has hosted green evidence. Start the Kimi-led public surface first after that checkpoint; do not treat planned external accounts or contacts as provisioned.
+- Start the locally authorized Kimi-led `public-project-surface`. Keep GitHub billing no-start visible as residual infrastructure evidence and do not treat planned external accounts or contacts as provisioned.
 - Ask repayment allocation/FX only when that slice starts. Before Phase 2 Finder/AI capability work, ask about staged-plaintext protection/expiry, CLI approval persistence/audit retention, assistant state, and remaining coverage provider/cost/confidence rules.
 
 ## 2026-07-26

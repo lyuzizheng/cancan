@@ -279,7 +279,7 @@ expect_failure "slice invalid status" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-sed 's/| public-project-surface | blocked |/| public-project-surface | ready |/' "$manifest.bak" > "$manifest"
+sed 's/| repayment-allocation | blocked |/| repayment-allocation | ready |/' "$manifest.bak" > "$manifest"
 expect_failure "ready slice retains blockers" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 
