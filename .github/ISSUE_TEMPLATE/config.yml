@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and how-to
+    url: https://github.com/lyuzizheng/cancan/discussions
+    about: Usage and support questions belong in Discussions (Questions category), not in issues.
+  - name: Early ideas and design discussion
+    url: https://github.com/lyuzizheng/cancan/discussions
+    about: Proposals that are still taking shape start in Discussions (Ideas category).
+  - name: Security vulnerabilities
+    url: https://github.com/lyuzizheng/cancan/blob/main/SECURITY.md
+    about: Never report vulnerabilities publicly. Use the private routes in SECURITY.md.
+  - name: Documentation
+    url: https://github.com/lyuzizheng/cancan/blob/main/docs/README.md
+    about: The repository docs are the source of truth for intended behavior.

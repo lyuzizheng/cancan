@@ -12,12 +12,14 @@
     "check:rust": "pnpm --filter @cancan/desktop check:rust",
     "test:rust": "pnpm --filter @cancan/desktop test:rust",
     "build:web": "pnpm --filter @cancan/desktop build:web",
+    "build:website": "pnpm --filter @cancan/website build",
+    "check:website": "pnpm --filter @cancan/website build && pnpm --filter @cancan/website check",
     "build:desktop": "pnpm --filter @cancan/desktop build:desktop",
     "check:presentation-types": "pnpm --filter @cancan/desktop check:presentation-types",
     "check:file-size": "node scripts/check-source-file-size.mjs",
-    "verify:fast": "pnpm check:file-size && pnpm typecheck && pnpm test:unit && pnpm build:web",
+    "verify:fast": "pnpm check:file-size && pnpm typecheck && pnpm test:unit && pnpm build:web && pnpm check:website",
     "verify:native": "pnpm --filter @cancan/desktop verify:native",
-    "verify": "pnpm check:file-size && pnpm typecheck && pnpm test:unit && pnpm --filter @cancan/desktop verify"
+    "verify": "pnpm check:file-size && pnpm typecheck && pnpm test:unit && pnpm --filter @cancan/desktop verify && pnpm check:website"
   },
   "devDependencies": {
     "happy-dom": "20.10.6",
