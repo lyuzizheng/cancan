@@ -2,6 +2,17 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-07-29
+
+### Completed
+
+- Started the ready `gmail-onboarding` slice with a mock-only `packages/connectors` checkpoint. The deterministic contract builds one Google Desktop OAuth authorization request with PKCE `S256`, a validated caller-supplied loopback port, the sole `gmail.readonly` scope, offline access, and no client secret; validates the exact root-loopback callback and one matching state before interpreting provider success or failure; builds the authorization-code exchange; accepts only a complete read-only token response; and normalizes the Gmail profile mailbox identity.
+- Kept this checkpoint free of embedded/live credentials, credential loading/storage, and network execution. It adds no live Google request executor, embedded client ID, token storage, Keychain/SQLite/Tauri/renderer wiring, Gmail rules, sync jobs, evidence capture, AI transfer, provider support, or public Gmail claim. Deterministic tests use synthetic client IDs, codes, tokens, mailbox addresses, entropy, and provider payloads and assert redacted contract failures.
+
+### Next
+
+- Before adding the loopback listener, real injected HTTP transport, mailbox-scoped Keychain token lifecycle, or SQLite connection identity, freeze one privileged execution adapter that consumes this contract without exposing OAuth tokens or the PKCE verifier to the renderer and without duplicating the implementation in Rust. The privileged host must choose and bind the random available port. Keep live Google credentials outside Git and defer real OAuth evidence until the owner provisions the separate development/test project.
+
 ## 2026-07-28
 
 ### Completed
