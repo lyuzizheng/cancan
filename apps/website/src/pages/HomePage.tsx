@@ -1,17 +1,39 @@
-import { Mockup } from "../components/Mockup";
+import type { CSSProperties } from "react";
+
+import { FlowGraph } from "../components/FlowGraph";
+import { Wordmark } from "../components/Layout";
+import { Statement } from "../components/Statement";
+
+/* Fictional micro-ledger lines, current sources only — decorative texture. */
+const DRIFT_ROWS = [
+  "21/01 DBS BANK · CARD PAYMENT · −980.50 SGD · LINKED — 21/01 DBS CARD · PAYMENT RECEIVED · +980.50 · 20/01 HSBC · SALARY CREDIT · +6,400.00 SGD · LEDGERED · 19/01 DBS BANK · FAST TRANSFER · −120.00 SGD · REVIEWED · 18/01 DBS CARD · NTUC FAIRPRICE · −54.20 SGD · LEDGERED · ",
+  "17/01 HSBC · GIRO — INSURANCE · −310.00 SGD · REVIEWED · 15/01 DBS BANK · GRAB TRANSPORT · −18.60 SGD · LEDGERED · 14/01 DBS CARD · PAYMENT RECEIVED · +500.00 · LINKED — 14/01 DBS BANK · CARD PAYMENT · −500.00 · 12/01 HSBC · INTEREST · +3.42 SGD · LEDGERED · ",
+  "10/01 DBS BANK · SALARY CREDIT · +6,200.00 SGD · LEDGERED · 09/01 DBS CARD · COFFEE · −6.40 SGD · REVIEWED · 08/01 HSBC · STANDING ORDER · −850.00 SGD · LEDGERED · 05/01 DBS BANK · PAYNOW IN · +65.00 SGD · REVIEWED · 03/01 DBS CARD · PETROL · −72.10 SGD · LEDGERED · ",
+  "02/01 HSBC · FAST TRANSFER · −200.00 SGD · REVIEWED · 31/12 DBS BANK · INTEREST · +3.42 SGD · LEDGERED · 30/12 DBS CARD · GROCERIES · −88.30 SGD · LEDGERED · 29/12 DBS BANK · CARD PAYMENT · −1,240.00 · LINKED — 29/12 DBS CARD · PAYMENT RECEIVED · +1,240.00 · ",
+];
+
+const DRIFT_STYLE = [
+  { opacity: 0.1, top: "9%", "--dur": "88s" } as CSSProperties,
+  { opacity: 0.07, top: "32%", "--dur": "112s" } as CSSProperties,
+  { opacity: 0.07, top: "60%", "--dur": "96s" } as CSSProperties,
+  { opacity: 0.08, top: "85%", "--dur": "124s" } as CSSProperties,
+];
+
+const TYPE_ROW_A = "DBS · POSB · UOB · OCBC · HSBC · Standard Chartered · Citi · Wise · GrabPay · CPF · Insurance · Brokerage · ";
+const TYPE_ROW_B = "Brokerage · Insurance · CPF · GrabPay · Wise · Citi · Standard Chartered · HSBC · OCBC · UOB · POSB · DBS · ";
 
 const FLOW_STEPS = [
   {
-    body: "Add statement PDFs, CSVs, or images directly — or save them to your CanCan Inbox folder in iCloud Drive and CanCan picks up new files for you.",
+    body: "Add statement PDFs, CSVs, or images directly — or save them to your CanCan Inbox folder in iCloud Drive and CanCan picks up new files for you. No bank credentials, no screen scraping.",
     title: "Collect",
   },
   {
-    body: "For the first public preview, CanCan extracts evidence locally, then asks the AI provider you configure to propose structured records. The exact parser and runtime versions stay recorded with every run.",
+    body: "CanCan extracts evidence locally, then asks the AI provider you configure to propose structured records — with the exact parser and runtime versions recorded next to every run.",
     title: "Parse",
   },
   {
-    body: "Records wait in one Review queue. Check details, edit, link related records such as card repayments, then add them together.",
-    title: "Review",
+    body: "Records wait in Review. Check details, edit, and link the same money seen on two statements — a card payment leaving DBS, arriving at your card — into one event.",
+    title: "Reconcile",
   },
   {
     body: "Accepted records become your ledger and Money Overview — every value traceable back to the document it came from, with typed Undo.",
@@ -19,183 +41,361 @@ const FLOW_STEPS = [
   },
 ];
 
+const FEATURES = [
+  {
+    body: "CanCan extracts evidence locally, then asks the AI provider you configure — with a key you hold — to propose structured records. The parser and runtime versions are recorded against every record, and the source document is filed in the encrypted Vault.",
+    index: "04.1",
+    title: <>AI-assisted parsing, <em>archived.</em></>,
+  },
+  {
+    body: "Money moving between your own accounts appears on two statements — once out, once in. Link the pair during review and your own transfers stop posing as spending.",
+    index: "04.2",
+    title: <>Reconciled, <em>counted once.</em></>,
+  },
+  {
+    body: "One allocation view across accounts and currencies, drawn only from approved ledger records — every figure traceable back to the page it came from.",
+    index: "04.3",
+    title: <>An overview <em>that cites its sources.</em></>,
+  },
+  {
+    body: "Deeper AI analysis is being qualified before it ships. When it arrives: your provider, your key, your consent — each analysis individually approved. Skip AI entirely and nothing is sent anywhere.",
+    index: "04.4",
+    title: <>Analysis, <em>on your terms.</em></>,
+  },
+];
+
+const CREED = [
+  {
+    note: "No sign-up, no sync service, nothing to breach on our side",
+    word: "account",
+  },
+  {
+    note: "Neither the app nor this site collects analytics or behavioral data",
+    word: "analytics",
+  },
+  {
+    note: "Gmail and AI go direct from your Mac, only with your consent",
+    word: "silent network",
+  },
+];
+
+const SOURCES = [
+  { mark: "D", name: "DBS Bank", note: "Bank statements — parsed locally, review-first", status: "current", tag: "[ Current ]" },
+  { mark: "D", name: "DBS Card", note: "Credit-card statements — parsed locally, review-first", status: "current", tag: "[ Current ]" },
+  { mark: "H", name: "HSBC", note: "Bank statements — parsed locally, review-first", status: "current", tag: "[ Current ]" },
+  { mark: "U", name: "UOB", note: "Targeted for the first public preview, gated on evidence", status: "coming", tag: "[ Coming ]" },
+  { mark: "G", name: "Gmail", note: "Statement attachments — public after Google’s verification", status: "coming", tag: "[ Coming ]" },
+];
+
+const delay = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
+
 export function HomePage() {
   return (
     <>
       <section className="hero">
-        <div className="hero-inner">
-          <div className="hero-copy">
-            <p className="hero-eyebrow">Local-first finance · macOS</p>
-            <h1>Your financial evidence, kept on your Mac.</h1>
-            <p className="lede">
-              CanCan turns bank statements into a ledger you control — processed by
-              the local app, reviewed by you, and traceable back to the exact document
-              every record came from. No hosted account. Nothing leaves your Mac by
-              default. No analytics.
-            </p>
-            <div className="hero-actions">
-              <a className="button-primary" href="/download/">Get the preview</a>
-              <a className="button-quiet" href="/docs/">Read the docs</a>
+        <div className="hero-drift" aria-hidden="true">
+          {DRIFT_ROWS.map((row, index) => (
+            <div className="drift-row" key={index} style={DRIFT_STYLE[index]}>
+              <div className="drift-track">
+                <span>{row}</span>
+                <span>{row}</span>
+              </div>
             </div>
-            <p className="status-line">
-              <span className="status-item">First public preview in preparation ·</span>{" "}
-              <span className="status-item">macOS 14 or later ·</span>{" "}
-              <span className="status-item">Open source, Apache-2.0</span>
-            </p>
+          ))}
+        </div>
+        <header className="hero-mast wrap">
+          <Wordmark current />
+          <a className="hero-mast-link mono-tag" href="https://github.com/lyuzizheng/cancan">
+            GitHub ↗
+          </a>
+        </header>
+        <div className="hero-core wrap">
+          <h1>
+            <span className="mask"><span style={delay(80)}>Every dollar</span></span>
+            <span className="mask"><span style={delay(210)}>has a <em>source.</em></span></span>
+          </h1>
+          <p className="hero-sign hero-in" style={delay(360)}>
+            CanCan — as in, all your money sources, <em>can.</em>
+          </p>
+          <p className="lede hero-in" style={delay(480)}>
+            Bank here, a card there, a wallet for the weekends — your money is spread
+            across more platforms than anyone can track by hand. CanCan collects the
+            statements those platforms already issue, reads them on your Mac with an
+            AI provider you configure, and reconciles them into one ledger where every
+            number cites its document.
+          </p>
+          <div className="hero-actions hero-in" style={delay(580)}>
+            <a className="button-solid" href="/download/">
+              Get the preview<span className="button-arrow" aria-hidden="true">→</span>
+            </a>
+            <a className="button-line" href="/docs/">
+              Read the docs
+            </a>
           </div>
-          <div className="hero-stage">
-            <Mockup variant="command" />
+        </div>
+        <div className="hero-foot wrap hero-in" style={delay(720)}>
+          <div className="hero-meta mono-tag" aria-label="Product facts">
+            <span>Local-first finance</span>
+            <span>macOS 14 or later</span>
+            <span>First preview in preparation</span>
+            <span>Open source — Apache-2.0</span>
+          </div>
+          <span className="hero-cue mono-tag" aria-hidden="true">
+            Scroll <span className="hero-cue-arrow">↓</span>
+          </span>
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="wrap">
+          <div className="section">
+            <div className="section-index">
+              <span className="idx mono-tag">N°01</span>
+              <span className="mono-tag">The reality</span>
+            </div>
+            <h2 className="section-title">
+              <span className="mask"><span>Your money lives in <em>more places</em></span></span>
+              <span className="mask"><span>than it did five years ago.</span></span>
+            </h2>
+            <div className="type-wall" aria-hidden="true">
+              <div className="type-row type-row-a">
+                <div className="type-track">
+                  <span>{TYPE_ROW_A}</span>
+                  <span>{TYPE_ROW_A}</span>
+                </div>
+              </div>
+              <div className="type-row type-row-b">
+                <div className="type-track">
+                  <span>{TYPE_ROW_B}</span>
+                  <span>{TYPE_ROW_B}</span>
+                </div>
+              </div>
+            </div>
+            <p className="sr-only">
+              DBS, POSB, UOB, OCBC, HSBC, Standard Chartered, Citi, Wise, GrabPay,
+              CPF, insurance, and brokerage — platforms a typical household juggles.
+            </p>
+            <p className="mono-tag specimen-caption">
+              [ Platforms a typical household juggles — not a coverage claim ]
+            </p>
+            <p className="reality-pivot">
+              Nobody keeps a spending diary — and nobody should have to.
+              The statements already exist. <em>CanCan reads those.</em>
+            </p>
           </div>
         </div>
       </section>
 
-      <section className="flow" aria-labelledby="flow-heading">
-        <h2 id="flow-heading">From statement to ledger in four calm steps</h2>
-        <ol className="flow-steps">
-          {FLOW_STEPS.map((step, index) => (
-            <li className="flow-step" key={step.title}>
-              <span className="flow-index" aria-hidden="true">{`0${index + 1}`}</span>
-              <h3>{step.title}</h3>
-              <p>{step.body}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="sources" aria-labelledby="sources-heading">
-          <h2 id="sources-heading">Statement sources, honestly listed</h2>
-          <ul className="source-groups">
-            <li className="source-group">
-              <h3><span className="point point-emerald" aria-hidden="true" />In the current build — review-first</h3>
-              <ul className="source-list">
-                <li>DBS bank statements</li>
-                <li>DBS credit-card statements</li>
-                <li>HSBC bank statements</li>
-              </ul>
-              <p>
-                In current builds, every parsed record waits for your review —
-                nothing enters your ledger automatically. Password-protected
-                eStatements are a first-class case: unlock once, and the password
-                stays in your macOS Keychain.
-              </p>
-            </li>
-            <li className="source-group">
-              <h3><span className="point point-amber" aria-hidden="true" />Coming with the first preview</h3>
-              <ul className="source-list">
-                <li>UOB statements</li>
-                <li>Gmail statement attachments — pending Google’s verification</li>
-              </ul>
-              <p>
-                Gmail imports only attachments matching rules you enable, directly
-                from your Mac, and becomes publicly available after Google verifies
-                the app.
-              </p>
-            </li>
-            <li className="source-group">
-              <h3><span className="point" aria-hidden="true" />The listing rule</h3>
-              <p>
-                A bank appears here only after a real parser profile exists for
-                it — never on a wishlist. Automatic add stays off for every
-                source until its confidence is separately qualified. Coverage
-                grows from what the project actually uses, then from your requests.
-              </p>
-              <p>
-                Using POSB, OCBC, Standard Chartered, Citibank, or Wise?{" "}
-                <a href="https://github.com/lyuzizheng/cancan/discussions">Tell us what you use</a>.
-              </p>
-            </li>
-          </ul>
-          <p className="sources-note">
-            Multi-currency is first-class: each account keeps its own currency —
-            SGD, USD, and more. No forced base currency, no exchange-rate guesses.
-          </p>
-      </section>
-
-      <section className="feature" aria-labelledby="inbox-heading">
-          <div className="feature-copy">
-            <h2 id="inbox-heading">Add statements without opening the app</h2>
-            <p>
-              Save a statement to the <code>Cancan/Inbox</code> folder in iCloud Drive and it
-              is waiting in CanCan the next time you open the app. CanCan only ever looks at
-              the Inbox child of that folder. It creates or reuses only the <code>Inbox</code>{" "}
-              and <code>Backups</code> children, and never modifies, moves, or deletes the
-              statement files you place there.
+      <section className="band night">
+        <div className="wrap">
+          <div className="section">
+            <div className="section-index">
+              <span className="idx mono-tag">N°02</span>
+              <span className="mono-tag">The link</span>
+            </div>
+            <h2 className="section-title">
+              <span className="mask"><span>The same dollar, <em>seen twice.</em></span></span>
+            </h2>
+            <p className="lede">
+              Money moves between your own accounts constantly — salary in, card paid off,
+              savings swept aside. Each move appears on two statements, once as money out
+              and once as money in. Untracked, it inflates your spending. CanCan links
+              the pair into a single event.
             </p>
-            <p>
-              Prefer manual control? Add files directly in the app.
-              The Inbox is one intake channel, never a requirement.
+            <FlowGraph />
+          </div>
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="wrap">
+          <div className="section">
+            <div className="section-index">
+              <span className="idx mono-tag">N°03</span>
+              <span className="mono-tag">Process</span>
+            </div>
+            <h2 className="section-title">
+              <span className="mask"><span>Four steps, <em>no surprises.</em></span></span>
+            </h2>
+            <div className="process-grid">
+              <ol className="flow-list">
+                {FLOW_STEPS.map((step, index) => (
+                  <li className="flow-step" key={step.title}>
+                    <span className="flow-num" aria-hidden="true">{index + 1}</span>
+                    <div>
+                      <h3>{step.title}</h3>
+                      <p>{step.body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <div className="process-visual">
+                <Statement />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="band night">
+        <div className="wrap">
+          <div className="creed">
+            <div className="section-index">
+              <span className="idx mono-tag">Creed</span>
+              <span className="mono-tag">What we refuse to build</span>
+            </div>
+            <div style={{ marginTop: "42px" }}>
+              {CREED.map((line) => (
+                <div className="creed-row" key={line.word}>
+                  <h3>No <em>{line.word}.</em></h3>
+                  <p>{line.note}</p>
+                </div>
+              ))}
+            </div>
+            <p className="creed-links mono-tag">
+              Engineering, not policy filler — read exactly how:{" "}
+              <a href="/privacy/">Privacy</a> · <a href="/security/">Security</a>
             </p>
           </div>
-          <Mockup variant="sources" />
+        </div>
       </section>
 
-      <section className="feature is-flipped" aria-labelledby="review-heading">
-          <div className="feature-copy">
-            <h2 id="review-heading">Review first. Auto-add must earn it.</h2>
-            <p>
-              In the current build, nothing enters your books automatically. A single
-              Review queue lets you check amounts and dates, edit what the parser
-              missed, and link related records — like a card repayment that appears
-              on two statements — before adding them as one event.
+      <section className="band">
+        <div className="wrap">
+          <div className="section">
+            <div className="section-index">
+              <span className="idx mono-tag">N°04</span>
+              <span className="mono-tag">The standard</span>
+            </div>
+            <h2 className="section-title">
+              <span className="mask"><span>Collected, reconciled,</span></span>
+              <span className="mask"><span><em>accounted for.</em></span></span>
+            </h2>
+            <ul className="feature-list">
+              {FEATURES.map((feature) => (
+                <li className="feature-row" key={feature.index}>
+                  <span className="feature-index">{feature.index}</span>
+                  <h3>{feature.title}</h3>
+                  <p>{feature.body}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="wrap">
+          <div className="section">
+            <div className="section-index">
+              <span className="idx mono-tag">N°05</span>
+              <span className="mono-tag">Coverage</span>
+            </div>
+            <h2 className="section-title" id="sources-heading">
+              <span className="mask"><span>Statement sources,</span></span>
+              <span className="mask"><span><em>honestly</em> listed.</span></span>
+            </h2>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SOURCES.map((source) => (
+                    <tr key={source.name}>
+                      <td className="source">
+                        <span className="source-mark" aria-hidden="true">{source.mark}</span>
+                        {source.name}
+                      </td>
+                      <td>
+                        <span className={source.status === "current" ? "tag-current" : "tag-coming"}>
+                          {source.tag}
+                        </span>
+                      </td>
+                      <td className="note">{source.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="table-notes">
+              A bank appears here only after a real parser profile exists for it — never on a
+              wishlist. Automatic add stays off for every source until its confidence is
+              separately qualified. Password-protected eStatements are a first-class case:
+              unlock once, and the password stays in your macOS Keychain.
             </p>
-            <p>
-              The preview adds automatic addition only for records that pass
-              independently qualified confidence gates; everything else still waits
-              for you. Every add is explicit, every undo is typed, and nothing
-              rewrites committed history silently.
+            <p className="table-notes">
+              Using POSB, OCBC, Standard Chartered, Citibank, or Wise?{" "}
+              <a href="https://github.com/lyuzizheng/cancan/discussions">Tell us what you use</a>.
             </p>
           </div>
-          <Mockup variant="review" />
+        </div>
       </section>
 
-      <section className="feature" aria-labelledby="overview-heading">
-          <div className="feature-copy">
-            <h2 id="overview-heading">A money picture that cites its sources</h2>
-            <p>
-              The Money Overview shows balances per account and currency, derived from your
-              own evidence, with the date behind each balance kept visible. There is no
-              aggregator account in the middle holding your data.
-            </p>
+      <section className="band">
+        <div className="wrap">
+          <div className="section">
+            <div className="section-index">
+              <span className="idx mono-tag">N°06</span>
+              <span className="mono-tag">Next</span>
+            </div>
+            <h2 className="section-title">
+              <span className="mask"><span>The first preview,</span></span>
+              <span className="mask"><span><em>honestly</em> scoped.</span></span>
+            </h2>
+            <div className="spec">
+              <div className="spec-head mono-tag">
+                <span>Spec — first public release</span>
+                <span>0.x Preview</span>
+              </div>
+              <h3>A pre-1.0 preview, <em>not a stability promise.</em></h3>
+              <p>
+                It ships local file ingestion, the CanCan Inbox folder, statement parsing
+                with review-first control, and source-backed money views.
+              </p>
+              <p>
+                Planned and gated on their own evidence: Gmail connection for statement
+                attachments and separately consented transaction-notification emails
+                (public availability follows Google’s verification), and source coverage
+                for DBS, HSBC, and UOB — some profiles start Review-only while their
+                automatic-add confidence is calibrated against held-out evidence.
+              </p>
+              <p>
+                Deeper AI analysis of your ledger is being qualified separately and ships
+                only behind explicit consent — your provider, your key.
+              </p>
+              <p>
+                Follow along on <a href="https://github.com/lyuzizheng/cancan">GitHub</a> —
+                development, specs, and releases all happen in the open — or{" "}
+                <a href="/docs/">read the docs</a>.
+              </p>
+            </div>
           </div>
-          <Mockup variant="command" />
+        </div>
       </section>
 
-      <section className="principles" aria-labelledby="principles-heading">
-          <h2 id="principles-heading">Local-first, verifiably</h2>
-          <ul className="principle-list">
-            <li>
-              <h3><span className="point point-emerald" aria-hidden="true" />Encrypted Vault</h3>
-              <p>Documents and data live in a SQLCipher-encrypted Vault on your Mac, unlocked by your password. Secrets stay in the macOS Keychain.</p>
-            </li>
-            <li>
-              <h3><span className="point point-emerald" aria-hidden="true" />No CanCan backend</h3>
-              <p>There is no account system, no sync service, and no upload pipeline. Optional connections — Gmail, your own AI provider — go directly from your Mac, under your consent.</p>
-            </li>
-            <li>
-              <h3><span className="point point-emerald" aria-hidden="true" />No telemetry</h3>
-              <p>Neither the app nor this website collects analytics or behavioral data. Crash reporting is separate, opt-in, and off by default.</p>
-            </li>
-          </ul>
-      </section>
-
-      <section className="roadmap" aria-labelledby="preview-heading">
-          <h2 id="preview-heading">The first preview, honestly scoped</h2>
-          <p>
-            The first public release is a pre-1.0 preview, not a stability promise. It ships
-            local file ingestion, the CanCan Inbox folder, statement parsing with
-            review-first control, and source-backed money views.
-          </p>
-          <p>
-            Planned for the preview and gated on their own evidence: Gmail connection for
-            statement attachments and separately consented transaction-notification emails
-            (public availability follows Google’s verification), and source coverage for
-            DBS, HSBC, and UOB — some profiles start Review-only while their automatic-add
-            confidence is calibrated against held-out evidence.
-          </p>
-          <p>
-            Follow along on <a href="https://github.com/lyuzizheng/cancan">GitHub</a> —
-            development, specs, and releases all happen in the open.
-          </p>
+      <section className="band night">
+        <div className="wrap">
+          <div className="cta">
+            <h2>
+              <span className="mask"><span>Prove <em>it.</em></span></span>
+            </h2>
+            <p className="cta-sign">CanCan — as in, all your money sources, <em>can.</em></p>
+            <p>GitHub Releases · Signed artifacts · No account</p>
+            <div className="cta-actions">
+              <a className="button-solid" href="/download/">
+                Get the preview<span className="button-arrow" aria-hidden="true">→</span>
+              </a>
+              <a className="button-line" href="https://github.com/lyuzizheng/cancan">
+                Star on GitHub
+              </a>
+            </div>
+          </div>
+        </div>
       </section>
     </>
   );
