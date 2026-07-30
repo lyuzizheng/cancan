@@ -27,7 +27,7 @@ Flow:
 ```text
 1. User starts Gmail connect flow in CanCan desktop app.
 2. App generates PKCE code_verifier and code_challenge.
-3. App starts a temporary local loopback listener on http://127.0.0.1:{random_port}/callback.
+3. App starts a temporary local loopback listener on http://127.0.0.1:{random_port}.
 4. App opens the system browser to Google OAuth authorization URL.
 5. User approves requested Gmail scope.
 6. Google redirects authorization code to local loopback callback.

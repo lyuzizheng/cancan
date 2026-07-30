@@ -111,6 +111,12 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  packages/connectors:
+    devDependencies:
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   packages/core:
     devDependencies:
       typescript:
