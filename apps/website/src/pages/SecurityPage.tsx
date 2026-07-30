@@ -38,8 +38,9 @@ export function SecurityPage() {
         <div className="meta-row">
           <dt>Documents</dt>
           <dd>
-            Source files are sealed in XChaCha20-Poly1305 envelopes with
-            per-file keys derived through HKDF-SHA256 from the Vault key —
+            Source files are sealed in XChaCha20-Poly1305 envelopes under a
+            file-encryption subkey that HKDF-SHA256 separates from the master
+            key, each envelope carrying its own random 24-byte nonce —
             authenticated encryption, so tampering is detected, not just
             discouraged.
           </dd>
@@ -47,9 +48,12 @@ export function SecurityPage() {
         <div className="meta-row">
           <dt>Key derivation</dt>
           <dd>
-            Your password is stretched with Argon2id (RFC 9106 low-memory
-            profile — 64 MiB, three passes, four lanes) into a 256-bit Vault
-            key. The password itself is never stored.
+            Your password is stretched with Argon2id into a 256-bit wrapping
+            key — the RFC 9106 low-memory profile (64 MiB, t=3, p=4) by
+            default, or the OWASP minimum profile (19 MiB, t=2, p=1) when the
+            first derivation exceeds the 750 ms unlock budget. That wrapping
+            key seals a randomly generated master key; the password itself is
+            never stored.
           </dd>
         </div>
         <div className="meta-row">
@@ -63,9 +67,11 @@ export function SecurityPage() {
         <div className="meta-row">
           <dt>Integrity</dt>
           <dd>
-            Files are SHA-256 hashed on ingest; stored bytes are re-hashed and
-            verified on every read, and duplicates collapse to one verified
-            copy.
+            Files are SHA-256 hashed on ingest and the digest is stored with
+            the document; every decryption is authenticated by the envelope
+            itself, and a Vault integrity sweep re-verifies stored bytes
+            against the recorded digest — mismatches are marked missing, never
+            served. Duplicates collapse to one verified copy.
           </dd>
         </div>
         <div className="meta-row">

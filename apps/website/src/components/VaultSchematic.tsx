@@ -11,7 +11,7 @@ export function VaultSchematic() {
       <div
         className="vault-exhibit"
         role="img"
-        aria-label="Schematic diagram: statement files enter the CanCan process on your Mac, are SHA-256 hashed and verified, then encrypted with Argon2id and SQLCipher into the Vault, which the macOS Keychain unlocks. The only outbound channels are consent-gated: the Gmail API with read-only scope and your own AI provider with your key."
+        aria-label="Schematic diagram: statement files enter the CanCan process on your Mac, are SHA-256 hashed and verified, then sealed into the Vault with XChaCha20-Poly1305 file envelopes and a SQLCipher database. The master key is wrapped by an Argon2id-derived key held in the macOS Keychain. The only outbound channels are consent-gated: the Gmail API with read-only scope and your own AI provider with your key."
       >
         <svg className="vault-schematic" viewBox="0 0 760 400" aria-hidden="true">
           {/* machine boundary */}
@@ -48,7 +48,7 @@ export function VaultSchematic() {
           <path className="vs-packet vpk-d" d="M390 139h34" />
           <rect className="vs-box" x="424" y="110" width="144" height="58" />
           <text className="vs-label" x="496" y="136" textAnchor="middle">ENCRYPT</text>
-          <text className="vs-sub" x="496" y="153" textAnchor="middle">ARGON2ID · SQLCIPHER</text>
+          <text className="vs-sub" x="496" y="153" textAnchor="middle">XCHACHA20 · SQLCIPHER</text>
 
           {/* vault */}
           <path className="vs-edge" d="M568 139h18" />

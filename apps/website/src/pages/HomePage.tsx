@@ -74,11 +74,11 @@ const VAULT_SPECS = [
     term: "At rest",
   },
   {
-    detail: "Argon2id stretches your password into the Vault key; Vault keys, tokens, and statement passwords live in the macOS Keychain.",
+    detail: "Argon2id stretches your password into a wrapping key that seals the randomly generated master key; Vault keys, tokens, and statement passwords live in the macOS Keychain.",
     term: "Keys",
   },
   {
-    detail: "Every document is SHA-256 hashed on the way in and re-verified on every read — tamper-evident, deduplicated, deterministic.",
+    detail: "Every document is SHA-256 hashed on the way in, every decryption is authenticated, and an integrity sweep re-checks stored bytes — tamper-evident, deduplicated, deterministic.",
     term: "Integrity",
   },
   {
