@@ -1,3 +1,5 @@
+-- Owning slice: gmail-onboarding
+
 CREATE TABLE gmail_accounts (
   id TEXT PRIMARY KEY,
   mailbox_address TEXT NOT NULL UNIQUE,
@@ -11,9 +13,5 @@ CREATE TABLE gmail_accounts (
         'disconnected'
       )
     ),
-  ai_processing_provider_fingerprint TEXT,
-  attachment_ai_processing_authorized_at TEXT,
-  transaction_body_ai_processing_authorized_at TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

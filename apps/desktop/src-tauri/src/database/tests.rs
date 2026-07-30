@@ -27,19 +27,22 @@ fn rejects_a_vault_with_a_newer_schema_version() {
     )
     .expect("open encrypted database");
     apply_migrations(&mut connection).expect("apply supported schema");
+    let supported_version = MIGRATIONS.last().expect("supported migration").version;
+    let newer_version = supported_version + 1;
     connection
         .execute(
             "INSERT INTO schema_migrations(version) VALUES (?1)",
-            [MIGRATIONS.last().expect("supported migration").version + 1],
+            [newer_version],
         )
         .expect("mark a newer schema version");
 
     let error = apply_migrations(&mut connection).expect_err("reject newer schema");
 
-    assert!(
-        error
-            .to_string()
-            .contains("database schema version 10 is newer than supported version 9")
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "database schema version {newer_version} is newer than supported version {supported_version}"
+        )
     );
 }
 
