@@ -2,8 +2,8 @@ import type { PreparedLedgerEvent } from "@cancan/core";
 
 import { inTransaction, type SqliteDatabase, type SqlValue } from "./sqlite";
 
-type AccountStatus = "candidate" | "confirmed" | "archived" | "merged";
-type ExternalRecordStatus = "staged" | "review" | "committed" | "superseded";
+type AccountStatus = "candidate" | "confirmed" | "dismissed" | "archived" | "merged";
+type ExternalRecordStatus = "staged" | "review" | "committed" | "removed" | "superseded";
 type StagedRecordStatus = Extract<ExternalRecordStatus, "staged" | "review">;
 
 export interface StagedImport {
