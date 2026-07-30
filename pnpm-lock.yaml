@@ -67,9 +67,6 @@ importers:
         specifier: 19.2.7
         version: 19.2.7(react@19.2.7)
     devDependencies:
-      '@fontsource-variable/geologica':
-        specifier: 5.2.8
-        version: 5.2.8
       '@fontsource-variable/martian-mono':
         specifier: 5.2.7
         version: 5.2.7

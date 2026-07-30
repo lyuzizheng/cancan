@@ -1,8 +1,10 @@
 import type { CSSProperties } from "react";
 
+import { ConsentArt, OverviewArt, ParseArt, ReconcileArt } from "../components/FeatureArt";
 import { FlowGraph } from "../components/FlowGraph";
 import { Wordmark } from "../components/Layout";
 import { Statement } from "../components/Statement";
+import { VaultSchematic } from "../components/VaultSchematic";
 
 /* Fictional micro-ledger lines, current sources only — decorative texture. */
 const DRIFT_ROWS = [
@@ -61,6 +63,31 @@ const FEATURES = [
     body: "Deeper AI analysis is being qualified before it ships. When it arrives: your provider, your key, your consent — each analysis individually approved. Skip AI entirely and nothing is sent anywhere.",
     index: "04.4",
     title: <>Analysis, <em>on your terms.</em></>,
+  },
+];
+
+const FEATURE_ARTS = [<ParseArt />, <ReconcileArt />, <OverviewArt />, <ConsentArt />];
+
+const VAULT_SPECS = [
+  {
+    detail: "SQLCipher ledger database and XChaCha20-Poly1305 document envelopes — authenticated encryption, plaintext never touches disk.",
+    term: "At rest",
+  },
+  {
+    detail: "Argon2id stretches your password into the Vault key; Vault keys, tokens, and statement passwords live in the macOS Keychain.",
+    term: "Keys",
+  },
+  {
+    detail: "Every document is SHA-256 hashed on the way in and re-verified on every read — tamper-evident, deduplicated, deterministic.",
+    term: "Integrity",
+  },
+  {
+    detail: "The interface receives presentation-safe read models only — no raw bytes, paths, hashes, or database handles cross into it.",
+    term: "Isolation",
+  },
+  {
+    detail: "Opt-in connections only: Gmail with read-only scope, your AI provider with a key you hold, update checks against signed metadata.",
+    term: "Network",
   },
 ];
 
@@ -252,6 +279,21 @@ export function HomePage() {
                 </div>
               ))}
             </div>
+            <div className="vault-tech">
+              <p className="mono-tag vault-tech-head">[ What "local" is built on ]</p>
+              <h3 className="vault-tech-title">
+                Your Mac is the <em>whole stack.</em>
+              </h3>
+              <VaultSchematic />
+              <dl className="vault-specs">
+                {VAULT_SPECS.map((spec) => (
+                  <div key={spec.term}>
+                    <dt>{spec.term}</dt>
+                    <dd>{spec.detail}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
             <p className="creed-links mono-tag">
               Engineering, not policy filler — read exactly how:{" "}
               <a href="/privacy/">Privacy</a> · <a href="/security/">Security</a>
@@ -272,11 +314,12 @@ export function HomePage() {
               <span className="mask"><span><em>accounted for.</em></span></span>
             </h2>
             <ul className="feature-list">
-              {FEATURES.map((feature) => (
+              {FEATURES.map((feature, index) => (
                 <li className="feature-row" key={feature.index}>
                   <span className="feature-index">{feature.index}</span>
                   <h3>{feature.title}</h3>
                   <p>{feature.body}</p>
+                  {FEATURE_ARTS[index]}
                 </li>
               ))}
             </ul>

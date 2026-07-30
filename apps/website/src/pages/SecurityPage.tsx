@@ -20,6 +20,80 @@ export function SecurityPage() {
         <li>Releases are CI-built from immutable tags with checksums, signatures, and provenance — never developer-machine builds.</li>
       </ul>
 
+      <h2 id="architecture">Local-first architecture</h2>
+      <p>
+        CanCan is a single-machine system: one Mac, one encrypted Vault, no
+        hosted backend. The choices below are implemented in the open-source
+        repository — <code>apps/desktop/src-tauri</code> — not promised on a
+        slide.
+      </p>
+      <dl>
+        <div className="meta-row">
+          <dt>Database</dt>
+          <dd>
+            SQLCipher with vendored OpenSSL — the ledger is encrypted page by
+            page, so no plaintext financial data ever reaches the disk.
+          </dd>
+        </div>
+        <div className="meta-row">
+          <dt>Documents</dt>
+          <dd>
+            Source files are sealed in XChaCha20-Poly1305 envelopes with
+            per-file keys derived through HKDF-SHA256 from the Vault key —
+            authenticated encryption, so tampering is detected, not just
+            discouraged.
+          </dd>
+        </div>
+        <div className="meta-row">
+          <dt>Key derivation</dt>
+          <dd>
+            Your password is stretched with Argon2id (RFC 9106 low-memory
+            profile — 64 MiB, three passes, four lanes) into a 256-bit Vault
+            key. The password itself is never stored.
+          </dd>
+        </div>
+        <div className="meta-row">
+          <dt>Secrets</dt>
+          <dd>
+            Vault keys, remembered unlock, OAuth refresh tokens, and statement
+            passwords live in the macOS Keychain — never in the database or in
+            plain files.
+          </dd>
+        </div>
+        <div className="meta-row">
+          <dt>Integrity</dt>
+          <dd>
+            Files are SHA-256 hashed on ingest; stored bytes are re-hashed and
+            verified on every read, and duplicates collapse to one verified
+            copy.
+          </dd>
+        </div>
+        <div className="meta-row">
+          <dt>Process boundary</dt>
+          <dd>
+            The UI process receives bounded, presentation-safe read models
+            only — raw file bytes, filesystem paths, hashes, locators, and
+            database handles never cross into it.
+          </dd>
+        </div>
+        <div className="meta-row">
+          <dt>Network</dt>
+          <dd>
+            No listener, no telemetry, no analytics. Outbound connections exist
+            only for capabilities you switch on: Gmail (official API,
+            read-only scope), your own AI provider with a key you hold, and
+            update checks that verify signed metadata before anything runs.
+          </dd>
+        </div>
+        <div className="meta-row">
+          <dt>Releases</dt>
+          <dd>
+            Artifacts are built by CI from immutable tags with checksums,
+            signatures, and build provenance — never from a developer machine.
+          </dd>
+        </div>
+      </dl>
+
       <h2 id="report">Reporting a vulnerability</h2>
       <p>
         Please report security issues privately — never in a public issue,
