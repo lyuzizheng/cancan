@@ -158,7 +158,9 @@ describe("privileged Gmail OAuth adapter", () => {
     const executeHttp = vi.fn();
     const persistAuthorizedMailbox = vi.fn();
     const close = vi.fn(async () => {
-      throw new Error("listener close failed");
+      if (close.mock.calls.length === 1) {
+        throw new Error("listener close failed");
+      }
     });
 
     await expect(
@@ -179,7 +181,7 @@ describe("privileged Gmail OAuth adapter", () => {
       }),
     ).rejects.toThrow("Gmail authorization could not be completed.");
 
-    expect(close).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(2);
     expect(executeHttp).not.toHaveBeenCalled();
     expect(persistAuthorizedMailbox).not.toHaveBeenCalled();
   });

@@ -49,7 +49,7 @@ export async function runPrivilegedGmailOAuth(
     throw authorizationFailed();
   }
 
-  let listenerCloseAttempted = false;
+  let listenerClosed = false;
   try {
     const session = await createGmailOAuthSession(
       {
@@ -68,11 +68,11 @@ export async function runPrivilegedGmailOAuth(
     );
     const callback = parseGmailOAuthCallback(session, callbackUrl);
 
-    listenerCloseAttempted = true;
     await runInjected(
       () => listener.close(),
       authorizationFailed,
     );
+    listenerClosed = true;
 
     const tokens = parseGmailOAuthTokenResponse(
       await runInjected(
@@ -106,7 +106,7 @@ export async function runPrivilegedGmailOAuth(
     );
     return mailbox;
   } catch (error) {
-    if (!listenerCloseAttempted) {
+    if (!listenerClosed) {
       try {
         await listener.close();
       } catch {
