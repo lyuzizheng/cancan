@@ -110,6 +110,15 @@ importers:
 
   packages/connectors:
     devDependencies:
+      '@types/node':
+        specifier: 24.13.3
+        version: 24.13.3
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
+      postject:
+        specifier: 1.0.0-alpha.6
+        version: 1.0.0-alpha.6
       typescript:
         specifier: 7.0.2
         version: 7.0.2

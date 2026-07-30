@@ -168,6 +168,7 @@ native_paths = [
   "apps/desktop/src/generated/presentation-types.ts",
   "apps/desktop/package.json",
   "packages/ai/**",
+  "packages/connectors/**",
   "packages/parsers/**",
   "packages/db/migrations/**",
   "package.json",
