@@ -17,6 +17,33 @@ fn open_store(root: &Path) -> ManualImportStore {
 }
 
 #[test]
+fn rejects_a_vault_with_a_newer_schema_version() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let database_path = root.path().join(DATABASE_FILE_NAME);
+    let mut connection = open_encrypted_database(
+        &database_path,
+        &KEY,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+    )
+    .expect("open encrypted database");
+    apply_migrations(&mut connection).expect("apply supported schema");
+    connection
+        .execute(
+            "INSERT INTO schema_migrations(version) VALUES (?1)",
+            [MIGRATIONS.last().expect("supported migration").version + 1],
+        )
+        .expect("mark a newer schema version");
+
+    let error = apply_migrations(&mut connection).expect_err("reject newer schema");
+
+    assert!(
+        error
+            .to_string()
+            .contains("database schema version 10 is newer than supported version 9")
+    );
+}
+
+#[test]
 fn lists_only_safe_money_source_display_fields_in_stable_order() {
     let root = tempfile::tempdir().expect("temporary Vault");
     let store = open_store(root.path());
