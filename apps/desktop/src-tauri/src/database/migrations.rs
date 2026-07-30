@@ -44,6 +44,23 @@ pub(super) fn apply_migration_set(
            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP \
          );",
     )?;
+    if let Some(supported_version) = migrations.last().map(|migration| migration.version) {
+        let database_version =
+            connection.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get::<_, Option<i64>>(0)
+            })?;
+        if let Some(database_version) =
+            database_version.filter(|version| *version > supported_version)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "database schema version {database_version} is newer than supported version {supported_version}"
+                ),
+            )
+            .into());
+        }
+    }
     for migration in migrations {
         let applied = connection
             .query_row(
