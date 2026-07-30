@@ -71,6 +71,7 @@ const KEYCHAIN_ACCOUNT: &str = "active-vault";
 const KEYCHAIN_ITEM_NOT_FOUND_STATUS: i32 = -25300;
 const KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.remembered-vault";
 const STATEMENT_PASSWORD_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.statement-password";
+const GMAIL_REFRESH_TOKEN_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.gmail-refresh-token";
 const LOCAL_INBOX_BOOKMARK_ACCOUNT: &str = "authorized-root";
 const LOCAL_INBOX_BOOKMARK_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.local-inbox";
 const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
@@ -447,6 +448,7 @@ pub(crate) struct VaultRuntime {
 
 struct RuntimeInner {
     document_passwords: Mutex<DocumentPasswordSessions>,
+    gmail_refresh_tokens: Arc<dyn GmailRefreshTokenStore>,
     local_inbox_access: Mutex<Option<AuthorizedRoot>>,
     local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
     local_inbox_last_scan: Mutex<Option<LocalInboxScanSummary>>,
@@ -465,6 +467,9 @@ struct RuntimeInner {
 mod accounts;
 mod documents;
 mod error;
+mod gmail;
+#[cfg(test)]
+mod gmail_tests;
 #[cfg(test)]
 mod hardening_tests;
 mod inbox;

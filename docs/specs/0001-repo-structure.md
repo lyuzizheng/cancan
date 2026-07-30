@@ -163,7 +163,8 @@ The privileged desktop host keeps domain-directory modules instead of single-fil
 apps/desktop/src-tauri/src/runtime/
   mod.rs             shared types/constants, VaultRuntime state and core accessors, re-exports
   error.rs           RuntimeError/VaultCommandError codes and the shared blocking-task helper
-  keyring.rs         Keychain-backed remembered-key, statement-password, and bookmark stores
+  keyring.rs         Keychain-backed remembered-key, statement-password, Gmail-token, and bookmark stores
+  gmail.rs           mailbox connection persistence and crash reconciliation
   sidecar.rs         normalizer/review-core sidecar process control and file-write helpers
   vault_lifecycle.rs vault create/unlock/lock/recovery methods and their commands
   inbox.rs           local-inbox methods, job orchestration, and their commands
@@ -176,6 +177,7 @@ apps/desktop/src-tauri/src/database/
   rows.rs            row-to-view mapping and review-record open helpers
   validation.rs      decimal/date/identifier validation helpers
   imports.rs         import/deletion persistence and audit helpers
+  gmail.rs           Gmail mailbox identity and connection-state repository
   tests.rs           database test module
 ```
 
@@ -189,7 +191,7 @@ The presentation-safe Rust command surface generates its TypeScript request/resp
 
 ## Implemented workspace and application gates
 
-The production workspace currently contains `apps/desktop`, `apps/website`, `packages/core`, `packages/db`, `packages/connectors`, `packages/parsers`, and `packages/ui`. The synthetic core slice implements pure financial preparation rules, the canonical proposal/grounding boundary, and a slice-owned SQLite migration/repository used only by deterministic tests. `packages/connectors` contains the deterministic Gmail Desktop OAuth/PKCE request, root-loopback callback, token-response, and mailbox-profile contract plus one privileged-use orchestration boundary. That boundary injects loopback binding, external-browser opening, JSON HTTP execution, and authorized-mailbox persistence; closes the listener before token exchange; and returns only normalized mailbox identity after persistence. Its reusable JSON executor has an injected `fetch` implementation, but the package has no embedded/live credential, credential loading/storage, concrete listener, Keychain or SQLite access, Tauri/renderer wiring, rule sync, provider-support claim, or production consumer. The existing renderer and privileged-host boundaries remain unchanged. The website package implements the static public surface from `0018`: React is a build-time authoring layer whose views are prerendered per route into HTML/CSS-only deployment output with no runtime JavaScript. A deterministic dist check covers internal links, accessibility structure, required disclosures, and the no-script boundary; the site has no backend, analytics, or tracking.
+The production workspace currently contains `apps/desktop`, `apps/website`, `packages/core`, `packages/db`, `packages/connectors`, `packages/parsers`, and `packages/ui`. The synthetic core slice implements pure financial preparation rules, the canonical proposal/grounding boundary, and a slice-owned SQLite migration/repository used only by deterministic tests. `packages/connectors` contains the deterministic Gmail Desktop OAuth/PKCE request, root-loopback callback, token-response, and mailbox-profile contract plus one privileged-use orchestration boundary. That boundary injects loopback binding, external-browser opening, JSON HTTP execution, and authorized-mailbox persistence; closes the listener before token exchange; and returns only normalized mailbox identity after persistence. Its reusable JSON executor has an injected `fetch` implementation. The Rust privileged host now owns encrypted `gmail_accounts` identity/status persistence and mailbox-scoped Keychain refresh-token storage with crash reconciliation, but it is not yet connected to the TypeScript adapter through a concrete loopback/browser/HTTP execution route. There is still no embedded/live credential, credential loading into the OAuth execution route, renderer command, rule sync, provider-support claim, or live production consumer. The website package implements the static public surface from `0018`: React is a build-time authoring layer whose views are prerendered per route into HTML/CSS-only deployment output with no runtime JavaScript. A deterministic dist check covers internal links, accessibility structure, required disclosures, and the no-script boundary; the site has no backend, analytics, or tracking.
 
 Root commands are real package scripts:
 

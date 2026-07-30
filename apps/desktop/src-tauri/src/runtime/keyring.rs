@@ -13,6 +13,19 @@ pub(super) trait StatementPasswordStore: Send + Sync {
     fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()>;
 }
 
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "refresh-token save and load are wired by the next connector execution checkpoint"
+    )
+)]
+pub(super) trait GmailRefreshTokenStore: Send + Sync {
+    fn delete(&self, secret_ref: &str) -> Result<(), ()>;
+    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
+    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()>;
+}
+
 pub(super) trait LocalInboxBookmarkStore: Send + Sync {
     fn delete(&self) -> Result<(), ()>;
     fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
@@ -148,6 +161,83 @@ impl KeychainStatementPasswordStore {
 }
 
 impl StatementPasswordStore for KeychainStatementPasswordStore {
+    #[cfg(target_os = "macos")]
+    fn delete(&self, secret_ref: &str) -> Result<(), ()> {
+        match self.item_query(secret_ref)?.delete() {
+            Ok(()) => Ok(()),
+            Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn delete(&self, _secret_ref: &str) -> Result<(), ()> {
+        Err(())
+    }
+
+    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+        match self.entry(secret_ref)?.get_secret() {
+            Ok(secret) => Ok(Some(Zeroizing::new(secret))),
+            Err(KeyringError::NoEntry) => Ok(None),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()> {
+        self.entry(secret_ref)?.set_secret(secret).map_err(|_| ())
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct KeychainGmailRefreshTokenStore {
+    service: String,
+}
+
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "refresh-token save and load are wired by the next connector execution checkpoint"
+    )
+)]
+impl KeychainGmailRefreshTokenStore {
+    pub(super) fn production() -> Self {
+        Self::new(GMAIL_REFRESH_TOKEN_KEYCHAIN_SERVICE)
+    }
+
+    pub(super) fn new(service: impl Into<String>) -> Self {
+        Self {
+            service: service.into(),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn entry(&self, secret_ref: &str) -> Result<KeyringEntry, ()> {
+        KeychainCredential::build(MacKeychainDomain::User, &self.service, secret_ref)
+            .map_err(|_| ())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn entry(&self, _secret_ref: &str) -> Result<KeyringEntry, ()> {
+        Err(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn item_query(&self, secret_ref: &str) -> Result<ItemSearchOptions, ()> {
+        let keychain =
+            SecKeychain::default_for_domain(SecPreferencesDomain::User).map_err(|_| ())?;
+        let mut query = ItemSearchOptions::new();
+        query
+            .keychains(&[keychain])
+            .class(ItemClass::generic_password())
+            .service(&self.service)
+            .account(secret_ref)
+            .limit(1);
+        Ok(query)
+    }
+}
+
+impl GmailRefreshTokenStore for KeychainGmailRefreshTokenStore {
     #[cfg(target_os = "macos")]
     fn delete(&self, secret_ref: &str) -> Result<(), ()> {
         match self.item_query(secret_ref)?.delete() {

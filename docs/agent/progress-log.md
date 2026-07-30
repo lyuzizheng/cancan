@@ -6,12 +6,14 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Completed
 
+- Added the first local privileged Gmail persistence checkpoint. Migration `0010_gmail_accounts.sql` keeps one encrypted-Vault identity per normalized mailbox and stores no OAuth token. The Rust host derives stable opaque mailbox/account keys, writes and read-verifies only the refresh token in macOS Keychain, reconnects the same mailbox without duplicate authority, and uses `pending_save`/`connected`/`pending_delete`/`disconnected` states. Targeted retries reconcile only their mailbox; Vault unlock attempts pending cleanup independently and leaves a failed mailbox pending without blocking local data or another mailbox.
+- Added clean/upgrade migration coverage, multi-mailbox isolation and same-mailbox reconnect tests, Keychain failure/retry and crash-recovery tests, locked-Vault rejection, and a production macOS Keychain replace/delete round trip. This checkpoint adds no Tauri command, renderer token path, Gmail rule/sync behavior, live Google credential, or network request.
 - Added the next mock-only `gmail-onboarding` checkpoint in `packages/connectors`: one privileged-use adapter now owns the ordered listener/browser/callback/token/profile/persistence flow over the existing OAuth contract. It closes the root-loopback listener before token exchange, validates callback state before token/profile HTTP execution, uses the access token only for the injected Gmail profile request, passes the complete token set to the injected authorized-mailbox persistence sink, returns no token to its caller, and maps dependency/provider failures to stable redacted errors.
 - Added a reusable injected-fetch JSON executor plus deterministic tests for success, callback rejection, browser/persistence/listener-cleanup failures, network/non-2xx/malformed JSON, cleanup ordering, and token/provider-body redaction. Tests use synthetic values and make no live Google request.
 
 ### Next
 
-- Implement the concrete local privileged bindings without changing this contract: random loopback binding with bounded timeout, external browser opening, and the dedicated connector execution route. Before adding mailbox-scoped Keychain plus SQLite persistence, freeze the cross-store save/reconnect/crash-reconciliation order so a partial write cannot create duplicate authority or orphan an undeletable refresh token. Keep tokens and the PKCE verifier outside renderer/Tauri presentation responses.
+- Implement the dedicated local connector execution route without changing the frozen adapter or persistence contracts: random loopback binding with bounded timeout, external browser opening, and injected HTTP transport. Keep tokens and the PKCE verifier outside renderer/Tauri presentation responses; do not add rules, sync, or live credentials in that checkpoint.
 
 ## 2026-07-29
 
