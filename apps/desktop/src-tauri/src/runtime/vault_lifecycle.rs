@@ -29,9 +29,26 @@ impl VaultRuntime {
         statement_passwords: Arc<dyn StatementPasswordStore>,
         local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
     ) -> Self {
+        Self::with_all_secret_stores(
+            root,
+            remembered_keys,
+            statement_passwords,
+            local_inbox_bookmarks,
+            Arc::new(KeychainGmailRefreshTokenStore::production()),
+        )
+    }
+
+    pub(super) fn with_all_secret_stores(
+        root: PathBuf,
+        remembered_keys: Arc<dyn RememberedKeyStore>,
+        statement_passwords: Arc<dyn StatementPasswordStore>,
+        local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
+        gmail_refresh_tokens: Arc<dyn GmailRefreshTokenStore>,
+    ) -> Self {
         Self {
             inner: Arc::new(RuntimeInner {
                 document_passwords: Mutex::new(HashMap::new()),
+                gmail_refresh_tokens,
                 local_inbox_access: Mutex::new(None),
                 local_inbox_bookmarks,
                 local_inbox_last_scan: Mutex::new(None),
@@ -189,6 +206,7 @@ impl VaultRuntime {
         let opened = ManualImportStore::open_existing(&self.inner.root, master_key)
             .map_err(|_| RuntimeError::new("invalid_vault"))?;
         self.reconcile_statement_passwords(&opened)?;
+        self.reconcile_gmail_accounts_after_unlock(&opened);
         *store = Some(opened);
         drop(store);
         self.advance_vault_session();
@@ -213,6 +231,7 @@ impl VaultRuntime {
         match ManualImportStore::open_existing(&self.inner.root, master_key) {
             Ok(opened) => {
                 self.reconcile_statement_passwords(&opened)?;
+                self.reconcile_gmail_accounts_after_unlock(&opened);
                 *store = Some(opened);
                 drop(store);
                 self.advance_vault_session();

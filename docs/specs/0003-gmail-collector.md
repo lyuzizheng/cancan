@@ -182,6 +182,25 @@ gmail_accounts
 
 `mailbox_address` is the normalized address returned by Gmail `users.getProfile` under the authorized read-only scope and is unique within the Vault. It is safe display metadata and reconnect identity, but Gmail message idempotency still uses the internal `gmail_account_id` plus message ID. The refresh token lives in Keychain under `secret_storage_key`, never SQLite.
 
+`connection_status` is one of `pending_save`, `connected`, `pending_delete`, or `disconnected`. Only `connected` grants sync authority. The local privileged host coordinates SQLite and Keychain in this exact order:
+
+```text
+connect or reconnect
+1. Normalize the Gmail profile address.
+2. Reconcile an incomplete token transition for that mailbox.
+3. Insert the mailbox identity, or reuse the existing identity for that address, as pending_save.
+4. Save and read-verify the refresh token under the mailbox-scoped Keychain key.
+5. Change pending_save to connected.
+
+disconnect
+1. Reconcile an incomplete token transition for that mailbox.
+2. Change connected to pending_delete before cancelling future remote authority.
+3. Delete the mailbox-scoped refresh token from Keychain.
+4. Change pending_delete to disconnected while retaining the mailbox identity.
+```
+
+The account ID and Keychain account key are deterministic opaque SHA-256-derived identifiers for the normalized mailbox and do not contain the address itself. Reconnect never replaces those identifiers or creates a second row. Startup/unlock attempts each pending mailbox independently: it deletes any token associated with `pending_save` before returning that identity to `disconnected`, and retries Keychain deletion for `pending_delete` before returning that identity to `disconnected`. A Keychain or SQLite failure leaves only that mailbox pending and unavailable, without blocking Vault unlock, local-file use, or another mailbox. It never reports the failed mailbox as connected or discards the cleanup reference. Access tokens remain memory-only and are not part of this durable cross-store lifecycle.
+
 `ai_processing_provider_fingerprint` is a deterministic non-secret hash of the configured provider adapter, normalized endpoint recipient, and retention-disclosure version. It excludes API keys, tokens, model request data, and other secrets. The two authorization timestamps record which mailbox capabilities the user accepted for that exact recipient/disclosure fingerprint. Changing the fingerprint clears both timestamps before the user records new selections, so an old body consent cannot become valid under a newly accepted attachment-only fingerprint.
 
 ```text

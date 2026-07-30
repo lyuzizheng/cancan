@@ -87,6 +87,11 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../../../../packages/db/migrations/0009_post_pr41_hardening.sql"),
         foreign_keys_off: true,
     },
+    Migration {
+        version: 10,
+        sql: include_str!("../../../../../packages/db/migrations/0010_gmail_accounts.sql"),
+        foreign_keys_off: false,
+    },
 ];
 
 const REVIEW_POLICY_VERSION: &str = "review-ledger-v1";
@@ -3284,6 +3289,9 @@ fn valid_currency(value: &str) -> bool {
 mod accounts;
 #[cfg(test)]
 mod accounts_tests;
+mod gmail;
+#[cfg(test)]
+mod gmail_tests;
 #[cfg(test)]
 mod hardening_tests;
 pub(crate) mod imports;
@@ -3294,6 +3302,7 @@ mod rows;
 mod tests;
 mod validation;
 
+pub(crate) use gmail::*;
 use imports::*;
 use migrations::*;
 use rows::*;
