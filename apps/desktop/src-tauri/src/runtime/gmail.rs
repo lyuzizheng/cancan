@@ -1,3 +1,4 @@
+use super::gmail_connector::run_gmail_connector_sidecar;
 use super::*;
 use crate::database::GmailAccountStatus;
 use sha2::{Digest, Sha256};
@@ -6,10 +7,34 @@ use sha2::{Digest, Sha256};
     not(test),
     allow(
         dead_code,
-        reason = "the persistence sink is wired by the next connector execution checkpoint"
+        reason = "the local connector route is wired to the renderer by a later onboarding checkpoint"
     )
 )]
 impl VaultRuntime {
+    #[cfg_attr(
+        test,
+        allow(
+            dead_code,
+            reason = "the local connector route is wired to the renderer by a later onboarding checkpoint"
+        )
+    )]
+    pub(crate) async fn authorize_gmail_mailbox(
+        &self,
+        app: &AppHandle,
+        client_id: &str,
+    ) -> Result<String, RuntimeError> {
+        if client_id.trim().is_empty() || client_id.len() > 4096 {
+            return Err(RuntimeError::new("gmail_authorization_unavailable"));
+        }
+        {
+            let store = self.store()?;
+            if store.is_none() {
+                return Err(RuntimeError::new("vault_locked"));
+            }
+        }
+        run_gmail_connector_sidecar(app, self, client_id).await
+    }
+
     pub(crate) fn persist_gmail_mailbox(
         &self,
         mailbox_address: &str,

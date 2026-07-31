@@ -16,7 +16,7 @@
     "test:rust": "pnpm build:sidecar && pnpm test:rust:prepared",
     "test:rust:prepared": "cd src-tauri && cargo test --locked",
     "build:web": "vite build",
-    "build:sidecar": "pnpm --filter @cancan/ai build:sidecar",
+    "build:sidecar": "pnpm --filter @cancan/ai build:sidecar && pnpm --filter @cancan/connectors build:sidecar",
     "build:desktop": "pnpm build:sidecar && pnpm build:desktop:prepared",
     "build:desktop:prepared": "tauri build --debug --no-bundle -- --locked",
     "verify:native": "pnpm build:sidecar && pnpm check:presentation-types:prepared && pnpm test:rust:prepared && pnpm check:rust:prepared && pnpm build:desktop:prepared",

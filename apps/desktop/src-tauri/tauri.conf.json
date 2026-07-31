@@ -27,7 +27,10 @@
   },
   "bundle": {
     "active": false,
-    "externalBin": ["binaries/cancan-document-normalizer"],
+    "externalBin": [
+      "binaries/cancan-document-normalizer",
+      "binaries/cancan-gmail-connector"
+    ],
     "icon": ["icons/64x64.png"]
   }
 }

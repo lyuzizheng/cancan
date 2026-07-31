@@ -468,6 +468,7 @@ mod accounts;
 mod documents;
 mod error;
 mod gmail;
+mod gmail_connector;
 #[cfg(test)]
 mod gmail_tests;
 #[cfg(test)]
