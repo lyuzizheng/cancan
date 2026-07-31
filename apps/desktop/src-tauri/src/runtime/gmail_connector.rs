@@ -206,21 +206,7 @@ pub(super) async fn run_gmail_connector_sidecar(
             }
             _ => return Err(RuntimeError::new("gmail_authorization_failed")),
         };
-        write_gmail_connector_response(&mut child, &request_id, "persisted")?;
-
-        let result = next_gmail_connector_message(&mut events, deadline).await?;
-        match result {
-            GmailConnectorMessage::Result {
-                mailbox_address,
-                request_id: response_id,
-            } if response_id == request_id && mailbox_address == persisted_mailbox => {
-                Ok(persisted_mailbox)
-            }
-            GmailConnectorMessage::Error { code } => {
-                Err(RuntimeError::new(gmail_connector_error_code(&code)))
-            }
-            _ => Err(RuntimeError::new("gmail_authorization_failed")),
-        }
+        Ok(persisted_mailbox)
     }
     .await;
     let persisted_mailbox = match protocol_result {
@@ -231,17 +217,33 @@ pub(super) async fn run_gmail_connector_sidecar(
         }
     };
 
-    if let Err(error) = write_gmail_connector_shutdown(&mut child) {
+    // Vault and Keychain persistence is the commit point. Protocol completion
+    // and process shutdown remain best-effort cleanup from here onward.
+    if write_gmail_connector_response(&mut child, &request_id, "persisted").is_err() {
         let _ = child.kill();
-        return Err(error);
+        return Ok(persisted_mailbox);
+    }
+    let result_matches = next_gmail_connector_message(&mut events, deadline)
+        .await
+        .is_ok_and(|message| {
+            matching_gmail_connector_result(&message, &request_id, &persisted_mailbox)
+        });
+    if !result_matches {
+        let _ = child.kill();
+        return Ok(persisted_mailbox);
+    }
+    if write_gmail_connector_shutdown(&mut child).is_err() {
+        let _ = child.kill();
+        return Ok(persisted_mailbox);
     }
     let shutdown_deadline = Instant::now() + GMAIL_CONNECTOR_SHUTDOWN_TIMEOUT;
-    match timeout_at(shutdown_deadline, events.recv()).await {
-        Ok(Some(CommandEvent::Terminated(payload))) if payload.code == Some(0) => {
-            Ok(persisted_mailbox)
-        }
-        _ => fail_gmail_connector(child, "gmail_authorization_failed"),
+    if !matches!(
+        timeout_at(shutdown_deadline, events.recv()).await,
+        Ok(Some(CommandEvent::Terminated(payload))) if payload.code == Some(0)
+    ) {
+        let _ = child.kill();
     }
+    Ok(persisted_mailbox)
 }
 
 async fn expect_open_external_url(
@@ -328,17 +330,26 @@ fn write_gmail_connector_shutdown(child: &mut CommandChild) -> Result<(), Runtim
         .map_err(|_| RuntimeError::new("gmail_authorization_failed"))
 }
 
-fn fail_gmail_connector<T>(child: CommandChild, code: &'static str) -> Result<T, RuntimeError> {
-    let _ = child.kill();
-    Err(RuntimeError::new(code))
-}
-
 fn gmail_connector_error_code(code: &str) -> &'static str {
     match code {
         "gmail_request_failed" => "gmail_request_failed",
         "gmail_authorization_failed" => "gmail_authorization_failed",
         _ => "gmail_authorization_failed",
     }
+}
+
+fn matching_gmail_connector_result(
+    message: &GmailConnectorMessage,
+    request_id: &str,
+    persisted_mailbox: &str,
+) -> bool {
+    matches!(
+        message,
+        GmailConnectorMessage::Result {
+            mailbox_address,
+            request_id: response_id,
+        } if response_id == request_id && mailbox_address == persisted_mailbox
+    )
 }
 
 fn valid_google_authorization_url(url: &str) -> bool {
@@ -380,10 +391,10 @@ fn read_loopback_request(
         .set_read_timeout(Some(StdDuration::from_secs(1)))
         .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
     let mut request = Zeroizing::new(Vec::with_capacity(1024));
-    let mut chunk = [0_u8; 512];
+    let mut chunk = Zeroizing::new([0_u8; 512]);
     loop {
         let read = stream
-            .read(&mut chunk)
+            .read(&mut chunk[..])
             .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
         if read == 0 || request.len() + read > 8192 {
             return Err(RuntimeError::new("gmail_authorization_failed"));
@@ -472,6 +483,33 @@ mod tests {
         ));
         assert!(!valid_google_authorization_url(
             "https://accounts.google.com/o/oauth2/v2/auth?\nclient_id=synthetic"
+        ));
+    }
+
+    #[test]
+    fn recognizes_only_the_committed_mailbox_result() {
+        assert!(matching_gmail_connector_result(
+            &GmailConnectorMessage::Result {
+                mailbox_address: "owner@example.com".to_owned(),
+                request_id: "request-1".to_owned(),
+            },
+            "request-1",
+            "owner@example.com",
+        ));
+        assert!(!matching_gmail_connector_result(
+            &GmailConnectorMessage::Error {
+                code: "gmail_authorization_failed".to_owned(),
+            },
+            "request-1",
+            "owner@example.com",
+        ));
+        assert!(!matching_gmail_connector_result(
+            &GmailConnectorMessage::Result {
+                mailbox_address: "other@example.com".to_owned(),
+                request_id: "request-1".to_owned(),
+            },
+            "request-1",
+            "owner@example.com",
         ));
     }
 }
