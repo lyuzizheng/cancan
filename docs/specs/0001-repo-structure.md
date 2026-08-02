@@ -163,7 +163,7 @@ The privileged desktop host keeps domain-directory modules instead of single-fil
 apps/desktop/src-tauri/src/runtime/
   mod.rs             shared types/constants, VaultRuntime state and core accessors, re-exports
   error.rs           RuntimeError/VaultCommandError codes and the shared blocking-task helper
-  keyring.rs         Keychain-backed remembered-key, statement-password, Gmail-token, and bookmark stores
+  keyring.rs         Keychain-backed Touch ID key, statement-password, Gmail-token, and bookmark stores
   gmail.rs           mailbox connection persistence and crash reconciliation
   gmail_connector.rs dedicated connector-sidecar protocol, loopback callback, and browser route
   sidecar.rs         normalizer/review-core sidecar process control and file-write helpers
@@ -185,6 +185,14 @@ apps/desktop/src-tauri/src/database/
 Splitting the `ManualImportStore` impl into per-aggregate modules is a registered follow-up in `docs/alignment-temp/alignment-progress.md`. Files that predate the guardrail (including that store impl, `app.tsx`, and the single-file `vault`/`viewer`/`source_observations` modules) carry ratchet-only per-file exemptions recorded in the `EXEMPTIONS` map of `scripts/check-source-file-size.mjs`; an exemption ceiling may only shrink, never grow, and removing one requires the split described here.
 
 The store mutex protects only bounded state/repository reads, job claims, and transactional writes. File I/O, PDF/image decode, OCR, sidecar/model execution, hashing, and other long-running extraction work happen outside it. A worker snapshots the required IDs/version while holding the lock, releases it for the long work, then reacquires it and validates the current version/idempotency key before applying the result. The per-aggregate impl split remains a readability follow-up; long-work lock ownership is already decided and does not wait for that refactor.
+
+## Desktop window and background-runtime boundary
+
+Phase 1 uses one Tauri process, not a separate helper service. Closing the final window destroys the React renderer/WebView while retaining only the Rust Vault runtime, SQLCipher/key state, Local Inbox watcher, and event-driven durable-job scheduler. Reopening from the Dock, menu bar, or notification recreates the renderer from host/SQLite state. The process must remain visibly running through normal macOS affordances.
+
+Idle background execution uses no busy loop or filesystem polling; Inbox work is event/rescan driven. An explicitly enabled connector such as Gmail may arm its accepted coarse interval timer, but it releases all work between scheduled checks and does not keep a sidecar or active loop alive. Parser and deterministic-core sidecars start only for a bounded job and exit afterward. Manual Vault lock or process exit stops Vault-dependent work and drops the live key; ordinary window close, backgrounding, macOS session lock, and sleep do not. Sleep pauses CPU and wake resumes the same process.
+
+Measure idle RSS, CPU, and energy after the WebView is destroyed. Add an XPC service, helper, or LaunchAgent only if measured evidence proves the single-process runtime cannot meet an accepted budget; do not create a second Vault owner, parser pipeline, or job authority speculatively.
 
 The renderer keeps `app.tsx` as orchestration state only; presentational views live in sibling modules (`sources-view.tsx`, `document-modals.tsx`, `vault-gate.tsx`, `notices.ts`, `overview.tsx`, `review.tsx`, `vault-spine.tsx`). Interaction tests split per flow with shared fixtures instead of one monolithic file.
 

@@ -23,6 +23,14 @@ The source-file deletion and restore-to-new-path crash outcomes are accepted and
 - Redacted operational logs are local-only, retained for 30 days, and exported only through an explicit user action.
 - Crash reporting is independent explicit opt-in and defaults off.
 
+## Desktop availability and background execution
+
+The Phase 1 job runner lives in the single Tauri desktop process. Closing the last window destroys the React renderer/WebView but does not quit CanCan; the Rust Vault runtime, SQLCipher connection/key, Inbox watcher, and event-driven job scheduler may remain. The app remains visibly running through normal macOS Dock or menu-bar affordances. Reopening the app recreates the renderer from host and SQLite state.
+
+This is not a separate helper, XPC service, LaunchAgent, or always-polling daemon. The idle runtime has no busy loop or filesystem polling and retains only the minimum privileged state needed for Inbox capture and jobs. An explicitly enabled remote connector may use its accepted coarse scheduled timer, such as Gmail's configurable polling interval, while releasing workers and sidecars between checks. The Node parser/core sidecar starts for a bounded job and exits afterward. A separate service is considered only after measuring idle RSS, CPU, and energy with the WebView destroyed and proving that the single-process design misses an accepted budget.
+
+The Vault key lifetime follows `0009-backup-restore-versioning.md`: window close, app backgrounding, macOS session lock, and sleep do not cryptographically lock a still-running process. Actual sleep pauses execution and the same process resumes after wake. Manual `Lock Vault`, normal Quit, Force Quit, crash, logout, or reboot drops the live key and prevents intake until a later user unlock. Startup recovery may requeue durable work while locked, but no Vault-dependent worker runs before that unlock.
+
 ## Operational diagnostics boundary
 
 Durable operational logs may contain timestamps, stable static error codes, job type/state, retry count, duration, app/runtime version, and redacted component context. They must not contain document or email content, extracted text, raw financial fields, amounts, filenames or filesystem paths, mailbox addresses, OAuth tokens, API keys, statement passwords, model request/response bodies, or unbounded identifiers that reveal those values.
@@ -138,7 +146,9 @@ parse_run creation
 external_record staging
 ```
 
-If the PDF is locked and no saved password works, this job becomes `blocked` with `blocked_reason = password_required`. The saved password scope is the related Money Source. A failed saved password never loops blindly: the user chooses a session-only password or replaces that Money Source's saved Keychain secret.
+Protected-PDF unlock may happen before source classification, so the host cannot assume one related Money Source. For an unclassified PDF, the privileged Rust host tries each distinct saved statement password at most once in a deterministic bounded pass. Password values, the candidate list, and per-password results never enter the renderer, parser/AI worker, logs, or job JSON. Successful decryption grants document access only; it is never evidence for provider, Money Source, account, or statement identity.
+
+If no saved password unlocks the file, the job becomes `blocked` with `blocked_reason = password_required`. The user may provide one session-only password. After trusted classification and any first-source confirmation, CanCan may offer to save or replace the password for that confirmed Money Source. It never stores password history or repeatedly retries the same saved secret within one parse attempt.
 
 Extraction observations remain job-scoped and in memory for the parse attempt. Do not persist unrestricted plaintext in logs or generic job JSON. A restart repeats the idempotent parse job from the encrypted source rather than inventing a second durable ingest job or a sensitive extraction-bundle handoff.
 
@@ -171,7 +181,7 @@ Ambiguous links should not auto-commit.
 
 Features such as statement coverage may use a recurring internal durable job after their capability contract is accepted under `0019-ai-capability-platform-and-cli.md`. One job invokes the capability for exactly one Money Source/account/document-type scope, validates every source/snippet reference, and stores a bounded advisory result. Accepted source/account/statement-period or processing-state changes mark that scope due. Startup/unlock runs a due scope only when no successful evaluation exists for the current local calendar day.
 
-Routine runs are implementation plumbing rather than a normal user-visible Job card. CanCan does not add a background daemon or generic always-on cron service: scheduled work runs while the Desktop app is available, and startup/unlock catches up due work idempotently. This does not authorize an unrestricted source dump, direct AI database/filesystem access, or financial mutation. Cancellation, consent, payload, retention, cost, confidence/explanation, and failure surface belong to the owning feature slice.
+Routine runs are implementation plumbing rather than a normal user-visible Job card. They use the same event-driven Rust background runtime described above, not a second daemon or generic always-on cron service. Startup/unlock catches up due work idempotently. This does not authorize an unrestricted source dump, direct AI database/filesystem access, or financial mutation. Cancellation, consent, payload, retention, cost, confidence/explanation, and failure surface belong to the owning feature slice.
 
 ### `commit_review_batch`
 
@@ -362,16 +372,18 @@ Do not put secrets, statement passwords, OAuth tokens, AI keys, or full sensitiv
 Show compact status only:
 
 ```text
-12 processed
-3 need attention
-1 failed
+Tasks: 3 need action
+Tasks: processing 2 statements
+Tasks: latest batch has 2 ready and 1 no-op result
 last Gmail scan at ...
 last backup at ...
 ```
 
-### Jobs page
+Completed non-actionable acquisition receipts project into Tasks `Recently completed`, including successful/no-op results and an explicit visible `File not added`; active acquisition projects into `In progress`; failures that still require later user action project into `Needs action` and deep-link to their exact owning surface. Tasks derives these rows from authoritative documents, source decisions, Review work, setup state, and jobs; it is not a second durable queue or generic task table. Do not make users open a technical job row to finish a normal import.
 
-Show advanced history and controls:
+### Advanced job history
+
+Expose from Settings or a diagnostic route when implemented, not as primary MVP navigation. Show advanced history and controls:
 
 ```text
 status
@@ -438,6 +450,7 @@ Full DAG features can be added later if needed, but the MVP should stay easy for
 - App startup recovers expired running jobs.
 - Job retries are idempotent.
 - Password-protected PDFs become blocked, not failed.
+- Before source classification, each distinct saved statement password is tried at most once inside the privileged host; unlock success never classifies the document and no password information crosses into renderer, AI, logs, or job JSON.
 - Blocked jobs have user-facing action surfaces.
 - Gmail sync reruns do not duplicate attachments or source documents.
 - Gmail rule sync is globally serial across mailboxes, disconnect stops further capture and deletes the token, and reconnect resumes retained rule/cursor identity without duplicate imports.
@@ -451,5 +464,6 @@ Full DAG features can be added later if needed, but the MVP should stay easy for
 - Backup runs as a job and reports progress/errors.
 - Source-file deletion converges idempotently on a tombstone, never breaks evidence navigation, and never changes committed ledger events.
 - Restore validates a new inactive Vault before the atomic switch and exposes resumable setup for device-local secrets afterward.
-- Command Center shows compact status; Jobs page shows details.
+- Command Center and the full Tasks route show user-meaningful action, progress, recent, and parked projections; advanced technical job history stays secondary.
+- Closing the last window can retain one event-driven Rust runtime with the Vault key, while manual lock or process exit stops Vault-dependent work and destroys that key.
 - Implementation avoids over-splitting simple internal work into tiny jobs.

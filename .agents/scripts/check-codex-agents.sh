@@ -145,7 +145,7 @@ begin
 
   expected_agents = {
     "explorer" => ["gpt-5.6-sol", "high", "read-only"],
-    "implementer" => ["gpt-5.6-terra", "max", nil],
+    "implementer" => ["gpt-5.6-luna", "max", nil],
     "tester" => ["gpt-5.6-luna", "max", "workspace-write"],
     "reviewer" => ["gpt-5.6-sol", "high", "read-only"],
   }

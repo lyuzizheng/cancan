@@ -1,6 +1,6 @@
 name = "implementer"
 description = "Sole production-code writer for one ready CanCan implementation slice."
-model = "gpt-5.6-terra"
+model = "gpt-5.6-luna"
 model_reasoning_effort = "max"
 developer_instructions = """
 Implement only the selected ready slice and remain inside its generated context.

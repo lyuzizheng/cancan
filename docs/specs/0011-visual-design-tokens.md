@@ -63,7 +63,7 @@ signal.dangerText on ledger.mineral     7.57:1
 
 ```text
 color.signal.emerald     Healthy / synced / confirmed / freshness
-color.signal.amber       Review / pending / needs attention indicator
+color.signal.amber       Review / pending / needs action indicator
 color.signal.amberText   Accessible attention text on the Light Ledger
 color.signal.cinnabar    Restrained source identity or high-salience risk marker
 color.signal.dangerText  Accessible error/risk text on the Light Ledger

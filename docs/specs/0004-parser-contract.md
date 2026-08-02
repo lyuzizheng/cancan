@@ -322,7 +322,9 @@ Exact evidence deduplication uses SHA-256 over imported file bytes or determinis
 
 The trusted host may encrypt and register a selected file before provider/document classification. At that point `semantic_document_key` remains null: the renderer and user never supply it. Exact-hash duplicate and restore outcomes are available immediately. The trusted classification/normalization path sets semantic identity after grounding the provider statement ID or accepted fallback inputs; only then can a byte-different file receive a probable-existing-statement outcome.
 
-A semantic document fingerprint detects probable duplicates whose PDF metadata or encoding changed. Prefer a provider statement ID; otherwise combine Money Source/account identity, statement period, and a normalized record-set fingerprint. A semantic match with different source bytes is review evidence, not permission to discard either file automatically.
+A versioned canonical-content fingerprint may prove that byte-different files contain the same locally extracted text/table observations despite PDF metadata, compression, or encoding changes. It is computed inside the trusted host from canonicalized local observations before AI normalization. A match skips AI normalization and record regeneration only when the existing matched document already has a successful trusted parse, usable statement identity, and reusable records. The new artifact remains additional evidence under that statement. If the matched document is unclassified, failed, blocked, or lacks reusable records, continue the normal parse instead of propagating an incomplete result. This fingerprint is equality evidence only: it does not classify provider/source/account, auto-commit records, delete either artifact, or authorize reuse when extraction is incomplete.
+
+A semantic document fingerprint then identifies the same statement even when financial content changed. Prefer a provider statement ID; otherwise combine Money Source/account identity, statement period, and a normalized record-set fingerprint. A semantic match with different canonical content is a possible revised statement: retain both files, run the new parse, reuse/version stable records, and create Review work for changed or conflicting financial facts.
 
 Cross-channel import behavior:
 
@@ -330,7 +332,9 @@ Cross-channel import behavior:
 same SHA-256 -> reuse the existing source document and do not create duplicate records
 same SHA-256 after current artifact deletion/loss through explicit Add/Restore -> reuse the source-document tombstone and offer/perform restore
 same SHA-256 from automatic folder/Gmail discovery after deletion -> preserve the tombstone and skip automatic restore
-same semantic document identity with different bytes -> retain the additional file evidence under the same statement identity
+different bytes with the same canonical-content fingerprint plus a prior successful trusted parse with reusable records -> retain the additional artifact, skip AI normalization, and reuse the existing statement records
+same canonical-content fingerprint without a reusable prior trusted parse -> retain the additional artifact and continue normal parsing
+same semantic document identity with different canonical content -> retain both statement revisions and parse/version changed records
 same stable external-record keys -> reuse/version records rather than duplicate them
 semantic conflict or changed financial content -> retain both files and create review work
 transaction email plus later statement row -> retain both evidence records and reconcile them to one canonical event when the match is proven
@@ -338,7 +342,7 @@ transaction email plus later statement row -> retain both evidence records and r
 
 Each exact artifact byte sequence has one `source_documents` row, which also owns its encrypted-artifact state and tombstone. Byte-different files under one semantic statement identity remain separate source-document rows.
 
-The import flow returns per-file outcomes as they become grounded: file capture distinguishes newly imported, already-present, restored, and failed files; trusted classification may add the probable-existing-statement outcome for byte-different evidence.
+The import flow returns per-file outcomes as they become grounded: file capture distinguishes newly imported, already-present, restored, and failed files; local extraction may add same-content; trusted classification/parsing may add updated-statement or processed-with-no-new-records. No early layer claims a later semantic result.
 
 Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity and a provider-owned canonical identity projection of the validated raw record. That projection contains only stable source values: it excludes optional locators, OCR/model confidence, observation IDs, extraction/runtime metadata, and mutable normalized descriptions. If the source contains literally identical projected rows, an occurrence ordinal within that identical-row group distinguishes them.
 

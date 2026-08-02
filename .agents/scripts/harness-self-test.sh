@@ -109,7 +109,7 @@ mv "$explorer_agent.bak" "$explorer_agent"
 
 implementer_agent="$TEST_ROOT/.codex/agents/implementer.toml"
 cp "$implementer_agent" "$implementer_agent.bak"
-printf '\nmodel = "gpt-5.6-terra"\n' >> "$implementer_agent"
+printf '\nmodel = "gpt-5.6-luna"\n' >> "$implementer_agent"
 expect_failure "duplicate agent key" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-codex-agents.sh"
 mv "$implementer_agent.bak" "$implementer_agent"
 
@@ -289,7 +289,7 @@ expect_failure "ready slice has incomplete dependency" env CANCAN_ROOT="$TEST_RO
 mv "$manifest.bak" "$manifest"
 
 cp "$manifest" "$manifest.bak"
-sed 's/, Public Gmail verification evidence, Backup operations and portability/, Backup operations and portability/' "$manifest.bak" > "$manifest"
+sed 's/Public release provisioning, Backup operations and portability/Backup operations and portability/' "$manifest.bak" > "$manifest"
 expect_failure "sensitive slice loses safety blocker" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-implementation-slices.sh"
 mv "$manifest.bak" "$manifest"
 

@@ -12,7 +12,7 @@ The mailbox authorization and payload boundary are accepted. Implementation may 
 
 Use official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect.
 
-Gmail is one optional evidence channel, not the product's primary ingestion architecture. Manual add, drag/drop, Open With, and a user-selected inbox folder must remain useful without Gmail.
+Gmail is one optional evidence channel, not the product's primary ingestion architecture or a Phase 1 acquisition blocker. Manual add, drag/drop, Open With, and the phone Shortcut plus user-selected iCloud Inbox are the official first path and must remain fully useful without Gmail.
 
 Do not use AI computer-use/browser automation as the primary Gmail architecture. Computer-use may remain a future fallback/experiment for websites or bank portals that do not expose usable APIs, but Gmail MVP should use the official API.
 
@@ -163,7 +163,7 @@ Disconnecting a mailbox disables all of its rules, cancels queued sync jobs, sto
 
 A Gmail rule may have provider and source hints, but downloaded documents and message evidence still go through classifier/parser verification. Do not trust the rule or source assignment alone.
 
-Transaction-notification rules additionally define exact supported sender/domain and authentication fingerprints. Before body normalization, the connector rejects Spam/Trash and deterministically verifies Gmail-provided authentication results against the provider package's aligned domain policy. Missing, failed, or mismatched authentication remains untrusted `Needs attention` evidence and cannot auto-link or auto-commit. A matching display-name or `From` header alone is never sufficient.
+Transaction-notification rules additionally define exact supported sender/domain and authentication fingerprints. Before body normalization, the connector rejects Spam/Trash and deterministically verifies Gmail-provided authentication results against the provider package's aligned domain policy. Missing, failed, or mismatched authentication remains untrusted evidence, projects into Tasks `Needs action`, and cannot auto-link or auto-commit. A matching display-name or `From` header alone is never sufficient.
 
 ## Data model
 
@@ -312,11 +312,12 @@ Flow:
 Attachment downloaded
 -> file hash dedupe
 -> detect password-protected PDF
--> source_document.document_status = locked
--> create review/job prompt: password needed
--> user enters password
+-> privileged host tries each distinct saved statement password once
+-> if none works, park as password_required and create a user action
+-> user may enter one session password
 -> app tests unlock locally
--> user may use it once or update the saved password for this Money Source
+-> trusted classification identifies/confirms the Money Source
+-> user may use it once, save it for that source, or update that source's saved password
 -> extraction resumes
 ```
 
@@ -327,8 +328,9 @@ Rules:
 - passwords must not be sent to AI providers;
 - passwords must not be written to logs, parse payloads, raw_json, normalized_json, or backups by default;
 - one saved password per Money Source is referenced by `statement_secret_refs` and stored in OS secret storage;
-- Gmail and manual imports assigned to the same Money Source reuse that password;
-- if it fails, prompt for `Use once` or `Update saved password`; MVP stores no password history or unlocked duplicate PDF;
+- before classification, the privileged host may try each distinct saved password once, without exposing the list or results outside Rust;
+- a successful password grants decryption only and never assigns the provider, Money Source, or account;
+- after classification/confirmation, prompt for `Use once`, `Save for this source`, or `Update saved password`; MVP stores no password history or unlocked duplicate PDF;
 - users can delete saved statement passwords from Settings.
 
 ## Sync strategy
@@ -381,7 +383,7 @@ Gmail auth/sync errors should appear in multiple places:
 
 ```text
 Command Center source status
-Jobs page with technical details
+advanced job history in Settings/diagnostics
 Gmail rule settings with reconnect CTA
 ```
 
@@ -455,7 +457,7 @@ email notification later matched to the posted statement row without duplicate l
 - Gmail-derived attachments or provider-approved bodies reach a configured cloud AI provider only while that mailbox's capability consent matches the current provider fingerprint; tokens, passwords, unrelated messages, and out-of-rule data never do.
 - Transaction-notification parsing requires provider-owned sender/domain authentication checks and excludes Spam/Trash; display names and content resemblance alone are untrusted.
 - CanCan provides no hosted inbound email address in MVP; send-to-self ingestion uses the user's authorized Gmail mailbox.
-- Password-protected PDFs can be detected, unlocked locally, and optionally tied to a saved secret reference.
+- Password-protected PDFs receive one bounded local saved-password pass, then can be unlocked by the user and optionally tied to a confirmed source without password-based classification.
 - Errors are visible and actionable.
 - Development/test credentials and test users are isolated from the production OAuth project.
 - Public release does not advertise Gmail connection until the production consent screen, website disclosures, restricted-scope justification, and required Google verification are complete.

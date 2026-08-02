@@ -92,6 +92,13 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../../../../packages/db/migrations/0010_gmail_accounts.sql"),
         foreign_keys_off: false,
     },
+    Migration {
+        version: 11,
+        sql: include_str!(
+            "../../../../../packages/db/migrations/0011_phase1_intake_foundation.sql"
+        ),
+        foreign_keys_off: false,
+    },
 ];
 
 const REVIEW_POLICY_VERSION: &str = "review-ledger-v1";
@@ -3295,6 +3302,8 @@ mod gmail_tests;
 #[cfg(test)]
 mod hardening_tests;
 pub(crate) mod imports;
+#[cfg(test)]
+mod intake_migration_tests;
 mod migrations;
 mod parse_jobs;
 mod rows;
