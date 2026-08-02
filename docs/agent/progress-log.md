@@ -2,6 +2,25 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-08-02
+
+### Completed
+
+- Rebased Phase 1 acquisition around user-downloaded statements: Add/Open With and a versioned `Save to CanCan Inbox` Share-sheet Shortcut over the user-authorized iCloud `Cancan/Inbox` are the official path. Gmail remains optional and no longer blocks Phase 1 or the first preview; a native iOS Share Extension is considered only if real Shortcut testing proves inadequate.
+- Replaced the fragmented `To do`/`Latest intake`/`Needs attention`/Review-status/Jobs presentation with one unified Tasks projection. Command Center shows at most five deep-linked rows grouped as `Needs action`, `In progress`, and `Recently completed`; `View all` opens a full Tasks route with an additional `Parked` filter; only actionable work contributes to badges. Domain owners retain all authority, recent outcomes expire after 168 hours, setup can remind again at its accepted seven-calendar-day due instant, evidence can remain parked without being lost, and financial Review cannot be dismissed through Tasks.
+- Accepted automatic routing for existing sources and one evidence-based lightweight confirmation before creating a newly detected supported Money Source/account. Filenames and PDF passwords never classify a source.
+- Added duplicate short-circuit layers: exact SHA-256 stops before parse; byte-different canonical local-content equality retains extra evidence and skips AI normalization/record regeneration only when a prior successful trusted parse has reusable records, otherwise normal parsing continues; same source/account/period with changed content is an updated statement whose stable records are reused/versioned and conflicts reach Review; a fully duplicate parsed record set reports `Processed — no new records` without ledger duplication.
+- Accepted one privileged-host attempt per distinct saved statement password before an encrypted PDF's source is known. The password list/results stay outside renderer, AI, logs, and job JSON; a successful password only decrypts, and save/update is offered only after source confirmation.
+- Replaced the intended Vault lifecycle: closing the final window destroys the WebView but retains one minimal event-driven Rust runtime and current key; session lock, inactivity, and sleep do not cryptographically lock a living process. Manual Lock and every process-ending path discard the key and stop intake. No separate service is added until measured idle RSS/CPU/energy proves it necessary.
+- Replaced ordinary remembered unlock with strict Touch ID using a device-only `biometryCurrentSet` Keychain item. `userPresence` and macOS account-password fallback are forbidden; the Vault password is the only fallback, and background work never triggers a biometric prompt.
+- Added one default-off `Background intake notifications` setting. Permission is requested only when enabled; notifications are redacted and batch-aggregated, exact-duplicate-only batches stay silent, and notification routing recreates the window before Touch ID/Vault-password gating when required.
+- Recorded the implementation gap explicitly: current `main` still auto-locks on inactivity/sleep/session resignation, uses ordinary `Remember on this Mac`, requires source-scoped password selection, retains inert Jobs navigation plus scattered To-do/attention/review presentation, and has none of the new Shortcut/unified-Tasks/notification/content-fingerprint behavior. Kimi Code CLI was unavailable for this spec-only UX redesign, so final designer review remains an implementation gate.
+- Started the ready `phase1-intake-experience` implementation with forward migration `0011_phase1_intake_foundation.sql`, registered in the production Rust migration runner. It adds only the acquisition receipt, versioned Money Source candidate, and document-park persistence foundation: sealed batch/item rows with monotonic outcome/notification state, truthful create/finalize timestamps, bounded safe labels and scanner correlation, immutable terminal receipts, stable rejection retry/supersession links, checked composite source-candidate identity, and candidate/source ownership guards. Production SQLCipher tests upgrade a populated v10 Vault without losing Money Source, job, document, or Gmail identity data and exercise the new constraints. Repository/service/UI behavior remains for later checkpoints.
+
+### Next
+
+- Continue `phase1-intake-experience` with the smallest host-owned intake receipt/candidate repository transactions over migration v11, then wire capture paths and the derived Tasks projection in later bounded checkpoints. The remaining lifecycle, Touch ID, password iteration, duplicate layers, Shortcut, reminders, notification, and renderer work stays pending; Kimi Code CLI leads customer-facing renderer craft and final visual review.
+
 ## 2026-07-30
 
 ### Completed

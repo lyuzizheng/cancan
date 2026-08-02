@@ -6,7 +6,7 @@ Define how CanCan ships frequent app and provider-parser updates through a class
 
 ## Release provisioning checkpoint
 
-The product identity and release policy below are accepted. Public promotion remains blocked until the domain, contacts, Cloudflare project, Apple signing/notarization identity, Tauri updater key and recovery copy, production Google project, dual-architecture evidence, and release credentials are actually provisioned and verified. Documentation must distinguish intended ownership from completed external setup.
+The product identity and release policy below are accepted. Public promotion remains blocked until the domain, contacts, Cloudflare project, Apple signing/notarization identity, Tauri updater key and recovery copy, dual-architecture evidence, and release credentials are actually provisioned and verified. A production Google project and verification block public Gmail availability only; they do not block a preview that ships the Phase 1 local/Shortcut intake floor without Gmail. Documentation must distinguish intended ownership from completed external setup.
 
 Do not implement an unsigned updater, remote prompt/config download, or independently delivered parser package by inference.
 
@@ -28,10 +28,10 @@ Do not implement an unsigned updater, remote prompt/config download, or independ
 - Phase 1 supports macOS on both Apple Silicon (`arm64`) and Intel (`x86_64`).
 - Windows desktop support is Phase 2 and does not block the Phase 1 macOS release.
 - The first public release is a pre-1.0 preview, not a `1.0` stability promise.
-- The first pre-1.0 preview includes local file ingestion, multiple user-authorized Gmail mailbox connections, Gmail attachment ingestion, and provider-approved transaction-email ingestion.
+- The first pre-1.0 preview acquisition floor is local file ingestion plus the phone Share Shortcut into the user-authorized iCloud Inbox. Gmail may be included only when independently ready, but is not a preview prerequisite.
 - `Automatically add high-confidence records` is available and on by default. A record auto-commits only when its structured AI confidence meets the package/document threshold and it passes every accepted deterministic hard gate in `0005`; review-only, uncalibrated, or experimental profiles remain in Review.
 - The first-preview source target is DBS, HSBC, and UOB. DBS Bank and DBS Card are separate accounts/profiles under one DBS Money Source. HSBC and UOB do not need a fixed Bank/Card profile matrix and may initially expose Review-only profiles, but each advertised source needs at least one working package/profile with deterministic fixture/runtime evidence. CPF and additional sources are follow-ons rather than first-preview blockers. Package/document confidence thresholds and calibration evidence remain release blockers for any profile advertised as auto-commit eligible.
-- Public Gmail availability is therefore a release prerequisite. The production consent screen, website disclosures, privacy/support contacts, restricted-scope justification, and required Google verification must complete before the preview ships.
+- Before public Gmail is enabled, its production consent screen, website disclosures, privacy/support contacts, restricted-scope justification, and required Google verification must complete. Those gates do not delay a preview whose published capability list excludes Gmail.
 
 ## Platform scope
 
@@ -50,11 +50,11 @@ The minimum supported version is macOS 14 Sonoma for both architectures. CI runn
 
 Windows is a Phase 2 port. Phase 2 must separately define supported Windows versions and architectures, installer/update format, code signing, OS secret storage, filesystem semantics, and equivalent Vault/security tests. Do not add Windows-specific production branches, dependencies, CI, or release claims during Phase 1 unless a focused Phase 2 slice is explicitly started.
 
-A native macOS Finder `Share > CanCan` intake entry is also Phase 2. When Desktop is closed or locked, the selected files use bounded App Group handoff staging until import after unlock. Its dedicated slice owns the extension/service target, entitlements, staged-plaintext protection/cleanup/expiry, supported multi-file behavior, signing/notarization, and packaged runtime evidence. It reuses the existing host Add/capture path and must not create a second parser, Vault owner, source registry, or durable job queue.
+A native macOS Finder `Share > CanCan` intake entry is also Phase 2. When the process is absent or the Vault is manually locked, selected files use bounded App Group handoff staging until import after unlock; a closed window alone is not locked. Its dedicated slice owns the extension/service target, entitlements, staged-plaintext protection/cleanup/expiry, supported multi-file behavior, signing/notarization, and packaged runtime evidence. It reuses the existing host Add/capture path and must not create a second parser, Vault owner, source registry, or durable job queue.
 
-## Future iOS intake companion
+## Conditional future iOS intake companion
 
-The accepted mobile direction is a thin native Swift containing app plus Share Extension whose only product responsibility is evidence intake. It is not part of Phase 1, does not contain the ledger or desktop Vault, and must not delay the desktop evidence/reconciliation loop.
+Phase 1 uses the versioned Share-sheet Shortcut plus iCloud Inbox. Validate that route on real bank-app share sheets, Files/iCloud availability, multi-file inputs, installation/update, and failure recovery before starting a native target. A thin native Swift containing app plus Share Extension is considered only if those tests show a material experience gap. If selected, its only product responsibility is evidence intake; it does not contain the ledger or desktop Vault.
 
 Before committing the production transport architecture, run a disposable local Xcode feasibility slice covering:
 
@@ -69,7 +69,7 @@ native target ownership outside generated Tauri desktop artifacts
 
 That spike chooses or rejects the transport boundary; it does not create public app identity, production signing, TestFlight, or App Store Connect state. A later explicitly authorized mobile release slice must separately prove Apple Developer ownership, production signing/provisioning, required privacy disclosures, TestFlight distribution, App Store review assets, supported iOS versions/devices, and release/revocation operations before the companion ships.
 
-Until that slice is accepted, the supported phone workflow is Save to Files/AirDrop/email into the desktop ingestion channels. Do not create a mobile account service, hosted upload backend, or multi-device ledger sync by implication.
+Until that slice is accepted, the supported phone workflow is `Save to CanCan Inbox` through the Share sheet, with Save to Files/AirDrop as manual fallbacks. Do not create a mobile account service, hosted upload backend, or multi-device ledger sync by implication.
 
 Primary references:
 
@@ -98,7 +98,7 @@ documentation/help for the capabilities that actually ship
 community/contributing links
 ```
 
-Before the pre-1.0 preview ships, add the Gmail connection explanation, Google API Services User Data Policy Limited Use disclosure, verified privacy/support contacts, and every public OAuth requirement owned by `0003-gmail-collector.md`. Website and in-app copy must distinguish attachment ingestion from separately consented provider-approved transaction-email body ingestion.
+Before public Gmail is offered, add the Gmail connection explanation, Google API Services User Data Policy Limited Use disclosure, verified privacy/support contacts, and every public OAuth requirement owned by `0003-gmail-collector.md`. Website and in-app copy must distinguish attachment ingestion from separately consented provider-approved transaction-email body ingestion. A preview without Gmail must omit Gmail availability claims rather than waiting for those capability-specific gates.
 
 Keep the site static. Do not add Cloudflare Workers/Pages Functions, hosted accounts, behavioral analytics, trackers, or a second product backend for the landing page. Any future telemetry requires a separate explicit product/privacy decision.
 
@@ -344,9 +344,9 @@ BYO-AI provider keys belong only in the user's local OS secret store. They are n
 - GitHub community files route support, bugs, contributions, and private security reports without asking users to expose financial data.
 - A release is not promoted until its public website/privacy claims, supported platforms, license, signing, updater-key recovery, and approval owner are complete.
 - The first public release uses a pre-1.0 version and honest preview language; review-only providers remain in Review and do not become stability or auto-add claims.
-- The first pre-1.0 release includes local files, multiple Gmail mailbox connections, Gmail attachments, and provider-approved transaction-email ingestion only after its public OAuth, consent, disclosure, and verification gates pass.
+- The first pre-1.0 release includes local files and the phone Shortcut/iCloud Inbox acquisition path. Gmail may join only after its public OAuth, consent, disclosure, and verification gates pass and is otherwise omitted without blocking the release.
 - The default-on auto-commit toggle applies only when structured AI confidence meets the accepted package/document threshold and every accepted deterministic hard gate passes; all other records remain in Review.
 - A fresh supported development machine can install and verify the pinned toolchain with one repository command; setup version drift and non-idempotent profile edits fail deterministic tests.
 - Phase 1 release evidence covers both macOS `arm64` and `x86_64`; evidence from one architecture never qualifies the other.
 - Windows remains Phase 2 and creates no Phase 1 implementation or release requirement.
-- The future iOS Share Extension remains a separate thin intake companion: a disposable technical spike selects its transport boundary, and a later authorized release slice owns production signing, TestFlight, and App Store evidence.
+- A future iOS Share Extension remains conditional on real Shortcut experience evidence; if selected, a disposable technical spike chooses its transport boundary and a later authorized release slice owns production signing, TestFlight, and App Store proof.

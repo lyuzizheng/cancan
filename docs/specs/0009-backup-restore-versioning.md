@@ -6,7 +6,7 @@ Define how CanCan preserves local-first data safely across app upgrades, backups
 
 ## Validated security boundary
 
-The user-facing key model, Argon2id profiles, macOS Keychain scope, no-temporary-plaintext viewer boundary, source-file deletion contract, authenticated envelope, and restore-to-new-path switch are accepted. The reproducible evidence and residual architecture boundary are recorded in the [Vault security validation](../../spikes/vault-security-validation/EVIDENCE.md). Backup scheduling, export/migration behavior, public release security, and real macOS `x86_64` qualification remain owned by their later slices; they do not block architecture-neutral manual-import implementation with synthetic or redacted data.
+The Argon2id profiles, no-temporary-plaintext viewer boundary, source-file deletion contract, authenticated envelope, and restore-to-new-path switch are accepted. The reproducible evidence and residual architecture boundary are recorded in the [Vault security validation](../../spikes/vault-security-validation/EVIDENCE.md). The 2026-08-02 strict Touch ID and background key-lifetime direction supersedes the ordinary remembered-key/system-lock behavior exercised there and requires new owning-slice evidence; do not cite the older spike as proof of the new lifecycle. Backup scheduling, export/migration behavior, public release security, and real macOS `x86_64` qualification remain owned by their later slices.
 
 ## Simple user security model
 
@@ -14,7 +14,7 @@ MVP exposes only three security concepts:
 
 ```text
 Vault password
-Remember on this Mac
+Touch ID
 Recovery file
 ```
 
@@ -23,14 +23,16 @@ Do not expose key hierarchies, KDF parameters, per-file keys, key rotation, or a
 Rules:
 
 - the vault password creates and unlocks the local vault;
-- `Remember on this Mac` is an explicit opt-in backed by OS Keychain/secret storage;
+- `Use Touch ID` is an explicit per-Mac opt-in backed by OS Keychain/secret storage;
 - the recovery file is generated once, strongly recommended, and saved outside the vault;
 - the recovery file is a bearer secret; anyone who obtains it can recover compatible Vault data without a second password;
 - CanCan has no server-side password reset or recovery service;
 - losing both password access and the recovery file makes the vault unrecoverable;
 - MVP has no user-facing key-rotation workflow;
-- system sleep/lock locks the vault immediately;
-- fifteen minutes of inactivity locks the vault in MVP rather than adding another settings panel.
+- only explicit `Lock Vault` cryptographically locks a still-running app;
+- closing windows, app backgrounding, screen/session lock, ordinary inactivity, and sleep retain the current process key; sleep merely pauses execution until wake;
+- normal Quit, Force Quit, crash, logout, and reboot end the process, discard the live key, and stop Vault-dependent intake until the next unlock;
+- the app must state this tradeoff plainly: background intake works while CanCan remains running, and the Mac account/session boundary protects that live process until the user manually locks or quits.
 
 ## Vault process ownership
 
@@ -46,13 +48,15 @@ Keep implementation robust but hidden:
 random vault master key
 password -> Argon2id wrapping key -> wrapped master key
 master key -> context-separated DB, file, identifier-digest, and backup subkeys
-optional Keychain wrapper for Remember on this Mac
+optional Touch ID-protected Keychain wrapper
 recovery file wrapper for the same master key
 ```
 
 Changing the password re-wraps the master key rather than re-encrypting every record and file. Context-separated subkeys are implementation details and must not become user concepts.
 
-Argon2id derives a wrapping key only when creating the password wrapper or unlocking through the vault password. It is not run once per document and does not encrypt document bytes. Normal unlock may use the opt-in Keychain wrapper, so `Remember on this Mac` avoids the password KDF on the daily path while preserving immediate lock on system sleep/lock.
+Argon2id derives a wrapping key only when creating the password wrapper or unlocking through the vault password. It is not run once per document and does not encrypt document bytes. Normal unlock may use the opt-in Touch ID-protected Keychain wrapper, so a successful biometric unlock avoids the password KDF on the daily path.
+
+The Touch ID item uses `SecAccessControl` with `biometryCurrentSet` and a device-only accessibility class. Do not use `userPresence`, because it permits macOS account-password fallback. The UI action is `Unlock with Touch ID`; there is no `Unlock with this Mac` or macOS password fallback. If Touch ID is unavailable or locked out, or the enrolled fingerprint set changes and invalidates the item, the only CanCan fallback is the Vault password. A successful password unlock may offer to enable Touch ID again. CanCan requests biometric authentication only after a user opens the unlock flow; background intake never triggers a biometric prompt.
 
 The password-wrapper format stores a versioned KDF profile and its parameters. Phase 1 uses the same versioned profiles on macOS `arm64` and `x86_64`:
 
@@ -95,7 +99,9 @@ offset  size  value
 40      n     `CCENV001` purpose-3 wrapper of the 256-bit Vault master key
 ```
 
-The purpose-3 wrapper uses XChaCha20-Poly1305, KDF profile `none`, no salt, and a fresh nonce. The raw recovery key appears only in the user-saved recovery file. On supported macOS systems, both the atomic-write temporary file and the final recovery file must be owner-only mode `0600` from creation; the application must not rely on the process umask for bearer-secret protection. CanCan stores no recovery key or recovery-file path in the Vault; after the external file is durably saved, the Vault stores only versioned configured-state magic plus the SHA-256 fingerprint of the complete recovery file. Cancellation or a handled write failure must not create configured state, and the Command Center reminder disappears only after both saves succeed.
+The purpose-3 wrapper uses XChaCha20-Poly1305, KDF profile `none`, no salt, and a fresh nonce. The raw recovery key appears only in the user-saved recovery file. On supported macOS systems, both the atomic-write temporary file and the final recovery file must be owner-only mode `0600` from creation; the application must not rely on the process umask for bearer-secret protection. CanCan stores no recovery key or recovery-file path in the Vault; after the external file is durably saved, the Vault stores only versioned configured-state magic plus the SHA-256 fingerprint of the complete recovery file. Cancellation or a handled write failure must not create configured state. The owning recovery configuration keeps the Tasks item unresolved until both saves succeed; `Remind me later` may suppress its Command Center row and badge until the seven-calendar-day UTC due instant defined by `0006` without pretending recovery is configured.
+
+The Phase 1 intake-experience slice versions that existing device-local recovery configuration record to add nullable `remind_after`. An older unconfigured record with no reminder decodes as immediately actionable; an older configured record remains configured and never produces the setup task. Writing or clearing the reminder uses the same atomic owner-only record replacement boundary and never changes the recovery-file fingerprint or bearer recovery material.
 
 Recovery-file import and backup-bundle recovery remain owned by the later `backup-release` slice. The production writer and deterministic reader in the current slice establish the compatibility contract without adding a restore UI early.
 
@@ -119,7 +125,7 @@ The encrypted file belongs to its `source_documents` registry row; MVP has no se
 
 Normal PDF viewing decrypts and renders requested pages in memory inside Rust/Tauri. CSV viewing may send at most the first 200 lines and 32 KiB of UTF-8 preview plaintext to the renderer; a CSV file within both caps may appear in full. Neither viewing path creates a plaintext temporary file or sends a raw original-file byte payload. `Save a copy` is the only explicit warned export of the original source file to a user-selected path outside the Vault.
 
-One optional statement-PDF password may be saved per Money Source in macOS Keychain. SQLite stores only its secret reference and status. Gmail and manual imports assigned to that Money Source try the same password. If it does not unlock a document, CanCan asks for a password and offers `Use once` or `Update saved password`; MVP stores no password history and no unlocked duplicate of the PDF.
+One optional statement-PDF password may be saved per Money Source in macOS Keychain. SQLite stores only its secret reference and status. When the source is not yet known, the privileged host may try every distinct saved statement password once for that parse attempt. A successful password only unlocks bytes; it never identifies the Money Source. If none works, CanCan asks for a password. After trusted classification and any required source confirmation, it offers `Use once`, `Save for this source`, or `Update saved password`; MVP stores no password history and no unlocked duplicate of the PDF.
 
 ## Backup target
 
@@ -222,12 +228,12 @@ device-local CanCan-root security-scoped bookmark and enabled state
 
 Restore writes and validates a new local Vault path before an atomic switch. It must not mutate the active Vault while integrity, compatibility, or password/recovery validation is incomplete.
 
-After restore on a new device, CanCan opens the restored non-secret data and a resumable Setup Checklist. The checklist includes Gmail reconnect, AI provider key re-entry, statement-PDF password re-entry for each affected Money Source, `Remember on this Mac`, future API connector tokens, and CanCan-root/`Backups` preparation. The device-local root bookmark/enabled state is never restored; local Inbox automation stays disabled until the user authorizes a root on that device. Missing secrets or device capabilities block only the jobs or features that depend on them; the user may browse restored records and finish setup later.
+After restore on a new device, CanCan opens the restored non-secret data and a resumable Setup Checklist. The checklist includes Gmail reconnect, AI provider key re-entry, statement-PDF password re-entry for each affected Money Source, Touch ID setup, future API connector tokens, and CanCan-root/`Backups` preparation. The device-local root bookmark/enabled state is never restored; local Inbox automation stays disabled until the user authorizes a root on that device. Missing secrets or device capabilities block only the jobs or features that depend on them; the user may browse restored records and finish setup later.
 
 ## Acceptance criteria
 
 - Backup has manifest, checksums, schema/app version markers.
-- User-facing security is limited to vault password, optional Keychain remembering, and one recovery file.
+- User-facing security is limited to Vault password, optional Touch ID unlock, and one recovery file.
 - MVP has no server recovery, key-rotation UI, or separate backup password.
 - A desktop process acquires exclusive Vault ownership before runtime construction; contention and lock errors fail closed before reconciliation or mutation.
 - Internal DB/file/identifier/backup keys are context-separated without becoming user settings.
@@ -237,9 +243,10 @@ After restore on a new device, CanCan opens the restored non-secret data and a r
 - Secrets are not restored silently.
 - The device-local CanCan-root bookmark/enabled state is excluded and cannot silently reactivate Inbox access after restore.
 - Argon2id parameters are stored as versioned wrapper profiles; new macOS vaults prefer RFC 9106's 64 MiB profile within the unlock budget and may fall back only to the OWASP minimum profile.
-- `Remember on this Mac` uses Keychain to keep the common unlock path fast; Argon2id is not a per-document encryption step.
+- Touch ID uses a `biometryCurrentSet` device-only Keychain item with no macOS password fallback; the Vault password remains the only application fallback, and Argon2id is not a per-document encryption step.
 - Normal PDF viewing sends only in-memory rendered pixels, and CSV viewing sends only the bounded UTF-8 preview described above; neither creates a plaintext temporary file or sends raw original-file bytes. Only explicit `Save a copy` exports the original source file.
-- Statement passwords are optional one-per-Money-Source Keychain secrets, excluded from backups, with use-once/update behavior and no password history.
+- Statement passwords are optional one-per-Money-Source Keychain secrets, excluded from backups, with one bounded pre-classification pass, use-once/save/update behavior, and no password history or source inference.
+- Window close, backgrounding, session lock, inactivity, and sleep do not discard a running process key; manual lock and every process-ending path do.
 - Deleted source files are absent from future backups while their tombstones and relationships remain; older backup copies are not claimed to be erased.
 - Restore validates a new Vault before switching and opens a resumable new-device Setup Checklist without hiding restored non-secret data.
 - Phase 1 Vault/security compatibility is verified on both macOS `arm64` and `x86_64`; Windows uses a separate Phase 2 security/storage contract.

@@ -114,7 +114,7 @@ Command Center should include:
 - snapshot freshness;
 - overview metrics;
 - AI insight module;
-- review/evidence status;
+- the unified Tasks projection for review/evidence/setup work;
 - but not a wall of dense tables on first load.
 
 ## Command Center priority
@@ -125,12 +125,13 @@ Recommended zones:
 
 ```text
 Top: Money Overview / source timestamps / vault status / last scan
+Upper: one Tasks section with Needs action, In progress, and Recently completed rows
 Main: money source streams and recent activity
-Side: AI insight, review count, backup health
-Lower section: Needs Review, New Evidence, Failed Jobs, Suggested Links
+Side: AI insight and backup health
+Lower: source-backed supporting detail without duplicate task/review/job cards
 ```
 
-Review remains important, but it does not need to dominate the first viewport.
+Review remains important, but its Command Center entry is a deep-linked Tasks row rather than a duplicate review card. The Tasks surface follows `0006-command-center-ui.md`; technical jobs are not a visual category.
 
 ## Source-specific presentation
 
@@ -190,6 +191,6 @@ Every motion needs a reduced-motion fallback. Avoid bounce/elastic easing, unifo
 - The Obsidian Vault Spine and Light Ledger form one coherent application rather than two unrelated themes.
 - Main surfaces retain CanCan's identity without sacrificing long-session readability.
 - No Material Design 1/2 or generic vibe-coded AI visual language remains.
-- Command Center balances overview, source activity, AI insight, and review status.
+- Command Center balances overview, the unified Tasks projection, source activity, and AI insight without duplicate Review or technical-job cards.
 - Each money source type can present tailored stats.
 - Motion follows the accepted precision rhythm, is visually inspected, and has a reduced-motion fallback.

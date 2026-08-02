@@ -8,7 +8,7 @@ The first-run experience must communicate technology, safety, and local ownershi
 
 ## Implementation boundary
 
-AI and Gmail setup are optional during first run. Exact cryptographic claims still depend on validated implementation evidence, and public Gmail claims remain gated by the production verification checkpoint in `0003`.
+AI, iCloud Inbox/Shortcut, and Gmail setup are optional during first run. Exact cryptographic claims still depend on validated implementation evidence, and public Gmail claims remain gated by the production verification checkpoint in `0003`. Phase 1 acquisition does not depend on Gmail.
 
 ## Experience goal
 
@@ -72,11 +72,13 @@ Welcome / product promise
 -> How the vault protects data
 -> Create local vault
 -> Choose vault password / local key setup
+-> Optionally enable Touch ID with no macOS-password fallback
 -> Save the recovery file now, or choose `Skip for now` and continue with recovery visibly not configured
 -> AI provider setup or `Skip for now`
 -> Add a first file or choose a supported Money Source
 -> Detect and confirm/create the Money Source plus sub-account(s) as evidence arrives
--> Optionally authorize the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) or connect one or more Gmail mailboxes using repeated Desktop OAuth + PKCE loopback
+-> Optionally authorize the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) and install/test the phone Share-sheet Shortcut
+-> Optionally connect one or more Gmail mailboxes using repeated Desktop OAuth + PKCE loopback
 -> Optional statement password setup when a supported provider needs it
 -> Review enabled capabilities and privacy-sensitive switches
 -> Land in Command Center
@@ -84,7 +86,7 @@ Welcome / product promise
 
 MVP should not ask the user to choose a base currency. CanCan should render native values and source-provided valuations in the Money Overview.
 
-Skipping AI never blocks Vault creation, local evidence capture, or document browsing. Setup review, Settings, and the Command Center `To do` list keep AI accurately `Not configured`; a parser-dependent action may offer a contextual setup CTA, but onboarding does not return as a repeated blocking modal.
+Skipping AI never blocks Vault creation, local evidence capture, or document browsing. Setup review, Settings, and the unified Tasks projection keep AI accurately `Not configured`; a parser-dependent action may offer a contextual setup CTA, but onboarding does not return as a repeated blocking modal.
 
 ## Local-first and encryption story
 
@@ -108,10 +110,13 @@ Before entering Command Center, show one polished review screen with the current
 
 ```text
 Local vault and lock
+Touch ID
 AI provider / cloud processing
 Gmail mailbox connections
 Automatic Gmail scan
 CanCan iCloud Drive root (`Inbox` / `Backups`)
+Phone Share Shortcut
+Background intake notifications
 Automatically add high-confidence records
 Optional FX-rate source
 Update checks
@@ -119,9 +124,9 @@ Backup target / last successful backup
 Crash reporting or diagnostics when later defined
 ```
 
-Each row shows `On`, `Off`, `Not configured`, or `Needs attention`, a one-line consequence, and an edit action. Do not hide privacy-sensitive defaults or force the user to revisit earlier steps to understand what is enabled.
+Each row shows `On`, `Off`, `Not configured`, or `Needs action`, a one-line consequence, and an edit action. Do not hide privacy-sensitive defaults or force the user to revisit earlier steps to understand what is enabled.
 
-Saving the recovery file is recommended but may be deferred. Deferring it does not block entry into Command Center. Setup review and Settings keep recovery visibly `Not configured`; the Command Center `To do` banner list also keeps a direct `Save recovery file` action until saving succeeds. Cancellation or a failed save leaves the task visible and the Vault unconfigured.
+Saving the recovery file is recommended but may be deferred. Deferring it does not block entry into Command Center. Setup review and Settings keep recovery visibly `Not configured`; the unified Tasks projection offers `Save recovery file` under `Needs action`. `Remind me later` suppresses this ordinary setup row and its badge until the seven-calendar-day UTC due instant defined by `0006`, then returns it as actionable; cancellation or a failed save leaves it visible and the Vault unconfigured. The recovery setting owns this reminder state rather than a generic task table.
 
 ## Network and telemetry boundary
 
@@ -151,7 +156,7 @@ Rules:
 
 - app should be usable enough to create a vault, create sources, and browse source documents without custom AI;
 - parser-quality features should clearly explain when AI setup is needed;
-- AI setup may be skipped without losing the local-first product path and resumes from Setup, Settings, the `To do` list, or a contextual parser CTA;
+- AI setup may be skipped without losing the local-first product path and resumes from Setup, Settings, the Tasks surface, or a contextual parser CTA;
 - user-owned provider settings are the current supported path for privacy, cost transparency, and control;
 - Vercel AI SDK may be used behind CanCan-owned adapters.
 
@@ -168,13 +173,15 @@ The app chooses native text, OCR, both, or original page evidence using the acce
 
 The future dedicated cloud-image OCR capability is separately disclosed and explicitly opt-in. Its manually imported cloud OCR payload/config and transport contract is owned by [`0004-parser-contract.md`](./0004-parser-contract.md). The reusable executor may perform the accepted request through an injected fetch boundary, but none of the user flow exists yet: Keychain or environment loading, Settings, Tauri/sidecar/UI wiring, disclosure UI, and the opt-in local smoke test remain unimplemented. That transport checkpoint alone does not authorize a live provider call or Gmail upload; the connected mailbox's current provider-bound consent does.
 
-## Gmail setup decision
+## Acquisition setup decision
 
-Gmail MVP uses official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect. The user may repeat that flow to add multiple mailbox-scoped connections.
+The official Phase 1 phone path is one Share-sheet Shortcut that saves supported files into the authorized `Cancan/Inbox`. CanCan provides an explicit install/test action and a truthful test receipt; it does not silently create or replace user automations. The Shortcut asks no source/account question and contains no Vault, parser, password, or ledger logic. The Mac classifies the captured evidence later.
+
+Gmail, when enabled, uses the official Gmail API with Desktop OAuth Authorization Code Flow + PKCE + loopback redirect. The user may repeat that flow to add multiple mailbox-scoped connections. It is an optional convenience channel, not required onboarding, the official phone intake path, or a Phase 1 acquisition blocker.
 
 Computer-use/browser automation is not the primary Gmail architecture. It may be reconsidered later for non-Gmail bank portals or as an experimental fallback.
 
-Gmail setup is not the first or required ingestion step. Onboarding should lead with `Add a file`, then offer the [CanCan iCloud Drive root](./0017-evidence-documents-source-ux.md#user-authorized-cancan-icloud-drive-root) and one or more Gmail mailboxes as optional convenience channels. The mailbox disclosure independently covers attachment and provider-approved transaction-body processing for the named AI recipient/disclosure; rules select what CanCan actually reads and retains, but do not trigger repeated authorization prompts. A changed provider recipient/disclosure requires mailbox-level re-consent before another AI transfer. A Money Source may then add different rules against any connected mailbox; those rules still converge on the shared parser job.
+Onboarding should lead with `Add a file`, then the CanCan iCloud Drive root plus phone Shortcut, and only then Gmail as an optional convenience channel. The mailbox disclosure independently covers attachment and provider-approved transaction-body processing for the named AI recipient/disclosure; rules select what CanCan actually reads and retains, but do not trigger repeated authorization prompts. A changed provider recipient/disclosure requires mailbox-level re-consent before another AI transfer. A Money Source may then add different rules against any connected mailbox; those rules still converge on the shared parser job.
 
 ## Protected statement passwords
 
@@ -184,9 +191,11 @@ MVP UX:
 
 ```text
 If a downloaded/imported PDF is password protected:
-  show a clear unlock prompt
-  let user apply the password once
-  offer optional secure save for that Money Source
+  try each distinct saved statement password once inside the privileged host
+  if none works, park the file and show a clear unlock action
+  let the user apply one password for the session
+  classify the source only after unlock, without treating the password as identity
+  offer optional secure save after the Money Source is confirmed
   retry extraction after unlock
 ```
 
@@ -195,8 +204,9 @@ Security rules:
 - statement passwords are optional;
 - saved passwords go to OS secret storage / Keychain / Stronghold, never plain SQLite;
 - SQLite may store only one secret reference id and status per Money Source;
-- Gmail and manual imports for that Money Source reuse the saved password;
-- a mismatch offers use once or update saved password; MVP stores no password history or unlocked duplicate PDF;
+- before source classification, the host may try all distinct saved statement passwords once; the candidate list and results never reach renderer, AI, or logs;
+- a password match grants decryption only and never assigns the Money Source;
+- after source confirmation, a mismatch offers use once, save, or update; MVP stores no password history or unlocked duplicate PDF;
 - passwords must not be logged, sent to AI, or included in backups by default;
 - user can remove saved passwords from Settings.
 
@@ -221,11 +231,11 @@ Avoid:
 - decorative animation with no state meaning;
 - complex onboarding that delays first useful action.
 
-## Startup sequence after vault exists
+## Startup and window lifecycle after vault exists
 
 ```text
-Open app
--> unlock vault
+Launch a new CanCan process
+-> unlock with user-initiated Touch ID or the Vault password
 -> run schema compatibility check
 -> apply allowed migrations or require upgrade path
 -> load settings and supported provider registry
@@ -235,8 +245,19 @@ Open app
 -> build resume plan
 -> rescan the enabled CanCan root's `Inbox` child after unlock
 -> optionally run enabled Gmail scans if auto-scan is on
--> land on Command Center with status modules
+-> land on Command Center with the unified Tasks section and finance modules
+
+Close the last window while the process remains unlocked
+-> destroy the renderer/WebView
+-> keep the minimal Rust Vault/job/Inbox runtime
+-> recreate the window later without re-authentication
+
+Manual Lock or process exit
+-> discard the live key and stop Vault-dependent intake
+-> require Touch ID or Vault password before processing resumes
 ```
+
+Touch ID uses a current-biometry-set Keychain item and is only requested from a user-opened unlock flow. CanCan never falls back from Touch ID to the macOS account password. Session lock, ordinary inactivity, and sleep do not discard the key of a process that remains alive; actual sleep pauses work and wake resumes it. The UI must make `Lock Vault` and `Quit CanCan` easy to understand for users who do not want background intake.
 
 ## Acceptance criteria
 
@@ -253,7 +274,8 @@ Open app
 - AI setup is prominent, may be skipped, and remains accurately resumable without a repeated blocking modal.
 - Gmail setup can add multiple mailbox-scoped OAuth connections, records provider-fingerprint-bound AI-processing consent per mailbox, disables transfer when AI is absent or the recipient/disclosure changes, and does not repeat consent for each later rule.
 - Gmail setup uses local-first Desktop OAuth + PKCE loopback flow.
-- The first useful import does not require Gmail or a source/account preselection; optional CanCan-root setup links to the canonical `Inbox`/`Backups` contract and explains that the source folder remains outside the encrypted Vault.
+- The first useful import does not require Gmail or a source/account preselection; optional CanCan-root setup links to the canonical `Inbox`/`Backups` contract, offers one explicit phone Shortcut install/test action, and explains that the source folder remains outside the encrypted Vault.
 - Transaction-notification email body capture is separately disclosed and enabled from attachment collection.
-- Protected PDF statements can prompt for a password and optionally save it securely.
-- Startup handles locked vault, migration checks, enabled root-`Inbox` rescan, optional Gmail scan, configured secrets, and unfinished jobs.
+- Protected PDF statements receive one bounded saved-password pass, then can prompt for a password and optionally save it securely after source confirmation.
+- Strict Touch ID unlock has no macOS-password fallback; the Vault password is the application fallback.
+- Startup handles locked vault, migration checks, enabled root-`Inbox` rescan, optional Gmail scan, configured secrets, and unfinished jobs; closing the last window may preserve a minimal unlocked Rust runtime until manual lock or process exit.

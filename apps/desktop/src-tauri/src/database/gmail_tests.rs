@@ -21,7 +21,7 @@ fn upgrades_a_v9_vault_without_changing_existing_data() {
         )
         .expect("seed existing data");
 
-    apply_migration_set(&mut connection, &MIGRATIONS[9..]).expect("apply Gmail migration");
+    apply_migration_set(&mut connection, &MIGRATIONS[9..10]).expect("apply Gmail migration");
 
     let display_name: String = connection
         .query_row(

@@ -111,9 +111,11 @@ Resolve in this order:
 5. resolve child accounts through the account identity algorithm below
 ```
 
-The source hint narrows candidates but cannot override a provider fingerprint mismatch. Unassigned or ambiguous evidence appears in Command Center `Needs attention`; it does not require a standalone Evidence Library.
+The source hint narrows candidates but cannot override a provider fingerprint mismatch. Unassigned or ambiguous evidence projects into Tasks `Needs action` unless the user keeps it parked; it does not require a standalone Evidence Library or generic task authority.
 
-If a protected file cannot reveal enough provider identity to select the correct saved statement password, ask for the Money Source before unlocking. This is a security-required exception to automatic routing, not a reason to require source selection for every import.
+When step 4 detects no configured source, the trusted classifier resolves the versioned composite `money_source_candidates` identity defined by `0002`: provider key plus a tagged exact stable provider root/source ID when supplied, otherwise the tagged provider-scoped singleton. It never concatenates identity strings. Concurrent documents attach to the same candidate. `Keep unassigned` parks that candidate and its linked evidence. `Create source and continue` performs the expected-version recheck, existing-source recheck, at-most-one source creation, candidate confirmation, linked-document routing, and audit append atomically; retries reuse the confirmed source and stale requests reload. Provider fingerprints remain evidence about the parser package/version, not the long-lived source identity by themselves.
+
+If a protected file cannot reveal provider identity, do not ask the user to guess the Money Source before unlocking. The privileged Rust host tries each distinct saved statement password at most once for that parse attempt. Password values and per-password results stay outside renderer, AI, logs, and job state; a successful unlock grants document access only and is never source/account evidence. If none works, project `Password needed` into Tasks `Needs action`; only the user's explicit `Leave parked` decision suppresses that current reason. After user unlock and trusted classification, offer to save or update the password only for the confirmed Money Source.
 
 ## Account identity data contract
 
@@ -254,6 +256,7 @@ If it identifies multiple child containers, create or update distinct account ca
 - Source model remains two-level from the user's perspective.
 - Money Sources are user-configured roots for provider-specific discovery/import channels.
 - Capture channels may defer source/account selection; trusted classification routes to one configured Money Source and the existing account resolver handles child accounts.
+- Protected unclassified evidence receives one bounded privileged-host saved-password pass before a user prompt; password matching never assigns source/account identity.
 - A supported provider can ship default Gmail rules or an official API connector without allowing arbitrary providers.
 - Matching documents continue through parsing when they reveal multiple child-account candidates.
 - First-seen accounts require one compact per-candidate accept/reject review before their first commit, not before parsing.

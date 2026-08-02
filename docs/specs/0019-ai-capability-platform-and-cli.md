@@ -21,7 +21,7 @@ In-app assistant history/settings, external approval-policy persistence, audit r
 
 ## Stable decisions
 
-- The unlocked Desktop app remains the sole Vault owner and privileged host.
+- The unlocked CanCan desktop process remains the sole Vault owner and privileged host, whether or not a renderer window is visible.
 - One host-owned typed capability/service registry is the canonical backend interface shared by the Desktop renderer, in-app AI, internal scheduled jobs, first-party CLI, and strict external-agent adapters.
 - The Phase 2 target catalog covers every existing user-facing read outcome and every host-validated edit, link, commit, delete, and restore mutation. Delivery may migrate that catalog in verified increments, but it must not leave a permanent renderer-only business API or create a narrower second AI/CLI implementation.
 - Tauri IPC, trusted in-process calls, the local socket, CLI commands, and strict function tools are transport/caller adapters over that interface. They do not implement a second renderer-only or agent-only business contract.
@@ -30,7 +30,7 @@ In-app assistant history/settings, external approval-policy persistence, audit r
 - AI results are advisory unless a registered mutation capability explicitly requires and receives host-validated user approval.
 - External access is off by default.
 - External adapters connect only to the running unlocked Desktop app through a user-only local Unix-domain socket. Phase 2 adds no TCP listener, hosted gateway, LaunchAgent, background daemon, or second Vault owner.
-- When Desktop is closed, no AI capability or scheduled analysis runs. Startup/unlock may catch up overdue internal work idempotently.
+- When the CanCan process is not running or the Vault is manually locked, no AI capability or scheduled analysis runs. Closing the last renderer window alone may retain the minimal unlocked Rust runtime; startup/unlock may catch up overdue internal work idempotently.
 - The CLI is a thin client of the capability registry. It does not open the Vault database or decrypt source files itself.
 - Secrets remain behind the privileged host and are never returned through a capability result.
 - Every capability invocation is bounded, schema-validated, caller-attributed, redacted, and auditable.
@@ -139,7 +139,7 @@ The durable local job system remains the only scheduler for product work. A capa
 
 For statement coverage, accepted source/account/statement-period or processing-state changes mark the `(money_source_id, account_id, document_type)` scope due. At startup/unlock, CanCan evaluates a due scope only when it has no successful evaluation for the current local calendar day. Retries reuse the same logical run/idempotency scope. This is a trigger policy, not a provider cadence rule: the AI still analyses the bounded evidence to decide whether a period appears missing.
 
-There is no separate AI cron daemon. Scheduling does not make routine internal runs visible as normal user Jobs, but a useful result or actionable failure appears in the owning feature surface.
+There is no separate AI cron daemon. Scheduling does not make routine internal runs visible as technical Jobs, but a useful result or actionable failure may project into Tasks and deep-link to the owning feature surface.
 
 ## Security and privacy boundaries
 

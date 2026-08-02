@@ -383,9 +383,38 @@ Spam/Trash, display-name spoof, sender-domain mismatch, and failed/missing authe
 email-first and statement-first convergence to one canonical ledger event
 late corroborating evidence against an already committed event, with unchanged legs/allocations and one atomic audit entry
 ambiguous/different-amount notification matches remaining in Review
+non-empty Gmail mailbox sync creating one intake batch, zero-new-evidence sync creating none, and Gmail batch completion/notification reusing the shared receipt contract
 ```
 
 These are mocked local/Gmail fixtures. CI must not require a live mailbox, sync provider, iCloud account, phone, bank app, or real statement.
+
+The Phase 1 intake-experience slice adds deterministic host, migration, and renderer fixtures for:
+
+```text
+one Tasks projection assembled from authoritative document, source-confirmation, Review, setup, job, parse, and audit state without a tasks/recent_tasks table
+one intake batch plus its pending items atomically created/sealed per explicit handoff or stable non-empty Local Inbox eligible set; zero-item runs creating no batch
+placeholder/changing/transiently unreadable Local Inbox entries creating no batch item until a later eligible pass
+ordered batch items moving one-way from pending to captured, rejected, restore-confirmation-required, suppressed, or exact-duplicate outcomes, with document/audit registration atomic and duplicates referencing the existing document
+pending items having created_at with no finalized_at, terminalization setting finalized_at once, and no terminal-to-pending transition
+pending explicit-handoff restart becoming actionable Import interrupted; pending automatic restart becoming silent discovery_retry while scanner authority retries in a new batch
+seal/completion monotonicity, crash/restart completion reconciliation, actionable terminal outcomes, idempotent notification-state transitions, and stable-ID retry without duplicate visible notifications
+restore-confirmation-required completing as actionable, then deriving restored or left-deleted after the audited document-owner decision
+explicit visible rejection becoming non-badged/non-notified File not added, while background rejection becomes a deep-linked CanCan Inbox action with retry/open/park behavior
+Add again/Try again atomically superseding the prior active or parked rejection through stable item correlation; checked paired fixed-width scanner correlation tokens; same-entry changed snapshots replacing only the old row while a new failed attempt remains actionable; unrelated entries not resolving it
+safe input labels enforcing sanitized basename/generated-message labels, 240-byte UTF-8 bound, no path/bookmark/hash/locator/raw subject/sender/body/ID, and redacted notifications
+168-hour receipt presentation/cleanup without deleting evidence, parse, Review, job, ledger, or audit authority
+Needs action, In progress, Recently completed, and Parked filtering plus maximum-five-row Command Center ordering
+only Needs action contributing to sidebar/Command Center badges
+exact whole-row deep links to password, source confirmation, document, statement-scoped Review, and Recovery/Settings, with Tasks filter/scroll restoration on return
+password Leave parked and source Keep unassigned surviving restart without deleting evidence; a changed attention reason becoming actionable instead of inheriting stale parking
+concurrent documents upserting one versioned composite source candidate; tagged empty/non-empty scope checks, exact/case-sensitive provider IDs, 512-byte rejection, and delimiter/adversarial collision fixtures; atomic existing-source recheck/create/confirm/route/audit; retry idempotency and stale-version reload without duplicate Money Sources
+seven-calendar-day setup reminder scheduling across DST and later time-zone changes, plus 168-hour recent-result expiry, under an injected clock/timezone
+Review aggregation without duplicate Command Center Review cards, generic task mutation, or a Tasks dismiss path
+exact duplicate, same-content, updated, and no-new-record outcomes projecting only into Recently completed while exact-duplicate-only background batches remain notification-silent
+notification click recreating/unlocking the window when required and then following the same Tasks/deep-link route
+populated previous-schema upgrade for intake receipt/candidate/document-park state plus backward-compatible versioning of the device-local recovery reminder record
+desktop, narrow single-column, keyboard/focus, accessible-name/state, loading/empty/error, and reduced-motion inspection followed by Kimi Code CLI's final designer-level review
+```
 
 The Phase 2 macOS Finder Share slice adds native packaged tests for:
 
@@ -393,8 +422,8 @@ The Phase 2 macOS Finder Share slice adds native packaged tests for:
 single and bounded multi-file Share > CanCan handoff
 running, launched, locked, and cancelled app states
 unsupported type and over-limit rejection
-shared Add/capture idempotency and Processing/Needs attention projection
-bounded App Group staging while closed/locked, with private protection, no-backup/no-index behavior, atomic handoff, success/cancel/expiry cleanup, and crash recovery
+shared Add/capture idempotency feeding the already-proven Tasks projection
+bounded App Group staging while the process is absent or the Vault is manually locked, with private protection, no-backup/no-index behavior, atomic handoff, success/cancel/expiry cleanup, and crash recovery; closing the window alone uses the live host path
 no Vault key, parser, database, source registry, or durable job queue in the extension/service
 signed/notarized package registration on each supported macOS architecture
 ```
