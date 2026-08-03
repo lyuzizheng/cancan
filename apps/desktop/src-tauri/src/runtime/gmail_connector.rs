@@ -388,7 +388,7 @@ fn read_loopback_request(
     listener_address: SocketAddr,
 ) -> Result<Zeroizing<String>, RuntimeError> {
     stream
-        .set_read_timeout(Some(StdDuration::from_secs(1)))
+        .set_read_timeout(Some(StdDuration::from_secs(10)))
         .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
     let mut request = Zeroizing::new(Vec::with_capacity(1024));
     let mut chunk = Zeroizing::new([0_u8; 512]);
@@ -440,9 +440,15 @@ mod tests {
         let mut loopback = GmailLoopbackListener::bind().expect("bind loopback");
         let port = loopback.port;
         let listener = loopback.take().expect("take listener");
+        // Keep the window bounded but generous enough that parallel test
+        // scheduling on constrained CI runners cannot starve the callback
+        // thread into a false timeout.
         let callback =
-            thread::spawn(move || wait_for_loopback_callback(listener, StdDuration::from_secs(1)));
+            thread::spawn(move || wait_for_loopback_callback(listener, StdDuration::from_secs(10)));
         let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect loopback");
+        stream
+            .set_read_timeout(Some(StdDuration::from_secs(10)))
+            .expect("set loopback client read timeout");
         stream
             .write_all(b"GET /?code=synthetic-code&state=synthetic-state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
             .expect("write callback");

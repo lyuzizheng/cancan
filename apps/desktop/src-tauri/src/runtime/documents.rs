@@ -1,64 +1,6 @@
 use super::*;
 
 impl VaultRuntime {
-    pub(crate) fn import_selected_document(
-        &self,
-        source_path: &Path,
-        restore_deleted_document_id: Option<&str>,
-    ) -> Result<SourceDocumentImportOutcome, RuntimeError> {
-        let (original_filename, mime_type) = source_document_metadata(source_path)?;
-        let document_id = random_identifier("document");
-        let audit_id = random_identifier("audit");
-        let input = SourceDocumentImport {
-            audit_actor: "user",
-            audit_id: &audit_id,
-            audit_policy_version: IMPORT_POLICY_VERSION,
-            audit_reason: "manual_import",
-            document_id: &document_id,
-            mime_type,
-            original_filename: &original_filename,
-            #[cfg(test)]
-            source_path,
-        };
-        let source = ManualImportStore::prepare_source_path(mime_type, source_path)
-            .map_err(|_| RuntimeError::new("import_failed"))?;
-        let session_generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
-        let plan = {
-            let store = self.store()?;
-            store
-                .as_ref()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
-                .source_capture_plan(&input, &source, restore_deleted_document_id)
-                .map_err(|_| RuntimeError::new("import_failed"))?
-        };
-        let capture = match plan {
-            SourceCapturePlan::Capture(capture) => capture,
-            SourceCapturePlan::RestoreConfirmationRequired(outcome) => return Ok(outcome),
-        };
-        let stored = capture
-            .store_prepared(&source)
-            .map_err(|_| RuntimeError::new("import_failed"))?;
-        if self.inner.vault_session_generation.load(Ordering::SeqCst) != session_generation {
-            return Err(RuntimeError::new("vault_locked"));
-        }
-        let result = {
-            let mut store = self.store()?;
-            store
-                .as_mut()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
-                .persist_captured_import(&input, &stored, restore_deleted_document_id)
-        };
-        match result {
-            Ok(outcome)
-                if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired =>
-            {
-                Ok(outcome)
-            }
-            Ok(outcome) => Ok(outcome),
-            Err(_) => Err(RuntimeError::new("import_failed")),
-        }
-    }
-
     pub(crate) fn delete_source_document(&self, document_id: &str) -> Result<(), RuntimeError> {
         if document_id.is_empty() {
             return Err(RuntimeError::new("invalid_document_request"));
@@ -861,7 +803,7 @@ pub(crate) async fn import_source_document(
         let path = selected
             .into_path()
             .map_err(|_| RuntimeError::new("file_selection_failed"))?;
-        let outcome = import_runtime.import_selected_document(&path, None)?;
+        let outcome = import_runtime.import_selected_document(&path)?;
         if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired {
             return Ok(Some(outcome));
         }
@@ -874,14 +816,21 @@ pub(crate) async fn import_source_document(
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancelCustom(
                 "Restore file".to_owned(),
-                "Cancel".to_owned(),
+                "Leave deleted".to_owned(),
             ))
             .blocking_show();
+        let Some(intake_item_id) = outcome.intake_item_id.as_deref() else {
+            return Err(RuntimeError::new("import_failed"));
+        };
         if !restore {
+            import_runtime.decline_restore_selected_document(
+                &outcome.document_id,
+                intake_item_id,
+            )?;
             return Ok(None);
         }
         import_runtime
-            .import_selected_document(&path, Some(&outcome.document_id))
+            .confirm_restore_selected_document(&path, &outcome.document_id, intake_item_id)
             .map(Some)
         },
     )

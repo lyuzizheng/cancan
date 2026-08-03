@@ -30,7 +30,7 @@ fn lock_and_unlock_reject_a_parse_result_extracted_by_the_old_vault_session() {
     let source = parent.path().join("statement.csv");
     fs::write(&source, "date,amount\n2026-07-01,10.00\n").expect("write fixture");
     let imported = runtime
-        .import_selected_document(&source, None)
+        .import_selected_document(&source)
         .expect("import document");
     let job = runtime
         .queued_local_inbox_parse_documents()
@@ -76,7 +76,7 @@ fn reopen_recovers_expired_parse_work_when_local_inbox_is_disabled() {
     let source = parent.path().join("statement.csv");
     fs::write(&source, "date,amount\n2026-07-01,10.00\n").expect("write fixture");
     let imported = runtime
-        .import_selected_document(&source, None)
+        .import_selected_document(&source)
         .expect("import document");
     let job = runtime
         .queued_local_inbox_parse_documents()
@@ -131,7 +131,7 @@ fn reopen_requeues_an_unexpired_parse_claim_and_rejects_the_old_token() {
     let source = parent.path().join("statement.csv");
     fs::write(&source, "date,amount\n2026-07-01,10.00\n").expect("write fixture");
     let imported = runtime
-        .import_selected_document(&source, None)
+        .import_selected_document(&source)
         .expect("import document");
     let job = runtime
         .queued_local_inbox_parse_documents()
@@ -229,7 +229,7 @@ fn unlocking_a_password_blocked_parse_requeues_the_same_logical_run() {
     let source = parent.path().join("protected-statement.pdf");
     fs::write(&source, protected_text_pdf()).expect("write protected PDF fixture");
     let imported = runtime
-        .import_selected_document(&source, None)
+        .import_selected_document(&source)
         .expect("import protected statement");
     let job = runtime
         .queued_local_inbox_parse_documents()

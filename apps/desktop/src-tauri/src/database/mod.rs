@@ -150,6 +150,8 @@ pub enum SourceDocumentImportStatus {
 pub struct SourceDocumentImportOutcome {
     pub document_id: String,
     pub status: SourceDocumentImportStatus,
+    #[serde(skip)]
+    pub(crate) intake_item_id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -623,6 +625,7 @@ impl ManualImportStore {
                     SourceDocumentImportOutcome {
                         document_id: existing.document_id.clone(),
                         status: SourceDocumentImportStatus::RestoreConfirmationRequired,
+                        intake_item_id: None,
                     },
                 ));
             }
@@ -645,21 +648,6 @@ impl ManualImportStore {
                 .as_ref()
                 .is_some_and(|document| document.file_state != "available"),
         }))
-    }
-
-    pub(crate) fn persist_captured_import(
-        &mut self,
-        input: &SourceDocumentImport<'_>,
-        stored: &StoredFile,
-        restore_deleted_document_id: Option<&str>,
-    ) -> StoreResult<SourceDocumentImportOutcome> {
-        Ok(persist_import(
-            &mut self.connection,
-            input,
-            stored,
-            restore_deleted_document_id,
-            None,
-        )?)
     }
 
     #[cfg(test)]
@@ -3304,11 +3292,14 @@ mod gmail_tests;
 #[cfg(test)]
 mod hardening_tests;
 pub(crate) mod imports;
-mod intake;
+pub(crate) mod intake;
 #[cfg(test)]
 mod intake_migration_tests;
+#[cfg(test)]
+pub(crate) mod intake_test_support;
 mod migrations;
 mod parse_jobs;
+pub(crate) mod restore_decisions;
 mod rows;
 #[cfg(test)]
 mod tests;

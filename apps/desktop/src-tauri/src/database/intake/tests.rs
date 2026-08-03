@@ -221,7 +221,7 @@ fn finalizes_an_exact_duplicate_once_without_creating_document_or_job_authority(
         .expect("store duplicate envelope");
     let duplicate_input = import_input(&source_path, "document-ignored", "audit-duplicate");
     let outcome = store
-        .persist_captured_intake_import(&duplicate_input, &stored, None, "item-duplicate")
+        .persist_captured_intake_import(&duplicate_input, &stored, "item-duplicate")
         .expect("atomically register duplicate and terminal receipt");
     assert_eq!(outcome.document_id, "document-existing");
     assert_eq!(outcome.status, SourceDocumentImportStatus::AlreadyPresent);
@@ -301,7 +301,7 @@ fn commits_new_document_audit_job_and_captured_receipt_in_one_transaction() {
         .store_prepared(&source)
         .expect("store captured envelope");
     store
-        .persist_captured_intake_import(&input, &stored, None, "item-captured")
+        .persist_captured_intake_import(&input, &stored, "item-captured")
         .expect("commit capture authority");
 
     let authority: (i64, i64, i64, String, String) = store
@@ -378,7 +378,7 @@ fn rolls_back_document_audit_job_and_receipt_when_atomic_terminalization_fails()
         .expect("store rollback envelope");
     assert!(
         store
-            .persist_captured_intake_import(&input, &stored, None, "item-conflict")
+            .persist_captured_intake_import(&input, &stored, "item-conflict")
             .is_err(),
         "receipt conflict must roll back all database authority"
     );
@@ -440,8 +440,8 @@ fn restore_plan_terminalizes_the_receipt_before_restart_recovery() {
             .intake_source_capture_plan(
                 &import_input(&source_path, "document-ignored", "audit-restore-attempt"),
                 &source,
-                None,
                 "item-restore",
+                false,
             )
             .expect("plan restore confirmation and finalize receipt");
         let SourceCapturePlan::RestoreConfirmationRequired(outcome) = plan else {
@@ -468,6 +468,79 @@ fn restore_plan_terminalizes_the_receipt_before_restart_recovery() {
             "document-deleted".to_owned(),
             None,
         )
+    );
+}
+
+#[test]
+fn automatic_local_inbox_discovery_suppresses_deleted_exact_match() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let source_path = root.path().join("local.pdf");
+    fs::write(&source_path, b"%PDF automatic discovery").expect("write source fixture");
+    let mut store = open_store(root.path());
+    let original = SourceDocumentImport {
+        audit_actor: "user",
+        audit_id: "audit-original",
+        audit_policy_version: "manual-import-v1",
+        audit_reason: "manual_import",
+        document_id: "document-deleted",
+        mime_type: "application/pdf",
+        original_filename: "statement.pdf",
+        source_path: &source_path,
+    };
+    store
+        .register_import(&original, None)
+        .expect("register original document");
+    store
+        .delete_source_document("document-deleted", "audit-delete")
+        .expect("delete original document");
+    let key = "a".repeat(64);
+    let version = format!("v1:{}", "b".repeat(64));
+    store
+        .create_intake_batch(&IntakeBatchInput {
+            id: "batch-local",
+            acquisition_channel: IntakeAcquisitionChannel::LocalInbox,
+            items: &[local_item("item-local", "local.pdf", &key, &version)],
+        })
+        .expect("create Local Inbox batch");
+    let source = ManualImportStore::prepare_source_path("application/pdf", &source_path)
+        .expect("prepare local source");
+    let local_input = SourceDocumentImport {
+        audit_actor: "system",
+        audit_id: "audit-local",
+        audit_policy_version: "manual-import-v1",
+        audit_reason: "local_inbox_import",
+        document_id: "document-ignored",
+        mime_type: "application/pdf",
+        original_filename: "local.pdf",
+        source_path: &source_path,
+    };
+    let plan = store
+        .intake_source_capture_plan(&local_input, &source, "item-local", true)
+        .expect("plan local inbox capture");
+    assert!(
+        matches!(plan, SourceCapturePlan::RestoreConfirmationRequired(_)),
+        "local inbox discovery returns a terminal plan without capture"
+    );
+    let receipt: (String, Option<String>, Option<String>, Option<String>) = store
+        .connection
+        .query_row(
+            "SELECT capture_outcome, source_document_id, rejection_kind, rejection_code \
+             FROM intake_batch_items WHERE id = 'item-local'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("read local inbox receipt");
+    assert_eq!(receipt.0, "suppressed");
+    assert_eq!(receipt.1, None);
+    assert_eq!(receipt.2, None);
+    assert_eq!(receipt.3.as_deref(), Some("tombstone_suppressed"));
+    assert_eq!(
+        store
+            .connection
+            .query_row("SELECT count(*) FROM source_documents", [], |row| row
+                .get::<_, i64>(0))
+            .expect("count documents"),
+        1
     );
 }
 

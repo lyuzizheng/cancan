@@ -226,7 +226,7 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
     let source = parent.path().join("protected-statement.pdf");
     fs::write(&source, protected_text_pdf()).expect("write protected PDF fixture");
     let outcome = runtime
-        .import_selected_document(&source, None)
+        .import_selected_document(&source)
         .expect("import protected statement");
 
     let documents = runtime
@@ -450,7 +450,7 @@ fn fails_closed_when_a_pdf_cannot_be_inspected() {
     )
     .expect("write corrupt PDF fixture");
     let outcome = runtime
-        .import_selected_document(&source, None)
+        .import_selected_document(&source)
         .expect("import corrupt PDF");
 
     assert_eq!(
@@ -482,13 +482,11 @@ fn keeps_listing_other_documents_when_one_encrypted_blob_is_unreadable() {
     let pdf = parent.path().join("protected-statement.pdf");
     fs::write(&pdf, protected_pdf_fixture()).expect("write protected PDF fixture");
     let pdf_outcome = runtime
-        .import_selected_document(&pdf, None)
+        .import_selected_document(&pdf)
         .expect("import protected statement");
     let csv = parent.path().join("transactions.csv");
     fs::write(&csv, b"date,amount\n2026-07-01,10.00\n").expect("write CSV fixture");
-    let csv_outcome = runtime
-        .import_selected_document(&csv, None)
-        .expect("import CSV");
+    let csv_outcome = runtime.import_selected_document(&csv).expect("import CSV");
 
     let encrypted_locator = {
         let store = runtime.store().expect("active store");
@@ -593,7 +591,7 @@ fn saves_an_atomic_plaintext_copy_only_outside_the_vault() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     let imported = runtime
-        .import_selected_document(&source, None)
+        .import_selected_document(&source)
         .expect("import source");
 
     let (mime_type, session_generation) = runtime
@@ -651,7 +649,7 @@ fn preserves_the_existing_destination_when_source_copy_write_fails() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     let imported = runtime
-        .import_selected_document(&source, None)
+        .import_selected_document(&source)
         .expect("import source");
     let destination_directory = parent.path().join("exports");
     fs::create_dir(&destination_directory).expect("create export directory");
@@ -1650,12 +1648,12 @@ fn imports_and_lists_an_unassigned_document_only_while_unlocked() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     let imported = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("import statement");
     assert_eq!(imported.status, SourceDocumentImportStatus::Imported);
 
     let duplicate = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("deduplicate statement");
     assert_eq!(duplicate.document_id, imported.document_id);
     assert_eq!(duplicate.status, SourceDocumentImportStatus::AlreadyPresent);
@@ -1672,14 +1670,18 @@ fn imports_and_lists_an_unassigned_document_only_while_unlocked() {
         .expect("list deleted document");
     assert_eq!(deleted[0].file_state, "deleted");
     let confirmation = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("request restore confirmation");
     assert_eq!(
         confirmation.status,
         SourceDocumentImportStatus::RestoreConfirmationRequired
     );
+    let receipt_id = confirmation
+        .intake_item_id
+        .as_deref()
+        .expect("restore receipt id");
     let restored = runtime
-        .import_selected_document(&source_path, Some(&imported.document_id))
+        .confirm_restore_selected_document(&source_path, &imported.document_id, receipt_id)
         .expect("restore deleted source");
     assert_eq!(restored.document_id, imported.document_id);
     assert_eq!(restored.status, SourceDocumentImportStatus::Restored);
@@ -1714,7 +1716,7 @@ fn imports_and_lists_an_unassigned_document_only_while_unlocked() {
     );
     assert_eq!(
         runtime
-            .import_selected_document(&source_path, None)
+            .import_selected_document(&source_path)
             .expect_err("reject import while locked")
             .code(),
         "vault_locked"
@@ -1733,7 +1735,7 @@ fn rejects_unsupported_document_imports() {
 
     assert_eq!(
         runtime
-            .import_selected_document(&unsupported, None)
+            .import_selected_document(&unsupported)
             .expect_err("reject unsupported document")
             .code(),
         "unsupported_document"
@@ -1751,7 +1753,7 @@ fn renders_an_imported_pdf_in_memory_only_while_the_vault_is_unlocked() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     let imported = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("import PDF");
     let before = vault_entries(&vault_root);
 
@@ -1785,7 +1787,7 @@ fn imports_and_renders_an_image_in_memory_only() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     let imported = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("import PNG");
     let before = vault_entries(&vault_root);
 
@@ -1821,7 +1823,7 @@ fn rejects_an_invalid_image_before_storing_it() {
 
     assert_eq!(
         runtime
-            .import_selected_document(&source_path, None)
+            .import_selected_document(&source_path)
             .expect_err("reject invalid PNG")
             .code(),
         "import_failed"
@@ -1841,10 +1843,10 @@ fn rejects_non_pdf_and_invalid_page_view_requests() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     let csv = runtime
-        .import_selected_document(&csv_path, None)
+        .import_selected_document(&csv_path)
         .expect("import CSV");
     let pdf = runtime
-        .import_selected_document(&pdf_path, None)
+        .import_selected_document(&pdf_path)
         .expect("import PDF");
 
     assert_eq!(
@@ -1892,7 +1894,7 @@ fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
     )
     .expect("write CSV fixture");
     let imported = runtime
-        .import_selected_document(&csv_path, None)
+        .import_selected_document(&csv_path)
         .expect("import CSV");
     let preview = runtime
         .preview_source_document(&imported.document_id)
@@ -1923,7 +1925,7 @@ fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
     let big_path = parent.path().join("big-export.csv");
     fs::write(&big_path, big_content).expect("write big CSV fixture");
     let big = runtime
-        .import_selected_document(&big_path, None)
+        .import_selected_document(&big_path)
         .expect("import big CSV");
     let big_preview = runtime
         .preview_source_document(&big.document_id)
@@ -1938,7 +1940,7 @@ fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
     let long_content = format!("memo,{}\n2026-07-02,1.00\n", "é".repeat(PREVIEW_MAX_BYTES));
     fs::write(&long_path, long_content).expect("write long-line CSV fixture");
     let long = runtime
-        .import_selected_document(&long_path, None)
+        .import_selected_document(&long_path)
         .expect("import long-line CSV");
     let long_preview = runtime
         .preview_source_document(&long.document_id)
@@ -1955,7 +1957,7 @@ fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
     let capped_content = format!("{}\n\n", "x".repeat(PREVIEW_MAX_BYTES));
     fs::write(&capped_path, capped_content).expect("write capped CSV fixture");
     let capped = runtime
-        .import_selected_document(&capped_path, None)
+        .import_selected_document(&capped_path)
         .expect("import capped CSV");
     let capped_preview = runtime
         .preview_source_document(&capped.document_id)
@@ -1968,7 +1970,7 @@ fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
     let empty_path = parent.path().join("empty.csv");
     fs::write(&empty_path, b"").expect("write empty CSV fixture");
     let empty = runtime
-        .import_selected_document(&empty_path, None)
+        .import_selected_document(&empty_path)
         .expect("import empty CSV");
     let empty_preview = runtime
         .preview_source_document(&empty.document_id)
@@ -1981,7 +1983,7 @@ fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
     let pdf_path = parent.path().join("statement.pdf");
     fs::write(&pdf_path, synthetic_pdf()).expect("write PDF fixture");
     let pdf = runtime
-        .import_selected_document(&pdf_path, None)
+        .import_selected_document(&pdf_path)
         .expect("import PDF");
     assert_eq!(
         runtime
@@ -2076,7 +2078,7 @@ fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
         }]
     );
     let imported = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("capture statement");
     let input = runtime
         .normalization_input(&imported.document_id)
@@ -2122,7 +2124,7 @@ fn persists_validated_records_and_reconciles_an_explicit_parser_re_run() {
         )
         .expect("seed source");
     let imported = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("capture statement");
     let input = runtime
         .normalization_input(&imported.document_id)
@@ -2266,7 +2268,7 @@ fn accepts_a_review_only_dbs_profile_and_reconciles_its_records_to_review() {
         .seed_money_source("source-dbs", "dbs", "DBS", "bank")
         .expect("seed DBS source");
     let imported = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("capture DBS statement");
     let input = runtime
         .normalization_input(&imported.document_id)
@@ -2676,7 +2678,7 @@ fn rejects_invalid_profiles_or_legacy_fingerprints_without_parse_persistence() {
             )
             .expect("seed source");
         let imported = runtime
-            .import_selected_document(&source_path, None)
+            .import_selected_document(&source_path)
             .expect("capture statement");
         let mut input = runtime
             .normalization_input(&imported.document_id)
@@ -2745,7 +2747,7 @@ fn rejects_invalid_normalizer_protocol_without_persisting_records_or_review() {
         )
         .expect("seed source");
     let imported = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("capture statement");
     let input = runtime
         .normalization_input(&imported.document_id)
@@ -2788,7 +2790,7 @@ fn rejects_invalid_normalizer_posting_status_without_persisting_records_or_revie
         )
         .expect("seed source");
     let imported = runtime
-        .import_selected_document(&source_path, None)
+        .import_selected_document(&source_path)
         .expect("capture statement");
     let input = runtime
         .normalization_input(&imported.document_id)
@@ -3412,10 +3414,10 @@ fn extracts_native_pdf_and_csv_observations_without_creating_files() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     let pdf = runtime
-        .import_selected_document(&pdf_path, None)
+        .import_selected_document(&pdf_path)
         .expect("import PDF");
     let csv = runtime
-        .import_selected_document(&csv_path, None)
+        .import_selected_document(&csv_path)
         .expect("import CSV");
     let vault_before = vault_entries(&vault_root);
     let mut temporary_entries_before = fs::read_dir(parent.path())

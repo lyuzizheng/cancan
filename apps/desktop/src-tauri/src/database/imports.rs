@@ -140,6 +140,7 @@ pub(super) fn persist_import(
             let outcome = SourceDocumentImportOutcome {
                 document_id: existing.document_id.clone(),
                 status: SourceDocumentImportStatus::RestoreConfirmationRequired,
+                intake_item_id: None,
             };
             if let Some(item_id) = intake_item_id {
                 super::intake::finalize_document_intake_item(
@@ -221,6 +222,7 @@ pub(super) fn persist_import(
     Ok(SourceDocumentImportOutcome {
         document_id,
         status,
+        intake_item_id: None,
     })
 }
 
