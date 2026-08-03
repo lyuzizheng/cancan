@@ -163,7 +163,6 @@ impl ManualImportStore {
         &mut self,
         input: &SourceDocumentImport<'_>,
         stored: &StoredFile,
-        restore_deleted_document_id: Option<&str>,
         intake_item_id: &str,
     ) -> StoreResult<SourceDocumentImportOutcome> {
         validate_identifier(intake_item_id, "intake item id")?;
@@ -171,8 +170,24 @@ impl ManualImportStore {
             &mut self.connection,
             input,
             stored,
-            restore_deleted_document_id,
+            None,
             Some(intake_item_id),
+        )?)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn persist_captured_import(
+        &mut self,
+        input: &SourceDocumentImport<'_>,
+        stored: &StoredFile,
+        restore_deleted_document_id: Option<&str>,
+    ) -> StoreResult<SourceDocumentImportOutcome> {
+        Ok(persist_import(
+            &mut self.connection,
+            input,
+            stored,
+            restore_deleted_document_id,
+            None,
         )?)
     }
 
@@ -180,11 +195,10 @@ impl ManualImportStore {
         &mut self,
         input: &SourceDocumentImport<'_>,
         source: &PreparedSource,
-        restore_deleted_document_id: Option<&str>,
         intake_item_id: &str,
     ) -> StoreResult<SourceCapturePlan> {
         validate_identifier(intake_item_id, "intake item id")?;
-        let plan = self.source_capture_plan(input, source, restore_deleted_document_id)?;
+        let plan = self.source_capture_plan(input, source, None)?;
         let SourceCapturePlan::RestoreConfirmationRequired(outcome) = &plan else {
             return Ok(plan);
         };
@@ -206,6 +220,10 @@ impl ManualImportStore {
             SourceDocumentImportStatus::RestoreConfirmationRequired,
         )?;
         transaction.commit()?;
+        let mut plan = plan;
+        if let SourceCapturePlan::RestoreConfirmationRequired(outcome) = &mut plan {
+            outcome.intake_item_id = Some(intake_item_id.to_owned());
+        }
         Ok(plan)
     }
 
@@ -231,6 +249,23 @@ impl ManualImportStore {
                  SELECT id FROM intake_batches WHERE acquisition_channel <> 'explicit_handoff' \
                )",
             [],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn recover_pending_local_inbox_items(&mut self, batch_id: &str) -> StoreResult<()> {
+        validate_identifier(batch_id, "intake batch id")?;
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "UPDATE intake_batch_items \
+             SET capture_outcome = 'suppressed', rejection_code = 'discovery_retry', \
+                 finalized_at = CURRENT_TIMESTAMP \
+             WHERE intake_batch_id = ?1 AND capture_outcome = 'pending' \
+               AND intake_batch_id IN ( \
+                 SELECT id FROM intake_batches WHERE acquisition_channel = 'local_inbox' \
+               )",
+            [batch_id],
         )?;
         transaction.commit()?;
         Ok(())
@@ -404,7 +439,7 @@ fn resolve_matching_local_inbox_rejections(
     Ok(())
 }
 
-fn validate_identifier(value: &str, name: &str) -> StoreResult<()> {
+pub(crate) fn validate_identifier(value: &str, name: &str) -> StoreResult<()> {
     if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("invalid {name}")).into());
     }
@@ -422,6 +457,23 @@ fn validate_safe_input_label(value: &str) -> StoreResult<()> {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid safe input label").into());
     }
     Ok(())
+}
+
+pub(crate) fn bounded_safe_input_label(value: &str) -> String {
+    let mut label = value
+        .chars()
+        .filter(|character| {
+            !is_control_or_bidi(*character) && *character != '/' && *character != '\\'
+        })
+        .collect::<String>();
+    while label.len() > 240 {
+        label.pop();
+    }
+    if label.is_empty() {
+        "File".to_owned()
+    } else {
+        label
+    }
 }
 
 fn is_control_or_bidi(value: char) -> bool {

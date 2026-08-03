@@ -221,7 +221,7 @@ fn finalizes_an_exact_duplicate_once_without_creating_document_or_job_authority(
         .expect("store duplicate envelope");
     let duplicate_input = import_input(&source_path, "document-ignored", "audit-duplicate");
     let outcome = store
-        .persist_captured_intake_import(&duplicate_input, &stored, None, "item-duplicate")
+        .persist_captured_intake_import(&duplicate_input, &stored, "item-duplicate")
         .expect("atomically register duplicate and terminal receipt");
     assert_eq!(outcome.document_id, "document-existing");
     assert_eq!(outcome.status, SourceDocumentImportStatus::AlreadyPresent);
@@ -301,7 +301,7 @@ fn commits_new_document_audit_job_and_captured_receipt_in_one_transaction() {
         .store_prepared(&source)
         .expect("store captured envelope");
     store
-        .persist_captured_intake_import(&input, &stored, None, "item-captured")
+        .persist_captured_intake_import(&input, &stored, "item-captured")
         .expect("commit capture authority");
 
     let authority: (i64, i64, i64, String, String) = store
@@ -378,7 +378,7 @@ fn rolls_back_document_audit_job_and_receipt_when_atomic_terminalization_fails()
         .expect("store rollback envelope");
     assert!(
         store
-            .persist_captured_intake_import(&input, &stored, None, "item-conflict")
+            .persist_captured_intake_import(&input, &stored, "item-conflict")
             .is_err(),
         "receipt conflict must roll back all database authority"
     );
@@ -440,7 +440,6 @@ fn restore_plan_terminalizes_the_receipt_before_restart_recovery() {
             .intake_source_capture_plan(
                 &import_input(&source_path, "document-ignored", "audit-restore-attempt"),
                 &source,
-                None,
                 "item-restore",
             )
             .expect("plan restore confirmation and finalize receipt");

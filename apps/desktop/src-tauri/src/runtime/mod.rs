@@ -1,4 +1,9 @@
 use crate::database::imports::{SourceCapturePlan, SourceDocumentReadPlan};
+use crate::database::intake::{
+    IntakeAcquisitionChannel, IntakeBatchInput, IntakeBatchItemInput, IntakeItemFinalization,
+    IntakeRejectionKind, bounded_safe_input_label,
+};
+use crate::database::restore_decisions::RestoreDecisionState;
 use crate::{
     database::{
         AccountConfirmationOutcome, AccountConfirmationPrompt, CandidateAccountDecisionInput,
@@ -13,10 +18,10 @@ use crate::{
         UndoOutcome, ValidatedExternalRecordInput, ValidatedStructuredParseInput,
     },
     local_inbox::{
-        AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureOutcome, FileSnapshot,
-        LocalInboxPaths, NativePreflight, SETTLE_INTERVAL, SystemNativePreflight, authorize_root,
-        capture_after_second_scan, ensure_inbox_paths, first_snapshot_after_preflight,
-        resolve_root_bookmark,
+        AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureDeferReason,
+        CaptureOutcome, FileSnapshot, LocalInboxPaths, NativePreflight, SETTLE_INTERVAL,
+        SystemNativePreflight, authorize_root, capture_after_second_scan, ensure_inbox_paths,
+        first_snapshot_after_preflight, resolve_root_bookmark,
     },
     source_observations::{ExtractionBundle, SourceObservationKind, extract_bundle},
     vault::{
@@ -452,6 +457,7 @@ struct RuntimeInner {
     local_inbox_access: Mutex<Option<AuthorizedRoot>>,
     local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
     local_inbox_last_scan: Mutex<Option<LocalInboxScanSummary>>,
+    local_inbox_scan_guard: Mutex<()>,
     local_inbox_watcher: Mutex<Option<notify::RecommendedWatcher>>,
     local_inbox_needs_attention: AtomicBool,
     local_inbox_needs_reauthorization: AtomicBool,
@@ -462,10 +468,31 @@ struct RuntimeInner {
     system_lock_generation: AtomicU64,
     system_session_active: AtomicBool,
     vault_session_generation: AtomicU64,
+    #[cfg(test)]
+    intake_test_hooks: Mutex<IntakeTestHooks>,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct IntakeTestHooks {
+    fail_next_plan: bool,
+    fail_next_persist: bool,
+    fail_next_finalization: bool,
+    fail_observation_filename: Option<String>,
+    local_inbox_scan_barrier: Option<Arc<std::sync::Barrier>>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy)]
+enum IntakeTestFault {
+    Plan,
+    Persist,
+    Finalization,
 }
 
 mod accounts;
 mod documents;
+mod documents_intake;
 mod error;
 mod gmail;
 mod gmail_connector;
@@ -474,7 +501,10 @@ mod gmail_tests;
 #[cfg(test)]
 mod hardening_tests;
 mod inbox;
+mod inbox_intake;
 mod inbox_watcher;
+#[cfg(test)]
+mod intake_tests;
 mod keyring;
 mod review;
 mod sidecar;
@@ -524,6 +554,88 @@ impl VaultRuntime {
             .store
             .lock()
             .map_err(|_| RuntimeError::new("runtime_unavailable"))
+    }
+
+    #[cfg(test)]
+    fn take_intake_test_fault(&self, fault: IntakeTestFault) -> bool {
+        let Ok(mut hooks) = self.inner.intake_test_hooks.lock() else {
+            return false;
+        };
+        match fault {
+            IntakeTestFault::Plan => std::mem::take(&mut hooks.fail_next_plan),
+            IntakeTestFault::Persist => std::mem::take(&mut hooks.fail_next_persist),
+            IntakeTestFault::Finalization => std::mem::take(&mut hooks.fail_next_finalization),
+        }
+    }
+
+    #[cfg(test)]
+    fn take_observation_test_fault(&self, path: &Path) -> bool {
+        let Some(filename) = path.file_name().and_then(|value| value.to_str()) else {
+            return false;
+        };
+        let Ok(mut hooks) = self.inner.intake_test_hooks.lock() else {
+            return false;
+        };
+        hooks
+            .fail_observation_filename
+            .as_deref()
+            .is_some_and(|expected| expected == filename)
+            && hooks.fail_observation_filename.take().is_some()
+    }
+
+    #[cfg(test)]
+    fn wait_for_local_inbox_scan_test_barrier(&self) {
+        let barrier = self
+            .inner
+            .intake_test_hooks
+            .lock()
+            .ok()
+            .and_then(|hooks| hooks.local_inbox_scan_barrier.clone());
+        if let Some(barrier) = barrier {
+            barrier.wait();
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn inject_intake_plan_failure(&self) {
+        if let Ok(mut hooks) = self.inner.intake_test_hooks.lock() {
+            hooks.fail_next_plan = true;
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn inject_intake_persist_failure(&self) {
+        if let Ok(mut hooks) = self.inner.intake_test_hooks.lock() {
+            hooks.fail_next_persist = true;
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn inject_intake_finalization_failure(&self) {
+        if let Ok(mut hooks) = self.inner.intake_test_hooks.lock() {
+            hooks.fail_next_finalization = true;
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn inject_observation_failure(&self, filename: &str) {
+        if let Ok(mut hooks) = self.inner.intake_test_hooks.lock() {
+            hooks.fail_observation_filename = Some(filename.to_owned());
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn inject_local_inbox_scan_barrier(&self, barrier: Arc<std::sync::Barrier>) {
+        if let Ok(mut hooks) = self.inner.intake_test_hooks.lock() {
+            hooks.local_inbox_scan_barrier = Some(barrier);
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn clear_local_inbox_scan_barrier(&self) {
+        if let Ok(mut hooks) = self.inner.intake_test_hooks.lock() {
+            hooks.local_inbox_scan_barrier = None;
+        }
     }
 
     pub(super) fn document_passwords(

@@ -52,6 +52,7 @@ impl VaultRuntime {
                 local_inbox_access: Mutex::new(None),
                 local_inbox_bookmarks,
                 local_inbox_last_scan: Mutex::new(None),
+                local_inbox_scan_guard: Mutex::new(()),
                 local_inbox_watcher: Mutex::new(None),
                 local_inbox_needs_attention: AtomicBool::new(false),
                 local_inbox_needs_reauthorization: AtomicBool::new(false),
@@ -62,6 +63,8 @@ impl VaultRuntime {
                 system_lock_generation: AtomicU64::new(0),
                 system_session_active: AtomicBool::new(true),
                 vault_session_generation: AtomicU64::new(0),
+                #[cfg(test)]
+                intake_test_hooks: Mutex::new(IntakeTestHooks::default()),
             }),
         }
     }
