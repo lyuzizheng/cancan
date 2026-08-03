@@ -131,15 +131,26 @@ pub(super) fn persist_import(
     input: &SourceDocumentImport<'_>,
     stored: &StoredFile,
     restore_deleted_document_id: Option<&str>,
+    intake_item_id: Option<&str>,
 ) -> rusqlite::Result<SourceDocumentImportOutcome> {
     let transaction = connection.transaction()?;
     let existing = find_exact_document(&transaction, &stored.file_sha256)?;
     match (existing.as_ref(), restore_deleted_document_id) {
         (Some(existing), None) if existing.file_state == "deleted" => {
-            return Ok(SourceDocumentImportOutcome {
+            let outcome = SourceDocumentImportOutcome {
                 document_id: existing.document_id.clone(),
                 status: SourceDocumentImportStatus::RestoreConfirmationRequired,
-            });
+            };
+            if let Some(item_id) = intake_item_id {
+                super::intake::finalize_document_intake_item(
+                    &transaction,
+                    item_id,
+                    &outcome.document_id,
+                    outcome.status,
+                )?;
+                transaction.commit()?;
+            }
+            return Ok(outcome);
         }
         (Some(existing), Some(expected_document_id))
             if existing.file_state == "deleted" && existing.document_id == expected_document_id => {
@@ -202,6 +213,9 @@ pub(super) fn persist_import(
         SourceDocumentImportStatus::Imported | SourceDocumentImportStatus::Restored
     ) {
         enqueue_parse_document(&transaction, &document_id, &new_database_id("parse-run"))?;
+    }
+    if let Some(item_id) = intake_item_id {
+        super::intake::finalize_document_intake_item(&transaction, item_id, &document_id, status)?;
     }
     transaction.commit()?;
     Ok(SourceDocumentImportOutcome {

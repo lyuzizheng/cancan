@@ -2,6 +2,21 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-08-03
+
+### Completed
+
+- Added the second bounded `phase1-intake-experience` checkpoint: host-owned v11 repository transactions atomically create and seal non-empty ordered intake batches, enforce one-way terminal receipts, recover interrupted items by acquisition channel, and correlate Local Inbox retries without resolving unrelated failures.
+- Added one transaction-scoped document intake path so new document/audit/parse-job authority and its captured receipt commit or roll back together. Exact duplicates link the existing document without a second document or job, and the real deleted-exact-match plan transactionally rechecks the tombstone and finalizes `restore_confirmation_required` before restart recovery can misclassify it.
+- Added checked Money Source candidate upsert, versioned `Keep unassigned` parking, and provider-singleton confirm/recheck/create/route/audit with stale-write rejection and idempotent retry. `provider_root_id` confirmation deliberately fails closed until exact provider-root identity can be persisted on or mapped authoritatively to a Money Source; provider-key-only reuse is forbidden.
+- Removed the premature batch-completion API after independent review proved that job status alone cannot establish authoritative ready/actionable truth. Focused repository tests, the complete Rust database suite, Clippy with warnings denied, and cumulative independent correctness/cleanup review pass.
+
+### Next
+
+- Wire explicit Add/Open With and stable non-empty Local Inbox eligible sets to the new batch admission and transaction-scoped capture APIs. Preserve one batch per enumerated input set rather than creating one batch per scanner callback.
+- Add host-derived ready/actionable completion and notification decisions only with the Tasks/pipeline projection that can prove authoritative downstream state. Resolve exact `provider_root_id` to Money Source persistence before enabling root-scoped source confirmation; do not fall back to `provider_key` matching.
+- The background runtime/Vault lifecycle, strict Touch ID, saved-password iteration, canonical-content duplicate layer, Shortcut artifact, reminders, opt-in notification delivery, and Kimi-led renderer/Tasks work remain pending.
+
 ## 2026-08-02
 
 ### Completed

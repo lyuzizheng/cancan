@@ -550,6 +550,7 @@ impl ManualImportStore {
             master_key,
         };
         store.reconcile_files()?;
+        store.recover_interrupted_intake_items()?;
         store.recover_expired_parse_document_jobs()?;
         store.recover_interrupted_parse_document_jobs()?;
         store.recover_interrupted_review_jobs()?;
@@ -657,6 +658,7 @@ impl ManualImportStore {
             input,
             stored,
             restore_deleted_document_id,
+            None,
         )?)
     }
 
@@ -3302,6 +3304,7 @@ mod gmail_tests;
 #[cfg(test)]
 mod hardening_tests;
 pub(crate) mod imports;
+mod intake;
 #[cfg(test)]
 mod intake_migration_tests;
 mod migrations;
