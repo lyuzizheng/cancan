@@ -216,6 +216,18 @@ fn extract_pdf_observations(
     )
 }
 
+/// Observation text is pinned to Unicode NFC at the extraction boundary.
+///
+/// PDFKit and Vision can return canonically equivalent strings in different
+/// normalization forms depending on the macOS release (for example a
+/// decomposed "e" + combining accent instead of a precomposed "é"), which
+/// would otherwise make byte-exact downstream matching depend on the host
+/// macOS version.
+#[cfg(target_os = "macos")]
+fn nfc_normalized_text(value: &objc2_foundation::NSString) -> String {
+    value.precomposedStringWithCanonicalMapping().to_string()
+}
+
 #[cfg(target_os = "macos")]
 fn extract_native_pdf_observations(
     plaintext: &[u8],
@@ -249,7 +261,7 @@ fn extract_native_pdf_observations(
         let page = unsafe { document.pageAtIndex(page_index) }
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "PDF page is unavailable"))?;
         let text = unsafe { page.string() }
-            .map(|value| value.to_string())
+            .map(|value| nfc_normalized_text(&value))
             .unwrap_or_default();
         let page = u32::try_from(page_index + 1)
             .map_err(|_| io::Error::other("PDF page index does not fit u32"))?;
@@ -480,7 +492,7 @@ impl PdfOcrEngine for VisionOcrEngine {
                 let candidate = observation.topCandidates(1).firstObject()?;
                 let bounding_box = unsafe { observation.as_super().as_super().boundingBox() };
                 Some(OcrTextBlock {
-                    text: candidate.string().to_string(),
+                    text: nfc_normalized_text(&candidate.string()),
                     confidence: f64::from(candidate.confidence()),
                     vision_bounding_box: BoundingBox {
                         x: bounding_box.origin.x,
@@ -851,6 +863,20 @@ mod tests {
         assert!(observations.iter().all(|observation| {
             observation.page.is_none() && observation.bounding_box.is_none()
         }));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn observation_text_is_nfc_normalized_across_macos_forms() {
+        use objc2_foundation::NSString;
+
+        // Decomposed form (NFD): "e" + combining acute accent, as returned
+        // by PDFKit/Vision on some macOS releases.
+        let decomposed = NSString::from_str("Cafe\u{0301}");
+        assert_eq!(nfc_normalized_text(&decomposed), "Caf\u{00e9}");
+        // Precomposed form (NFC) passes through unchanged.
+        let precomposed = NSString::from_str("Caf\u{00e9}");
+        assert_eq!(nfc_normalized_text(&precomposed), "Caf\u{00e9}");
     }
 
     #[cfg(target_os = "macos")]
