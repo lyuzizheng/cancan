@@ -113,12 +113,12 @@ impl VaultRuntime {
                 Err(RuntimeError::new("import_failed"))
             } else {
                 store
-                    .intake_source_capture_plan(&input, &source, &intake_item_id)
+                    .intake_source_capture_plan(&input, &source, &intake_item_id, false)
                     .map_err(|_| RuntimeError::new("import_failed"))
             }
             #[cfg(not(test))]
             store
-                .intake_source_capture_plan(&input, &source, &intake_item_id)
+                .intake_source_capture_plan(&input, &source, &intake_item_id, false)
                 .map_err(|_| RuntimeError::new("import_failed"))
         })();
         let plan = match plan_result {

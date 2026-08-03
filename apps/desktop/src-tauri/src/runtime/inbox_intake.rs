@@ -332,7 +332,7 @@ impl VaultRuntime {
             store
                 .as_mut()
                 .ok_or_else(|| RuntimeError::new("vault_locked"))?
-                .intake_source_capture_plan(&input, &source, intake_item_id)
+                .intake_source_capture_plan(&input, &source, intake_item_id, true)
                 .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?
         };
         let capture = match plan {
@@ -352,15 +352,7 @@ impl VaultRuntime {
                 .ok_or_else(|| RuntimeError::new("vault_locked"))?
                 .persist_captured_intake_import(&input, &stored, intake_item_id)
         };
-        match result {
-            Ok(outcome)
-                if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired =>
-            {
-                Ok(outcome)
-            }
-            Ok(outcome) => Ok(outcome),
-            Err(_) => Err(RuntimeError::new("local_inbox_import_failed")),
-        }
+        result.map_err(|_| RuntimeError::new("local_inbox_import_failed"))
     }
 }
 

@@ -196,6 +196,7 @@ impl ManualImportStore {
         input: &SourceDocumentImport<'_>,
         source: &PreparedSource,
         intake_item_id: &str,
+        automatic_discovery: bool,
     ) -> StoreResult<SourceCapturePlan> {
         validate_identifier(intake_item_id, "intake item id")?;
         let plan = self.source_capture_plan(input, source, None)?;
@@ -213,12 +214,30 @@ impl ManualImportStore {
             )
             .into());
         }
-        finalize_document_intake_item(
-            &transaction,
-            intake_item_id,
-            &outcome.document_id,
-            SourceDocumentImportStatus::RestoreConfirmationRequired,
-        )?;
+        if automatic_discovery {
+            let changed = transaction.execute(
+                "UPDATE intake_batch_items \
+                 SET capture_outcome = 'suppressed', rejection_kind = NULL, \
+                     rejection_code = 'tombstone_suppressed', rejection_parked_at = NULL, \
+                     finalized_at = CURRENT_TIMESTAMP \
+                 WHERE id = ?1 AND capture_outcome = 'pending' AND finalized_at IS NULL",
+                [intake_item_id],
+            )?;
+            if changed != 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "intake item is missing or already finalized",
+                )
+                .into());
+            }
+        } else {
+            finalize_document_intake_item(
+                &transaction,
+                intake_item_id,
+                &outcome.document_id,
+                SourceDocumentImportStatus::RestoreConfirmationRequired,
+            )?;
+        }
         transaction.commit()?;
         let mut plan = plan;
         if let SourceCapturePlan::RestoreConfirmationRequired(outcome) = &mut plan {
@@ -233,7 +252,8 @@ impl ManualImportStore {
             "UPDATE intake_batch_items \
              SET capture_outcome = 'rejected', \
                  rejection_kind = 'background_action_required', \
-                 rejection_code = 'handoff_interrupted', finalized_at = CURRENT_TIMESTAMP \
+                 rejection_code = 'handoff_interrupted', \
+                 rejection_parked_at = CURRENT_TIMESTAMP, finalized_at = CURRENT_TIMESTAMP \
              WHERE capture_outcome = 'pending' \
                AND intake_batch_id IN ( \
                  SELECT id FROM intake_batches WHERE acquisition_channel = 'explicit_handoff' \
@@ -290,7 +310,7 @@ pub(super) fn finalize_document_intake_item(
         params![outcome, document_id, item_id],
     )?;
     if changed != 1 {
-        return Err(rusqlite::Error::InvalidQuery);
+        return Err(rusqlite::Error::QueryReturnedNoRows);
     }
     Ok(())
 }
