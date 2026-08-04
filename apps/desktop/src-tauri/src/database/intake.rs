@@ -4,6 +4,8 @@ use super::*;
 
 mod candidates;
 #[cfg(test)]
+pub(crate) use candidates::*;
+#[cfg(test)]
 mod tests;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

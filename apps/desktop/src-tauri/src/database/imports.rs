@@ -222,7 +222,7 @@ pub(super) fn persist_import(
     Ok(SourceDocumentImportOutcome {
         document_id,
         status,
-        intake_item_id: None,
+        intake_item_id: intake_item_id.map(|id| id.to_owned()),
     })
 }
 

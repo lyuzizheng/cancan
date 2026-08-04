@@ -3301,6 +3301,7 @@ mod migrations;
 mod parse_jobs;
 pub(crate) mod restore_decisions;
 mod rows;
+pub(crate) mod tasks;
 #[cfg(test)]
 mod tests;
 mod validation;

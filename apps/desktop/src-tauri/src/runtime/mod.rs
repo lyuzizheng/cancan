@@ -72,6 +72,7 @@ const KEY_LEN: usize = 32;
 const KEY_FILE_NAME: &str = "vault-key.ccenv";
 const RECOVERY_STATUS_FILE_NAME: &str = "vault-recovery.status";
 const RECOVERY_STATUS_MAGIC: &[u8; 8] = b"CCRECST1";
+const RECOVERY_STATUS_V2_MAGIC: &[u8; 8] = b"CCRECST2";
 const KEYCHAIN_ACCOUNT: &str = "active-vault";
 const KEYCHAIN_ITEM_NOT_FOUND_STATUS: i32 = -25300;
 const KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.remembered-vault";
@@ -508,6 +509,9 @@ mod intake_tests;
 mod keyring;
 mod review;
 mod sidecar;
+mod tasks;
+#[cfg(test)]
+mod tasks_tests;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
@@ -522,6 +526,7 @@ pub(crate) use inbox::*;
 use keyring::*;
 pub(crate) use review::*;
 use sidecar::*;
+pub(crate) use tasks::*;
 pub(crate) use undo::*;
 pub(crate) use vault_lifecycle::*;
 

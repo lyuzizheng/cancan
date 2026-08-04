@@ -6,6 +6,12 @@ fn generated_presentation_types() -> String {
     let declarations = [
         crate::runtime::SourceDocumentStatus::decl(&config),
         crate::runtime::SourceDocumentSummary::decl(&config),
+        crate::runtime::TaskFilter::decl(&config),
+        crate::runtime::TaskGroup::decl(&config),
+        crate::runtime::TaskConsequence::decl(&config),
+        crate::runtime::TaskDestination::decl(&config),
+        crate::runtime::TaskRow::decl(&config),
+        crate::runtime::Tasks::decl(&config),
         crate::database::AccountConfirmationCandidate::decl(&config),
         crate::database::AccountConfirmationPrompt::decl(&config),
         crate::database::CandidateAccountDecision::decl(&config),

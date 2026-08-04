@@ -223,7 +223,9 @@ export type EnqueueCommitReviewBatchArgs = { reviewItemIds: string[] };
 export type GetReviewJobArgs = { jobId: string };
 
 export type UndoCommittedEventArgs = { eventId: string };
-import type { CandidateAccountDecisionInput } from "./generated/presentation-types";
+export type ListTasksArgs = { filter: TaskFilter };
+
+import type { CandidateAccountDecisionInput, TaskFilter } from "./generated/presentation-types";
 
 export type {
   AccountConfirmationCandidate,
@@ -234,4 +236,10 @@ export type {
   CandidateAccountDecisionInput,
   SourceDocumentStatus,
   SourceDocumentSummary,
+  TaskConsequence,
+  TaskDestination,
+  TaskFilter,
+  TaskGroup,
+  TaskRow,
+  Tasks,
 } from "./generated/presentation-types";
