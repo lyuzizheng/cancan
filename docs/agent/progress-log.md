@@ -2,6 +2,20 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-08-04
+
+### Completed
+
+- Wired explicit Add/Open With through one sealed intake batch and transaction-scoped capture receipt, including visible rejection, exact-duplicate, deleted-exact-match restore/leave-deleted, and retry outcomes.
+- Wired each stable non-empty Local Inbox eligible set through one sealed batch. Overlapping scans serialize, sibling failures do not stop later captures, matching entry retries supersede only their prior rejection, automatic tombstones remain suppressed, and restart recovery terminalizes pending channel work according to the existing receipt contract.
+- Kept whole-file storage outside the shared store mutex with transactional revalidation on persistence. The merged checkpoint passed focused intake coverage, full fast/native local verification, hosted fast/native checks on PR58, and independent review.
+
+### Next
+
+- Implement the presentation-safe host-derived Tasks read model and use the same authoritative projection to complete sealed batches and decide `suppressed` versus `pending` notification state. Do not add a task table, generic task mutation, renderer, or OS notification delivery in this checkpoint.
+- Freeze the generated Tasks presentation contract, then hand customer-facing Command Center/full Tasks/deep-link/park/reminder integration to Kimi Code CLI for desktop, narrow, accessibility, and reduced-motion review.
+- Before enabling root-scoped source confirmation, persist or authoritatively map exact `provider_root_id`; continue failing closed instead of matching only `provider_key`. Keep background lifecycle, strict Touch ID, saved-password iteration, canonical-content duplicate handling, Shortcut, and notification delivery in later bounded checkpoints.
+
 ## 2026-08-03
 
 ### Completed
@@ -13,9 +27,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Wire explicit Add/Open With and stable non-empty Local Inbox eligible sets to the new batch admission and transaction-scoped capture APIs. Preserve one batch per enumerated input set rather than creating one batch per scanner callback.
-- Add host-derived ready/actionable completion and notification decisions only with the Tasks/pipeline projection that can prove authoritative downstream state. Resolve exact `provider_root_id` to Money Source persistence before enabling root-scoped source confirmation; do not fall back to `provider_key` matching.
-- The background runtime/Vault lifecycle, strict Touch ID, saved-password iteration, canonical-content duplicate layer, Shortcut artifact, reminders, opt-in notification delivery, and Kimi-led renderer/Tasks work remain pending.
+- Superseded by the 2026-08-04 entry after the capture-path wiring merged.
 
 ## 2026-08-02
 

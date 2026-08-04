@@ -139,6 +139,8 @@ Recommended priority:
 
 `Tasks` is the one user-facing work projection. It replaces separate first-screen `To do`, `Latest intake`, `Needs attention`, Review-status, and Jobs cards. It does not create a generic task authority or copy domain state: evidence, source confirmation, Review, security/setup, backup, and job owners remain authoritative, while the host derives safe task presentation rows and deep links from them.
 
+The privileged host freezes one presentation-safe Tasks read contract before renderer integration. Each returned row contains only a deterministic opaque presentation key, group, human title and consequence, safe timestamp, destination kind, and the minimum opaque destination identity required by the owning route. The host, not the renderer, derives ordering, badges, readiness, parking, recent expiry, and batch completion. The contract returns no path, bookmark, locator, hash, raw provider identity, secret, financial payload copied from Review, or generic mutation token. User actions call the existing owner-specific command; there is no `complete_task`, `dismiss_task`, or `update_task` command.
+
 The section groups one list model by user consequence:
 
 ```text
@@ -156,7 +158,7 @@ Unresolved task behavior follows the owning domain:
 
 ```text
 protected document       Enter password / Leave parked
-unknown supported source Confirm source / Keep unassigned
+unknown supported source Create source and continue / Choose an existing source / View document / Keep unassigned
 deleted exact re-import  Restore source file / Leave deleted
 ordinary setup           complete now / Remind me later for seven calendar days
 financial Review         resolve in Review; no dismiss or fake completion
