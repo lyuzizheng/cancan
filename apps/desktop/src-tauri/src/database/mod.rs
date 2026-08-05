@@ -99,6 +99,11 @@ const MIGRATIONS: &[Migration] = &[
         ),
         foreign_keys_off: false,
     },
+    Migration {
+        version: 12,
+        sql: include_str!("../../../../../packages/db/migrations/0012_provider_root_identity.sql"),
+        foreign_keys_off: false,
+    },
 ];
 
 const REVIEW_POLICY_VERSION: &str = "review-ledger-v1";
