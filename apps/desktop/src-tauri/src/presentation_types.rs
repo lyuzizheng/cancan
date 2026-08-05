@@ -18,6 +18,12 @@ fn generated_presentation_types() -> String {
         crate::database::CandidateAccountDecisionInput::decl(&config),
         crate::database::AccountConfirmationStatus::decl(&config),
         crate::database::AccountConfirmationOutcome::decl(&config),
+        crate::database::intake::MoneySourceCandidateStatus::decl(&config),
+        crate::database::intake::SourceConfirmationScopeKind::decl(&config),
+        crate::database::intake::SourceConfirmationPromptStatus::decl(&config),
+        crate::database::intake::SourceConfirmationPrompt::decl(&config),
+        crate::database::intake::MoneySourceCandidateState::decl(&config),
+        crate::database::intake::ConfirmedMoneySourceCandidate::decl(&config),
     ]
     .map(|declaration| format!("export {declaration}"));
     format!(

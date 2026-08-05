@@ -6,6 +6,8 @@ import type {
   AccountConfirmationPrompt,
   AcceptReviewRelationshipArgs,
   CandidateAccountDecisionInput,
+  ConfirmSourceCandidateArgs,
+  ConfirmedMoneySourceCandidate,
   DecideCandidateAccountsArgs,
   EditReviewRecordArgs,
   EnqueueCommitReviewBatchArgs,
@@ -17,7 +19,9 @@ import type {
   LocalInboxScanSummary,
   LocalInboxStatus,
   MoneyOverview,
+  MoneySourceCandidateState,
   MoneySourceSummary,
+  ParkSourceCandidateArgs,
   ReparseSourceDocumentArgs,
   PreviewSourceDocumentArgs,
   RecentActivitySummary,
@@ -32,6 +36,7 @@ import type {
   RelationshipCandidateSummary,
   SavedStatementPasswordResult,
   SaveSourceDocumentCopyArgs,
+  SourceConfirmationPrompt,
   SourceDocumentImportOutcome,
   SourceDocumentPreview,
   SourceDocumentSummary,
@@ -73,6 +78,16 @@ export interface VaultApi {
     proposalVersion: string,
     decisions: CandidateAccountDecisionInput[],
   ): Promise<AccountConfirmationOutcome>;
+  confirmSourceCandidate(
+    candidateId: string,
+    expectedVersion: number,
+    displayName: string,
+    sourceType: string,
+  ): Promise<ConfirmedMoneySourceCandidate>;
+  parkSourceCandidate(
+    candidateId: string,
+    expectedVersion: number,
+  ): Promise<MoneySourceCandidateState>;
   createVault(password: string): Promise<VaultStatus>;
   chooseLocalInboxRoot(): Promise<LocalInboxStatus | null>;
   deleteSourceDocument(documentId: string): Promise<boolean>;
@@ -90,6 +105,7 @@ export interface VaultApi {
   importSourceDocument(): Promise<SourceDocumentImportOutcome | null>;
   listMoneySources(): Promise<MoneySourceSummary[]>;
   listAccountConfirmationPrompts(): Promise<AccountConfirmationPrompt[]>;
+  listSourceConfirmationPrompts(): Promise<SourceConfirmationPrompt[]>;
   listRecentActivity(): Promise<RecentActivitySummary[]>;
   listRelationshipCandidates(
     reviewItemId: string,
@@ -320,6 +336,31 @@ export function createVaultApi(
     listMoneySources: () => call<MoneySourceSummary[]>("list_money_sources"),
     listAccountConfirmationPrompts: () =>
       call<AccountConfirmationPrompt[]>("list_account_confirmation_prompts"),
+    listSourceConfirmationPrompts: () =>
+      call<SourceConfirmationPrompt[]>("list_source_confirmation_prompts"),
+    confirmSourceCandidate: (
+      candidateId,
+      expectedVersion,
+      displayName,
+      sourceType,
+    ) => {
+      const args: ConfirmSourceCandidateArgs = {
+        request: { candidateId, displayName, expectedVersion, sourceType },
+      };
+      return call<ConfirmedMoneySourceCandidate, ConfirmSourceCandidateArgs>(
+        "confirm_source_candidate",
+        args,
+      );
+    },
+    parkSourceCandidate: (candidateId, expectedVersion) => {
+      const args: ParkSourceCandidateArgs = {
+        request: { candidateId, expectedVersion },
+      };
+      return call<MoneySourceCandidateState, ParkSourceCandidateArgs>(
+        "park_source_candidate",
+        args,
+      );
+    },
     listSourceDocuments: (moneySourceId) => {
       const args: ListSourceDocumentsArgs = { moneySourceId };
       return call<SourceDocumentSummary[], ListSourceDocumentsArgs>(
@@ -424,6 +465,10 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t confirm those accounts. Try again.";
     case "invalid_account_confirmation_request":
       return "That account confirmation isn’t valid.";
+    case "source_confirmation_unavailable":
+      return "CanCan couldn’t update that money source confirmation. Try again.";
+    case "invalid_source_confirmation_request":
+      return "That money source confirmation isn’t valid.";
     case "list_tasks_failed":
       return "Couldn’t load your tasks. Try again.";
     case "clock_error":

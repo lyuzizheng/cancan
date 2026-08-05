@@ -27,3 +27,15 @@ export type CandidateAccountDecisionInput = { accountId: string, action: Candida
 export type AccountConfirmationStatus = "already_confirmed" | "confirmed" | "conflict" | "restored" | "updated";
 
 export type AccountConfirmationOutcome = { status: AccountConfirmationStatus, };
+
+export type MoneySourceCandidateStatus = "confirmed" | "kept_unassigned" | "pending";
+
+export type SourceConfirmationScopeKind = "provider_singleton" | "provider_root_id";
+
+export type SourceConfirmationPromptStatus = "pending" | "kept_unassigned";
+
+export type SourceConfirmationPrompt = { candidateId: string, documentCount: number, latestDocumentTitle: string | null, providerKey: string, scopeKind: SourceConfirmationScopeKind, scopeValue: string, status: SourceConfirmationPromptStatus, version: number, };
+
+export type MoneySourceCandidateState = { candidateId: string, confirmedMoneySourceId: string | null, status: MoneySourceCandidateStatus, version: number, };
+
+export type ConfirmedMoneySourceCandidate = { candidateId: string, moneySourceId: string, version: number, };

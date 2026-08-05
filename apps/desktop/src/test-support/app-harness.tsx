@@ -7,9 +7,11 @@ import { afterEach, beforeEach, expect, vi } from "vitest";
 import type {
   AccountConfirmationOutcome,
   AccountConfirmationPrompt,
+  ConfirmedMoneySourceCandidate,
   LocalInboxScanSummary,
   LocalInboxStatus,
   MoneyOverview,
+  MoneySourceCandidateState,
   MoneySourceSummary,
   RecentActivitySummary,
   RelationshipCandidateSummary,
@@ -168,6 +170,13 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     chooseLocalInboxRoot: vi.fn(
       async (): Promise<LocalInboxStatus | null> => null,
     ),
+    confirmSourceCandidate: vi.fn(
+      async (): Promise<ConfirmedMoneySourceCandidate> => ({
+        candidateId: "candidate-1",
+        moneySourceId: "source-1",
+        version: 3,
+      }),
+    ),
     createVault: vi.fn(async (): Promise<VaultStatus> => "unlocked"),
     deleteSourceDocument: vi.fn(async (): Promise<boolean> => true),
     decideCandidateAccounts: vi.fn(
@@ -204,6 +213,7 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
       async (): Promise<SourceDocumentImportOutcome | null> => null,
     ),
     listAccountConfirmationPrompts: vi.fn(async () => []),
+    listSourceConfirmationPrompts: vi.fn(async () => []),
     listMoneySources: vi.fn(async (): Promise<MoneySourceSummary[]> => []),
     listRecentActivity: vi.fn(async (): Promise<RecentActivitySummary[]> => []),
     listRelationshipCandidates: vi.fn(
@@ -218,6 +228,14 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     localInboxStatus: vi.fn(async (): Promise<LocalInboxStatus> => inboxDisabled),
     lockVault: vi.fn(async (): Promise<VaultStatus> => "locked"),
     onVaultLocked: vi.fn(async () => () => undefined),
+    parkSourceCandidate: vi.fn(
+      async (): Promise<MoneySourceCandidateState> => ({
+        candidateId: "candidate-1",
+        confirmedMoneySourceId: null,
+        status: "kept_unassigned",
+        version: 4,
+      }),
+    ),
     previewSourceDocument: vi.fn(
       async (): Promise<SourceDocumentPreview> => ({
         lineCount: 0,
