@@ -27,79 +27,6 @@ pub(crate) use accounts::{
 const KEY_LEN: usize = 32;
 pub(crate) const DATABASE_FILE_NAME: &str = "finance.sqlite";
 const DATABASE_KEY_CONTEXT: &[u8] = b"cancan:database:v1";
-struct Migration {
-    version: i64,
-    sql: &'static str,
-    foreign_keys_off: bool,
-}
-
-const MIGRATIONS: &[Migration] = &[
-    Migration {
-        version: 1,
-        sql: include_str!("../../../../../packages/db/migrations/0001_synthetic_core.sql"),
-        foreign_keys_off: false,
-    },
-    Migration {
-        version: 2,
-        sql: include_str!("../../../../../packages/db/migrations/0002_vault_manual_import.sql"),
-        foreign_keys_off: false,
-    },
-    Migration {
-        version: 3,
-        sql: include_str!(
-            "../../../../../packages/db/migrations/0003_source_document_pending_identity.sql"
-        ),
-        foreign_keys_off: true,
-    },
-    Migration {
-        version: 4,
-        sql: include_str!(
-            "../../../../../packages/db/migrations/0004_source_document_pending_source.sql"
-        ),
-        foreign_keys_off: true,
-    },
-    Migration {
-        version: 5,
-        sql: include_str!(
-            "../../../../../packages/db/migrations/0005_money_source_statement_password.sql"
-        ),
-        foreign_keys_off: false,
-    },
-    Migration {
-        version: 6,
-        sql: include_str!("../../../../../packages/db/migrations/0006_review_ledger.sql"),
-        foreign_keys_off: true,
-    },
-    Migration {
-        version: 7,
-        sql: include_str!("../../../../../packages/db/migrations/0007_local_inbox.sql"),
-        foreign_keys_off: false,
-    },
-    Migration {
-        version: 8,
-        sql: include_str!(
-            "../../../../../packages/db/migrations/0008_external_record_posting_status.sql"
-        ),
-        foreign_keys_off: false,
-    },
-    Migration {
-        version: 9,
-        sql: include_str!("../../../../../packages/db/migrations/0009_post_pr41_hardening.sql"),
-        foreign_keys_off: true,
-    },
-    Migration {
-        version: 10,
-        sql: include_str!("../../../../../packages/db/migrations/0010_gmail_accounts.sql"),
-        foreign_keys_off: false,
-    },
-    Migration {
-        version: 11,
-        sql: include_str!(
-            "../../../../../packages/db/migrations/0011_phase1_intake_foundation.sql"
-        ),
-        foreign_keys_off: false,
-    },
-];
 
 const REVIEW_POLICY_VERSION: &str = "review-ledger-v1";
 const ACCOUNT_CONFIRMATION_POLICY_VERSION: &str = "account-confirmation-v1";
@@ -1487,8 +1414,11 @@ impl ManualImportStore {
             );
         };
 
-        let mut source_statement = transaction
-            .prepare("SELECT id FROM money_sources WHERE provider_key = ?1 ORDER BY id LIMIT 2")?;
+        let mut source_statement = transaction.prepare(
+            "SELECT id FROM money_sources \
+                 WHERE provider_key = ?1 AND provider_root_id IS NULL \
+                 ORDER BY id LIMIT 2",
+        )?;
         let source_ids = source_statement
             .query_map([input.provider_key], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;

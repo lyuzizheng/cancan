@@ -60,14 +60,14 @@ fn upgrades_a_populated_v10_vault_through_the_production_registry() {
         )
         .expect("seed Gmail identity");
 
-    apply_migrations(&mut connection).expect("apply production v11 migration");
+    apply_migrations(&mut connection).expect("apply production v12 migration");
 
     let schema_version: i64 = connection
         .query_row("SELECT max(version) FROM schema_migrations", [], |row| {
             row.get(0)
         })
         .expect("read schema version");
-    assert_eq!(schema_version, 11);
+    assert_eq!(schema_version, 12);
     assert_eq!(
         connection
             .query_row(

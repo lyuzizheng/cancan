@@ -1,5 +1,84 @@
 use super::*;
 
+pub(super) struct Migration {
+    pub(super) version: i64,
+    pub(super) sql: &'static str,
+    pub(super) foreign_keys_off: bool,
+}
+
+pub(super) const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("../../../../../packages/db/migrations/0001_synthetic_core.sql"),
+        foreign_keys_off: false,
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("../../../../../packages/db/migrations/0002_vault_manual_import.sql"),
+        foreign_keys_off: false,
+    },
+    Migration {
+        version: 3,
+        sql: include_str!(
+            "../../../../../packages/db/migrations/0003_source_document_pending_identity.sql"
+        ),
+        foreign_keys_off: true,
+    },
+    Migration {
+        version: 4,
+        sql: include_str!(
+            "../../../../../packages/db/migrations/0004_source_document_pending_source.sql"
+        ),
+        foreign_keys_off: true,
+    },
+    Migration {
+        version: 5,
+        sql: include_str!(
+            "../../../../../packages/db/migrations/0005_money_source_statement_password.sql"
+        ),
+        foreign_keys_off: false,
+    },
+    Migration {
+        version: 6,
+        sql: include_str!("../../../../../packages/db/migrations/0006_review_ledger.sql"),
+        foreign_keys_off: true,
+    },
+    Migration {
+        version: 7,
+        sql: include_str!("../../../../../packages/db/migrations/0007_local_inbox.sql"),
+        foreign_keys_off: false,
+    },
+    Migration {
+        version: 8,
+        sql: include_str!(
+            "../../../../../packages/db/migrations/0008_external_record_posting_status.sql"
+        ),
+        foreign_keys_off: false,
+    },
+    Migration {
+        version: 9,
+        sql: include_str!("../../../../../packages/db/migrations/0009_post_pr41_hardening.sql"),
+        foreign_keys_off: true,
+    },
+    Migration {
+        version: 10,
+        sql: include_str!("../../../../../packages/db/migrations/0010_gmail_accounts.sql"),
+        foreign_keys_off: false,
+    },
+    Migration {
+        version: 11,
+        sql: include_str!(
+            "../../../../../packages/db/migrations/0011_phase1_intake_foundation.sql"
+        ),
+        foreign_keys_off: false,
+    },
+    Migration {
+        version: 12,
+        sql: include_str!("../../../../../packages/db/migrations/0012_provider_root_identity.sql"),
+        foreign_keys_off: false,
+    },
+];
+
 pub(super) fn open_encrypted_database(
     path: &Path,
     master_key: &[u8; KEY_LEN],
