@@ -307,7 +307,9 @@ impl ManualImportStore {
             }
             "provider_singleton" => {
                 let mut statement = transaction.prepare(
-                    "SELECT id FROM money_sources WHERE provider_key = ?1 ORDER BY id LIMIT 2",
+                    "SELECT id FROM money_sources \
+                     WHERE provider_key = ?1 AND provider_root_id IS NULL \
+                     ORDER BY id LIMIT 2",
                 )?;
                 let existing_sources = statement
                     .query_map([&provider_key], |row| row.get::<_, String>(0))?

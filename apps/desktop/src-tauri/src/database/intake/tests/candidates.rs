@@ -386,3 +386,54 @@ fn root_confirmation_never_reuses_singleton_source_and_keeps_roots_distinct() {
         3
     );
 }
+
+#[test]
+fn singleton_confirmation_does_not_reuse_root_scoped_source() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    for (id, hash) in [("document-singleton", 'b'), ("document-root", 'c')] {
+        insert_document(&store, id, hash);
+    }
+
+    // Seed a root-scoped source directly (as if a prior root confirmation created it).
+    store
+        .connection
+        .execute(
+            "INSERT INTO money_sources(id, provider_key, provider_root_id, display_name, source_type) VALUES ('source-root', 'bank', 'Root:A', 'Bank Root', 'bank')",
+            [],
+        )
+        .expect("seed root source");
+
+    // A singleton candidate for the same provider must NOT reuse the root-scoped source.
+    store
+        .attach_money_source_candidate(&MoneySourceCandidateInput {
+            candidate_id: "candidate-singleton",
+            document_id: "document-singleton",
+            provider_key: "bank",
+            scope: MoneySourceCandidateScope::ProviderSingleton,
+        })
+        .expect("attach singleton candidate");
+
+    let confirmed = store
+        .confirm_money_source_candidate(&ConfirmMoneySourceCandidateInput {
+            audit_id: "audit-singleton",
+            candidate_id: "candidate-singleton",
+            display_name: "Bank",
+            expected_version: 1,
+            proposed_money_source_id: "source-singleton",
+            source_type: "bank",
+        })
+        .expect("confirm singleton candidate");
+
+    assert_eq!(confirmed.money_source_id, "source-singleton");
+    assert_eq!(
+        store
+            .connection
+            .query_row("SELECT count(*) FROM money_sources", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count sources"),
+        2,
+        "singleton confirmation must create a new source, not reuse the root-scoped one"
+    );
+}

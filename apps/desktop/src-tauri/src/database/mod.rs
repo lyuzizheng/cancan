@@ -1493,7 +1493,11 @@ impl ManualImportStore {
         };
 
         let mut source_statement = transaction
-            .prepare("SELECT id FROM money_sources WHERE provider_key = ?1 ORDER BY id LIMIT 2")?;
+            .prepare(
+                "SELECT id FROM money_sources \
+                 WHERE provider_key = ?1 AND provider_root_id IS NULL \
+                 ORDER BY id LIMIT 2",
+            )?;
         let source_ids = source_statement
             .query_map([input.provider_key], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
