@@ -3302,6 +3302,9 @@ mod parse_jobs;
 pub(crate) mod restore_decisions;
 mod rows;
 pub(crate) mod tasks;
+pub(crate) mod tasks_reconcile;
+#[cfg(test)]
+mod tasks_test_support;
 #[cfg(test)]
 mod tests;
 mod validation;

@@ -364,18 +364,26 @@ fn wait_for_loopback_callback(
 ) -> Result<Zeroizing<String>, RuntimeError> {
     let deadline = StdInstant::now() + timeout;
     loop {
+        let remaining = deadline.saturating_duration_since(StdInstant::now());
+        if remaining.is_zero() {
+            return Err(RuntimeError::new("gmail_authorization_failed"));
+        }
         match listener.accept() {
             Ok((mut stream, peer)) if peer.ip().is_loopback() => {
                 let address = listener
                     .local_addr()
                     .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
-                return read_loopback_request(&mut stream, address);
+                // A foreign probe, scanner, or half-open connection on the loopback
+                // port must not kill the authorization flow: each connection gets
+                // its own bounded window, and malformed ones are discarded while we
+                // keep waiting for the real Google callback.
+                let per_connection = remaining.min(StdDuration::from_secs(2));
+                if let Ok(url) = read_loopback_request(&mut stream, address, per_connection) {
+                    return Ok(url);
+                }
             }
             Ok(_) => continue,
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                if StdInstant::now() >= deadline {
-                    return Err(RuntimeError::new("gmail_authorization_failed"));
-                }
                 thread::sleep(StdDuration::from_millis(10));
             }
             Err(_) => return Err(RuntimeError::new("gmail_authorization_failed")),
@@ -386,9 +394,10 @@ fn wait_for_loopback_callback(
 fn read_loopback_request(
     stream: &mut TcpStream,
     listener_address: SocketAddr,
+    read_timeout: StdDuration,
 ) -> Result<Zeroizing<String>, RuntimeError> {
     stream
-        .set_read_timeout(Some(StdDuration::from_secs(10)))
+        .set_read_timeout(Some(read_timeout))
         .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
     let mut request = Zeroizing::new(Vec::with_capacity(1024));
     let mut chunk = Zeroizing::new([0_u8; 512]);

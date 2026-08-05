@@ -511,6 +511,8 @@ mod review;
 mod sidecar;
 mod tasks;
 #[cfg(test)]
+mod tasks_test_support;
+#[cfg(test)]
 mod tasks_tests;
 #[cfg(test)]
 mod test_support;
