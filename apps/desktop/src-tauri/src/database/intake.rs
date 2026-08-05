@@ -4,7 +4,7 @@ use super::*;
 
 mod candidates;
 #[cfg(test)]
-pub(crate) use candidates::*;
+pub(crate) use candidates::{MoneySourceCandidateInput, MoneySourceCandidateScope};
 #[cfg(test)]
 mod tests;
 

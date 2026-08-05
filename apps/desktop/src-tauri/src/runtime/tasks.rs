@@ -45,6 +45,9 @@ pub(crate) enum TaskConsequence {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+// Tagged discriminated union: the renderer switches on `destination.kind` and
+// narrows per variant. `rename_all_fields = "camelCase"` camelCases each
+// variant's fields in the generated TypeScript contract.
 #[serde(
     tag = "kind",
     rename_all = "snake_case",
@@ -100,60 +103,85 @@ impl VaultRuntime {
         let store = store_guard
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        store.reconcile_sealed_batches(None).map_err(|error| {
-            eprintln!("reconcile error: {error:?}");
-            RuntimeError::new("list_tasks_failed")
-        })?;
+        store
+            .reconcile_sealed_batches()
+            .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
         let raw = store
-            .derive_task_rows(None, filter == TaskFilter::Full)
-            .map_err(|error| {
-                eprintln!("derive error: {error:?}");
-                RuntimeError::new("list_tasks_failed")
-            })?;
-        let mut rows: Vec<TaskRow> = raw.into_iter().map(raw_task_to_row).collect();
+            .derive_task_rows(filter == TaskFilter::Full)
+            .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
+        let rows: Vec<TaskRow> = raw.into_iter().map(raw_task_to_row).collect();
 
-        if !self.recovery_configured() {
-            let remind_after = self.recovery_reminder();
-            let (group, consequence, title, timestamp) = match remind_after {
-                Some(remind) => {
-                    let now = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map_err(|_| RuntimeError::new("clock_error"))?
-                        .as_secs();
-                    if remind > now {
-                        let timestamp = store
-                            .format_unix_timestamp(remind)
-                            .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
-                        (
-                            TaskGroup::Parked,
-                            TaskConsequence::SetupReminderPostponed,
-                            "Recovery setup reminder postponed".to_string(),
-                            timestamp,
-                        )
-                    } else {
-                        let timestamp = store
-                            .current_timestamp()
-                            .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
-                        (
-                            TaskGroup::NeedsAction,
-                            TaskConsequence::SaveRecoveryFile,
-                            "Set up recovery file".to_string(),
-                            timestamp,
-                        )
+        // A document can surface in more than one derivation (e.g. an active
+        // reparse alongside a failed reconcile, both keyed `task:document:{id}`).
+        // Keep one row per row_key, preferring the most urgent group and then the
+        // more recent timestamp, so the renderer never receives duplicate keys.
+        let mut best_by_row_key: Vec<(String, TaskRow)> = Vec::new();
+        for row in rows {
+            match best_by_row_key
+                .iter_mut()
+                .find(|(key, _)| *key == row.row_key)
+            {
+                Some((_, existing)) => {
+                    if task_row_urgency(&row) > task_row_urgency(existing)
+                        || (task_row_urgency(&row) == task_row_urgency(existing)
+                            && row.timestamp > existing.timestamp)
+                    {
+                        *existing = row;
                     }
                 }
-                None => {
+                None => best_by_row_key.push((row.row_key.clone(), row)),
+            }
+        }
+        let mut rows: Vec<TaskRow> = best_by_row_key.into_iter().map(|(_, row)| row).collect();
+
+        // Recovery setup row, keyed off the reminder:
+        //   - reminder in the future  -> postponed row (Parked), even if a
+        //     recovery file has already been saved
+        //   - reminder in the past    -> "set up recovery file" again
+        //   - no reminder, not configured -> "set up recovery file"
+        //   - no reminder, configured -> no row
+        let recovery_row = match self.recovery_reminder() {
+            Some(remind) => {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_err(|_| RuntimeError::new("clock_error"))?
+                    .as_secs();
+                if remind > now {
+                    let timestamp = store
+                        .format_unix_timestamp(remind)
+                        .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
+                    Some((
+                        TaskGroup::Parked,
+                        TaskConsequence::SetupReminderPostponed,
+                        "Recovery setup reminder postponed".to_string(),
+                        timestamp,
+                    ))
+                } else {
                     let timestamp = store
                         .current_timestamp()
                         .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
-                    (
+                    Some((
                         TaskGroup::NeedsAction,
                         TaskConsequence::SaveRecoveryFile,
                         "Set up recovery file".to_string(),
                         timestamp,
-                    )
+                    ))
                 }
-            };
+            }
+            None if !self.recovery_configured() => {
+                let timestamp = store
+                    .current_timestamp()
+                    .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
+                Some((
+                    TaskGroup::NeedsAction,
+                    TaskConsequence::SaveRecoveryFile,
+                    "Set up recovery file".to_string(),
+                    timestamp,
+                ))
+            }
+            None => None,
+        };
+        if let Some((group, consequence, title, timestamp)) = recovery_row {
             rows.push(TaskRow {
                 row_key: "task:setup".to_string(),
                 group,
@@ -202,6 +230,17 @@ impl VaultRuntime {
             needs_action_count,
             rows: display_rows,
         })
+    }
+}
+
+/// Lower value = more urgent. NeedsAction beats InProgress beats
+/// RecentlyCompleted beats Parked.
+fn task_row_urgency(row: &TaskRow) -> u8 {
+    match row.group {
+        TaskGroup::NeedsAction => 0,
+        TaskGroup::InProgress => 1,
+        TaskGroup::RecentlyCompleted => 2,
+        TaskGroup::Parked => 3,
     }
 }
 

@@ -140,7 +140,9 @@ pub(super) fn persist_import(
             let outcome = SourceDocumentImportOutcome {
                 document_id: existing.document_id.clone(),
                 status: SourceDocumentImportStatus::RestoreConfirmationRequired,
-                intake_item_id: None,
+                // Every other outcome echoes the intake item back so callers can
+                // correlate the receipt with the item; do the same here.
+                intake_item_id: intake_item_id.map(|id| id.to_owned()),
             };
             if let Some(item_id) = intake_item_id {
                 super::intake::finalize_document_intake_item(

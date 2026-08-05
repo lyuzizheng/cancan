@@ -424,6 +424,10 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t confirm those accounts. Try again.";
     case "invalid_account_confirmation_request":
       return "That account confirmation isn’t valid.";
+    case "list_tasks_failed":
+      return "Couldn’t load your tasks. Try again.";
+    case "clock_error":
+      return "Couldn’t read the system clock. Try again.";
     default:
       return "Couldn’t complete that request. Try again.";
   }

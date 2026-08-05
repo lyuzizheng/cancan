@@ -85,6 +85,8 @@ export type RestoreDismissedCandidateAccountArgs = { accountId: string };
 
 export type ListSourceDocumentsArgs = { moneySourceId: string };
 
+export type ListTasksArgs = { filter: TaskFilter };
+
 export interface StatementPasswordSourceSummary {
   displayName: string;
   hasSavedPassword: boolean;
@@ -223,7 +225,6 @@ export type EnqueueCommitReviewBatchArgs = { reviewItemIds: string[] };
 export type GetReviewJobArgs = { jobId: string };
 
 export type UndoCommittedEventArgs = { eventId: string };
-export type ListTasksArgs = { filter: TaskFilter };
 
 import type { CandidateAccountDecisionInput, TaskFilter } from "./generated/presentation-types";
 
