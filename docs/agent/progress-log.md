@@ -2,19 +2,6 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
-## 2026-08-05
-
-### Completed
-
-- Persisted the exact `provider_root_id` on `money_sources` (production migration `0012_provider_root_identity.sql`, schema v12): a nullable `provider_root_id TEXT` column bounded at 512 UTF-8 bytes by a CHECK, plus a partial unique index on `(provider_key, provider_root_id)` so one configured source exists per exact root identity per provider. Existing sources keep NULL and stay unaffected.
-- Enabled root-scoped source confirmation: `confirm_money_source_candidate` now branches on the candidate scope. `provider_root_id` matches only by exact `(provider_key, provider_root_id)` — it persists the opaque root value without normalization or case folding, creates the source when none matches, reuses the one matching source, fails closed on multiple matches, and never falls back to provider-key-only matching or reuses a singleton source whose `provider_root_id` is NULL. `provider_singleton` behavior is unchanged; unknown scopes still fail closed.
-- Replaced the fail-closed root-scope assertions with enabled-behavior regression coverage: exact persisted identity, idempotent retry, distinct roots under one provider, cross-scope isolation from singleton sources, partial unique-index enforcement, and candidate-identity uniqueness blocking twin candidates. Focused candidate tests, the full Rust database suite, and Clippy with warnings denied pass locally.
-
-### Next
-
-- Wire the renderer-visible source-confirmation flow to the scope-aware confirmation path; unknown scopes continue to fail closed.
-- Hand customer-facing Command Center/full Tasks/deep-link/park/reminder integration to Kimi Code CLI for desktop, narrow, accessibility, and reduced-motion review. Keep background lifecycle, strict Touch ID, saved-password iteration, canonical-content duplicate handling, Shortcut, and notification delivery in later bounded checkpoints.
-
 ## 2026-08-04
 
 ### Completed
@@ -27,7 +14,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 ### Next
 
 - Hand customer-facing Command Center/full Tasks/deep-link/park/reminder integration to Kimi Code CLI for desktop, narrow, accessibility, and reduced-motion review.
-- Superseded by the 2026-08-05 entry after exact `provider_root_id` persistence enabled root-scoped source confirmation.
+- Before enabling root-scoped source confirmation, persist or authoritatively map exact `provider_root_id`; continue failing closed instead of matching only `provider_key`. Keep background lifecycle, strict Touch ID, saved-password iteration, canonical-content duplicate handling, Shortcut, and notification delivery in later bounded checkpoints.
 
 ## 2026-08-03
 

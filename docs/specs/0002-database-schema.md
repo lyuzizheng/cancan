@@ -246,7 +246,7 @@ an access path beginning with match_edges.external_record_id for record -> event
 an access path beginning with match_edges.ledger_event_id for event -> source-record navigation
 ```
 
-The match-edge primary/unique key may satisfy one direction; do not create a redundant index for it. Account-provider identity receives a partial unique constraint only when a stable provider account ID is present on a non-merged account. `money_sources` receives a partial unique constraint on `(provider_key, provider_root_id)` only when the exact root identity is present, so one configured source exists per exact root identity per provider while singleton sources keep `provider_root_id` NULL. Status, date, list, and read-model indexes are added with the repository method that needs them and verified with its query plan or focused benchmark. Do not index optional values inside `raw_json` unless a later accepted feature introduces a real query for them.
+The match-edge primary/unique key may satisfy one direction; do not create a redundant index for it. Account-provider identity receives a partial unique constraint only when a stable provider account ID is present on a non-merged account. Status, date, list, and read-model indexes are added with the repository method that needs them and verified with its query plan or focused benchmark. Do not index optional values inside `raw_json` unless a later accepted feature introduces a real query for them.
 
 ## JSON field policy
 

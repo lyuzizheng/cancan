@@ -259,88 +259,44 @@ impl ManualImportStore {
             )
             .into());
         }
-        let (provider_key, scope_kind, scope_value): (String, String, String) = transaction
-            .query_row(
-                "SELECT provider_key, candidate_scope_kind, candidate_scope_value \
-                 FROM money_source_candidates WHERE id = ?1",
-                [input.candidate_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )?;
-        let money_source_id = match scope_kind.as_str() {
-            "provider_root_id" => {
-                let mut statement = transaction.prepare(
-                    "SELECT id FROM money_sources \
-                     WHERE provider_key = ?1 AND provider_root_id = ?2 \
-                     ORDER BY id LIMIT 2",
+        let (provider_key, scope_kind): (String, String) = transaction.query_row(
+            "SELECT provider_key, candidate_scope_kind \
+             FROM money_source_candidates WHERE id = ?1",
+            [input.candidate_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if scope_kind != "provider_singleton" {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "provider-root confirmation requires exact Money Source identity persistence",
+            )
+            .into());
+        }
+        let mut statement = transaction
+            .prepare("SELECT id FROM money_sources WHERE provider_key = ?1 ORDER BY id LIMIT 2")?;
+        let existing_sources = statement
+            .query_map([&provider_key], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+        let money_source_id = match existing_sources.as_slice() {
+            [] => {
+                transaction.execute(
+                    "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        input.proposed_money_source_id,
+                        &provider_key,
+                        input.display_name,
+                        input.source_type,
+                    ],
                 )?;
-                let existing_sources = statement
-                    .query_map(params![&provider_key, &scope_value], |row| {
-                        row.get::<_, String>(0)
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?;
-                drop(statement);
-                match existing_sources.as_slice() {
-                    [] => {
-                        transaction.execute(
-                            "INSERT INTO money_sources( \
-                               id, provider_key, provider_root_id, display_name, source_type \
-                             ) VALUES (?1, ?2, ?3, ?4, ?5)",
-                            params![
-                                input.proposed_money_source_id,
-                                &provider_key,
-                                &scope_value,
-                                input.display_name,
-                                input.source_type,
-                            ],
-                        )?;
-                        input.proposed_money_source_id.to_owned()
-                    }
-                    [money_source_id] => money_source_id.clone(),
-                    _ => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Money Source candidate matches multiple configured sources",
-                        )
-                        .into());
-                    }
-                }
+                input.proposed_money_source_id.to_owned()
             }
-            "provider_singleton" => {
-                let mut statement = transaction.prepare(
-                    "SELECT id FROM money_sources WHERE provider_key = ?1 ORDER BY id LIMIT 2",
-                )?;
-                let existing_sources = statement
-                    .query_map([&provider_key], |row| row.get::<_, String>(0))?
-                    .collect::<Result<Vec<_>, _>>()?;
-                drop(statement);
-                match existing_sources.as_slice() {
-                    [] => {
-                        transaction.execute(
-                            "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
-                             VALUES (?1, ?2, ?3, ?4)",
-                            params![
-                                input.proposed_money_source_id,
-                                &provider_key,
-                                input.display_name,
-                                input.source_type,
-                            ],
-                        )?;
-                        input.proposed_money_source_id.to_owned()
-                    }
-                    [money_source_id] => money_source_id.clone(),
-                    _ => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Money Source candidate matches multiple configured sources",
-                        )
-                        .into());
-                    }
-                }
-            }
+            [money_source_id] => money_source_id.clone(),
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "unknown Money Source candidate scope",
+                    "Money Source candidate matches multiple configured sources",
                 )
                 .into());
             }
