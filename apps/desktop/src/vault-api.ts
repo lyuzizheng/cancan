@@ -12,6 +12,8 @@ import type {
   GetReviewJobArgs,
   DeleteSourceDocumentArgs,
   ListSourceDocumentsArgs,
+  ListTasksArgs,
+  TaskFilter,
   LocalInboxScanSummary,
   LocalInboxStatus,
   MoneyOverview,
@@ -33,6 +35,7 @@ import type {
   SourceDocumentImportOutcome,
   SourceDocumentPreview,
   SourceDocumentSummary,
+  Tasks,
   DocumentStatementPasswordArgs,
   RestoreDismissedCandidateAccountArgs,
   StatementPasswordSourceSummary,
@@ -95,6 +98,7 @@ export interface VaultApi {
   listReviewItems(): Promise<ReviewItemSummary[]>;
   listSourceDocuments(moneySourceId: string): Promise<SourceDocumentSummary[]>;
   listStatementPasswordSources(): Promise<StatementPasswordSourceSummary[]>;
+  listTasks(filter: TaskFilter): Promise<Tasks>;
   listUnassignedSourceDocuments(): Promise<SourceDocumentSummary[]>;
   lockVault(): Promise<VaultStatus>;
   localInboxStatus(): Promise<LocalInboxStatus>;
@@ -257,6 +261,10 @@ export function createVaultApi(
     forgetVaultOnThisMac: () => call<void>("forget_vault_on_this_mac"),
     listStatementPasswordSources: () =>
       call<StatementPasswordSourceSummary[]>("list_statement_password_sources"),
+    listTasks: (filter: TaskFilter) => {
+      const args: ListTasksArgs = { filter };
+      return call<Tasks, ListTasksArgs>("list_tasks", args);
+    },
     trySavedStatementPassword: (documentId, moneySourceId) => {
       const args: TrySavedStatementPasswordArgs = {
         documentId,
@@ -416,6 +424,10 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t confirm those accounts. Try again.";
     case "invalid_account_confirmation_request":
       return "That account confirmation isn’t valid.";
+    case "list_tasks_failed":
+      return "Couldn’t load your tasks. Try again.";
+    case "clock_error":
+      return "Couldn’t read the system clock. Try again.";
     default:
       return "Couldn’t complete that request. Try again.";
   }

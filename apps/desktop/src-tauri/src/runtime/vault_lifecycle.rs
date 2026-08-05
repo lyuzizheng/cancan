@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RecoveryStatus {
+    Configured { remind_after: Option<u64> },
+    Postponed { remind_after: u64 },
+}
+
 impl VaultRuntime {
     pub(crate) fn new(root: PathBuf) -> Self {
         Self::with_secret_stores(
@@ -84,11 +90,69 @@ impl VaultRuntime {
     }
 
     pub(super) fn recovery_configured(&self) -> bool {
-        let Ok(status) = fs::read(self.inner.root.join(RECOVERY_STATUS_FILE_NAME)) else {
-            return false;
-        };
-        status.len() == RECOVERY_STATUS_MAGIC.len() + KEY_LEN
+        matches!(
+            self.read_recovery_status_file(),
+            Some(RecoveryStatus::Configured { .. })
+        )
+    }
+
+    pub(super) fn recovery_reminder(&self) -> Option<u64> {
+        match self.read_recovery_status_file()? {
+            RecoveryStatus::Configured { remind_after } => remind_after,
+            RecoveryStatus::Postponed { remind_after } => Some(remind_after),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn postpone_recovery_setup(&self) -> Result<(), RuntimeError> {
+        let status = self.read_recovery_status_file();
+        let mut fingerprint = [0_u8; KEY_LEN];
+        let include_fingerprint = matches!(status, Some(RecoveryStatus::Configured { .. }));
+        if include_fingerprint {
+            let existing = fs::read(self.inner.root.join(RECOVERY_STATUS_FILE_NAME))
+                .map_err(|_| RuntimeError::new("recovery_status_read_failed"))?;
+            fingerprint.copy_from_slice(
+                &existing[RECOVERY_STATUS_MAGIC.len()..RECOVERY_STATUS_MAGIC.len() + KEY_LEN],
+            );
+        }
+        let remind_after = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| RuntimeError::new("clock_error"))?
+            .as_secs()
+            .saturating_add(7 * 24 * 60 * 60);
+        let mut bytes = Vec::with_capacity(8 + KEY_LEN + 8);
+        bytes.extend_from_slice(RECOVERY_STATUS_V2_MAGIC);
+        if include_fingerprint {
+            bytes.extend_from_slice(&fingerprint);
+        }
+        bytes.extend_from_slice(&remind_after.to_le_bytes());
+        write_atomic(&self.inner.root.join(RECOVERY_STATUS_FILE_NAME), &bytes)
+            .map_err(|_| RuntimeError::new("recovery_status_write_failed"))
+    }
+
+    fn read_recovery_status_file(&self) -> Option<RecoveryStatus> {
+        let status = fs::read(self.inner.root.join(RECOVERY_STATUS_FILE_NAME)).ok()?;
+        if status.len() == RECOVERY_STATUS_MAGIC.len() + KEY_LEN
             && &status[..RECOVERY_STATUS_MAGIC.len()] == RECOVERY_STATUS_MAGIC
+        {
+            return Some(RecoveryStatus::Configured { remind_after: None });
+        }
+        if status.len() == RECOVERY_STATUS_V2_MAGIC.len() + KEY_LEN + 8
+            && &status[..RECOVERY_STATUS_V2_MAGIC.len()] == RECOVERY_STATUS_V2_MAGIC
+        {
+            let remind_after =
+                u64_from_le_bytes(&status[RECOVERY_STATUS_V2_MAGIC.len() + KEY_LEN..]);
+            return Some(RecoveryStatus::Configured {
+                remind_after: Some(remind_after),
+            });
+        }
+        if status.len() == RECOVERY_STATUS_V2_MAGIC.len() + 8
+            && &status[..RECOVERY_STATUS_V2_MAGIC.len()] == RECOVERY_STATUS_V2_MAGIC
+        {
+            let remind_after = u64_from_le_bytes(&status[RECOVERY_STATUS_V2_MAGIC.len()..]);
+            return Some(RecoveryStatus::Postponed { remind_after });
+        }
+        None
     }
 
     pub(crate) fn status(&self) -> Result<VaultStatus, RuntimeError> {
@@ -449,4 +513,8 @@ pub(crate) async fn save_recovery_file(
         Ok(true)
     })
     .await
+}
+
+fn u64_from_le_bytes(bytes: &[u8]) -> u64 {
+    u64::from_le_bytes(bytes.try_into().expect("fixed u64 length"))
 }

@@ -354,7 +354,7 @@ impl ManualImportStore {
     }
 }
 
-fn restore_decision_audit_id(receipt_id: &str, action: &str) -> String {
+pub(crate) fn restore_decision_audit_id(receipt_id: &str, action: &str) -> String {
     let mut digest = Sha256::new();
     digest.update(b"cancan:source-restore-decision:v1\0");
     digest.update(receipt_id.as_bytes());
