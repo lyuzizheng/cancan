@@ -506,6 +506,8 @@ mod inbox_watcher;
 #[cfg(test)]
 mod intake_tests;
 mod keyring;
+#[cfg(test)]
+mod keyring_tests;
 mod lifecycle;
 mod review;
 mod sidecar;
@@ -517,8 +519,6 @@ mod tasks_test_support;
 mod tasks_tests;
 #[cfg(test)]
 mod test_support;
-#[cfg(test)]
-mod keyring_tests;
 #[cfg(test)]
 mod tests;
 mod undo;

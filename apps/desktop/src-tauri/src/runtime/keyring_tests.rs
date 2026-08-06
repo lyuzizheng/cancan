@@ -13,8 +13,7 @@ fn keychain_store_round_trips_binary_secret() {
     }
 
     let service = format!("{KEYCHAIN_SERVICE}.test.{}", candidate_name());
-    let store =
-        KeychainRememberedKeyStore::new_without_biometry(service.clone(), KEYCHAIN_ACCOUNT);
+    let store = KeychainRememberedKeyStore::new_without_biometry(service.clone(), KEYCHAIN_ACCOUNT);
     store.delete().expect("remove pre-existing test entry");
     let _cleanup = Cleanup(store.clone());
     assert!(!store.is_present().expect("test entry starts absent"));
@@ -23,8 +22,7 @@ fn keychain_store_round_trips_binary_secret() {
     store.save(&secret).expect("save binary Keychain secret");
     assert!(store.is_present().expect("test entry is present"));
 
-    let restarted =
-        KeychainRememberedKeyStore::new_without_biometry(service, KEYCHAIN_ACCOUNT);
+    let restarted = KeychainRememberedKeyStore::new_without_biometry(service, KEYCHAIN_ACCOUNT);
     assert_eq!(
         restarted
             .load()
