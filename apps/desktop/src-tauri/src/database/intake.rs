@@ -3,15 +3,14 @@
 use super::*;
 
 mod candidates;
+#[allow(unused_imports)]
 pub(crate) use candidates::{
-    ConfirmMoneySourceCandidateInput, ConfirmedMoneySourceCandidate, MoneySourceCandidateState,
-    SourceConfirmationPrompt,
-};
-#[cfg(test)]
-pub(crate) use candidates::{
-    MoneySourceCandidateInput, MoneySourceCandidateScope, MoneySourceCandidateStatus,
+    ConfirmMoneySourceCandidateInput, ConfirmedMoneySourceCandidate, MoneySourceCandidateInput,
+    MoneySourceCandidateScope, MoneySourceCandidateState, SourceConfirmationPrompt,
     SourceConfirmationPromptStatus, SourceConfirmationScopeKind,
 };
+#[cfg(test)]
+pub(crate) use candidates::MoneySourceCandidateStatus;
 #[cfg(test)]
 mod tests;
 

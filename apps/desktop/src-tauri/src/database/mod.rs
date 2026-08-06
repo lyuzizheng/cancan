@@ -398,6 +398,7 @@ pub struct TrustedDocumentClassification<'a> {
     pub document_id: &'a str,
     pub document_type: Option<&'a str>,
     pub provider_key: &'a str,
+    pub provider_root_id: Option<&'a str>,
     pub semantic_document_key: &'a str,
     pub statement_period_from: Option<&'a str>,
     pub statement_period_to: Option<&'a str>,
@@ -1414,26 +1415,49 @@ impl ManualImportStore {
             );
         };
 
-        let mut source_statement = transaction.prepare(
-            "SELECT id FROM money_sources \
+        let source_ids = if let Some(provider_root_id) = input.provider_root_id {
+            let mut source_statement = transaction.prepare(
+                "SELECT id FROM money_sources \
+                 WHERE provider_key = ?1 AND provider_root_id = ?2 \
+                 ORDER BY id LIMIT 2",
+            )?;
+            source_statement
+                .query_map(params![input.provider_key, provider_root_id], |row| {
+                    row.get::<_, String>(0)
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            let mut source_statement = transaction.prepare(
+                "SELECT id FROM money_sources \
                  WHERE provider_key = ?1 AND provider_root_id IS NULL \
                  ORDER BY id LIMIT 2",
-        )?;
-        let source_ids = source_statement
-            .query_map([input.provider_key], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        drop(source_statement);
-        if source_ids.len() != 1 {
-            return Ok(needs_attention(
-                input.document_id,
-                if source_ids.is_empty() {
-                    "money_source_not_found"
-                } else {
-                    "money_source_ambiguous"
-                },
-            ));
-        }
-        let money_source_id = &source_ids[0];
+            )?;
+            source_statement
+                .query_map([input.provider_key], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let money_source_id = match source_ids.as_slice() {
+            [] => {
+                drop(transaction);
+                let candidate_id = new_database_id("source-candidate");
+                let scope = match input.provider_root_id {
+                    Some(root_id) => crate::database::intake::MoneySourceCandidateScope::ProviderRootId(root_id),
+                    None => crate::database::intake::MoneySourceCandidateScope::ProviderSingleton,
+                };
+                self.attach_money_source_candidate(&crate::database::intake::MoneySourceCandidateInput {
+                    candidate_id: &candidate_id,
+                    document_id: input.document_id,
+                    provider_key: input.provider_key,
+                    scope,
+                })?;
+                return Ok(needs_attention(
+                    input.document_id,
+                    "source_confirmation_required",
+                ));
+            }
+            [money_source_id] => money_source_id,
+            _ => return Ok(needs_attention(input.document_id, "money_source_ambiguous")),
+        };
         if assigned_source_id
             .as_deref()
             .is_some_and(|id| id != money_source_id)

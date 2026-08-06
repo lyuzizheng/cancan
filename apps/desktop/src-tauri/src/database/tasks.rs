@@ -147,22 +147,32 @@ impl ManualImportStore {
 
     fn derive_new_source_tasks(&self) -> StoreResult<Vec<RawTask>> {
         let mut statement = self.connection.prepare(
-            "SELECT c.id, MAX(sd.original_filename), c.updated_at \
+            "SELECT c.id, c.updated_at, \
+                 COALESCE( \
+                   (SELECT sd.original_filename FROM source_documents sd \
+                    WHERE sd.money_source_candidate_id = c.id \
+                      AND sd.money_source_id IS NULL \
+                    ORDER BY sd.received_at DESC, sd.id DESC LIMIT 1), \
+                   'Imported document' \
+                 ) \
              FROM money_source_candidates c \
-             JOIN source_documents sd ON sd.money_source_candidate_id = c.id \
              WHERE c.status = 'pending' \
-               AND sd.money_source_id IS NULL \
-               AND NOT ( \
-                 sd.attention_parked_reason = 'source_confirmation' \
-                 AND sd.attention_parked_at IS NOT NULL \
+               AND EXISTS ( \
+                 SELECT 1 FROM source_documents sd \
+                 WHERE sd.money_source_candidate_id = c.id \
+                   AND sd.money_source_id IS NULL \
+                   AND NOT ( \
+                     sd.attention_parked_reason = 'source_confirmation' \
+                     AND sd.attention_parked_at IS NOT NULL \
+                   ) \
                ) \
-             GROUP BY c.id, c.updated_at",
+             ORDER BY c.updated_at, c.id",
         )?;
         let rows = statement
             .query_map([], |row| {
                 Ok(RawTask {
-                    title: row.get(1)?,
-                    timestamp: row.get(2)?,
+                    title: row.get(2)?,
+                    timestamp: row.get(1)?,
                     kind: RawTaskKind::NewSource {
                         candidate_id: row.get(0)?,
                     },
@@ -532,7 +542,16 @@ impl ManualImportStore {
         let mut rows = Vec::new();
 
         let mut statement = self.connection.prepare(
-            "SELECT c.id, MAX(sd.original_filename), MAX(sd.attention_parked_at) \
+            "SELECT c.id, MAX(sd.attention_parked_at), \
+                 COALESCE( \
+                   (SELECT sd.original_filename FROM source_documents sd \
+                    WHERE sd.money_source_candidate_id = c.id \
+                      AND sd.money_source_id IS NULL \
+                      AND sd.attention_parked_reason = 'source_confirmation' \
+                      AND sd.attention_parked_at IS NOT NULL \
+                    ORDER BY sd.received_at DESC, sd.id DESC LIMIT 1), \
+                   'Imported document' \
+                 ) \
              FROM money_source_candidates c \
              JOIN source_documents sd ON sd.money_source_candidate_id = c.id \
              WHERE c.status = 'kept_unassigned' \
@@ -545,8 +564,8 @@ impl ManualImportStore {
             statement
                 .query_map([], |row| {
                     Ok(RawTask {
-                        title: row.get(1)?,
-                        timestamp: row.get(2)?,
+                        title: row.get(2)?,
+                        timestamp: row.get(1)?,
                         kind: RawTaskKind::SourceUnassigned {
                             candidate_id: row.get(0)?,
                         },

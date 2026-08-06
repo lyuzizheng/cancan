@@ -73,6 +73,7 @@ pub(super) fn classify_document(
         document_id,
         document_type: Some("statement"),
         provider_key: "dbs",
+        provider_root_id: None,
         semantic_document_key: "dbs-2026-08",
         statement_period_from: Some("2026-08-01"),
         statement_period_to: Some("2026-08-31"),

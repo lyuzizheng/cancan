@@ -224,6 +224,7 @@ struct NormalizerAccount {
 struct NormalizerDocument {
     document_type: String,
     provider_key: String,
+    provider_root_id: Option<String>,
     statement_id: Option<String>,
     statement_period: Option<NormalizerStatementPeriod>,
 }

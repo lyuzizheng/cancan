@@ -57,7 +57,6 @@ pub(crate) struct SourceConfirmationPrompt {
     pub(crate) latest_document_title: Option<String>,
     pub(crate) provider_key: String,
     pub(crate) scope_kind: SourceConfirmationScopeKind,
-    pub(crate) scope_value: String,
     pub(crate) status: SourceConfirmationPromptStatus,
     pub(crate) version: i64,
 }
@@ -426,6 +425,18 @@ impl ManualImportStore {
             )
             .into());
         }
+        let document_ids: Vec<String> = {
+            let mut statement = transaction.prepare(
+                "SELECT id FROM source_documents \
+                 WHERE money_source_candidate_id = ?1 AND money_source_id IS NULL \
+                 ORDER BY id",
+            )?;
+            let ids = statement
+                .query_map([input.candidate_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            drop(statement);
+            ids
+        };
         transaction.execute(
             "UPDATE source_documents \
              SET money_source_id = ?1, money_source_candidate_id = NULL, \
@@ -433,6 +444,24 @@ impl ManualImportStore {
              WHERE money_source_candidate_id = ?2 AND money_source_id IS NULL",
             params![money_source_id, input.candidate_id],
         )?;
+        for document_id in &document_ids {
+            let active: bool = transaction.query_row(
+                "SELECT EXISTS( \
+                   SELECT 1 FROM jobs \
+                   WHERE related_source_document_id = ?1 AND job_type = ?2 \
+                     AND status IN ('queued', 'running') \
+                 )",
+                params![document_id, crate::database::PARSE_DOCUMENT_JOB_TYPE],
+                |row| row.get(0),
+            )?;
+            if !active {
+                crate::database::enqueue_parse_document(
+                    &transaction,
+                    document_id,
+                    &new_database_id("parse-run"),
+                )?;
+            }
+        }
         transaction.execute(
             "INSERT INTO audit_log( \
                id, entity_type, entity_id, action, actor, reason, source_ref, policy_version \
@@ -458,7 +487,17 @@ impl ManualImportStore {
         &self,
     ) -> StoreResult<Vec<SourceConfirmationPrompt>> {
         let mut statement = self.connection.prepare(
-            "SELECT c.id, c.provider_key, c.candidate_scope_kind, c.candidate_scope_value, \\\n                    c.status, c.version, \\\n                    (SELECT COUNT(*) FROM source_documents sd \\\n                     WHERE sd.money_source_candidate_id = c.id \\\n                       AND sd.money_source_id IS NULL), \\\n                    (SELECT MAX(sd.original_filename) FROM source_documents sd \\\n                     WHERE sd.money_source_candidate_id = c.id \\\n                       AND sd.money_source_id IS NULL) \\\n             FROM money_source_candidates c \\\n             WHERE c.status IN ('pending', 'kept_unassigned') \\\n             ORDER BY c.updated_at, c.id",
+            "SELECT c.id, c.provider_key, c.candidate_scope_kind, c.status, c.version, \
+                    (SELECT COUNT(*) FROM source_documents sd \
+                     WHERE sd.money_source_candidate_id = c.id \
+                       AND sd.money_source_id IS NULL), \
+                    (SELECT sd.original_filename FROM source_documents sd \
+                     WHERE sd.money_source_candidate_id = c.id \
+                       AND sd.money_source_id IS NULL \
+                     ORDER BY sd.received_at DESC, sd.id DESC LIMIT 1) \
+             FROM money_source_candidates c \
+             WHERE c.status IN ('pending', 'kept_unassigned') \
+             ORDER BY c.updated_at, c.id",
         )?;
         let rows = statement
             .query_map([], |row| {
@@ -469,14 +508,13 @@ impl ManualImportStore {
                         &row.get::<_, String>(2)?,
                     )
                     .map_err(rusqlite::Error::ToSqlConversionFailure)?,
-                    scope_value: row.get(3)?,
                     status: SourceConfirmationPromptStatus::from_database(
-                        &row.get::<_, String>(4)?,
+                        &row.get::<_, String>(3)?,
                     )
                     .map_err(rusqlite::Error::ToSqlConversionFailure)?,
-                    version: row.get(5)?,
-                    document_count: row.get(6)?,
-                    latest_document_title: row.get(7)?,
+                    version: row.get(4)?,
+                    document_count: row.get(5)?,
+                    latest_document_title: row.get(6)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

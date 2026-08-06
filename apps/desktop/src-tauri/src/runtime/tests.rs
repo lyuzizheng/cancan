@@ -2856,6 +2856,7 @@ fn synthetic_normalizer_result() -> NormalizerResult {
             document: NormalizerDocument {
                 document_type: "transfer_export".to_owned(),
                 provider_key: "synthetic-bank".to_owned(),
+                provider_root_id: None,
                 statement_id: Some("transfer-2026-07".to_owned()),
                 statement_period: Some(NormalizerStatementPeriod {
                     from: Some("2026-07-01".to_owned()),
@@ -2992,6 +2993,7 @@ fn dbs_bank_normalizer_result() -> NormalizerResult {
             document: NormalizerDocument {
                 document_type: "bank_statement".to_owned(),
                 provider_key: "dbs".to_owned(),
+                provider_root_id: None,
                 statement_id: Some("dbs-bank_statement-2026-07".to_owned()),
                 statement_period: Some(NormalizerStatementPeriod {
                     from: Some("2026-07-01".to_owned()),
@@ -3054,6 +3056,7 @@ fn hsbc_bank_repayment_normalizer_result() -> NormalizerResult {
             document: NormalizerDocument {
                 document_type: "bank_statement".to_owned(),
                 provider_key: "hsbc".to_owned(),
+                provider_root_id: None,
                 statement_id: Some("hsbc-bank_statement-2026-06".to_owned()),
                 statement_period: Some(NormalizerStatementPeriod {
                     from: Some("2026-06-29".to_owned()),
@@ -3116,6 +3119,7 @@ fn dbs_card_repayment_normalizer_result() -> NormalizerResult {
             document: NormalizerDocument {
                 document_type: "credit_card_statement".to_owned(),
                 provider_key: "dbs".to_owned(),
+                provider_root_id: None,
                 statement_id: Some("dbs-credit_card_statement-2026-07".to_owned()),
                 statement_period: Some(NormalizerStatementPeriod {
                     from: Some("2026-07-01".to_owned()),
@@ -3558,7 +3562,6 @@ fn synthetic_pdf_with_stream(text: &str) -> Vec<u8> {
     .expect("write trailer");
     pdf
 }
-
 fn vault_entries(root: &Path) -> Vec<PathBuf> {
     fn visit(root: &Path, path: &Path, entries: &mut Vec<PathBuf>) {
         for entry in fs::read_dir(path).expect("read Vault directory") {
