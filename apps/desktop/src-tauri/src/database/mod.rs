@@ -1441,15 +1441,19 @@ impl ManualImportStore {
                 drop(transaction);
                 let candidate_id = new_database_id("source-candidate");
                 let scope = match input.provider_root_id {
-                    Some(root_id) => crate::database::intake::MoneySourceCandidateScope::ProviderRootId(root_id),
+                    Some(root_id) => {
+                        crate::database::intake::MoneySourceCandidateScope::ProviderRootId(root_id)
+                    }
                     None => crate::database::intake::MoneySourceCandidateScope::ProviderSingleton,
                 };
-                self.attach_money_source_candidate(&crate::database::intake::MoneySourceCandidateInput {
-                    candidate_id: &candidate_id,
-                    document_id: input.document_id,
-                    provider_key: input.provider_key,
-                    scope,
-                })?;
+                self.attach_money_source_candidate(
+                    &crate::database::intake::MoneySourceCandidateInput {
+                        candidate_id: &candidate_id,
+                        document_id: input.document_id,
+                        provider_key: input.provider_key,
+                        scope,
+                    },
+                )?;
                 return Ok(needs_attention(
                     input.document_id,
                     "source_confirmation_required",
