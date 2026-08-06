@@ -518,6 +518,8 @@ mod tasks_tests;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
+mod keyring_tests;
+#[cfg(test)]
 mod tests;
 mod undo;
 mod vault_lifecycle;
