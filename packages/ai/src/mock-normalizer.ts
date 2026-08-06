@@ -93,6 +93,9 @@ function profileEngines(extractionBundle: ExtractionBundle): {
       ocrEngines.set(`${engine.engine}\u0000${engine.version}`, engine);
       continue;
     }
+    if (observation.kind !== "native_text" && observation.kind !== "table_cell") {
+      continue;
+    }
     const engine = {
       kind: observation.kind,
       engine: observation.engine,

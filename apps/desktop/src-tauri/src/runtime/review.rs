@@ -357,11 +357,19 @@ impl VaultRuntime {
                 ),
             );
         }
-        let semantic_document_key = format!(
-            "{}:{}",
-            proposal.document.provider_key.as_str(),
-            statement_id
-        );
+        let semantic_document_key = match proposal.document.provider_root_id.as_deref() {
+            Some(root_id) => format!(
+                "{}:{}:{}",
+                proposal.document.provider_key.as_str(),
+                root_id,
+                statement_id
+            ),
+            None => format!(
+                "{}:{}",
+                proposal.document.provider_key.as_str(),
+                statement_id
+            ),
+        };
         let account_ids = (0..proposal.accounts.len())
             .map(|_| random_identifier("account"))
             .collect::<Vec<_>>();
@@ -385,6 +393,7 @@ impl VaultRuntime {
             document_id,
             document_type: Some(&proposal.document.document_type),
             provider_key: &proposal.document.provider_key,
+            provider_root_id: proposal.document.provider_root_id.as_deref(),
             semantic_document_key: &semantic_document_key,
             statement_period_from: proposal
                 .document

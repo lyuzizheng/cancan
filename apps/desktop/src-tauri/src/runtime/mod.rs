@@ -224,6 +224,7 @@ struct NormalizerAccount {
 struct NormalizerDocument {
     document_type: String,
     provider_key: String,
+    provider_root_id: Option<String>,
     statement_id: Option<String>,
     statement_period: Option<NormalizerStatementPeriod>,
 }
@@ -509,6 +510,7 @@ mod intake_tests;
 mod keyring;
 mod review;
 mod sidecar;
+mod source_confirmation;
 mod tasks;
 #[cfg(test)]
 mod tasks_test_support;
@@ -528,6 +530,7 @@ pub(crate) use inbox::*;
 use keyring::*;
 pub(crate) use review::*;
 use sidecar::*;
+pub(crate) use source_confirmation::*;
 pub(crate) use tasks::*;
 pub(crate) use undo::*;
 pub(crate) use vault_lifecycle::*;

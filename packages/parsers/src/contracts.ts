@@ -7,7 +7,7 @@ export interface ExactMoneyInput {
 
 export interface SourceObservation {
   id: string;
-  kind: "native_text" | "ocr_text" | "table_cell";
+  kind: "native_text" | "ocr_text" | "table_cell" | "document_region" | "message_field";
   page?: number;
   row?: number;
   column?: number;

@@ -30,6 +30,7 @@ describe("Vault API", () => {
     const listCommands = new Set([
       "list_money_sources",
       "list_account_confirmation_prompts",
+      "list_source_confirmation_prompts",
       "list_recent_activity",
       "list_relationship_candidates",
       "list_review_items",
@@ -93,6 +94,14 @@ describe("Vault API", () => {
       { accountId: "account-2", action: "dismiss" },
     ]);
     await api.restoreDismissedCandidateAccount("account-2");
+    await api.listSourceConfirmationPrompts();
+    await api.confirmSourceCandidate(
+      "candidate-1",
+      2,
+      "DBS Bank",
+      "bank_account",
+    );
+    await api.parkSourceCandidate("candidate-1", 3);
     await api.listSourceDocuments("source-dbs");
     await api.listUnassignedSourceDocuments();
     const removeVaultLockListener = await api.onVaultLocked(() => undefined);
@@ -184,6 +193,22 @@ describe("Vault API", () => {
         },
       ],
       ["restore_dismissed_candidate_account", { accountId: "account-2" }],
+      ["list_source_confirmation_prompts", undefined],
+      [
+        "confirm_source_candidate",
+        {
+          request: {
+            candidateId: "candidate-1",
+            displayName: "DBS Bank",
+            expectedVersion: 2,
+            sourceType: "bank_account",
+          },
+        },
+      ],
+      [
+        "park_source_candidate",
+        { request: { candidateId: "candidate-1", expectedVersion: 3 } },
+      ],
       ["list_source_documents", { moneySourceId: "source-dbs" }],
       ["list_unassigned_source_documents", undefined],
       ["reparse_source_document", { documentId: "document-1" }],
@@ -247,5 +272,11 @@ describe("Vault API", () => {
     expect(commandErrorMessage("private backend detail")).toBe(
       "Couldn’t complete that request. Try again.",
     );
+    expect(commandErrorMessage({ code: "source_confirmation_unavailable" })).toBe(
+      "CanCan couldn’t update that money source confirmation. Try again.",
+    );
+    expect(
+      commandErrorMessage({ code: "invalid_source_confirmation_request" }),
+    ).toBe("That money source confirmation isn’t valid.");
   });
 });

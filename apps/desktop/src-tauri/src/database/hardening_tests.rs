@@ -320,6 +320,7 @@ fn stale_parse_claim_cannot_change_a_newer_attempt() {
         document_id: "document-stale",
         document_type: Some("account_statement"),
         provider_key: "dbs",
+        provider_root_id: None,
         semantic_document_key: "dbs:checking:2026-07",
         statement_period_from: Some("2026-07-01"),
         statement_period_to: Some("2026-07-31"),

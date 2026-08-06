@@ -437,3 +437,98 @@ fn singleton_confirmation_does_not_reuse_root_scoped_source() {
         "singleton confirmation must create a new source, not reuse the root-scoped one"
     );
 }
+
+#[test]
+fn source_confirmation_prompts_and_confirm_requeue_parse_job() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    store
+        .connection
+        .execute(
+            "INSERT INTO source_documents( \
+               id, file_sha256, original_filename, mime_type, byte_size, file_state, received_at \
+             ) VALUES ('doc-1', '1', 'Older statement.pdf', 'application/pdf', 1, 'missing', '2026-08-06T00:00:00Z')",
+            params![],
+        )
+        .expect("insert older source document");
+    store
+        .connection
+        .execute(
+            "INSERT INTO source_documents( \
+               id, file_sha256, original_filename, mime_type, byte_size, file_state, received_at \
+             ) VALUES ('doc-2', '2', 'Latest statement.pdf', 'application/pdf', 1, 'missing', '2026-08-06T00:00:01Z')",
+            params![],
+        )
+        .expect("insert latest source document");
+
+    let accounts = [TrustedAccountCandidate {
+        account_id: "account-candidate",
+        account_type: "deposit_account",
+        currency: Some("SGD"),
+        display_name: "Synthetic checking",
+        masked_identifier: Some("••001"),
+        provider_account_id: Some("checking-001"),
+    }];
+    let outcome = store
+        .apply_trusted_classification(&TrustedDocumentClassification {
+            accounts: &accounts,
+            audit_id: "audit-classify",
+            document_id: "doc-2",
+            document_type: Some("account_statement"),
+            provider_key: "dbs",
+            provider_root_id: None,
+            semantic_document_key: "dbs:checking:2026-07",
+            statement_period_from: Some("2026-07-01"),
+            statement_period_to: Some("2026-07-31"),
+        })
+        .expect("apply trusted classification when source is missing");
+    assert_eq!(outcome.status, SourceDocumentRoutingStatus::NeedsAttention);
+    assert_eq!(outcome.reason, Some("source_confirmation_required"));
+
+    let prompts = store
+        .list_source_confirmation_prompts()
+        .expect("list source confirmation prompts");
+    assert_eq!(prompts.len(), 1);
+    let prompt = &prompts[0];
+    assert_eq!(prompt.provider_key, "dbs");
+    assert_eq!(prompt.document_count, 1);
+    assert_eq!(
+        prompt.latest_document_title.as_deref(),
+        Some("Latest statement.pdf")
+    );
+    assert!(matches!(
+        prompt.scope_kind,
+        SourceConfirmationScopeKind::ProviderSingleton
+    ));
+    assert_eq!(prompt.status, SourceConfirmationPromptStatus::Pending);
+
+    let confirmed = store
+        .confirm_money_source_candidate(&ConfirmMoneySourceCandidateInput {
+            audit_id: "audit-confirm",
+            candidate_id: &prompt.candidate_id,
+            display_name: "DBS",
+            expected_version: prompt.version,
+            proposed_money_source_id: "source-dbs",
+            source_type: "bank",
+        })
+        .expect("confirm source candidate");
+    assert_eq!(confirmed.money_source_id, "source-dbs");
+
+    let prompts_after = store
+        .list_source_confirmation_prompts()
+        .expect("list source confirmation prompts after confirm");
+    assert!(prompts_after.is_empty());
+
+    let job_count: i64 = store
+        .connection
+        .query_row(
+            "SELECT count(*) FROM jobs \
+             WHERE related_source_document_id = 'doc-2' \
+               AND job_type = 'parse_document' \
+               AND status = 'queued'",
+            params![],
+            |row| row.get(0),
+        )
+        .expect("count parse jobs");
+    assert_eq!(job_count, 1);
+}

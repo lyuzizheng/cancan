@@ -1,7 +1,65 @@
 use super::*;
+use serde::Serialize;
 
 const MONEY_SOURCE_CANDIDATE_KEY_VERSION: i64 = 1;
 const SOURCE_CONFIRMATION_POLICY_VERSION: &str = "source-confirmation-v1";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) enum SourceConfirmationScopeKind {
+    ProviderSingleton,
+    ProviderRootId,
+}
+
+impl SourceConfirmationScopeKind {
+    fn from_database(value: &str) -> StoreResult<Self> {
+        match value {
+            "provider_singleton" => Ok(Self::ProviderSingleton),
+            "provider_root_id" => Ok(Self::ProviderRootId),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid Money Source candidate scope",
+            )
+            .into()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) enum SourceConfirmationPromptStatus {
+    Pending,
+    KeptUnassigned,
+}
+
+impl SourceConfirmationPromptStatus {
+    fn from_database(value: &str) -> StoreResult<Self> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "kept_unassigned" => Ok(Self::KeptUnassigned),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid Money Source candidate status",
+            )
+            .into()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct SourceConfirmationPrompt {
+    pub(crate) candidate_id: String,
+    pub(crate) document_count: i64,
+    pub(crate) latest_document_title: Option<String>,
+    pub(crate) provider_key: String,
+    pub(crate) scope_kind: SourceConfirmationScopeKind,
+    pub(crate) status: SourceConfirmationPromptStatus,
+    pub(crate) version: i64,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MoneySourceCandidateScope<'a> {
@@ -25,7 +83,9 @@ pub(crate) struct MoneySourceCandidateInput<'a> {
     pub(crate) scope: MoneySourceCandidateScope<'a>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum MoneySourceCandidateStatus {
     Confirmed,
     KeptUnassigned,
@@ -47,7 +107,9 @@ impl MoneySourceCandidateStatus {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct MoneySourceCandidateState {
     pub(crate) candidate_id: String,
     pub(crate) confirmed_money_source_id: Option<String>,
@@ -55,7 +117,9 @@ pub(crate) struct MoneySourceCandidateState {
     pub(crate) version: i64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ConfirmedMoneySourceCandidate {
     pub(crate) candidate_id: String,
     pub(crate) money_source_id: String,
@@ -361,6 +425,18 @@ impl ManualImportStore {
             )
             .into());
         }
+        let document_ids: Vec<String> = {
+            let mut statement = transaction.prepare(
+                "SELECT id FROM source_documents \
+                 WHERE money_source_candidate_id = ?1 AND money_source_id IS NULL \
+                 ORDER BY id",
+            )?;
+            let ids = statement
+                .query_map([input.candidate_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            drop(statement);
+            ids
+        };
         transaction.execute(
             "UPDATE source_documents \
              SET money_source_id = ?1, money_source_candidate_id = NULL, \
@@ -368,6 +444,24 @@ impl ManualImportStore {
              WHERE money_source_candidate_id = ?2 AND money_source_id IS NULL",
             params![money_source_id, input.candidate_id],
         )?;
+        for document_id in &document_ids {
+            let active: bool = transaction.query_row(
+                "SELECT EXISTS( \
+                   SELECT 1 FROM jobs \
+                   WHERE related_source_document_id = ?1 AND job_type = ?2 \
+                     AND status IN ('queued', 'running') \
+                 )",
+                params![document_id, crate::database::PARSE_DOCUMENT_JOB_TYPE],
+                |row| row.get(0),
+            )?;
+            if !active {
+                crate::database::enqueue_parse_document(
+                    &transaction,
+                    document_id,
+                    &new_database_id("parse-run"),
+                )?;
+            }
+        }
         transaction.execute(
             "INSERT INTO audit_log( \
                id, entity_type, entity_id, action, actor, reason, source_ref, policy_version \
@@ -387,6 +481,44 @@ impl ManualImportStore {
             money_source_id,
             version: input.expected_version + 1,
         })
+    }
+
+    pub(crate) fn list_source_confirmation_prompts(
+        &self,
+    ) -> StoreResult<Vec<SourceConfirmationPrompt>> {
+        let mut statement = self.connection.prepare(
+            "SELECT c.id, c.provider_key, c.candidate_scope_kind, c.status, c.version, \
+                    (SELECT COUNT(*) FROM source_documents sd \
+                     WHERE sd.money_source_candidate_id = c.id \
+                       AND sd.money_source_id IS NULL), \
+                    (SELECT sd.original_filename FROM source_documents sd \
+                     WHERE sd.money_source_candidate_id = c.id \
+                       AND sd.money_source_id IS NULL \
+                     ORDER BY sd.received_at DESC, sd.id DESC LIMIT 1) \
+             FROM money_source_candidates c \
+             WHERE c.status IN ('pending', 'kept_unassigned') \
+             ORDER BY c.updated_at, c.id",
+        )?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(SourceConfirmationPrompt {
+                    candidate_id: row.get(0)?,
+                    provider_key: row.get(1)?,
+                    scope_kind: SourceConfirmationScopeKind::from_database(
+                        &row.get::<_, String>(2)?,
+                    )
+                    .map_err(rusqlite::Error::ToSqlConversionFailure)?,
+                    status: SourceConfirmationPromptStatus::from_database(
+                        &row.get::<_, String>(3)?,
+                    )
+                    .map_err(rusqlite::Error::ToSqlConversionFailure)?,
+                    version: row.get(4)?,
+                    document_count: row.get(5)?,
+                    latest_document_title: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 }
 

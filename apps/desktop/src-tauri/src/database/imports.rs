@@ -397,6 +397,16 @@ pub(super) fn validate_classification(
             .into());
         }
     }
+    if input
+        .provider_root_id
+        .is_some_and(|value| value.is_empty() || value.len() > 512)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid provider root identity",
+        )
+        .into());
+    }
     if input.accounts.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

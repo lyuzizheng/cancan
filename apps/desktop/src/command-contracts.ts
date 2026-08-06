@@ -83,6 +83,19 @@ export type DecideCandidateAccountsArgs = {
 
 export type RestoreDismissedCandidateAccountArgs = { accountId: string };
 
+export type ConfirmSourceCandidateArgs = {
+  request: {
+    candidateId: string;
+    displayName: string;
+    expectedVersion: number;
+    sourceType: string;
+  };
+};
+
+export type ParkSourceCandidateArgs = {
+  request: { candidateId: string; expectedVersion: number };
+};
+
 export type ListSourceDocumentsArgs = { moneySourceId: string };
 
 export type ListTasksArgs = { filter: TaskFilter };
@@ -235,6 +248,12 @@ export type {
   AccountConfirmationStatus,
   CandidateAccountDecision,
   CandidateAccountDecisionInput,
+  ConfirmedMoneySourceCandidate,
+  MoneySourceCandidateState,
+  MoneySourceCandidateStatus,
+  SourceConfirmationPrompt,
+  SourceConfirmationPromptStatus,
+  SourceConfirmationScopeKind,
   SourceDocumentStatus,
   SourceDocumentSummary,
   TaskConsequence,
