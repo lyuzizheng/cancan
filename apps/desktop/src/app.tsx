@@ -44,7 +44,6 @@ export type { Notice } from "./feedback";
 export type { VaultScreenStatus } from "./vault-spine";
 
 const defaultVaultApi = createVaultApi();
-const VAULT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
 const REVIEW_JOB_POLL_INTERVAL_MS = 600;
 const REVIEW_JOB_MAX_POLLS = 50;
 
@@ -381,47 +380,25 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   }, [api, loadDocuments, loadFinanceData, showVaultGate]);
 
   useEffect(() => {
-    if (vaultStatus !== "unlocked") {
-      return;
-    }
-
     let active = true;
-    let timeout = window.setTimeout(
-      lockAfterInactivity,
-      VAULT_INACTIVITY_TIMEOUT_MS,
-    );
-    const resetTimeout = () => {
-      window.clearTimeout(timeout);
-      timeout = window.setTimeout(lockAfterInactivity, VAULT_INACTIVITY_TIMEOUT_MS);
-    };
-    const activityEvents = [
-      "keydown",
-      "pointerdown",
-      "pointermove",
-      "touchstart",
-      "wheel",
-    ];
-    const activityListenerOptions = { passive: true };
-    for (const event of activityEvents) {
-      window.addEventListener(event, resetTimeout, activityListenerOptions);
-    }
+    let removeListener: (() => void) | undefined;
+    void api.onVaultLocked(() => {
+      if (active) {
+        showVaultGate("locked");
+      }
+    }).then((remove) => {
+      if (active) {
+        removeListener = remove;
+      } else {
+        remove();
+      }
+    });
 
     return () => {
       active = false;
-      window.clearTimeout(timeout);
-      for (const event of activityEvents) {
-        window.removeEventListener(event, resetTimeout);
-      }
+      removeListener?.();
     };
-
-    function lockAfterInactivity() {
-      void requestVaultLock().then((vaultRemainsUnlocked) => {
-        if (active && vaultRemainsUnlocked) {
-          resetTimeout();
-        }
-      });
-    }
-  }, [requestVaultLock, vaultStatus]);
+  }, [api, showVaultGate]);
 
   const refreshVaultStatus = useCallback(async () => {
     const sessionId = vaultSessionId.current;
@@ -456,36 +433,18 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   }, [api, loadDocuments, loadFinanceData, showVaultGate]);
 
   useEffect(() => {
-    let active = true;
-    let removeListener: (() => void) | undefined;
-    void api.onVaultLocked(() => {
-      if (active) {
-        showVaultGate("locked");
-      }
-    }).then((remove) => {
-      if (active) {
-        removeListener = remove;
-      } else {
-        remove();
-      }
-    }).catch(() => {
-      // Focus and visibility reconciliation remain the fail-closed fallback.
-    });
-
-    const reconcileAfterSystemTransition = () => {
+    const reconcileAfterFocus = () => {
       if (document.visibilityState === "visible") {
         void refreshVaultStatus();
       }
     };
-    window.addEventListener("focus", reconcileAfterSystemTransition);
-    document.addEventListener("visibilitychange", reconcileAfterSystemTransition);
+    window.addEventListener("focus", reconcileAfterFocus);
+    document.addEventListener("visibilitychange", reconcileAfterFocus);
     return () => {
-      active = false;
-      removeListener?.();
-      window.removeEventListener("focus", reconcileAfterSystemTransition);
-      document.removeEventListener("visibilitychange", reconcileAfterSystemTransition);
+      window.removeEventListener("focus", reconcileAfterFocus);
+      document.removeEventListener("visibilitychange", reconcileAfterFocus);
     };
-  }, [api, refreshVaultStatus, showVaultGate]);
+  }, [refreshVaultStatus]);
 
   useEffect(() => {
     void refreshVaultStatus();

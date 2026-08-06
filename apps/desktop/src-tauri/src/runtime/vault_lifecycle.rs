@@ -1,4 +1,5 @@
 use super::*;
+use tauri::Emitter;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RecoveryStatus {
@@ -66,8 +67,6 @@ impl VaultRuntime {
                 root,
                 statement_passwords,
                 store: Mutex::new(None),
-                system_lock_generation: AtomicU64::new(0),
-                system_session_active: AtomicBool::new(true),
                 vault_session_generation: AtomicU64::new(0),
                 #[cfg(test)]
                 intake_test_hooks: Mutex::new(IntakeTestHooks::default()),
@@ -156,10 +155,7 @@ impl VaultRuntime {
     }
 
     pub(crate) fn status(&self) -> Result<VaultStatus, RuntimeError> {
-        if !self.system_session_active() {
-            return self.locked_status();
-        }
-        let store = self.store()?;
+        let store = self.raw_store()?;
         if store.is_some() {
             return Ok(VaultStatus::Unlocked);
         }
@@ -370,32 +366,6 @@ impl VaultRuntime {
         self.document_passwords()?.clear();
         self.locked_status()
     }
-
-    pub(crate) fn request_system_lock(&self) -> Result<(), RuntimeError> {
-        self.inner
-            .system_session_active
-            .store(false, Ordering::SeqCst);
-        self.inner
-            .system_lock_generation
-            .fetch_add(1, Ordering::SeqCst);
-        self.advance_vault_session();
-        self.clear_local_inbox_access();
-        let mut store = self.raw_store()?;
-        *store = None;
-        self.document_passwords()?.clear();
-        Ok(())
-    }
-
-    pub(crate) fn resume_system_session(&self) -> Result<(), RuntimeError> {
-        self.advance_vault_session();
-        let mut store = self.raw_store()?;
-        *store = None;
-        self.document_passwords()?.clear();
-        self.inner
-            .system_session_active
-            .store(true, Ordering::SeqCst);
-        Ok(())
-    }
 }
 
 #[tauri::command]
@@ -482,10 +452,13 @@ pub(crate) async fn forget_vault_on_this_mac(
 
 #[tauri::command]
 pub(crate) async fn lock_vault(
+    app: AppHandle,
     runtime: State<'_, VaultRuntime>,
 ) -> Result<VaultStatus, VaultCommandError> {
     let runtime = runtime.inner().clone();
-    run_runtime_task(move || runtime.lock()).await
+    let status = run_runtime_task(move || runtime.lock()).await?;
+    let _ = app.emit("vault-locked", ());
+    Ok(status)
 }
 
 #[tauri::command]

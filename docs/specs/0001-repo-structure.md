@@ -168,6 +168,7 @@ apps/desktop/src-tauri/src/runtime/
   gmail_connector.rs dedicated connector-sidecar protocol, loopback callback, and browser route
   sidecar.rs         normalizer/review-core sidecar process control and file-write helpers
   vault_lifecycle.rs vault create/unlock/lock/recovery methods and their commands
+  lifecycle.rs       Tauri window/run-event lifecycle: background window, close-to-background, Dock reopen, exit lock
   inbox.rs           local-inbox methods, job orchestration, and their commands
   documents.rs       document/statement-password methods and their commands
   review.rs          review-ledger methods, batch jobs, and their commands
@@ -188,7 +189,7 @@ The store mutex protects only bounded state/repository reads, job claims, and tr
 
 ## Desktop window and background-runtime boundary
 
-Phase 1 uses one Tauri process, not a separate helper service. Closing the final window destroys the React renderer/WebView while retaining only the Rust Vault runtime, SQLCipher/key state, Local Inbox watcher, and event-driven durable-job scheduler. Reopening from the Dock, menu bar, or notification recreates the renderer from host/SQLite state. The process must remain visibly running through normal macOS affordances.
+Phase 1 uses one Tauri process, not a separate helper service. Closing the final window destroys the React renderer/WebView while a hidden macOS background `WebviewWindow` keeps the Rust runtime alive, retaining the Vault session, SQLCipher/key state, Local Inbox watcher, and event-driven durable-job scheduler. Reopening from the Dock recreates the renderer from host/SQLite state; menu-bar and notification reopen paths remain pending. The process must remain visibly running through normal macOS affordances.
 
 Idle background execution uses no busy loop or filesystem polling; Inbox work is event/rescan driven. An explicitly enabled connector such as Gmail may arm its accepted coarse interval timer, but it releases all work between scheduled checks and does not keep a sidecar or active loop alive. Parser and deterministic-core sidecars start only for a bounded job and exit afterward. Manual Vault lock or process exit stops Vault-dependent work and drops the live key; ordinary window close, backgrounding, macOS session lock, and sleep do not. Sleep pauses CPU and wake resumes the same process.
 

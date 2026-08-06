@@ -467,8 +467,6 @@ struct RuntimeInner {
     root: PathBuf,
     statement_passwords: Arc<dyn StatementPasswordStore>,
     store: Mutex<Option<ManualImportStore>>,
-    system_lock_generation: AtomicU64,
-    system_session_active: AtomicBool,
     vault_session_generation: AtomicU64,
     #[cfg(test)]
     intake_test_hooks: Mutex<IntakeTestHooks>,
@@ -508,6 +506,7 @@ mod inbox_watcher;
 #[cfg(test)]
 mod intake_tests;
 mod keyring;
+mod lifecycle;
 mod review;
 mod sidecar;
 mod source_confirmation;
@@ -528,6 +527,7 @@ pub(crate) use documents::*;
 pub(crate) use error::*;
 pub(crate) use inbox::*;
 use keyring::*;
+pub(crate) use lifecycle::*;
 pub(crate) use review::*;
 use sidecar::*;
 pub(crate) use source_confirmation::*;
@@ -537,21 +537,16 @@ pub(crate) use vault_lifecycle::*;
 
 impl VaultRuntime {
     pub(super) fn store(&self) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
-        let system_lock_generation = self.inner.system_lock_generation.load(Ordering::SeqCst);
-        self.store_for_system_generation(system_lock_generation)
+        self.raw_store()
     }
 
-    pub(super) fn store_for_system_generation(
+    #[cfg(test)]
+    pub(super) fn store_for_vault_session(
         &self,
-        system_lock_generation: u64,
+        vault_session_generation: u64,
     ) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
-        if !self.system_session_active() {
-            return Err(RuntimeError::new("vault_locked"));
-        }
         let store = self.raw_store()?;
-        if !self.system_session_active()
-            || self.inner.system_lock_generation.load(Ordering::SeqCst) != system_lock_generation
-        {
+        if self.inner.vault_session_generation.load(Ordering::SeqCst) != vault_session_generation {
             return Err(RuntimeError::new("vault_locked"));
         }
         Ok(store)
@@ -655,10 +650,6 @@ impl VaultRuntime {
             .document_passwords
             .lock()
             .map_err(|_| RuntimeError::new("runtime_unavailable"))
-    }
-
-    pub(super) fn system_session_active(&self) -> bool {
-        self.inner.system_session_active.load(Ordering::SeqCst)
     }
 
     pub(super) fn load_remembered_master_key(

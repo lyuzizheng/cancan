@@ -2,6 +2,18 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-08-06
+
+### Completed
+
+- Implemented the strict Vault lifecycle and background Rust runtime for `phase1-intake-experience` checkpoint (A). Removed the old `system_lock.rs` sleep/session-resignation/inactivity locking and the `system_lock_generation` / `system_session_active` state. Added `apps/desktop/src-tauri/src/runtime/lifecycle.rs`, a Tauri module that creates a hidden background `WebviewWindow` on macOS, destroys the main WebView on `CloseRequested` while keeping the process alive, recreates the main renderer from `tauri.conf.json` on `Reopen`, and locks the Vault on `ExitRequested` before the process exits. The frontend 15-minute inactivity lock was removed and the `vault-locked` event now follows an explicit `lock_vault` command.
+- Updated `docs/agent/current-state.md` to record that the Vault is cleared only on manual lock, normal quit/`ExitRequested`, crash, or reboot; inactivity, sleep, and user-session resignation no longer lock a living process. This supersedes the 2026-08-02 entry's recorded gap about auto-locking on inactivity/sleep/session resignation.
+- All Rust tests and Clippy, plus `pnpm test:unit` and TypeScript typechecking, pass locally.
+
+### Next
+
+- Continue `phase1-intake-experience` with the remaining bounded checkpoints: customer-facing Command Center / full Tasks / deep-link / park / reminder renderer integration, source-confirmation card UI, strict Touch ID-only remembered unlock, bounded saved-password iteration, canonical-content duplicate handling, phone Shortcut, and opt-in batch notification delivery.
+
 ## 2026-08-05
 
 ### Completed
@@ -54,12 +66,12 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 - Replaced the intended Vault lifecycle: closing the final window destroys the WebView but retains one minimal event-driven Rust runtime and current key; session lock, inactivity, and sleep do not cryptographically lock a living process. Manual Lock and every process-ending path discard the key and stop intake. No separate service is added until measured idle RSS/CPU/energy proves it necessary.
 - Replaced ordinary remembered unlock with strict Touch ID using a device-only `biometryCurrentSet` Keychain item. `userPresence` and macOS account-password fallback are forbidden; the Vault password is the only fallback, and background work never triggers a biometric prompt.
 - Added one default-off `Background intake notifications` setting. Permission is requested only when enabled; notifications are redacted and batch-aggregated, exact-duplicate-only batches stay silent, and notification routing recreates the window before Touch ID/Vault-password gating when required.
-- Recorded the implementation gap explicitly: current `main` still auto-locks on inactivity/sleep/session resignation, uses ordinary `Remember on this Mac`, requires source-scoped password selection, retains inert Jobs navigation plus scattered To-do/attention/review presentation, and has none of the new Shortcut/unified-Tasks/notification/content-fingerprint behavior. Kimi Code CLI was unavailable for this spec-only UX redesign, so final designer review remains an implementation gate.
+- Recorded the implementation gap explicitly: current `main` still auto-locks on inactivity/sleep/session resignation, uses ordinary `Remember on this Mac`, requires source-scoped password selection, retains inert Jobs navigation plus scattered To-do/attention/review presentation, and has none of the new Shortcut/unified-Tasks/notification/content-fingerprint behavior. Kimi Code CLI was unavailable for this spec-only UX redesign, so final designer review remains an implementation gate. (The lifecycle/inactivity-lock gap was implemented on 2026-08-06.)
 - Started the ready `phase1-intake-experience` implementation with forward migration `0011_phase1_intake_foundation.sql`, registered in the production Rust migration runner. It adds only the acquisition receipt, versioned Money Source candidate, and document-park persistence foundation: sealed batch/item rows with monotonic outcome/notification state, truthful create/finalize timestamps, bounded safe labels and scanner correlation, immutable terminal receipts, stable rejection retry/supersession links, checked composite source-candidate identity, and candidate/source ownership guards. Production SQLCipher tests upgrade a populated v10 Vault without losing Money Source, job, document, or Gmail identity data and exercise the new constraints. Repository/service/UI behavior remains for later checkpoints.
 
 ### Next
 
-- Continue `phase1-intake-experience` with the smallest host-owned intake receipt/candidate repository transactions over migration v11, then wire capture paths and the derived Tasks projection in later bounded checkpoints. The remaining lifecycle, Touch ID, password iteration, duplicate layers, Shortcut, reminders, notification, and renderer work stays pending; Kimi Code CLI leads customer-facing renderer craft and final visual review.
+- Continue `phase1-intake-experience` with the smallest host-owned intake receipt/candidate repository transactions over migration v11, then wire capture paths and the derived Tasks projection in later bounded checkpoints. The remaining lifecycle, Touch ID, password iteration, duplicate layers, Shortcut, reminders, notification, and renderer work stays pending; Kimi Code CLI leads customer-facing renderer craft and final visual review. (The background Rust runtime and strict Vault lifecycle were implemented on 2026-08-06; the strict Touch ID, password iteration, duplicate layers, Shortcut, notifications, and renderer work remain pending.)
 
 ## 2026-07-30
 

@@ -4,7 +4,7 @@ use crate::database::{CandidateAccountDecision, SourceDocumentImportStatus};
 use crate::vault::open_recovery_file;
 #[cfg(target_os = "macos")]
 use crate::viewer::tests::{protected_pdf_fixture, synthetic_png_fixture};
-use std::{collections::HashMap, thread, time::Duration};
+use std::{collections::HashMap, sync::atomic::Ordering, thread, time::Duration};
 
 #[derive(Default)]
 pub(super) struct MemoryRememberedKeyStore {
@@ -293,13 +293,10 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
     runtime
         .render_source_document_page(&outcome.document_id, 1)
         .expect("render session-unlocked statement");
-    runtime.request_system_lock().expect("system-lock Vault");
-    runtime
-        .resume_system_session()
-        .expect("resume system session");
+    runtime.lock().expect("lock Vault");
     runtime
         .unlock(b"synthetic-vault-password")
-        .expect("reopen system-locked Vault");
+        .expect("reopen locked Vault");
     assert_eq!(
         runtime
             .list_unassigned_source_documents()
@@ -882,42 +879,54 @@ fn failed_recovery_write_does_not_mark_the_vault_configured() {
 }
 
 #[test]
-fn system_lock_waits_for_store_cleanup_and_rejects_a_stale_store_generation() {
+fn lock_waits_for_store_cleanup_and_rejects_a_stale_vault_session_generation() {
     let parent = tempfile::tempdir().expect("temporary app data");
     let runtime = VaultRuntime::new(parent.path().join("vault"));
     runtime
         .create(b"synthetic-vault-password")
         .expect("create Vault");
-    let stale_generation = runtime.inner.system_lock_generation.load(Ordering::SeqCst);
+    let stale_generation = runtime
+        .inner
+        .vault_session_generation
+        .load(Ordering::SeqCst);
     let held_store = runtime.raw_store().expect("hold active store");
     let locking_runtime = runtime.clone();
     let (finished, completion) = std::sync::mpsc::channel();
     thread::spawn(move || {
         finished
-            .send(locking_runtime.request_system_lock())
+            .send(locking_runtime.lock())
             .expect("send lock result");
     });
 
     let deadline = std::time::Instant::now() + Duration::from_secs(1);
-    while runtime.system_session_active() && std::time::Instant::now() < deadline {
+    while runtime
+        .inner
+        .vault_session_generation
+        .load(Ordering::SeqCst)
+        == stale_generation
+        && std::time::Instant::now() < deadline
+    {
         thread::yield_now();
     }
-    assert!(!runtime.system_session_active());
+    assert!(
+        runtime
+            .inner
+            .vault_session_generation
+            .load(Ordering::SeqCst)
+            != stale_generation
+    );
     assert!(completion.try_recv().is_err());
     drop(held_store);
     completion
         .recv_timeout(Duration::from_secs(1))
-        .expect("system lock completion")
-        .expect("system lock");
+        .expect("lock completion")
+        .expect("lock Vault");
     assert_eq!(
         runtime.status().expect("locked status"),
         VaultStatus::Locked
     );
 
-    runtime
-        .resume_system_session()
-        .expect("resume system session");
-    let stale_store = runtime.store_for_system_generation(stale_generation);
+    let stale_store = runtime.store_for_vault_session(stale_generation);
     assert_eq!(
         stale_store
             .err()
