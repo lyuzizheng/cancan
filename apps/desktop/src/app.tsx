@@ -535,14 +535,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       setNotice(
         remembered
           ? {
-              body: "This Mac can unlock your Vault through Keychain without running the password check.",
+              body: "CanCan can unlock your Vault with Touch ID without running the password check.",
               tone: "success",
-              title: "Remembered unlock enabled",
+              title: "Touch ID unlock enabled",
             }
           : {
               body: "Your current Vault stays open. Your password will be required after you lock or restart CanCan.",
               tone: "success",
-              title: "Remembered unlock removed",
+              title: "Touch ID unlock removed",
             },
       );
     }).finally(() => setUpdatingRemembered(false));

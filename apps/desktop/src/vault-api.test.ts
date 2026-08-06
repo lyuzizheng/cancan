@@ -223,10 +223,10 @@ describe("Vault API", () => {
       "Unlock your Vault to continue.",
     );
     expect(commandErrorMessage({ code: "remembered_unlock_unavailable" })).toBe(
-      "Remembered unlock is no longer available. Use your Vault password instead.",
+      "Touch ID unlock is no longer available. Use your Vault password instead.",
     );
     expect(commandErrorMessage({ code: "remember_failed" })).toBe(
-      "CanCan couldn’t save remembered unlock in this Mac’s Keychain.",
+      "CanCan couldn’t enable Touch ID unlock.",
     );
     expect(
       commandErrorMessage({ code: "statement_password_save_failed" }),

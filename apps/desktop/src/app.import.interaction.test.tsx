@@ -230,20 +230,20 @@ describe("App manual import orchestration", () => {
     });
 
     await mount(api);
-    expect(container.textContent).toContain("Unlock with this Mac");
+    expect(container.textContent).toContain("Unlock with Touch ID");
     expect(api.unlockVaultWithKeychain).not.toHaveBeenCalled();
 
     await enterPassword("typed-but-unused");
-    await click("Unlock with this Mac");
+    await click("Unlock with Touch ID");
 
     expect(api.unlockVaultWithKeychain).toHaveBeenCalledTimes(1);
-    expect(container.textContent).not.toContain("Unlock with this Mac");
+    expect(container.textContent).not.toContain("Unlock with Touch ID");
 
     await click("Lock Vault");
     expect(container.querySelector<HTMLInputElement>("#vault-password")?.value).toBe("");
   });
 
-  it("keeps password unlock available when Keychain presence is unknown", async () => {
+  it("keeps password unlock available when Touch ID presence is unknown", async () => {
     const api = createApi({
       vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
         recoveryConfigured: false,
@@ -254,13 +254,13 @@ describe("App manual import orchestration", () => {
 
     await mount(api);
 
-    expect(container.textContent).toContain("Keychain unlock is unavailable");
+    expect(container.textContent).toContain("Touch ID unlock is unavailable");
     expect(container.textContent).toContain("Vault password");
-    expect(container.textContent).not.toContain("Unlock with this Mac");
+    expect(container.textContent).not.toContain("Unlock with Touch ID");
     expect(api.unlockVaultWithKeychain).not.toHaveBeenCalled();
   });
 
-  it("enables and removes remembered unlock without sending the key to the renderer", async () => {
+  it("enables and removes Touch ID unlock without sending the key to the renderer", async () => {
     const api = createApi();
 
     await mount(api, "sources");
@@ -275,7 +275,7 @@ describe("App manual import orchestration", () => {
     });
     expect(api.rememberVaultOnThisMac).toHaveBeenCalledWith();
     expect(checkbox?.checked).toBe(true);
-    expect(container.textContent).toContain("Remembered unlock enabled");
+    expect(container.textContent).toContain("Touch ID unlock enabled");
 
     await act(async () => {
       checkbox!.click();
@@ -283,10 +283,10 @@ describe("App manual import orchestration", () => {
     });
     expect(api.forgetVaultOnThisMac).toHaveBeenCalledWith();
     expect(checkbox?.checked).toBe(false);
-    expect(container.textContent).toContain("Remembered unlock removed");
+    expect(container.textContent).toContain("Touch ID unlock removed");
   });
 
-  it("keeps the Vault open and the opt-in off when Keychain storage fails", async () => {
+  it("keeps the Vault open and the opt-in off when Touch ID storage fails", async () => {
     const api = createApi({
       rememberVaultOnThisMac: vi.fn(async () => {
         throw { code: "remember_failed", privateDetail: "Keychain platform detail" };
@@ -304,13 +304,13 @@ describe("App manual import orchestration", () => {
 
     expect(checkbox?.checked).toBe(false);
     expect(container.textContent).toContain(
-      "CanCan couldn’t save remembered unlock in this Mac’s Keychain.",
+      "CanCan couldn’t enable Touch ID unlock.",
     );
     expect(container.textContent).not.toContain("Keychain platform detail");
     expect(container.textContent).toContain("Add file");
   });
 
-  it("removes a stale remembered-unlock action after Keychain unlock fails", async () => {
+  it("removes a stale Touch ID unlock action after Touch ID unlock fails", async () => {
     const vaultAccessStatus = vi
       .fn<() => Promise<VaultAccessStatus>>()
       .mockResolvedValueOnce({ recoveryConfigured: false, rememberedOnThisMac: true, status: "locked" })
@@ -323,11 +323,11 @@ describe("App manual import orchestration", () => {
     });
 
     await mount(api);
-    await click("Unlock with this Mac");
+    await click("Unlock with Touch ID");
 
-    expect(container.textContent).not.toContain("Unlock with this Mac");
+    expect(container.textContent).not.toContain("Unlock with Touch ID");
     expect(container.textContent).toContain(
-      "Remembered unlock is no longer available.",
+      "Touch ID unlock is no longer available.",
     );
     expect(container.textContent).toContain("Vault password");
   });

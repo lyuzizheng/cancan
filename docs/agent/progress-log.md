@@ -2,6 +2,17 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-08-07
+
+### Completed
+
+- Implemented strict Touch ID-only remembered unlock for `phase1-intake-experience` checkpoint (B). Replaced the ordinary `Remember on this Mac` Keychain item with a `biometryCurrentSet` device-only keychain item stored in the macOS data-protection keychain (`kSecUseDataProtectionKeychain`). `KeychainRememberedKeyStore` now writes a protected 32-byte master-key secret with `SecAccessControl` configured for `biometryCurrentSet` and `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` protection, and a separate non-authenticating presence marker. `userPresence` and the macOS account password are never used as a fallback; if Touch ID is unavailable, locked out, or the enrolled fingerprint set changes, the Vault password remains the only fallback. Background intake never triggers a biometric prompt. `is_present` checks only the marker, so startup status queries do not prompt; `load` triggers the Touch ID prompt when the user chooses the unlock action. The frontend copy, success notices, and error messages now refer to `Unlock with Touch ID` and `Touch ID unavailable`.
+- All Rust `cargo test`, `cargo clippy --locked -D warnings`, `pnpm test:unit`, and `pnpm typecheck` pass locally. The macOS data-protection keychain requires a code-signed app with the `keychain-access-groups` entitlement, so the `KeychainRememberedKeyStore` round-trip test is `#[ignore]`d and runs only in a signed/provisioned environment.
+
+### Next
+
+- Continue `phase1-intake-experience` with the remaining bounded checkpoints: customer-facing Command Center / full Tasks / deep-link / park / reminder renderer integration, source-confirmation card UI, bounded saved-password iteration, canonical-content duplicate handling, phone Shortcut, and opt-in batch notification delivery. The post-password offer to re-enable Touch ID is deferred to a future settings/Touch ID polish pass.
+
 ## 2026-08-06
 
 ### Completed
@@ -12,7 +23,7 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 ### Next
 
-- Continue `phase1-intake-experience` with the remaining bounded checkpoints: customer-facing Command Center / full Tasks / deep-link / park / reminder renderer integration, source-confirmation card UI, strict Touch ID-only remembered unlock, bounded saved-password iteration, canonical-content duplicate handling, phone Shortcut, and opt-in batch notification delivery.
+- Continue `phase1-intake-experience` with the remaining bounded checkpoints: customer-facing Command Center / full Tasks / deep-link / park / reminder renderer integration, source-confirmation card UI, bounded saved-password iteration, canonical-content duplicate handling, phone Shortcut, and opt-in batch notification delivery.
 
 ## 2026-08-05
 

@@ -68,7 +68,7 @@ export function SourcesView(props: SourcesViewProps) {
               onChange={(event) => props.onRememberedChange(event.target.checked)}
               type="checkbox"
             />
-            <span>{props.updatingRemembered ? "Updating Keychain…" : props.rememberedOnThisMac === null ? "Keychain unavailable" : "Remember on this Mac"}</span>
+            <span>{props.updatingRemembered ? "Updating…" : props.rememberedOnThisMac === null ? "Touch ID unavailable" : "Unlock with Touch ID"}</span>
           </label>
           <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onLock} type="button">
             Lock Vault

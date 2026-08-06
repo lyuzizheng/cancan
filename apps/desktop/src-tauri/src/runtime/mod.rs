@@ -656,6 +656,9 @@ impl VaultRuntime {
         &self,
     ) -> Result<Option<Zeroizing<[u8; KEY_LEN]>>, ()> {
         let Some(secret) = self.inner.remembered_keys.load()? else {
+            // The protected key is gone (or the enrolled biometric set changed),
+            // so remove the presence marker so the UI stops offering Touch ID.
+            self.inner.remembered_keys.delete()?;
             return Ok(None);
         };
         let master_key = match secret.as_slice().try_into() {
