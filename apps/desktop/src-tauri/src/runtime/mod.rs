@@ -655,19 +655,17 @@ impl VaultRuntime {
     pub(super) fn load_remembered_master_key(
         &self,
     ) -> Result<Option<Zeroizing<[u8; KEY_LEN]>>, ()> {
-        let Some(secret) = self.inner.remembered_keys.load()? else {
-            // The protected key is gone (or the enrolled biometric set changed),
-            // so remove the presence marker so the UI stops offering Touch ID.
-            self.inner.remembered_keys.delete()?;
-            return Ok(None);
-        };
-        let master_key = match secret.as_slice().try_into() {
-            Ok(master_key) => master_key,
-            Err(_) => {
+        let secret = match self.inner.remembered_keys.load()? {
+            Some(secret) if secret.len() == KEY_LEN => secret,
+            _ => {
+                // The protected key is gone, malformed, or the enrolled biometric set changed,
+                // so remove the presence marker so the UI stops offering Touch ID.
                 self.inner.remembered_keys.delete()?;
                 return Ok(None);
             }
         };
-        Ok(Some(Zeroizing::new(master_key)))
+        Ok(Some(Zeroizing::new(
+            <[u8; KEY_LEN]>::try_from(secret.as_slice()).expect("length checked"),
+        )))
     }
 }

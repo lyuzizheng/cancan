@@ -4,8 +4,8 @@ use super::*;
 use security_framework::{
     access_control::{ProtectionMode, SecAccessControl},
     passwords::{
-        AccessControlOptions, PasswordOptions, delete_generic_password,
-        delete_generic_password_options, generic_password, set_generic_password_options,
+        AccessControlOptions, PasswordOptions, delete_generic_password_options, generic_password,
+        set_generic_password_options,
     },
 };
 
@@ -89,7 +89,27 @@ impl KeychainRememberedKeyStore {
     }
 
     #[cfg(target_os = "macos")]
-    fn delete_options(options: PasswordOptions) -> Result<(), ()> {
+    fn item_options(&self, account: &str, use_protected: bool) -> PasswordOptions {
+        let mut options = PasswordOptions::new_generic_password(&self.service, account);
+        if use_protected {
+            options.use_protected_keychain();
+        }
+        options
+    }
+
+    #[cfg(target_os = "macos")]
+    fn read_item(&self, account: &str) -> Result<Option<Vec<u8>>, security_framework::base::Error> {
+        let options = self.item_options(account, true);
+        match generic_password(options) {
+            Ok(secret) => Ok(Some(secret)),
+            Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn delete_item(&self, account: &str, use_protected: bool) -> Result<(), ()> {
+        let options = self.item_options(account, use_protected);
         match delete_generic_password_options(options) {
             Ok(()) => Ok(()),
             Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(()),
@@ -98,74 +118,33 @@ impl KeychainRememberedKeyStore {
     }
 
     #[cfg(target_os = "macos")]
-    fn load_marker(&self) -> Result<Vec<u8>, security_framework::base::Error> {
-        let mut options =
-            PasswordOptions::new_generic_password(&self.service, &self.marker_account);
-        options.use_protected_keychain();
-        generic_password(options)
-    }
-
-    #[cfg(target_os = "macos")]
-    fn load_secret(&self) -> Result<Option<Vec<u8>>, ()> {
-        let mut options = PasswordOptions::new_generic_password(&self.service, &self.account);
-        options.use_protected_keychain();
-        match generic_password(options) {
-            Ok(secret) => Ok(Some(secret)),
-            Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(None),
-            Err(_) => Err(()),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    fn save_marker(&self) -> Result<(), ()> {
-        let mut options =
-            PasswordOptions::new_generic_password(&self.service, &self.marker_account);
-        options.use_protected_keychain();
+    fn write_item(&self, account: &str, value: &[u8], access_control: usize) -> Result<(), ()> {
+        let mut options = self.item_options(account, true);
         options.set_access_synchronized(Some(false));
         let access = SecAccessControl::create_with_protection(
             Some(ProtectionMode::AccessibleWhenUnlockedThisDeviceOnly),
-            AccessControlOptions::empty().bits(),
+            access_control,
         )
         .map_err(|_| ())?;
         options.set_access_control(access);
-        set_generic_password_options(&[1], options).map_err(|_| ())
-    }
-
-    #[cfg(target_os = "macos")]
-    fn save_secret(&self, secret: &[u8]) -> Result<(), ()> {
-        let mut options = PasswordOptions::new_generic_password(&self.service, &self.account);
-        options.use_protected_keychain();
-        options.set_access_synchronized(Some(false));
-        let access = SecAccessControl::create_with_protection(
-            Some(ProtectionMode::AccessibleWhenUnlockedThisDeviceOnly),
-            self.access_control,
-        )
-        .map_err(|_| ())?;
-        options.set_access_control(access);
-        set_generic_password_options(secret, options).map_err(|_| ())
+        set_generic_password_options(value, options).map_err(|_| ())
     }
 }
 
 impl RememberedKeyStore for KeychainRememberedKeyStore {
     #[cfg(target_os = "macos")]
     fn delete(&self) -> Result<(), ()> {
-        let mut options = PasswordOptions::new_generic_password(&self.service, &self.account);
-        options.use_protected_keychain();
-        let protected_deleted = Self::delete_options(options);
-
-        let mut options =
-            PasswordOptions::new_generic_password(&self.service, &self.marker_account);
-        options.use_protected_keychain();
-        let marker_deleted = Self::delete_options(options);
-
-        // Clean up any pre-biometry item stored in the legacy file-based keychain.
-        let legacy_deleted = match delete_generic_password(&self.service, &self.account) {
-            Ok(()) => Ok(()),
-            Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(()),
-            Err(_) => Err(()),
-        };
-
-        protected_deleted.and(marker_deleted).and(legacy_deleted)
+        let results = [
+            self.delete_item(&self.account, true),
+            self.delete_item(&self.marker_account, true),
+            // Clean up any pre-biometry item stored in the legacy file-based keychain.
+            self.delete_item(&self.account, false),
+        ];
+        if results.iter().any(|r| r.is_err()) {
+            Err(())
+        } else {
+            Ok(())
+        }
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -175,11 +154,9 @@ impl RememberedKeyStore for KeychainRememberedKeyStore {
 
     #[cfg(target_os = "macos")]
     fn is_present(&self) -> Result<bool, ()> {
-        match self.load_marker() {
-            Ok(_) => Ok(true),
-            Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(false),
-            Err(_) => Err(()),
-        }
+        self.read_item(&self.marker_account)
+            .map(|secret| secret.is_some())
+            .map_err(|_| ())
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -189,11 +166,9 @@ impl RememberedKeyStore for KeychainRememberedKeyStore {
 
     #[cfg(target_os = "macos")]
     fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
-        match self.load_secret() {
-            Ok(Some(secret)) => Ok(Some(Zeroizing::new(secret))),
-            Ok(None) => Ok(None),
-            Err(()) => Err(()),
-        }
+        self.read_item(&self.account)
+            .map(|secret| secret.map(Zeroizing::new))
+            .map_err(|_| ())
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -203,13 +178,18 @@ impl RememberedKeyStore for KeychainRememberedKeyStore {
 
     #[cfg(target_os = "macos")]
     fn save(&self, secret: &[u8]) -> Result<(), ()> {
+        const MARKER_VALUE: &[u8] = &[1];
+
         let _ = self.delete();
-        self.save_marker().inspect_err(|_| {
-            let _ = self.delete();
-        })?;
-        self.save_secret(secret).inspect_err(|_| {
-            let _ = self.delete();
-        })
+        self.write_item(
+            &self.marker_account,
+            MARKER_VALUE,
+            AccessControlOptions::empty().bits(),
+        )?;
+        self.write_item(&self.account, secret, self.access_control)
+            .inspect_err(|_| {
+                let _ = self.delete();
+            })
     }
 
     #[cfg(not(target_os = "macos"))]

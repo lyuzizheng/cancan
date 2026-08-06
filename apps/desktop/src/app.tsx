@@ -466,6 +466,16 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   };
 
+  const finalizeUnlock = async (nextStatus: VaultScreenStatus) => {
+    documentLoadsAllowed.current = nextStatus === "unlocked";
+    setVaultStatus(nextStatus);
+    setPassword("");
+    if (nextStatus === "unlocked") {
+      await loadDocuments();
+      await loadFinanceData();
+    }
+  };
+
   const submitPassword = () => {
     if (!password) {
       setError("Enter a password to continue.");
@@ -478,15 +488,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         vaultStatus === "not_created"
           ? await api.createVault(password)
           : await api.unlockVault(password);
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      setPassword("");
-      documentLoadsAllowed.current = nextStatus === "unlocked";
-      setVaultStatus(nextStatus);
-      if (nextStatus === "unlocked") {
-        await loadDocuments();
-        await loadFinanceData();
+      if (vaultSessionId.current === sessionId) {
+        await finalizeUnlock(nextStatus);
       }
     }, sessionId);
   };
@@ -496,15 +499,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     void run(async () => {
       try {
         const nextStatus = await api.unlockVaultWithKeychain();
-        if (vaultSessionId.current !== sessionId) {
-          return;
-        }
-        documentLoadsAllowed.current = nextStatus === "unlocked";
-        setVaultStatus(nextStatus);
-        if (nextStatus === "unlocked") {
-          setPassword("");
-          await loadDocuments();
-          await loadFinanceData();
+        if (vaultSessionId.current === sessionId) {
+          await finalizeUnlock(nextStatus);
         }
       } catch (nextError) {
         if (vaultSessionId.current !== sessionId) {

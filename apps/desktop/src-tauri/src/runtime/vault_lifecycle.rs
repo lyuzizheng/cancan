@@ -244,11 +244,25 @@ impl VaultRuntime {
         sync_directory(parent).map_err(|_| ())
     }
 
+    fn finish_unlock(
+        &self,
+        opened: ManualImportStore,
+        mut store: MutexGuard<'_, Option<ManualImportStore>>,
+    ) -> Result<VaultStatus, RuntimeError> {
+        self.reconcile_statement_passwords(&opened)?;
+        self.reconcile_gmail_accounts_after_unlock(&opened);
+        *store = Some(opened);
+        drop(store);
+        self.advance_vault_session();
+        let _ = self.activate_local_inbox_from_bookmark();
+        Ok(VaultStatus::Unlocked)
+    }
+
     pub(crate) fn unlock(&self, password: &[u8]) -> Result<VaultStatus, RuntimeError> {
         if password.is_empty() {
             return Err(RuntimeError::new("password_required"));
         }
-        let mut store = self.store()?;
+        let store = self.store()?;
         if store.is_some() {
             return Ok(VaultStatus::Unlocked);
         }
@@ -268,17 +282,11 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("invalid_credentials"))?;
         let opened = ManualImportStore::open_existing(&self.inner.root, master_key)
             .map_err(|_| RuntimeError::new("invalid_vault"))?;
-        self.reconcile_statement_passwords(&opened)?;
-        self.reconcile_gmail_accounts_after_unlock(&opened);
-        *store = Some(opened);
-        drop(store);
-        self.advance_vault_session();
-        let _ = self.activate_local_inbox_from_bookmark();
-        Ok(VaultStatus::Unlocked)
+        self.finish_unlock(opened, store)
     }
 
     pub(crate) fn unlock_with_keychain(&self) -> Result<VaultStatus, RuntimeError> {
-        let mut store = self.store()?;
+        let store = self.store()?;
         if store.is_some() {
             return Ok(VaultStatus::Unlocked);
         }
@@ -291,18 +299,9 @@ impl VaultRuntime {
         else {
             return Err(RuntimeError::new("remembered_unlock_unavailable"));
         };
-        match ManualImportStore::open_existing(&self.inner.root, master_key) {
-            Ok(opened) => {
-                self.reconcile_statement_passwords(&opened)?;
-                self.reconcile_gmail_accounts_after_unlock(&opened);
-                *store = Some(opened);
-                drop(store);
-                self.advance_vault_session();
-                let _ = self.activate_local_inbox_from_bookmark();
-                Ok(VaultStatus::Unlocked)
-            }
-            Err(_) => Err(RuntimeError::new("remembered_unlock_failed")),
-        }
+        let opened = ManualImportStore::open_existing(&self.inner.root, master_key)
+            .map_err(|_| RuntimeError::new("remembered_unlock_failed"))?;
+        self.finish_unlock(opened, store)
     }
 
     pub(crate) fn remember_on_this_mac(&self) -> Result<(), RuntimeError> {
@@ -394,6 +393,25 @@ pub(crate) async fn create_vault(
     run_runtime_task(move || runtime.create(password.as_bytes())).await
 }
 
+async fn unlock_and_resume<F>(
+    app: AppHandle,
+    runtime: VaultRuntime,
+    unlock: F,
+) -> Result<VaultStatus, VaultCommandError>
+where
+    F: FnOnce() -> Result<VaultStatus, RuntimeError> + Send + 'static,
+{
+    let status = tauri::async_runtime::spawn_blocking(unlock)
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+        .map_err(VaultCommandError::from)?;
+    resume_review_jobs_after_unlock(&app, runtime.clone()).await;
+    resume_parse_document_jobs_after_unlock(&app, runtime.clone()).await;
+    resume_document_reconciliations_after_unlock(runtime.clone()).await;
+    resume_local_inbox_after_unlock(&app, runtime).await;
+    Ok(status)
+}
+
 #[tauri::command]
 pub(crate) async fn unlock_vault(
     password: String,
@@ -403,16 +421,10 @@ pub(crate) async fn unlock_vault(
     let runtime = runtime.inner().clone();
     let password = Zeroizing::new(password);
     let unlock_runtime = runtime.clone();
-    let status =
-        tauri::async_runtime::spawn_blocking(move || unlock_runtime.unlock(password.as_bytes()))
-            .await
-            .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-            .map_err(VaultCommandError::from)?;
-    resume_review_jobs_after_unlock(&app, runtime.clone()).await;
-    resume_parse_document_jobs_after_unlock(&app, runtime.clone()).await;
-    resume_document_reconciliations_after_unlock(runtime.clone()).await;
-    resume_local_inbox_after_unlock(&app, runtime).await;
-    Ok(status)
+    unlock_and_resume(app, runtime, move || {
+        unlock_runtime.unlock(password.as_bytes())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -422,16 +434,7 @@ pub(crate) async fn unlock_vault_with_keychain(
 ) -> Result<VaultStatus, VaultCommandError> {
     let runtime = runtime.inner().clone();
     let unlock_runtime = runtime.clone();
-    let status =
-        tauri::async_runtime::spawn_blocking(move || unlock_runtime.unlock_with_keychain())
-            .await
-            .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
-            .map_err(VaultCommandError::from)?;
-    resume_review_jobs_after_unlock(&app, runtime.clone()).await;
-    resume_parse_document_jobs_after_unlock(&app, runtime.clone()).await;
-    resume_document_reconciliations_after_unlock(runtime.clone()).await;
-    resume_local_inbox_after_unlock(&app, runtime).await;
-    Ok(status)
+    unlock_and_resume(app, runtime, move || unlock_runtime.unlock_with_keychain()).await
 }
 
 #[tauri::command]
