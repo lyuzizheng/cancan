@@ -44,7 +44,6 @@ export type { Notice } from "./feedback";
 export type { VaultScreenStatus } from "./vault-spine";
 
 const defaultVaultApi = createVaultApi();
-const VAULT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
 const REVIEW_JOB_POLL_INTERVAL_MS = 600;
 const REVIEW_JOB_MAX_POLLS = 50;
 
@@ -381,47 +380,27 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   }, [api, loadDocuments, loadFinanceData, showVaultGate]);
 
   useEffect(() => {
-    if (vaultStatus !== "unlocked") {
-      return;
-    }
-
     let active = true;
-    let timeout = window.setTimeout(
-      lockAfterInactivity,
-      VAULT_INACTIVITY_TIMEOUT_MS,
-    );
-    const resetTimeout = () => {
-      window.clearTimeout(timeout);
-      timeout = window.setTimeout(lockAfterInactivity, VAULT_INACTIVITY_TIMEOUT_MS);
-    };
-    const activityEvents = [
-      "keydown",
-      "pointerdown",
-      "pointermove",
-      "touchstart",
-      "wheel",
-    ];
-    const activityListenerOptions = { passive: true };
-    for (const event of activityEvents) {
-      window.addEventListener(event, resetTimeout, activityListenerOptions);
-    }
+    let removeListener: (() => void) | undefined;
+    void api.onVaultLocked(() => {
+      if (active) {
+        showVaultGate("locked");
+      }
+    }).then((remove) => {
+      if (active) {
+        removeListener = remove;
+      } else {
+        remove();
+      }
+    }).catch(() => {
+      // Focus and visibility reconciliation remain the fail-closed fallback.
+    });
 
     return () => {
       active = false;
-      window.clearTimeout(timeout);
-      for (const event of activityEvents) {
-        window.removeEventListener(event, resetTimeout);
-      }
+      removeListener?.();
     };
-
-    function lockAfterInactivity() {
-      void requestVaultLock().then((vaultRemainsUnlocked) => {
-        if (active && vaultRemainsUnlocked) {
-          resetTimeout();
-        }
-      });
-    }
-  }, [requestVaultLock, vaultStatus]);
+  }, [api, showVaultGate]);
 
   const refreshVaultStatus = useCallback(async () => {
     const sessionId = vaultSessionId.current;
@@ -456,36 +435,18 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   }, [api, loadDocuments, loadFinanceData, showVaultGate]);
 
   useEffect(() => {
-    let active = true;
-    let removeListener: (() => void) | undefined;
-    void api.onVaultLocked(() => {
-      if (active) {
-        showVaultGate("locked");
-      }
-    }).then((remove) => {
-      if (active) {
-        removeListener = remove;
-      } else {
-        remove();
-      }
-    }).catch(() => {
-      // Focus and visibility reconciliation remain the fail-closed fallback.
-    });
-
-    const reconcileAfterSystemTransition = () => {
+    const reconcileAfterFocus = () => {
       if (document.visibilityState === "visible") {
         void refreshVaultStatus();
       }
     };
-    window.addEventListener("focus", reconcileAfterSystemTransition);
-    document.addEventListener("visibilitychange", reconcileAfterSystemTransition);
+    window.addEventListener("focus", reconcileAfterFocus);
+    document.addEventListener("visibilitychange", reconcileAfterFocus);
     return () => {
-      active = false;
-      removeListener?.();
-      window.removeEventListener("focus", reconcileAfterSystemTransition);
-      document.removeEventListener("visibilitychange", reconcileAfterSystemTransition);
+      window.removeEventListener("focus", reconcileAfterFocus);
+      document.removeEventListener("visibilitychange", reconcileAfterFocus);
     };
-  }, [api, refreshVaultStatus, showVaultGate]);
+  }, [refreshVaultStatus]);
 
   useEffect(() => {
     void refreshVaultStatus();
@@ -507,6 +468,16 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   };
 
+  const finalizeUnlock = async (nextStatus: VaultScreenStatus) => {
+    documentLoadsAllowed.current = nextStatus === "unlocked";
+    setVaultStatus(nextStatus);
+    setPassword("");
+    if (nextStatus === "unlocked") {
+      await loadDocuments();
+      await loadFinanceData();
+    }
+  };
+
   const submitPassword = () => {
     if (!password) {
       setError("Enter a password to continue.");
@@ -519,15 +490,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         vaultStatus === "not_created"
           ? await api.createVault(password)
           : await api.unlockVault(password);
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      setPassword("");
-      documentLoadsAllowed.current = nextStatus === "unlocked";
-      setVaultStatus(nextStatus);
-      if (nextStatus === "unlocked") {
-        await loadDocuments();
-        await loadFinanceData();
+      if (vaultSessionId.current === sessionId) {
+        await finalizeUnlock(nextStatus);
       }
     }, sessionId);
   };
@@ -537,15 +501,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     void run(async () => {
       try {
         const nextStatus = await api.unlockVaultWithKeychain();
-        if (vaultSessionId.current !== sessionId) {
-          return;
-        }
-        documentLoadsAllowed.current = nextStatus === "unlocked";
-        setVaultStatus(nextStatus);
-        if (nextStatus === "unlocked") {
-          setPassword("");
-          await loadDocuments();
-          await loadFinanceData();
+        if (vaultSessionId.current === sessionId) {
+          await finalizeUnlock(nextStatus);
         }
       } catch (nextError) {
         if (vaultSessionId.current !== sessionId) {
@@ -576,14 +533,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       setNotice(
         remembered
           ? {
-              body: "This Mac can unlock your Vault through Keychain without running the password check.",
+              body: "CanCan can unlock your Vault with Touch ID without running the password check.",
               tone: "success",
-              title: "Remembered unlock enabled",
+              title: "Touch ID unlock enabled",
             }
           : {
               body: "Your current Vault stays open. Your password will be required after you lock or restart CanCan.",
               tone: "success",
-              title: "Remembered unlock removed",
+              title: "Touch ID unlock removed",
             },
       );
     }).finally(() => setUpdatingRemembered(false));
@@ -1502,7 +1459,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         {vaultStatus === "not_created" || vaultStatus === "locked" ? (
           <VaultGate
             busy={busy}
-            body={vaultStatus === "not_created" ? "Create a local Vault before adding your first statement or export." : "Unlock your local Vault to add a file or check its routing."}
+            body={vaultStatus === "not_created" ? "Create a local Vault before adding your first statement or export." : "Unlock your local Vault to add a file or check its routing. While CanCan stays open, background intake keeps working and your Mac's login session protects the live Vault; CanCan locks only when you lock it or quit the app."}
             password={password}
             rememberedOnThisMac={rememberedOnThisMac}
             title={vaultStatus === "not_created" ? "Create your Vault" : "Unlock your Vault"}

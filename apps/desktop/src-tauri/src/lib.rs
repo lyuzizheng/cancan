@@ -4,7 +4,6 @@ mod local_inbox;
 mod presentation_types;
 mod runtime;
 mod source_observations;
-mod system_lock;
 mod vault;
 mod viewer;
 
@@ -15,13 +14,13 @@ use runtime::{
     get_review_detail, get_review_job, import_source_document, list_account_confirmation_prompts,
     list_money_sources, list_recent_activity, list_relationship_candidates, list_review_items,
     list_source_confirmation_prompts, list_source_documents, list_statement_password_sources,
-    list_tasks, list_unassigned_source_documents, local_inbox_status, lock_vault,
-    park_source_candidate, preview_source_document, remember_vault_on_this_mac,
+    list_tasks, list_unassigned_source_documents, local_inbox_status, lock_vault, on_run_event,
+    on_window_event, park_source_candidate, preview_source_document, remember_vault_on_this_mac,
     remove_review_record, remove_statement_password, render_source_document_page,
     reparse_source_document, rescan_local_inbox, restore_dismissed_candidate_account,
-    save_recovery_file, save_source_document_copy, try_saved_statement_password,
-    undo_committed_event, unlock_source_document, unlock_vault, unlock_vault_with_keychain,
-    vault_access_status, vault_status,
+    save_recovery_file, save_source_document_copy, setup_background_window,
+    try_saved_statement_password, undo_committed_event, unlock_source_document, unlock_vault,
+    unlock_vault_with_keychain, vault_access_status, vault_status,
 };
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
@@ -66,7 +65,7 @@ pub fn run() {
             let ownership = VaultProcessOwnership::acquire(&app_data_dir)?;
             app.manage(ownership);
             app.manage(VaultRuntime::new(app_data_dir.join("vault")));
-            system_lock::install(app.handle().clone());
+            setup_background_window(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -115,8 +114,10 @@ pub fn run() {
             get_review_job,
             undo_committed_event
         ])
-        .run(tauri::generate_context!())
-        .expect("CanCan desktop runtime failed");
+        .on_window_event(on_window_event)
+        .build(tauri::generate_context!())
+        .expect("CanCan desktop runtime failed")
+        .run(on_run_event);
 }
 
 #[cfg(test)]

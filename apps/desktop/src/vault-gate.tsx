@@ -23,10 +23,10 @@ export function VaultGate({
       <h2 id="vault-gate-title">{title}</h2>
       <p>{body}</p>
       {rememberedOnThisMac === null ? (
-        <p className="vault-keychain-status">Keychain unlock is unavailable. Use your Vault password.</p>
+        <p className="vault-keychain-status">Touch ID unlock is unavailable. Use your Vault password.</p>
       ) : rememberedOnThisMac && onUnlockWithKeychain ? (
         <button className="button button-quiet vault-keychain-unlock" disabled={busy} onClick={onUnlockWithKeychain} type="button">
-          Unlock with this Mac
+          Unlock with Touch ID
         </button>
       ) : null}
       {acceptsPassword ? (

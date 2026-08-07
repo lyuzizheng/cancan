@@ -44,7 +44,7 @@ objc2-foundation = { version = "=0.3.2", default-features = false, features = ["
 objc2-image-io = { version = "=0.3.2", default-features = false, features = ["std", "CGImageProperties", "CGImageSource", "objc2-core-graphics"] }
 objc2-pdf-kit = { version = "=0.3.2", default-features = false, features = ["PDFDocument", "PDFPage"] }
 objc2-vision = { version = "=0.3.2", default-features = false, features = ["std", "VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler", "VNTypes", "objc2-core-foundation"] }
-security-framework = "=3.7.0"
+security-framework = { version = "=3.7.0", features = ["OSX_10_15"] }
 
 [dev-dependencies]
 tempfile = "=3.27.0"

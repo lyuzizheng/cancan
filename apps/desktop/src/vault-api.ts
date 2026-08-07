@@ -395,13 +395,13 @@ export function commandErrorMessage(error: unknown): string {
     case "password_required":
       return "Enter a password to continue.";
     case "remembered_unlock_unavailable":
-      return "Remembered unlock is no longer available. Use your Vault password instead.";
+      return "Touch ID unlock is no longer available. Use your Vault password instead.";
     case "remembered_unlock_failed":
-      return "CanCan couldn’t access remembered unlock in this Mac’s Keychain.";
+      return "CanCan couldn’t unlock with Touch ID.";
     case "remember_failed":
-      return "CanCan couldn’t save remembered unlock in this Mac’s Keychain.";
+      return "CanCan couldn’t enable Touch ID unlock.";
     case "forget_failed":
-      return "CanCan couldn’t remove remembered unlock from this Mac’s Keychain.";
+      return "CanCan couldn’t disable Touch ID unlock.";
     case "statement_password_required":
       return "Enter the statement password to continue.";
     case "statement_password_save_failed":

@@ -75,6 +75,7 @@ const RECOVERY_STATUS_MAGIC: &[u8; 8] = b"CCRECST1";
 const RECOVERY_STATUS_V2_MAGIC: &[u8; 8] = b"CCRECST2";
 const KEYCHAIN_ACCOUNT: &str = "active-vault";
 const KEYCHAIN_ITEM_NOT_FOUND_STATUS: i32 = -25300;
+const KEYCHAIN_ITEM_INVALIDATED_STATUS: i32 = -25301;
 const KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.remembered-vault";
 const STATEMENT_PASSWORD_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.statement-password";
 const GMAIL_REFRESH_TOKEN_KEYCHAIN_SERVICE: &str = "dev.cancan.desktop.gmail-refresh-token";
@@ -467,8 +468,6 @@ struct RuntimeInner {
     root: PathBuf,
     statement_passwords: Arc<dyn StatementPasswordStore>,
     store: Mutex<Option<ManualImportStore>>,
-    system_lock_generation: AtomicU64,
-    system_session_active: AtomicBool,
     vault_session_generation: AtomicU64,
     #[cfg(test)]
     intake_test_hooks: Mutex<IntakeTestHooks>,
@@ -508,6 +507,11 @@ mod inbox_watcher;
 #[cfg(test)]
 mod intake_tests;
 mod keyring;
+#[cfg(test)]
+mod keyring_tests;
+mod lifecycle;
+#[cfg(test)]
+mod remembered_key_tests;
 mod review;
 mod sidecar;
 mod source_confirmation;
@@ -528,6 +532,7 @@ pub(crate) use documents::*;
 pub(crate) use error::*;
 pub(crate) use inbox::*;
 use keyring::*;
+pub(crate) use lifecycle::*;
 pub(crate) use review::*;
 use sidecar::*;
 pub(crate) use source_confirmation::*;
@@ -537,33 +542,22 @@ pub(crate) use vault_lifecycle::*;
 
 impl VaultRuntime {
     pub(super) fn store(&self) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
-        let system_lock_generation = self.inner.system_lock_generation.load(Ordering::SeqCst);
-        self.store_for_system_generation(system_lock_generation)
-    }
-
-    pub(super) fn store_for_system_generation(
-        &self,
-        system_lock_generation: u64,
-    ) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
-        if !self.system_session_active() {
-            return Err(RuntimeError::new("vault_locked"));
-        }
-        let store = self.raw_store()?;
-        if !self.system_session_active()
-            || self.inner.system_lock_generation.load(Ordering::SeqCst) != system_lock_generation
-        {
-            return Err(RuntimeError::new("vault_locked"));
-        }
-        Ok(store)
-    }
-
-    pub(super) fn raw_store(
-        &self,
-    ) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
         self.inner
             .store
             .lock()
             .map_err(|_| RuntimeError::new("runtime_unavailable"))
+    }
+
+    #[cfg(test)]
+    pub(super) fn store_for_vault_session(
+        &self,
+        vault_session_generation: u64,
+    ) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
+        let store = self.store()?;
+        if self.inner.vault_session_generation.load(Ordering::SeqCst) != vault_session_generation {
+            return Err(RuntimeError::new("vault_locked"));
+        }
+        Ok(store)
     }
 
     #[cfg(test)]
@@ -657,23 +651,30 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("runtime_unavailable"))
     }
 
-    pub(super) fn system_session_active(&self) -> bool {
-        self.inner.system_session_active.load(Ordering::SeqCst)
-    }
-
     pub(super) fn load_remembered_master_key(
         &self,
     ) -> Result<Option<Zeroizing<[u8; KEY_LEN]>>, ()> {
-        let Some(secret) = self.inner.remembered_keys.load()? else {
-            return Ok(None);
-        };
-        let master_key = match secret.as_slice().try_into() {
-            Ok(master_key) => master_key,
-            Err(_) => {
+        let secret = match self.inner.remembered_keys.load() {
+            Ok(Some(secret)) if secret.len() == KEY_LEN => secret,
+            Ok(_) => {
+                // The protected key is gone or malformed; remove the presence
+                // marker so the UI stops offering Touch ID.
                 self.inner.remembered_keys.delete()?;
                 return Ok(None);
             }
+            Err(()) if self.inner.remembered_keys.invalidated() => {
+                // The enrolled Touch ID fingerprint set changed and invalidated
+                // the item; clean up both items so the UI stops offering a
+                // Touch ID unlock that can never succeed. Other load errors
+                // (user cancel, authentication unavailable) keep the marker so
+                // the retry stays possible.
+                self.inner.remembered_keys.delete()?;
+                return Ok(None);
+            }
+            Err(()) => return Err(()),
         };
-        Ok(Some(Zeroizing::new(master_key)))
+        Ok(Some(Zeroizing::new(
+            <[u8; KEY_LEN]>::try_from(secret.as_slice()).expect("length checked"),
+        )))
     }
 }

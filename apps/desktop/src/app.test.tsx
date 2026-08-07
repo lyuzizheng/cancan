@@ -106,7 +106,7 @@ describe("VaultGate", () => {
         title="Unlock your Vault"
       />,
     );
-    expect(remembered).toContain("Unlock with this Mac");
+    expect(remembered).toContain("Unlock with Touch ID");
 
     const unavailable = renderToStaticMarkup(
       <VaultGate
@@ -119,7 +119,7 @@ describe("VaultGate", () => {
         title="Unlock your Vault"
       />,
     );
-    expect(unavailable).toContain("Keychain unlock is unavailable");
+    expect(unavailable).toContain("Touch ID unlock is unavailable");
   });
 });
 
@@ -128,7 +128,7 @@ describe("SourcesView", () => {
     const markup = render({ unassignedDocuments: [document] });
 
     expect(markup).toContain("Add file");
-    expect(markup).toContain("Remember on this Mac");
+    expect(markup).toContain("Unlock with Touch ID");
     expect(markup).toContain("June statement.pdf");
     expect(markup).toContain("View document");
     expect(markup).toContain("Re-run parser");
