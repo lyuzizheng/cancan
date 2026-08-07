@@ -260,6 +260,23 @@ describe("App manual import orchestration", () => {
     expect(api.unlockVaultWithKeychain).not.toHaveBeenCalled();
   });
 
+  it("states the live-Vault tradeoff plainly on the unlock gate", async () => {
+    const api = createApi({
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
+        rememberedOnThisMac: false,
+        status: "locked",
+      })),
+    });
+
+    await mount(api);
+
+    expect(container.textContent).toContain(
+      "background intake keeps working and your Mac's login session protects the live Vault",
+    );
+    expect(container.textContent).toContain("locks only when you lock it or quit");
+  });
+
   it("enables and removes Touch ID unlock without sending the key to the renderer", async () => {
     const api = createApi();
 

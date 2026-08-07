@@ -155,7 +155,7 @@ impl VaultRuntime {
     }
 
     pub(crate) fn status(&self) -> Result<VaultStatus, RuntimeError> {
-        let store = self.raw_store()?;
+        let store = self.store()?;
         if store.is_some() {
             return Ok(VaultStatus::Unlocked);
         }
@@ -286,6 +286,16 @@ impl VaultRuntime {
     }
 
     pub(crate) fn unlock_with_keychain(&self) -> Result<VaultStatus, RuntimeError> {
+        // Load the key before acquiring the store guard: the Touch ID-protected
+        // read shows a system prompt that can stay up until the user responds,
+        // and holding the store mutex across it would block status queries and
+        // background intake jobs for the entire prompt.
+        let Some(master_key) = self
+            .load_remembered_master_key()
+            .map_err(|_| RuntimeError::new("remembered_unlock_failed"))?
+        else {
+            return Err(RuntimeError::new("remembered_unlock_unavailable"));
+        };
         let store = self.store()?;
         if store.is_some() {
             return Ok(VaultStatus::Unlocked);
@@ -293,12 +303,6 @@ impl VaultRuntime {
         if self.locked_status()? != VaultStatus::Locked {
             return Err(RuntimeError::new("vault_not_created"));
         }
-        let Some(master_key) = self
-            .load_remembered_master_key()
-            .map_err(|_| RuntimeError::new("remembered_unlock_failed"))?
-        else {
-            return Err(RuntimeError::new("remembered_unlock_unavailable"));
-        };
         let opened = ManualImportStore::open_existing(&self.inner.root, master_key)
             .map_err(|_| RuntimeError::new("remembered_unlock_failed"))?;
         self.finish_unlock(opened, store)
@@ -360,7 +364,7 @@ impl VaultRuntime {
     pub(crate) fn lock(&self) -> Result<VaultStatus, RuntimeError> {
         self.advance_vault_session();
         self.clear_local_inbox_access();
-        let mut store = self.raw_store()?;
+        let mut store = self.store()?;
         *store = None;
         self.document_passwords()?.clear();
         self.locked_status()

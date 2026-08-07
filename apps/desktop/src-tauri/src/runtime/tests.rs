@@ -96,6 +96,67 @@ impl RememberedKeyStore for MalformedDeleteFailingRememberedKeyStore {
     }
 }
 
+/// Simulates a Touch ID item the OS invalidated after the enrolled fingerprint
+/// set changed: `load` errors, the marker is still present, and `delete`
+/// cleans both items up.
+struct InvalidatedRememberedKeyStore {
+    deleted: Mutex<bool>,
+}
+
+impl InvalidatedRememberedKeyStore {
+    fn new() -> Self {
+        Self {
+            deleted: Mutex::new(false),
+        }
+    }
+}
+
+impl RememberedKeyStore for InvalidatedRememberedKeyStore {
+    fn delete(&self) -> Result<(), ()> {
+        *self.deleted.lock().map_err(|_| ())? = true;
+        Ok(())
+    }
+
+    fn is_present(&self) -> Result<bool, ()> {
+        Ok(!*self.deleted.lock().map_err(|_| ())?)
+    }
+
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+        Err(())
+    }
+
+    fn invalidated(&self) -> bool {
+        true
+    }
+
+    fn save(&self, _secret: &[u8]) -> Result<(), ()> {
+        Err(())
+    }
+}
+
+/// Simulates a transient read failure (user cancelled the Touch ID prompt or
+/// authentication is temporarily unavailable): `load` errors, the marker is
+/// still present, and the item is not invalidated, so the offer must survive.
+struct TransientFailureRememberedKeyStore;
+
+impl RememberedKeyStore for TransientFailureRememberedKeyStore {
+    fn delete(&self) -> Result<(), ()> {
+        Err(())
+    }
+
+    fn is_present(&self) -> Result<bool, ()> {
+        Ok(true)
+    }
+
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+        Err(())
+    }
+
+    fn save(&self, _secret: &[u8]) -> Result<(), ()> {
+        Err(())
+    }
+}
+
 #[derive(Default)]
 pub(super) struct MemoryStatementPasswordStore {
     fail_delete: AtomicBool,
@@ -889,7 +950,7 @@ fn lock_waits_for_store_cleanup_and_rejects_a_stale_vault_session_generation() {
         .inner
         .vault_session_generation
         .load(Ordering::SeqCst);
-    let held_store = runtime.raw_store().expect("hold active store");
+    let held_store = runtime.store().expect("hold active store");
     let locking_runtime = runtime.clone();
     let (finished, completion) = std::sync::mpsc::channel();
     thread::spawn(move || {
@@ -991,6 +1052,91 @@ fn remembers_unlock_in_the_secret_store_and_removes_it_explicitly() {
             .expect_err("remembered key was removed")
             .code(),
         "remembered_unlock_unavailable"
+    );
+}
+
+#[test]
+fn clears_an_os_invalidated_touch_id_item_and_keeps_password_fallback() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let root = parent.path().join("vault");
+    let remembered_keys = Arc::new(MemoryRememberedKeyStore::default());
+    let setup = VaultRuntime::with_remembered_keys(root.clone(), remembered_keys);
+    setup
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    setup.remember_on_this_mac().expect("remember on this Mac");
+    setup.lock().expect("lock Vault");
+    drop(setup);
+
+    let invalidated = Arc::new(InvalidatedRememberedKeyStore::new());
+    let runtime = VaultRuntime::with_remembered_keys(root.clone(), invalidated.clone());
+    assert_eq!(
+        runtime.access_status().expect("status before unlock"),
+        VaultAccessStatus {
+            recovery_configured: false,
+            remembered_on_this_mac: Some(true),
+            status: VaultStatus::Locked,
+        }
+    );
+
+    // The invalidated item errors on load; the runtime clears both items so the
+    // stale Touch ID offer disappears, then the Vault password still unlocks.
+    assert_eq!(
+        runtime
+            .unlock_with_keychain()
+            .expect_err("invalidated Touch ID item")
+            .code(),
+        "remembered_unlock_unavailable"
+    );
+    assert!(*invalidated.deleted.lock().expect("deleted flag"));
+    assert_eq!(
+        runtime.access_status().expect("status after cleanup"),
+        VaultAccessStatus {
+            recovery_configured: false,
+            remembered_on_this_mac: Some(false),
+            status: VaultStatus::Locked,
+        }
+    );
+    assert_eq!(
+        runtime
+            .unlock(b"synthetic-vault-password")
+            .expect("password fallback"),
+        VaultStatus::Unlocked
+    );
+}
+
+#[test]
+fn keeps_the_touch_id_offer_when_the_read_fails_transiently() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let root = parent.path().join("vault");
+    let remembered_keys = Arc::new(MemoryRememberedKeyStore::default());
+    let setup = VaultRuntime::with_remembered_keys(root.clone(), remembered_keys);
+    setup
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    setup.remember_on_this_mac().expect("remember on this Mac");
+    setup.lock().expect("lock Vault");
+    drop(setup);
+
+    // A transient failure (user cancel / authentication unavailable) errors on
+    // load without being invalidated, so the marker must survive and the retry
+    // stays offered.
+    let runtime =
+        VaultRuntime::with_remembered_keys(root, Arc::new(TransientFailureRememberedKeyStore));
+    assert_eq!(
+        runtime
+            .unlock_with_keychain()
+            .expect_err("transient Touch ID failure")
+            .code(),
+        "remembered_unlock_failed"
+    );
+    assert_eq!(
+        runtime.access_status().expect("marker kept"),
+        VaultAccessStatus {
+            recovery_configured: false,
+            remembered_on_this_mac: Some(true),
+            status: VaultStatus::Locked,
+        }
     );
 }
 

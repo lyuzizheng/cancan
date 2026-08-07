@@ -109,7 +109,7 @@ fn explicit_ineligible_inputs_create_visible_terminal_receipts() {
         .expect_err("non-UTF-8 input must fail");
     assert_eq!(non_utf8_error.code(), "import_failed");
 
-    let store = runtime.raw_store().expect("open store");
+    let store = runtime.store().expect("open store");
     let store = store.as_ref().expect("unlocked store");
     let items = store.intake_item_test_states().expect("read receipts");
     assert_eq!(items.len(), 3);
@@ -157,7 +157,7 @@ fn explicit_plan_failure_releases_store_before_finalization() {
         .expect("plan failure must not deadlock")
         .expect_err("injected plan failure");
     assert_eq!(error.code(), "import_failed");
-    let store = runtime.raw_store().expect("open store");
+    let store = runtime.store().expect("open store");
     let store = store.as_ref().expect("unlocked store");
     let items = store.intake_item_test_states().expect("read receipt");
     assert_eq!(items.len(), 1);
@@ -192,7 +192,7 @@ fn explicit_persist_failure_releases_store_before_finalization() {
         .expect("persist failure must not deadlock")
         .expect_err("injected persist failure");
     assert_eq!(error.code(), "import_failed");
-    let store = runtime.raw_store().expect("open store");
+    let store = runtime.store().expect("open store");
     let store = store.as_ref().expect("unlocked store");
     let items = store.intake_item_test_states().expect("read receipt");
     assert_eq!(items.len(), 1);
@@ -217,7 +217,7 @@ fn explicit_finalization_failure_is_returned_without_claiming_terminalization() 
         .import_selected_document(&parent.path().join("missing.pdf"))
         .expect_err("missing input must fail");
     assert_eq!(error.code(), "intake_finalization_failed");
-    let store = runtime.raw_store().expect("open store");
+    let store = runtime.store().expect("open store");
     let store = store.as_ref().expect("unlocked store");
     let items = store.intake_item_test_states().expect("read receipt");
     assert_eq!(items.len(), 1);
@@ -272,7 +272,7 @@ fn explicit_imports_terminalize_capture_duplicate_restore_and_retry_receipts() {
         .expect("retry restore decision");
     assert_eq!(restored_again.status, SourceDocumentImportStatus::Restored);
 
-    let store = runtime.raw_store().expect("open store");
+    let store = runtime.store().expect("open store");
     let store = store.as_ref().expect("unlocked store");
     let batches = store
         .intake_batch_test_states()
@@ -364,7 +364,7 @@ fn restore_decision_is_mutually_exclusive_and_decline_is_idempotent() {
         .expect_err("declined receipt must not be confirmable");
     assert_eq!(error.code(), "import_failed");
 
-    let store = runtime.raw_store().expect("open store");
+    let store = runtime.store().expect("open store");
     let store = store.as_ref().expect("unlocked store");
     let actions = store
         .source_document_audit_actions_test(&imported.document_id)
@@ -404,7 +404,7 @@ fn interrupted_explicit_intake_is_terminal_after_store_restart() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     {
-        let mut store = runtime.raw_store().expect("open store");
+        let mut store = runtime.store().expect("open store");
         store
             .as_mut()
             .expect("unlocked store")
@@ -433,7 +433,7 @@ fn interrupted_explicit_intake_is_terminal_after_store_restart() {
     restarted
         .unlock(b"synthetic-vault-password")
         .expect("unlock restarted Vault");
-    let store = restarted.raw_store().expect("open restarted store");
+    let store = restarted.store().expect("open restarted store");
     let state = store
         .as_ref()
         .expect("unlocked restarted store")
@@ -482,7 +482,7 @@ fn local_inbox_failed_capture_retries_the_same_entry_without_erasing_siblings() 
     assert_eq!(first.deferred, 1);
     assert_eq!(first.imported, 1);
     let first_items = {
-        let store = runtime.raw_store().expect("open store");
+        let store = runtime.store().expect("open store");
         let store = store.as_ref().expect("unlocked store");
         store
             .intake_item_test_states()
@@ -514,7 +514,7 @@ fn local_inbox_failed_capture_retries_the_same_entry_without_erasing_siblings() 
         .expect("retry failed image entry");
     assert_eq!(second.deferred, 0);
     assert_eq!(second.imported, 1);
-    let store = runtime.raw_store().expect("reopen store");
+    let store = runtime.store().expect("reopen store");
     let store = store.as_ref().expect("unlocked store");
     let batches = store
         .intake_batch_test_states()
@@ -592,7 +592,7 @@ fn overlapping_local_inbox_scans_seal_one_batch() {
     runtime.clear_local_inbox_scan_barrier();
     assert_eq!(first_result.imported + second_result.imported, 1);
 
-    let store = runtime.raw_store().expect("open store");
+    let store = runtime.store().expect("open store");
     let store = store.as_ref().expect("unlocked store");
     let batches = store
         .intake_batch_test_states()
@@ -629,7 +629,7 @@ fn local_inbox_observation_failure_finishes_all_admitted_siblings() {
         .rescan_local_inbox()
         .expect_err("observation failure should aggregate after the batch");
     assert_eq!(error.code(), "local_inbox_observation_failed");
-    let store = runtime.raw_store().expect("open store");
+    let store = runtime.store().expect("open store");
     let store = store.as_ref().expect("unlocked store");
     let items = store.intake_item_test_states().expect("read intake items");
     assert_eq!(items.len(), 2);
@@ -665,7 +665,7 @@ fn local_inbox_finalization_failure_recovers_pending_item_and_continues() {
     std::fs::write(inbox.join("failed.png"), b"not a PNG").expect("write invalid image");
     std::fs::write(inbox.join("sibling.pdf"), b"%PDF-1.4\nvalid").expect("write valid sibling");
     {
-        let mut store = runtime.raw_store().expect("open store");
+        let mut store = runtime.store().expect("open store");
         store
             .as_mut()
             .expect("unlocked store")
@@ -687,7 +687,7 @@ fn local_inbox_finalization_failure_recovers_pending_item_and_continues() {
         .rescan_local_inbox()
         .expect_err("finalization failure should be returned");
     assert_eq!(error.code(), "intake_finalization_failed");
-    let store = runtime.raw_store().expect("open store");
+    let store = runtime.store().expect("open store");
     let store = store.as_ref().expect("unlocked store");
     let items = store.intake_item_test_states().expect("read intake items");
     assert_eq!(items.len(), 3);

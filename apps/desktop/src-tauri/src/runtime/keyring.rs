@@ -13,6 +13,13 @@ pub(super) trait RememberedKeyStore: Send + Sync {
     fn delete(&self) -> Result<(), ()>;
     fn is_present(&self) -> Result<bool, ()>;
     fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
+    /// True when the operating system has permanently invalidated the stored
+    /// secret (for example, the enrolled Touch ID fingerprint set changed), so
+    /// the presence marker and any stale secret should be cleaned up instead of
+    /// offering an unlock that can never succeed.
+    fn invalidated(&self) -> bool {
+        false
+    }
     fn save(&self, secret: &[u8]) -> Result<(), ()>;
 }
 
@@ -134,13 +141,15 @@ impl KeychainRememberedKeyStore {
 impl RememberedKeyStore for KeychainRememberedKeyStore {
     #[cfg(target_os = "macos")]
     fn delete(&self) -> Result<(), ()> {
-        let results = [
+        let protected = [
             self.delete_item(&self.account, true),
             self.delete_item(&self.marker_account, true),
-            // Clean up any pre-biometry item stored in the legacy file-based keychain.
-            self.delete_item(&self.account, false),
         ];
-        if results.iter().any(|r| r.is_err()) {
+        // The legacy file-based-keychain item is a best-effort cleanup; an OS
+        // error there must not fail a forget that already removed the
+        // Touch ID-protected items.
+        let _ = self.delete_item(&self.account, false);
+        if protected.iter().any(|result| result.is_err()) {
             Err(())
         } else {
             Ok(())
@@ -162,6 +171,18 @@ impl RememberedKeyStore for KeychainRememberedKeyStore {
     #[cfg(not(target_os = "macos"))]
     fn is_present(&self) -> Result<bool, ()> {
         Err(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn invalidated(&self) -> bool {
+        match self.read_item(&self.account) {
+            // The read failing because the item is gone means the marker was
+            // left behind after cleanup; treat it as invalidated so the marker
+            // is removed and the UI stops offering Touch ID.
+            Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => true,
+            Err(error) => error.code() == KEYCHAIN_ITEM_INVALIDATED_STATUS,
+            Ok(_) => false,
+        }
     }
 
     #[cfg(target_os = "macos")]
