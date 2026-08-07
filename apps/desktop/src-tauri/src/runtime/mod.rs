@@ -510,6 +510,8 @@ mod keyring;
 #[cfg(test)]
 mod keyring_tests;
 mod lifecycle;
+#[cfg(test)]
+mod remembered_key_tests;
 mod review;
 mod sidecar;
 mod source_confirmation;
