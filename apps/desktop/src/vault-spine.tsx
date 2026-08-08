@@ -10,13 +10,14 @@ import type { VaultStatus } from "./command-contracts";
 
 export type VaultScreenStatus = VaultStatus | "loading";
 
-export type AppView = "overview" | "sources" | "review";
+export type AppView = "overview" | "sources" | "review" | "tasks";
 
 export interface VaultSpineProps {
   activeView: AppView;
   inert: boolean;
   onNavigate: (view: AppView) => void;
   reviewCount: number | null;
+  tasksCount: number | null;
   vaultStatus: VaultScreenStatus;
 }
 
@@ -60,6 +61,13 @@ export function VaultSpine(props: VaultSpineProps) {
             onNavigate={() => props.onNavigate("overview")}
           />
           <NavEntry
+            active={props.activeView === "tasks"}
+            count={props.tasksCount}
+            icon="jobs"
+            label="Tasks"
+            onNavigate={() => props.onNavigate("tasks")}
+          />
+          <NavEntry
             active={props.activeView === "sources"}
             icon="sources"
             label="Sources"
@@ -75,7 +83,6 @@ export function VaultSpine(props: VaultSpineProps) {
             onNavigate={() => props.onNavigate("review")}
           />
           <UpcomingEntry icon="money-flow" label="Money Flow" />
-          <UpcomingEntry icon="jobs" label="Jobs" />
           <UpcomingEntry icon="settings" label="Settings" />
         </ul>
       </nav>

@@ -34,7 +34,7 @@ export type SourceConfirmationScopeKind = "provider_singleton" | "provider_root_
 
 export type SourceConfirmationPromptStatus = "pending" | "kept_unassigned";
 
-export type SourceConfirmationPrompt = { candidateId: string, documentCount: number, latestDocumentTitle: string | null, providerKey: string, scopeKind: SourceConfirmationScopeKind, status: SourceConfirmationPromptStatus, version: number, };
+export type SourceConfirmationPrompt = { candidateId: string, documentCount: number, latestDocumentId: string | null, latestDocumentTitle: string | null, providerKey: string, scopeKind: SourceConfirmationScopeKind, status: SourceConfirmationPromptStatus, version: number, };
 
 export type MoneySourceCandidateState = { candidateId: string, confirmedMoneySourceId: string | null, status: MoneySourceCandidateStatus, version: number, };
 

@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { AccountConfirmationCard } from "./attention";
 import type { AccountConfirmationPrompt } from "./command-contracts";
-import { AttentionSection, type AttentionSectionProps } from "./attention";
 
 const prompt: AccountConfirmationPrompt = {
   candidateAccounts: [
@@ -28,28 +28,26 @@ const prompt: AccountConfirmationPrompt = {
   proposalVersion: "proposal-version-1",
 };
 
-const baseProps: AttentionSectionProps = {
-  accountPrompts: [],
-  attentionBusyKey: null,
-  existingSources: [],
-  onConfirmSourceCandidate: () => undefined,
-  onDecideAccounts: () => undefined,
-  onKeepSourceCandidateUnassigned: () => undefined,
-  onRestoreAccount: () => undefined,
-  sourcePrompts: [],
-};
-
-function render(props: Partial<AttentionSectionProps> = {}): string {
-  return renderToStaticMarkup(<AttentionSection {...baseProps} {...props} />);
+function render(
+  overrides: Partial<Parameters<typeof AccountConfirmationCard>[0]> = {},
+): string {
+  return renderToStaticMarkup(
+    <ul>
+      <AccountConfirmationCard
+        busy={false}
+        deciding={false}
+        onDecide={() => undefined}
+        onRestore={() => undefined}
+        prompt={prompt}
+        {...overrides}
+      />
+    </ul>,
+  );
 }
 
-describe("AttentionSection", () => {
-  it("renders nothing without candidate or dismissed accounts", () => {
-    expect(render()).toBe("");
-  });
-
+describe("AccountConfirmationCard", () => {
   it("renders per-account choices and an explicit restore action", () => {
-    const html = render({ accountPrompts: [prompt] });
+    const html = render();
 
     expect(html).toContain("CanCan found new accounts in your DBS statements");
     expect(html).toContain("DBS Multiplier Account");
@@ -60,24 +58,22 @@ describe("AttentionSection", () => {
   });
 
   it("disables actions while an account decision is in flight", () => {
-    const html = render({
-      accountPrompts: [prompt],
-      attentionBusyKey: "account:source-dbs",
-    });
+    const html = render({ busy: true, deciding: true });
 
     expect(html).toContain("Saving…");
     expect((html.match(/disabled=""/g) ?? []).length).toBeGreaterThan(1);
   });
 
-  it("does not show a zero attention badge for restore-only accounts", () => {
+  it("shows restore-only accounts without candidate choices", () => {
     const html = render({
-      accountPrompts: [{
+      prompt: {
         ...prompt,
         candidateAccounts: [],
-      }],
+      },
     });
 
-    expect(html).not.toContain('aria-label="0 to check"');
+    expect(html).not.toContain("Save choices");
     expect(html).toContain("Wise USD Balance · dismissed");
+    expect(html).toContain("Restore");
   });
 });

@@ -13,6 +13,8 @@ import type {
   SourceConfirmationPrompt,
   SourceDocumentSummary,
   RecentActivitySummary,
+  TaskGroup,
+  Tasks,
 } from "./command-contracts";
 import {
   DocumentPreview,
@@ -33,7 +35,10 @@ import {
   type ReviewJobPanelState,
 } from "./review";
 import { createSourceConfirmationActions } from "./source-confirmation-actions";
+import { FocusedSourceConfirmationDialog } from "./source-confirmation";
 import { SourcesView, type MoneySourceDocuments } from "./sources-view";
+import { createTaskDestinationActions } from "./task-destination-actions";
+import { TasksView } from "./tasks-view";
 import {
   commandErrorMessage,
   createVaultApi,
@@ -41,6 +46,7 @@ import {
 } from "./vault-api";
 import { VaultGate } from "./vault-gate";
 import { VaultSpine, type AppView, type VaultScreenStatus } from "./vault-spine";
+import { createViewerActions } from "./viewer-actions";
 
 export type { Notice } from "./feedback";
 export type { VaultScreenStatus } from "./vault-spine";
@@ -106,6 +112,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     SourceConfirmationPrompt[] | null
   >(null);
   const [attentionBusyKey, setAttentionBusyKey] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<Tasks | null>(null);
+  const [tasksFull, setTasksFull] = useState<Tasks | null>(null);
+  const [tasksFilter, setTasksFilter] = useState<TaskGroup>("needs_action");
+  const [focusedCandidateId, setFocusedCandidateId] = useState<string | null>(null);
   const viewerRequestId = useRef(0);
   const previewRequestId = useRef(0);
   const unlockRequestId = useRef(0);
@@ -189,6 +199,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setAccountPrompts(null);
     setSourcePrompts(null);
     setAttentionBusyKey(null);
+    setTasks(null);
+    setTasksFull(null);
+    setTasksFilter("needs_action");
+    setFocusedCandidateId(null);
     setBusy(false);
     return nextSessionId;
   }, [clearViewer, clearPreview, stopReviewJobPolling]);
@@ -277,12 +291,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           }
         },
       );
-      const [items, overview, activity, accounts, sourceConfirmations] = await Promise.all([
+      const [items, overview, activity, accounts, sourceConfirmations, commandTasks, fullTasks] = await Promise.all([
         api.listReviewItems(),
         api.getMoneyOverview(),
         api.listRecentActivity(),
         api.listAccountConfirmationPrompts(),
         api.listSourceConfirmationPrompts(),
+        api.listTasks("command_center"),
+        api.listTasks("full"),
       ]);
       if (
         vaultSessionId.current === sessionId
@@ -293,6 +309,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setRecentActivity(activity);
         setAccountPrompts(accounts);
         setSourcePrompts(sourceConfirmations);
+        setTasks(commandTasks);
+        setTasksFull(fullTasks);
         setSelectedReviewIds((current) => new Set(
           [...current].filter((id) =>
             items.some((item) => item.reviewItemId === id)
@@ -775,59 +793,38 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     });
   };
 
-  const loadViewerPage = (
-    documentId: string,
-    documentTitle: string,
-    pageNumber: number,
-  ) => {
-    const requestId = viewerRequestId.current + 1;
-    viewerRequestId.current = requestId;
-    setViewingPage(true);
-    void run(async () => {
-      try {
-        const page = await api.renderSourceDocumentPage(documentId, pageNumber);
-        if (viewerRequestId.current === requestId) {
-          setViewer({ documentId, documentTitle, page });
-        }
-      } catch (nextError) {
-        if (viewerRequestId.current !== requestId) {
-          return;
-        }
-        if (viewer !== null) {
-          clearViewer();
-        }
-        throw nextError;
-      }
-    }).finally(() => {
-      if (viewerRequestId.current === requestId) {
-        setViewingPage(false);
-      }
-    });
-  };
-
-  const loadDocumentPreview = (documentId: string, documentTitle: string) => {
-    const requestId = previewRequestId.current + 1;
-    previewRequestId.current = requestId;
-    void run(async () => {
-      try {
-        const nextPreview = await api.previewSourceDocument(documentId);
-        if (previewRequestId.current === requestId) {
-          setPreview({ documentTitle, preview: nextPreview });
-        }
-      } catch (nextError) {
-        if (previewRequestId.current !== requestId) {
-          return;
-        }
-        throw nextError;
-      }
-    });
-  };
+  const { loadDocumentPreview, loadViewerPage } = createViewerActions({
+    api,
+    clearViewer,
+    previewRequestId,
+    run,
+    setPreview,
+    setViewer,
+    setViewingPage,
+    viewer,
+    viewerRequestId,
+  });
 
   const navigate = (view: AppView) => {
     setActiveView(view);
     setError(null);
     setNotice(null);
   };
+
+  const { openTaskDestination, viewDocument, viewPromptDocument } = createTaskDestinationActions({
+    loadDocumentPreview,
+    loadViewerPage,
+    navigate,
+    openDocumentUnlock,
+    saveRecoveryFile,
+    selectMoneySource,
+    selectedMoneySourceIdRef,
+    setFocusedCandidateId,
+    setNotice,
+    sourceDocuments,
+    unassignedDocuments,
+    viewerReturnFocus,
+  });
 
   const openReviewDetail = (item: ReviewItemSummary) => {
     const sessionId = vaultSessionId.current;
@@ -1445,14 +1442,12 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     vaultSessionId,
   });
 
-  const modalOpen = viewer !== null
-    || preview !== null
-    || unlockingDocument !== null;
+  const modalOpen = viewer !== null || preview !== null || unlockingDocument !== null
+    || focusedCandidateId !== null;
   const unlocked = vaultStatus === "unlocked";
   const existingSources = sourceDocuments.map((entry) => entry.source);
-  const pendingSourcePrompts = (sourcePrompts ?? []).filter(
-    (prompt) => prompt.status === "pending",
-  );
+  const focusedCandidate = focusedCandidateId === null ? undefined
+    : (sourcePrompts ?? []).find((prompt) => prompt.candidateId === focusedCandidateId);
 
   return (
     <AppShell>
@@ -1461,6 +1456,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         inert={modalOpen}
         onNavigate={navigate}
         reviewCount={unlocked ? reviewItems?.length ?? null : null}
+        tasksCount={unlocked ? tasks?.needsActionCount ?? null : null}
         vaultStatus={vaultStatus}
       />
 
@@ -1493,26 +1489,29 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
 
         {unlocked && activeView === "overview" ? (
           <OverviewView
-            accountPrompts={accountPrompts ?? []}
-            attentionBusyKey={attentionBusyKey}
-            existingSources={existingSources}
             loading={moneyOverview === null && recentActivity === null}
             moneyOverview={moneyOverview}
             notice={notice}
-            onConfirmSourceCandidate={(prompt, displayName, sourceType) =>
-              void confirmSourceCandidate(prompt, displayName, sourceType)}
-            onDecideAccounts={(prompt, decisions) => void decideAccounts(prompt, decisions)}
-            onKeepSourceCandidateUnassigned={(prompt) => void parkSourceCandidate(prompt)}
             onLock={() => void requestVaultLock()}
-            onOpenReview={() => navigate("review")}
             onOpenSources={() => navigate("sources")}
+            onOpenTask={openTaskDestination}
             onRefresh={() => void refreshVaultStatus()}
-            onRestoreAccount={(accountId) => void restoreAccount(accountId)}
             onUndo={undoCommittedEvent}
+            onViewAllTasks={() => navigate("tasks")}
             recentActivity={recentActivity}
-            reviewCount={reviewItems?.length ?? null}
-            sourcePrompts={pendingSourcePrompts}
+            tasks={tasks}
             undoingEventId={undoingEventId}
+          />
+        ) : null}
+
+        {unlocked && activeView === "tasks" ? (
+          <TasksView
+            filter={tasksFilter}
+            onFilterChange={setTasksFilter}
+            onLock={() => void requestVaultLock()}
+            onOpenTask={openTaskDestination}
+            onRefresh={() => void refreshVaultStatus()}
+            tasks={tasksFull}
           />
         ) : null}
 
@@ -1547,6 +1546,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
 
         {unlocked && activeView === "sources" ? (
           <SourcesView
+            accountPrompts={accountPrompts ?? []}
             attentionBusyKey={attentionBusyKey}
             busy={busy}
             deletingDocumentId={deletingDocumentId}
@@ -1561,6 +1561,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             notice={notice}
             onConfirmSourceCandidate={(prompt, displayName, sourceType) =>
               void confirmSourceCandidate(prompt, displayName, sourceType)}
+            onDecideAccounts={(prompt, decisions) => void decideAccounts(prompt, decisions)}
             onDelete={deleteDocument}
             onImport={importDocument}
             onInboxCancelDisable={() => setInboxConfirmingDisable(false)}
@@ -1575,17 +1576,12 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onOpenUnlock={openDocumentUnlock}
             onRefresh={() => void refreshVaultStatus()}
             onRememberedChange={updateRemembered}
+            onRestoreAccount={(accountId) => void restoreAccount(accountId)}
             onSelectMoneySource={selectMoneySource}
             onSaveRecoveryFile={saveRecoveryFile}
             onSaveSourceCopy={saveSourceCopy}
-            onView={(document, trigger) => {
-              viewerReturnFocus.current = trigger;
-              if (document.mimeType === "text/csv") {
-                loadDocumentPreview(document.documentId, document.originalFilename);
-              } else {
-                loadViewerPage(document.documentId, document.originalFilename, 1);
-              }
-            }}
+            onView={viewDocument}
+            onViewPromptDocument={viewPromptDocument}
             recoveryConfigured={recoveryConfigured}
             rememberedOnThisMac={rememberedOnThisMac}
             savingCopyDocumentId={savingCopyDocumentId}
@@ -1634,6 +1630,18 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           onSourceChange={selectUnlockSource}
           onSubmit={submitDocumentPassword}
           state={unlockingDocument}
+        />
+      ) : null}
+      {unlocked ? (
+        <FocusedSourceConfirmationDialog
+          busyKey={attentionBusyKey}
+          existingSources={existingSources}
+          focusedCandidate={focusedCandidate}
+          onClose={() => setFocusedCandidateId(null)}
+          onConfirm={(prompt, displayName, sourceType) =>
+            void confirmSourceCandidate(prompt, displayName, sourceType)}
+          onKeepUnassigned={(prompt) => void parkSourceCandidate(prompt)}
+          onViewDocument={viewPromptDocument}
         />
       ) : null}
     </AppShell>

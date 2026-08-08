@@ -1,51 +1,48 @@
-import { Button, LedgerHeader } from "@cancan/ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  LedgerHeader,
+  MetricRow,
+  SectionHeader,
+  Skeleton,
+} from "@cancan/ui";
 
 import type {
-  AccountConfirmationPrompt,
-  CandidateAccountDecisionInput,
   MoneyOverview,
   MoneyOverviewAmount,
-  MoneySourceSummary,
   RecentActivitySummary,
-  SourceConfirmationPrompt,
+  TaskRow,
+  Tasks,
 } from "./command-contracts";
-import { AttentionSection } from "./attention";
 import { Feedback, type Notice } from "./feedback";
 import {
   eventTypeLabel,
   formatCurrencyAmount,
   formatLedgerDate,
 } from "./format";
+import { TasksSection } from "./tasks";
 
 export interface OverviewViewProps {
-  accountPrompts: AccountConfirmationPrompt[];
-  attentionBusyKey: string | null;
-  existingSources: MoneySourceSummary[];
   loading: boolean;
   moneyOverview: MoneyOverview | null;
   notice: Notice | null;
-  onConfirmSourceCandidate: (
-    prompt: SourceConfirmationPrompt,
-    displayName: string,
-    sourceType: string,
-  ) => void;
-  onDecideAccounts: (
-    prompt: AccountConfirmationPrompt,
-    decisions: CandidateAccountDecisionInput[],
-  ) => void;
-  onKeepSourceCandidateUnassigned: (prompt: SourceConfirmationPrompt) => void;
   onLock: () => void;
-  onOpenReview: () => void;
   onOpenSources: () => void;
+  onOpenTask: (row: TaskRow) => void;
   onRefresh: () => void;
-  onRestoreAccount: (accountId: string) => void;
   onUndo: (eventId: string) => void;
+  onViewAllTasks: () => void;
   recentActivity: RecentActivitySummary[] | null;
-  reviewCount: number | null;
-  sourcePrompts: SourceConfirmationPrompt[];
+  tasks: Tasks | null;
   undoingEventId: string | null;
 }
 
+/**
+ * Command Center — the 0006 zones on the token foundation: one unified Tasks
+ * section, then the money overview and recent activity streams on the open
+ * ledger rhythm (hairline rules, no card grid).
+ */
 export function OverviewView(props: OverviewViewProps) {
   const overviewEmpty = props.moneyOverview !== null
     && props.moneyOverview.assets.length === 0
@@ -68,105 +65,76 @@ export function OverviewView(props: OverviewViewProps) {
         title="Your money, organized"
       />
 
-      <section className="overview-content" aria-label="Money overview">
+      <div className="grid gap-10 pt-6">
         {props.notice ? <Feedback {...props.notice} /> : null}
 
-        <AttentionSection
-          accountPrompts={props.accountPrompts}
-          attentionBusyKey={props.attentionBusyKey}
-          existingSources={props.existingSources}
-          onConfirmSourceCandidate={props.onConfirmSourceCandidate}
-          onDecideAccounts={props.onDecideAccounts}
-          onKeepSourceCandidateUnassigned={props.onKeepSourceCandidateUnassigned}
-          onRestoreAccount={props.onRestoreAccount}
-          sourcePrompts={props.sourcePrompts}
+        <TasksSection
+          onOpenTask={props.onOpenTask}
+          onViewAll={props.onViewAllTasks}
+          tasks={props.tasks}
         />
 
-        <section className="money-panel" aria-labelledby="money-overview-heading">
-          <div className="money-panel-heading">
-            <h2 id="money-overview-heading">
-              <span className="panel-dot panel-dot-emerald" aria-hidden="true" />
-              Money Overview
-            </h2>
-          </div>
-          {props.loading && props.moneyOverview === null ? (
-            <p className="panel-status" role="status">Loading your balances…</p>
-          ) : null}
-          {!props.loading && overviewEmpty ? (
-            <div className="panel-empty">
-              <p>Balances appear here after your first records are added.</p>
-              <button className="button button-quiet" onClick={props.onOpenSources} type="button">
-                Add a statement from Sources
-              </button>
-            </div>
-          ) : null}
-          {!overviewEmpty && props.moneyOverview !== null ? (
-            <div className="money-groups">
-              <MoneyGroup label="Assets" amounts={props.moneyOverview.assets} />
-              <MoneyGroup label="Liabilities" amounts={props.moneyOverview.liabilities} />
-            </div>
-          ) : null}
-        </section>
-
-        <section className="review-status-panel" aria-labelledby="review-status-heading">
-          <div className="money-panel-heading">
-            <h2 id="review-status-heading">
-              <span className="panel-dot panel-dot-amber" aria-hidden="true" />
-              Review
-            </h2>
-            {props.reviewCount !== null && props.reviewCount > 0 ? (
-              <span className="attention-count" aria-label={`${props.reviewCount} to review`}>
-                {props.reviewCount}
-              </span>
+        <section aria-label="Money overview">
+          <SectionHeader title="Money Overview" tone="healthy" />
+          <div className="mt-2 border-t border-ledger-rule">
+            {props.loading && props.moneyOverview === null ? (
+              <div className="grid gap-2.5 py-3" role="status">
+                <span className="sr-only">Loading your balances…</span>
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            ) : null}
+            {!props.loading && overviewEmpty ? (
+              <EmptyState
+                action={(
+                  <Button onClick={props.onOpenSources} variant="quiet">
+                    Add a statement from Sources
+                  </Button>
+                )}
+                body="Balances appear here after your first records are added."
+                icon="money-flow"
+                title="No balances yet"
+              />
+            ) : null}
+            {!overviewEmpty && props.moneyOverview !== null ? (
+              <div className="grid gap-5 pt-3">
+                <MoneyGroup label="Assets" amounts={props.moneyOverview.assets} />
+                <MoneyGroup label="Liabilities" amounts={props.moneyOverview.liabilities} />
+              </div>
             ) : null}
           </div>
-          {props.reviewCount === null ? (
-            <p className="panel-status" role="status">Checking review…</p>
-          ) : props.reviewCount === 0 ? (
-            <p className="panel-status">Nothing needs your check.</p>
-          ) : (
-            <div className="review-status-body">
-              <p>
-                {props.reviewCount === 1
-                  ? "1 record needs your check."
-                  : `${props.reviewCount} records need your check.`}
-              </p>
-              <button className="button button-primary" onClick={props.onOpenReview} type="button">
-                Open Review
-              </button>
-            </div>
-          )}
         </section>
 
-        <section className="activity-panel" aria-labelledby="activity-heading">
-          <div className="money-panel-heading">
-            <h2 id="activity-heading">
-              <span className="panel-dot panel-dot-emerald" aria-hidden="true" />
-              Recent activity
-            </h2>
+        <section aria-label="Recent activity">
+          <SectionHeader title="Recent activity" tone="healthy" />
+          <div className="mt-2 border-t border-ledger-rule">
+            {props.loading && props.recentActivity === null ? (
+              <div className="grid gap-2.5 py-3" role="status">
+                <span className="sr-only">Loading recent activity…</span>
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            ) : null}
+            {!props.loading && props.recentActivity !== null && props.recentActivity.length === 0 ? (
+              <p className="py-3 text-sm text-ledger-text-muted">
+                Nothing added yet. Records you add appear here quietly, with Undo if you need it.
+              </p>
+            ) : null}
+            {props.recentActivity !== null && props.recentActivity.length > 0 ? (
+              <ul className="m-0 list-none p-0">
+                {props.recentActivity.map((event) => (
+                  <ActivityRow
+                    event={event}
+                    key={event.eventId}
+                    onUndo={props.onUndo}
+                    undoing={props.undoingEventId === event.eventId}
+                  />
+                ))}
+              </ul>
+            ) : null}
           </div>
-          {props.loading && props.recentActivity === null ? (
-            <p className="panel-status" role="status">Loading recent activity…</p>
-          ) : null}
-          {!props.loading && props.recentActivity !== null && props.recentActivity.length === 0 ? (
-            <p className="panel-status">
-              Nothing added yet. Records you add appear here quietly, with Undo if you need it.
-            </p>
-          ) : null}
-          {props.recentActivity !== null && props.recentActivity.length > 0 ? (
-            <ul className="activity-list">
-              {props.recentActivity.map((event) => (
-                <ActivityRow
-                  event={event}
-                  key={event.eventId}
-                  onUndo={props.onUndo}
-                  undoing={props.undoingEventId === event.eventId}
-                />
-              ))}
-            </ul>
-          ) : null}
         </section>
-      </section>
+      </div>
     </>
   );
 }
@@ -182,21 +150,21 @@ function MoneyGroup({
     return null;
   }
   return (
-    <section className="money-group" aria-label={label}>
-      <h3>{label}</h3>
-      <ul className="money-list">
-        {amounts.map((amount) => (
-          <li className="money-row" key={amount.accountId}>
-            <div className="money-account">
-              <p>{amount.accountLabel}</p>
-              <span className="money-asof">As of {formatLedgerDate(amount.asOf)}</span>
-            </div>
-            <p className="money-value">
-              {formatCurrencyAmount(amount.currency, amount.value)}
-            </p>
-          </li>
+    <section aria-label={label}>
+      <h3 className="px-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+        {label}
+      </h3>
+      <div className="mt-1 border-t border-ledger-rule">
+        {amounts.map((amount, index) => (
+          <MetricRow
+            key={amount.accountId}
+            label={amount.accountLabel}
+            meta={`As of ${formatLedgerDate(amount.asOf)}`}
+            ruled={index < amounts.length - 1}
+            value={formatCurrencyAmount(amount.currency, amount.value)}
+          />
         ))}
-      </ul>
+      </div>
     </section>
   );
 }
@@ -211,26 +179,26 @@ function ActivityRow({
   undoing: boolean;
 }) {
   return (
-    <li className="activity-row">
-      <div className="activity-details">
-        <p>
+    <li className="flex items-center justify-between gap-4 border-b border-ledger-rule py-2.5">
+      <div className="min-w-0">
+        <p className="flex items-center gap-2 text-md font-medium text-ledger-ink">
           {eventTypeLabel(event.eventType)}
-          {event.spending ? <span className="activity-tag">Spending</span> : null}
+          {event.spending ? <Badge tone="attention">Spending</Badge> : null}
         </p>
-        <span className="activity-meta">
+        <p className="mt-0.5 truncate font-mono text-xs text-ledger-text-muted">
           {formatLedgerDate(event.eventDate)}
           {event.sourceLabels.length > 0 ? ` · ${event.sourceLabels.join(" · ")}` : ""}
-        </span>
+        </p>
       </div>
       {event.canUndo ? (
-        <button
-          className="button button-quiet"
+        <Button
           disabled={undoing}
           onClick={() => onUndo(event.eventId)}
-          type="button"
+          size="sm"
+          variant="quiet"
         >
           {undoing ? "Undoing…" : "Undo"}
-        </button>
+        </Button>
       ) : null}
     </li>
   );

@@ -1,10 +1,10 @@
 /**
  * Dev-only visual inspection harness. Renders the Command Center views with
- * deterministic fixtures, selected via `?state=` (overview, overview-attention,
- * overview-empty, review, review-empty, review-detail, review-job,
- * sources-inbox-disabled, sources-inbox-enabled, sources-inbox-reauth,
- * vault-gate-loading, vault-gate-create, vault-gate-locked,
- * primitives, primitives-dialog).
+ * deterministic fixtures, selected via `?state=` (overview, overview-empty,
+ * tasks, tasks-parked, source-confirm, review, review-empty, review-detail,
+ * review-job, sources-inbox-disabled, sources-inbox-enabled,
+ * sources-inbox-reauth, vault-gate-loading, vault-gate-create,
+ * vault-gate-locked, primitives, primitives-dialog).
  * Not part of the shipped bundle: `vite build` only bundles index.html.
  */
 import { AppShell, LedgerColumn, LedgerRegion } from "@cancan/ui";
@@ -16,7 +16,6 @@ import "./app.css";
 import { PrimitivesGallery } from "./preview-gallery";
 
 import type {
-  AccountConfirmationPrompt,
   LocalInboxStatus,
   MoneyOverview,
   MoneySourceSummary,
@@ -25,10 +24,13 @@ import type {
   ReviewItemDetail,
   ReviewItemSummary,
   SourceConfirmationPrompt,
+  Tasks,
 } from "./command-contracts";
 import { InboxPanel } from "./inbox";
 import { OverviewView } from "./overview";
 import { ReviewView, type ReviewDetailState, type ReviewJobPanelState } from "./review";
+import { FocusedSourceConfirmationDialog } from "./source-confirmation";
+import { TasksView } from "./tasks-view";
 import { VaultGate } from "./vault-gate";
 import { VaultSpine, type AppView } from "./vault-spine";
 
@@ -151,30 +153,62 @@ const finishedJob: ReviewJobPanelState = {
   status: "done",
 };
 
-const accountPrompts: AccountConfirmationPrompt[] = [
-  {
-    candidateAccounts: [
-      {
-        accountId: "account-dbs",
-        accountType: "deposit_account",
-        currency: "SGD",
-        displayName: "DBS Multiplier Account",
-        maskedIdentifier: "•••• 1234",
-      },
-      {
-        accountId: "account-card",
-        accountType: "credit_card",
-        currency: "SGD",
-        displayName: "DBS Visa Card",
-        maskedIdentifier: "•••• 5678",
-      },
-    ],
-    dismissedAccounts: [],
-    displayName: "DBS",
-    moneySourceId: "source-dbs",
-    proposalVersion: "proposal-version-1",
-  },
-];
+/**
+ * Task fixtures mirror the host's projection: Command Center rows exclude
+ * parked and cap at five; the full route includes every group.
+ */
+const commandCenterTasks: Tasks = {
+  needsActionCount: 2,
+  rows: [
+    {
+      consequence: "password_needed",
+      destination: { documentId: "document-1", kind: "password", moneySourceId: "source-dbs" },
+      group: "needs_action",
+      rowKey: "task:password:document-1",
+      timestamp: "2026-07-19 09:12",
+      title: "June statement.pdf",
+    },
+    {
+      consequence: "new_source_detected",
+      destination: { kind: "source_confirmation", moneySourceCandidateId: "candidate-dbs" },
+      group: "needs_action",
+      rowKey: "task:new_source:candidate-dbs",
+      timestamp: "2026-07-18 15:40",
+      title: "New source detected: DBS",
+    },
+    {
+      consequence: "processing",
+      destination: { documentId: "document-2", kind: "document" },
+      group: "in_progress",
+      rowKey: "task:processing:document-2",
+      timestamp: "2026-07-18 08:03",
+      title: "May statement.pdf",
+    },
+    {
+      consequence: "ready",
+      destination: { intakeItemId: "intake-1", kind: "receipt" },
+      group: "recently_completed",
+      rowKey: "task:ready:document-3",
+      timestamp: "2026-07-17 19:26",
+      title: "April statement.pdf",
+    },
+  ],
+};
+
+const fullTasks: Tasks = {
+  ...commandCenterTasks,
+  rows: [
+    ...commandCenterTasks.rows,
+    {
+      consequence: "password_parked",
+      destination: { documentId: "document-4", kind: "document" },
+      group: "parked",
+      rowKey: "task:parked:document-4",
+      timestamp: "2026-07-10 11:52",
+      title: "2025 tax export.csv",
+    },
+  ],
+};
 
 const existingSources: MoneySourceSummary[] = [
   {
@@ -188,6 +222,7 @@ const sourcePrompts: SourceConfirmationPrompt[] = [
   {
     candidateId: "candidate-dbs",
     documentCount: 2,
+    latestDocumentId: "document-1",
     latestDocumentTitle: "June statement.pdf",
     providerKey: "dbs",
     scopeKind: "provider_singleton",
@@ -228,7 +263,7 @@ const inboxReauth: LocalInboxStatus = {
 const noop = () => undefined;
 
 function navigate(view: AppView) {
-  const state = view === "sources" ? "review" : view;
+  const state = view === "sources" ? "sources-inbox-enabled" : view;
   window.location.search = `?state=${state}`;
 }
 
@@ -242,30 +277,34 @@ function Preview() {
 
   let content = null;
   let activeView: AppView = "overview";
-  if (state === "overview" || state === "overview-attention" || state === "overview-empty") {
+  if (state === "overview" || state === "overview-empty" || state === "source-confirm") {
     const empty = state === "overview-empty";
-    const withAttention = state === "overview-attention";
     content = (
       <OverviewView
-        accountPrompts={withAttention ? accountPrompts : []}
-        attentionBusyKey={null}
-        existingSources={withAttention ? existingSources : []}
         loading={false}
         moneyOverview={empty ? { assets: [], liabilities: [] } : moneyOverview}
         notice={null}
-        onConfirmSourceCandidate={noop}
-        onDecideAccounts={noop}
-        onKeepSourceCandidateUnassigned={noop}
         onLock={noop}
-        onOpenReview={() => navigate("review")}
         onOpenSources={() => navigate("sources")}
+        onOpenTask={noop}
         onRefresh={noop}
-        onRestoreAccount={noop}
         onUndo={noop}
+        onViewAllTasks={() => navigate("tasks")}
         recentActivity={empty ? [] : recentActivity}
-        reviewCount={empty ? 0 : reviewItems.length}
-        sourcePrompts={withAttention ? sourcePrompts : []}
+        tasks={empty ? { needsActionCount: 0, rows: [] } : commandCenterTasks}
         undoingEventId={null}
+      />
+    );
+  } else if (state === "tasks" || state === "tasks-parked") {
+    activeView = "tasks";
+    content = (
+      <TasksView
+        filter={state === "tasks-parked" ? "parked" : "needs_action"}
+        onFilterChange={noop}
+        onLock={noop}
+        onOpenTask={noop}
+        onRefresh={noop}
+        tasks={fullTasks}
       />
     );
   } else if (state === "sources-inbox-disabled"
@@ -348,14 +387,26 @@ function Preview() {
     <AppShell>
       <VaultSpine
         activeView={activeView}
-        inert={false}
+        inert={state === "source-confirm"}
         onNavigate={navigate}
         reviewCount={state === "overview-empty" || state === "review-empty" ? 0 : reviewItems.length}
+        tasksCount={state === "overview-empty" ? 0 : commandCenterTasks.needsActionCount}
         vaultStatus="unlocked"
       />
-      <LedgerRegion>
+      <LedgerRegion inert={state === "source-confirm"}>
         <LedgerColumn>{content}</LedgerColumn>
       </LedgerRegion>
+      {state === "source-confirm" ? (
+        <FocusedSourceConfirmationDialog
+          busyKey={null}
+          existingSources={existingSources}
+          focusedCandidate={sourcePrompts[0]}
+          onClose={noop}
+          onConfirm={noop}
+          onKeepUnassigned={noop}
+          onViewDocument={noop}
+        />
+      ) : null}
     </AppShell>
   );
 }

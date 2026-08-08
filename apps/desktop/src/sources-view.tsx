@@ -1,11 +1,14 @@
 import { Button, LedgerHeader } from "@cancan/ui";
 
 import type {
+  AccountConfirmationPrompt,
+  CandidateAccountDecisionInput,
   LocalInboxStatus,
   MoneySourceSummary,
   SourceConfirmationPrompt,
   SourceDocumentSummary,
 } from "./command-contracts";
+import { AccountConfirmationCard } from "./attention";
 import { Feedback, type Notice } from "./feedback";
 import { InboxPanel } from "./inbox";
 import { SourceConfirmationCardList } from "./source-confirmation";
@@ -16,6 +19,7 @@ export interface MoneySourceDocuments {
 }
 
 export interface SourcesViewProps {
+  accountPrompts: AccountConfirmationPrompt[];
   attentionBusyKey: string | null;
   busy: boolean;
   deletingDocumentId: string | null;
@@ -33,6 +37,10 @@ export interface SourcesViewProps {
     displayName: string,
     sourceType: string,
   ) => void;
+  onDecideAccounts: (
+    prompt: AccountConfirmationPrompt,
+    decisions: CandidateAccountDecisionInput[],
+  ) => void;
   onDelete: (documentId: string) => void;
   onImport: () => void;
   onInboxCancelDisable: () => void;
@@ -47,6 +55,7 @@ export interface SourcesViewProps {
   onOpenUnlock: (document: SourceDocumentSummary) => void;
   onRefresh: () => void;
   onRememberedChange: (remembered: boolean) => void;
+  onRestoreAccount: (accountId: string) => void;
   onSelectMoneySource: (moneySourceId: string) => void;
   onSaveRecoveryFile: () => void;
   onSaveSourceCopy: (documentId: string) => void;
@@ -54,6 +63,7 @@ export interface SourcesViewProps {
     document: SourceDocumentSummary,
     trigger: HTMLButtonElement,
   ) => void;
+  onViewPromptDocument: (prompt: SourceConfirmationPrompt) => void;
   recoveryConfigured: boolean;
   rememberedOnThisMac: boolean | null;
   savingCopyDocumentId: string | null;
@@ -66,6 +76,12 @@ export interface SourcesViewProps {
 }
 
 export function SourcesView(props: SourcesViewProps) {
+  const attentionCount = props.unassignedDocuments.length
+    + props.sourcePrompts.filter((prompt) => prompt.status === "pending").length
+    + props.accountPrompts.reduce(
+      (count, prompt) => count + prompt.candidateAccounts.length,
+      0,
+    );
   return (
     <>
       <LedgerHeader
@@ -183,12 +199,12 @@ export function SourcesView(props: SourcesViewProps) {
         <section className="attention-panel" aria-labelledby="attention-heading">
           <div className="attention-panel-heading">
             <h2 id="attention-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />Needs attention</h2>
-            <span className="attention-count" aria-label={`${props.unassignedDocuments.length + props.sourcePrompts.filter((prompt) => prompt.status === "pending").length} to check`}>
-              {props.unassignedDocuments.length + props.sourcePrompts.filter((prompt) => prompt.status === "pending").length}
+            <span className="attention-count" aria-label={`${attentionCount} to check`}>
+              {attentionCount}
             </span>
           </div>
 
-          {!props.loadingDocuments && props.unassignedDocuments.length === 0 && props.sourcePrompts.length === 0 ? (
+          {!props.loadingDocuments && attentionCount === 0 && props.sourcePrompts.length === 0 && props.accountPrompts.length === 0 ? (
             <p className="panel-status">No evidence needs your attention.</p>
           ) : null}
           <SourceConfirmationCardList
@@ -196,8 +212,23 @@ export function SourcesView(props: SourcesViewProps) {
             existingSources={props.existingSources}
             onConfirm={props.onConfirmSourceCandidate}
             onKeepUnassigned={props.onKeepSourceCandidateUnassigned}
+            onViewDocument={props.onViewPromptDocument}
             prompts={props.sourcePrompts}
           />
+          {props.accountPrompts.length > 0 ? (
+            <ul className="attention-card-list">
+              {props.accountPrompts.map((prompt) => (
+                <AccountConfirmationCard
+                  busy={props.attentionBusyKey !== null}
+                  deciding={props.attentionBusyKey === `account:${prompt.moneySourceId}`}
+                  key={prompt.moneySourceId}
+                  onDecide={(decisions) => props.onDecideAccounts(prompt, decisions)}
+                  onRestore={props.onRestoreAccount}
+                  prompt={prompt}
+                />
+              ))}
+            </ul>
+          ) : null}
           {props.unassignedDocuments.length > 0 ? (
             <EvidenceDocumentGroups documents={props.unassignedDocuments} props={props} />
           ) : null}

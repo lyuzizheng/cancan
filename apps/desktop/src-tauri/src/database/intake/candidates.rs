@@ -54,6 +54,7 @@ impl SourceConfirmationPromptStatus {
 pub(crate) struct SourceConfirmationPrompt {
     pub(crate) candidate_id: String,
     pub(crate) document_count: i64,
+    pub(crate) latest_document_id: Option<String>,
     pub(crate) latest_document_title: Option<String>,
     pub(crate) provider_key: String,
     pub(crate) scope_kind: SourceConfirmationScopeKind,
@@ -494,6 +495,10 @@ impl ManualImportStore {
                     (SELECT sd.original_filename FROM source_documents sd \
                      WHERE sd.money_source_candidate_id = c.id \
                        AND sd.money_source_id IS NULL \
+                     ORDER BY sd.received_at DESC, sd.id DESC LIMIT 1), \
+                    (SELECT sd.id FROM source_documents sd \
+                     WHERE sd.money_source_candidate_id = c.id \
+                       AND sd.money_source_id IS NULL \
                      ORDER BY sd.received_at DESC, sd.id DESC LIMIT 1) \
              FROM money_source_candidates c \
              WHERE c.status IN ('pending', 'kept_unassigned') \
@@ -515,6 +520,7 @@ impl ManualImportStore {
                     version: row.get(4)?,
                     document_count: row.get(5)?,
                     latest_document_title: row.get(6)?,
+                    latest_document_id: row.get(7)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
