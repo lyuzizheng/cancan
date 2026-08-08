@@ -1,0 +1,17 @@
+/*
+ * Desktop CSS entry.
+ * Layer order matters: legacy sits between theme and utilities, so token
+ * utilities always win over legacy rules in migrated views.
+ * Preflight is intentionally NOT imported: the legacy shell predates it and
+ * must render untouched until slice 6 deletes it; migrated views and
+ * primitives are explicitly styled through tokens and carry no UA-default
+ * dependency.
+ */
+@layer theme, base, legacy, components, utilities;
+
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
+@import "@cancan/ui/tokens.css";
+@import "@cancan/ui/foundation.css" layer(legacy);
+
+@source "../../../packages/ui/src";

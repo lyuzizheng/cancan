@@ -1,0 +1,34 @@
+/*
+ * Self-hosted font faces (pinned fontsource packages).
+ * Kept out of tokens.css: this file is imported directly by the desktop entry
+ * so Vite's asset pipeline rewrites the url()s; the Tailwind import inliner
+ * leaves bare package specifiers untouched. Fraunces uses the standard subset
+ * (wght + opsz only; WONK stays 0) per the scoped display role in spec 0008.
+ */
+
+@font-face {
+  font-family: "Geologica Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/geologica/files/geologica-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Martian Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url("@fontsource-variable/martian-mono/files/martian-mono-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Fraunces Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/fraunces/files/fraunces-latin-standard-normal.woff2")
+    format("woff2-variations");
+}

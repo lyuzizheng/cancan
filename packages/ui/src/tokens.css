@@ -1,0 +1,120 @@
+/*
+ * CanCan design tokens — single source of truth.
+ * Spec: docs/specs/0011-visual-design-tokens.md (v2), docs/specs/0008-design-system.md.
+ *
+ * Every value here is emitted twice by Tailwind v4:
+ *   - as a CSS custom property on :root (e.g. var(--color-ledger-mineral))
+ *   - as a utility namespace (e.g. bg-ledger-mineral, text-accent-go-deep)
+ * Hard-coded hex/px values belong nowhere else; see scripts/check-tailwind-discipline.mjs.
+ * Font faces live in fonts.css (Vite asset pipeline rewrites their url()s).
+ */
+
+@theme {
+  /* Vault Spine (dark) */
+  --color-vault-obsidian: oklch(16.7% 0.009 169);
+  --color-vault-graphite: oklch(24.3% 0.013 160.3);
+  --color-vault-seam: oklch(33.7% 0.017 159);
+  --color-vault-text: oklch(94.4% 0.009 145.5);
+  --color-vault-text-muted: oklch(72% 0.017 154.3);
+
+  /* Light Ledger */
+  --color-ledger-mineral: oklch(96.6% 0.004 121.6);
+  --color-ledger-porcelain: oklch(99.1% 0.003 106.4);
+  --color-ledger-ink: oklch(21.1% 0.01 159.2);
+  --color-ledger-text-muted: oklch(49.1% 0.014 153.4);
+  --color-ledger-rule: oklch(87.7% 0.009 145.5);
+
+  /* Status signals */
+  --color-signal-emerald: oklch(53% 0.1 157.8);
+  --color-signal-amber: oklch(62.8% 0.123 69.1);
+  --color-signal-amber-text: oklch(48.3% 0.1 67.8);
+  --color-signal-cinnabar: oklch(53.9% 0.151 31.4);
+  --color-signal-danger-text: oklch(43.7% 0.126 29.9);
+
+  /* Editorial accent — dark surfaces / large fills only, except go-deep text */
+  --color-accent-go-bright: oklch(77.7% 0.177 153.4);
+  --color-accent-go: oklch(68.2% 0.165 153.3);
+  --color-accent-go-deep: oklch(46.8% 0.105 155.7);
+  --color-accent-go-ink: oklch(21.8% 0.042 159.4);
+
+  /* Type roles */
+  --font-sans:
+    "Geologica Variable", "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  --font-mono: "Martian Mono Variable", ui-monospace, "SF Mono", monospace;
+  --font-serif: "Fraunces Variable", Georgia, serif;
+
+  /* Weight discipline: ≤560 in-app (spec 0008); no 600+ utility is provided */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-display: 560;
+
+  /* Fixed product type scale */
+  --text-xs: 0.72rem;
+  --text-xs--line-height: 1.45;
+  --text-sm: 0.8rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 0.88rem;
+  --text-base--line-height: 1.55;
+  --text-md: 0.92rem;
+  --text-md--line-height: 1.5;
+  --text-lg: 1.1rem;
+  --text-lg--line-height: 1.35;
+  --text-xl: 1.3rem;
+  --text-xl--line-height: 1.25;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.2;
+
+  /* Mono metadata labels (website rhythm) */
+  --tracking-mono-label: 0.18em;
+
+  /* Geometry — no large radius; lg is window-chassis only */
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* One signature curve; durations 120/180/240 via duration-<n> + motion.ts */
+  --ease-mech: cubic-bezier(0.19, 1, 0.22, 1);
+
+  /* Overlay/dialog motion — entrance only; exits run at ~75% duration.
+     Reduced-motion consumers disable these via motion-reduce:animate-none. */
+  --animate-overlay-in: overlay-in 180ms var(--ease-mech) both;
+  --animate-overlay-out: overlay-out 140ms var(--ease-mech) both;
+  --animate-dialog-in: dialog-in 240ms var(--ease-mech) both;
+  --animate-dialog-out: dialog-out 180ms var(--ease-mech) both;
+  --animate-pop-in: pop-in 180ms var(--ease-mech) both;
+
+  @keyframes overlay-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes overlay-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes dialog-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -49%) scale(0.98);
+    }
+  }
+
+  @keyframes dialog-out {
+    to {
+      opacity: 0;
+      transform: translate(-50%, -49%) scale(0.98);
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-2px);
+    }
+  }
+}

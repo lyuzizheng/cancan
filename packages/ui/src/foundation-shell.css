@@ -1,20 +1,4 @@
-@font-face {
-  font-family: "Geologica Variable";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url("@fontsource-variable/geologica/files/geologica-latin-wght-normal.woff2")
-    format("woff2-variations");
-}
-
-@font-face {
-  font-family: "Martian Mono Variable";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 800;
-  src: url("@fontsource-variable/martian-mono/files/martian-mono-latin-wght-normal.woff2")
-    format("woff2-variations");
-}
+/* Font faces moved to tokens.css (single token source of truth). */
 
 :root {
   --vault-obsidian: oklch(16.7% 0.009 169);
