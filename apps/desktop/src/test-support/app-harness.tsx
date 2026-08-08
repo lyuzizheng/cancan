@@ -337,7 +337,7 @@ export async function mount(api: VaultApi, view?: "sources" | "review") {
 }
 
 export function navItem(label: string): HTMLButtonElement {
-  const matches = [...container.querySelectorAll<HTMLButtonElement>(".vault-nav-item")]
+  const matches = [...container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Command Center"] button')]
     .filter((element) => element.textContent?.trim().startsWith(label));
   expect(matches).toHaveLength(1);
   return matches[0]!;

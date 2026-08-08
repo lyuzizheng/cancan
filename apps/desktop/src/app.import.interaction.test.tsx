@@ -758,8 +758,8 @@ describe("App manual import orchestration", () => {
       "data:image/png;base64,cmVuZGVyZWQtcGFnZQ==",
     );
     expect(container.textContent).toContain("Page 1 of 2");
-    expect(container.querySelector("section.ledger")?.hasAttribute("inert")).toBe(true);
-    expect(container.querySelector("aside.vault-spine")?.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector("main > section")?.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector("main > aside")?.hasAttribute("inert")).toBe(true);
 
     const close = button("Close");
     const next = button("Next");

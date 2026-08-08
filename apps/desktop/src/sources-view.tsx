@@ -1,3 +1,5 @@
+import { Button, LedgerHeader } from "@cancan/ui";
+
 import type {
   LocalInboxStatus,
   MoneySourceSummary,
@@ -66,29 +68,29 @@ export interface SourcesViewProps {
 export function SourcesView(props: SourcesViewProps) {
   return (
     <>
-      <header className="ledger-header">
-        <div>
-          <p className="ledger-eyebrow">Sources / Evidence</p>
-          <h1>Secure file intake</h1>
-        </div>
-        <div className="ledger-actions">
-          <label className="remember-vault-control">
-            <input
-              checked={props.rememberedOnThisMac === true}
-              disabled={props.busy || props.normalizingDocumentId !== null || props.rememberedOnThisMac === null}
-              onChange={(event) => props.onRememberedChange(event.target.checked)}
-              type="checkbox"
-            />
-            <span>{props.updatingRemembered ? "Updating…" : props.rememberedOnThisMac === null ? "Touch ID unavailable" : "Unlock with Touch ID"}</span>
-          </label>
-          <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onLock} type="button">
-            Lock Vault
-          </button>
-          <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onImport} type="button">
-            {props.importing ? "Opening picker…" : "Add file"}
-          </button>
-        </div>
-      </header>
+      <LedgerHeader
+        actions={
+          <>
+            <label className="remember-vault-control">
+              <input
+                checked={props.rememberedOnThisMac === true}
+                disabled={props.busy || props.normalizingDocumentId !== null || props.rememberedOnThisMac === null}
+                onChange={(event) => props.onRememberedChange(event.target.checked)}
+                type="checkbox"
+              />
+              <span>{props.updatingRemembered ? "Updating…" : props.rememberedOnThisMac === null ? "Touch ID unavailable" : "Unlock with Touch ID"}</span>
+            </label>
+            <Button disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onLock} variant="quiet">
+              Lock Vault
+            </Button>
+            <Button disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onImport}>
+              {props.importing ? "Opening picker…" : "Add file"}
+            </Button>
+          </>
+        }
+        eyebrow="Sources / Evidence"
+        title="Secure file intake"
+      />
 
       <section className="intake-content" aria-label="Manual import">
         {!props.recoveryConfigured ? (

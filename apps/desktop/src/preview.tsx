@@ -3,10 +3,11 @@
  * deterministic fixtures, selected via `?state=` (overview, overview-attention,
  * overview-empty, review, review-empty, review-detail, review-job,
  * sources-inbox-disabled, sources-inbox-enabled, sources-inbox-reauth,
+ * vault-gate-loading, vault-gate-create, vault-gate-locked,
  * primitives, primitives-dialog).
  * Not part of the shipped bundle: `vite build` only bundles index.html.
  */
-import { AppShell } from "@cancan/ui";
+import { AppShell, LedgerColumn, LedgerRegion } from "@cancan/ui";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "@cancan/ui/fonts.css";
@@ -28,6 +29,7 @@ import type {
 import { InboxPanel } from "./inbox";
 import { OverviewView } from "./overview";
 import { ReviewView, type ReviewDetailState, type ReviewJobPanelState } from "./review";
+import { VaultGate } from "./vault-gate";
 import { VaultSpine, type AppView } from "./vault-spine";
 
 const moneyOverview: MoneyOverview = {
@@ -289,6 +291,23 @@ function Preview() {
         status={status}
       />
     );
+  } else if (state === "vault-gate-loading" || state === "vault-gate-create" || state === "vault-gate-locked") {
+    content = state === "vault-gate-loading" ? (
+      <VaultGate busy title="Checking your Vault" body="Confirming the local Vault state before showing evidence." />
+    ) : (
+      <VaultGate
+        busy={false}
+        body={state === "vault-gate-create"
+          ? "Create a local Vault before adding your first statement or export."
+          : "Unlock your local Vault to add a file or check its routing."}
+        onPasswordChange={noop}
+        onSubmit={noop}
+        onUnlockWithKeychain={state === "vault-gate-locked" ? noop : undefined}
+        password=""
+        rememberedOnThisMac={state === "vault-gate-locked" ? true : undefined}
+        title={state === "vault-gate-create" ? "Create your Vault" : "Unlock your Vault"}
+      />
+    );
   } else {
     activeView = "review";
     content = (
@@ -334,7 +353,9 @@ function Preview() {
         reviewCount={state === "overview-empty" || state === "review-empty" ? 0 : reviewItems.length}
         vaultStatus="unlocked"
       />
-      <section className="ledger">{content}</section>
+      <LedgerRegion>
+        <LedgerColumn>{content}</LedgerColumn>
+      </LedgerRegion>
     </AppShell>
   );
 }

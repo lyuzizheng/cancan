@@ -1,4 +1,10 @@
-import type { ReactNode } from "react";
+import {
+  cx,
+  Icon,
+  StatusPoint,
+  type IconName,
+  type StatusPointTone,
+} from "@cancan/ui";
 
 import type { VaultStatus } from "./command-contracts";
 
@@ -14,21 +20,39 @@ export interface VaultSpineProps {
   vaultStatus: VaultScreenStatus;
 }
 
+/**
+ * Vault Spine — the obsidian source index rail. Chrome stays in Geologica
+ * (the serif display role never touches the spine); go-bright is reserved
+ * for the brand mark and the active dot, the two dark-surface accent moments.
+ * Below md it collapses to a top bar with a horizontal nav strip so
+ * navigation is never lost.
+ */
 export function VaultSpine(props: VaultSpineProps) {
   return (
     <aside
       aria-hidden={props.inert ? true : undefined}
-      className="vault-spine"
+      className="flex shrink-0 flex-col border-vault-seam bg-vault-obsidian px-3.5 pt-5 pb-4 text-vault-text max-md:w-full max-md:border-b max-md:pt-4 md:min-h-screen md:w-60 md:border-r"
       inert={props.inert}
       aria-label="CanCan Vault"
     >
-      <div className="vault-brand">
-        <span className="vault-mark" aria-hidden="true">C</span>
-        <span>CanCan</span>
+      <div className="flex items-center gap-2.5 px-2.5 max-md:px-0">
+        <span
+          aria-hidden="true"
+          className="grid size-7 shrink-0 place-items-center rounded-sm border border-vault-seam bg-vault-graphite font-mono text-sm font-medium text-accent-go-bright"
+        >
+          C
+        </span>
+        <span className="text-lg font-medium tracking-tight">CanCan</span>
       </div>
-      <nav className="vault-nav" aria-label="Command Center">
-        <p className="vault-nav-label">Command Center</p>
-        <ul className="vault-nav-list">
+
+      <nav
+        aria-label="Command Center"
+        className="max-md:-mx-3.5 max-md:mt-3 max-md:overflow-x-auto max-md:px-3.5 max-md:pb-1 md:mt-7"
+      >
+        <p className="mb-2 px-2.5 font-mono text-xs uppercase tracking-mono-label text-vault-text-muted max-md:hidden">
+          Command Center
+        </p>
+        <ul className="m-0 flex list-none gap-1 p-0 md:grid md:gap-0.5">
           <NavEntry
             active={props.activeView === "overview"}
             icon="overview"
@@ -41,8 +65,8 @@ export function VaultSpine(props: VaultSpineProps) {
             label="Sources"
             onNavigate={() => props.onNavigate("sources")}
           />
-          <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="assets" />Assets</span></li>
-          <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="transactions" />Transactions</span></li>
+          <UpcomingEntry icon="assets" label="Assets" />
+          <UpcomingEntry icon="transactions" label="Transactions" />
           <NavEntry
             active={props.activeView === "review"}
             count={props.reviewCount}
@@ -50,23 +74,38 @@ export function VaultSpine(props: VaultSpineProps) {
             label="Review"
             onNavigate={() => props.onNavigate("review")}
           />
-          <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="money-flow" />Money Flow</span></li>
-          <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="jobs" />Jobs</span></li>
-          <li><span className="vault-nav-item vault-nav-upcoming"><NavIcon name="settings" />Settings</span></li>
+          <UpcomingEntry icon="money-flow" label="Money Flow" />
+          <UpcomingEntry icon="jobs" label="Jobs" />
+          <UpcomingEntry icon="settings" label="Settings" />
         </ul>
       </nav>
-      <div className="vault-assistant">
-        <span className="vault-nav-item vault-nav-upcoming"><NavIcon name="assistant" />AI Assistant</span>
+
+      <div className="mt-auto border-t border-vault-seam pt-3 max-md:hidden">
+        <span className="flex h-9 items-center gap-2.5 rounded-sm px-2.5 text-base font-medium text-vault-text-muted opacity-50">
+          <Icon name="assistant" size={16} />
+          AI Assistant
+        </span>
       </div>
-      <div className="vault-spine-status">
-        <p className="vault-spine-label">Local Vault</p>
-        <p className="vault-spine-state">
-          <span className={`vault-status-light vault-status-${props.vaultStatus}`} aria-hidden="true" />
+
+      <div className="border-t border-vault-seam max-md:mt-2 max-md:flex max-md:items-center max-md:gap-2.5 max-md:pt-2.5 md:mt-3.5 md:px-2.5 md:pt-3.5">
+        <p className="font-mono text-xs uppercase tracking-mono-label text-vault-text-muted">
+          Local Vault
+        </p>
+        <p className="flex items-center gap-2 text-sm font-medium text-vault-text md:mt-2">
+          <StatusPoint
+            className={props.vaultStatus === "loading" ? "animate-pulse motion-reduce:animate-none" : undefined}
+            tone={statusTone(props.vaultStatus)}
+          />
           {vaultStatusLabel(props.vaultStatus)}
         </p>
-        <p className="vault-spine-copy">Evidence stays encrypted on this Mac.</p>
+        <p className="mt-1.5 text-xs text-vault-text-muted max-md:hidden">
+          Evidence stays encrypted on this Mac.
+        </p>
       </div>
-      <p className="vault-spine-footnote">Local-first finance</p>
+
+      <p className="mt-3.5 border-t border-vault-seam px-2.5 pt-3 text-xs text-vault-text-muted max-md:hidden">
+        Local-first finance
+      </p>
     </aside>
   );
 }
@@ -80,27 +119,63 @@ function NavEntry({
 }: {
   active: boolean;
   count?: number | null;
-  icon: NavIconName;
+  icon: IconName;
   label: string;
   onNavigate: () => void;
 }) {
+  const hasCount = count !== null && count !== undefined && count > 0;
   return (
-    <li>
+    <li className="max-md:flex-none">
       <button
         aria-current={active ? "page" : undefined}
-        className={`vault-nav-item${active ? " vault-nav-item-active" : ""}`}
+        className={cx(
+          "flex h-9 items-center gap-2.5 whitespace-nowrap rounded-sm border bg-transparent px-2.5 text-base font-medium transition-colors duration-120 ease-mech md:w-full",
+          "focus-visible:outline-2 focus-visible:outline-accent-go-bright focus-visible:outline-offset-2",
+          active
+            ? "border-vault-seam bg-vault-graphite text-vault-text"
+            : "border-transparent text-vault-text-muted hover:text-vault-text",
+        )}
         onClick={onNavigate}
         type="button"
       >
-        <NavIcon name={icon} />
+        <Icon name={icon} size={16} />
         {label}
-        {count !== null && count !== undefined && count > 0 ? (
-          <span className="vault-nav-count" aria-label={`${count} to review`}>{count}</span>
+        {hasCount || active ? (
+          <span className="ml-2 flex items-center gap-2 md:ml-auto">
+            {hasCount ? (
+              <span
+                aria-label={`${count} to review`}
+                className={cx(
+                  "grid h-5 min-w-5 place-items-center rounded-pill border bg-vault-graphite px-1.5 font-mono text-xs text-signal-amber",
+                  active ? "border-signal-amber" : "border-vault-seam",
+                )}
+              >
+                {count}
+              </span>
+            ) : null}
+            {active ? (
+              <span aria-hidden="true" className="size-1.5 rounded-pill bg-accent-go-bright" />
+            ) : null}
+          </span>
         ) : null}
-        {active ? <span className="vault-nav-dot" aria-hidden="true" /> : null}
       </button>
     </li>
   );
+}
+
+function UpcomingEntry({ icon, label }: { icon: IconName; label: string }) {
+  return (
+    <li className="max-md:flex-none">
+      <span className="flex h-9 items-center gap-2.5 whitespace-nowrap rounded-sm px-2.5 text-base font-medium text-vault-text-muted opacity-50 md:w-full">
+        <Icon name={icon} size={16} />
+        {label}
+      </span>
+    </li>
+  );
+}
+
+function statusTone(status: VaultScreenStatus): StatusPointTone {
+  return status === "unlocked" ? "healthy" : "attention";
 }
 
 function vaultStatusLabel(status: VaultScreenStatus) {
@@ -111,79 +186,4 @@ function vaultStatusLabel(status: VaultScreenStatus) {
     : status === "not_created"
     ? "Vault setup needed"
     : "Checking Vault";
-}
-
-type NavIconName =
-  | "overview"
-  | "sources"
-  | "assets"
-  | "transactions"
-  | "review"
-  | "money-flow"
-  | "jobs"
-  | "settings"
-  | "assistant";
-
-export function NavIcon({ name }: { name: NavIconName }) {
-  const shapes: Record<NavIconName, ReactNode> = {
-    overview: (
-      <>
-        <rect x="3" y="3" width="5" height="5" rx="1" />
-        <rect x="10" y="3" width="5" height="5" rx="1" />
-        <rect x="3" y="10" width="5" height="5" rx="1" />
-        <rect x="10" y="10" width="5" height="5" rx="1" />
-      </>
-    ),
-    sources: (
-      <>
-        <rect x="3" y="3" width="12" height="12" rx="2" />
-        <path d="M3 8h12" />
-      </>
-    ),
-    assets: (
-      <>
-        <circle cx="9" cy="9" r="6" />
-        <path d="M9 3v6l4.2 2.4" />
-      </>
-    ),
-    transactions: (
-      <>
-        <path d="M3 6h10" />
-        <path d="M10 3l3 3-3 3" />
-        <path d="M15 12H5" />
-        <path d="M8 9l-3 3 3 3" />
-      </>
-    ),
-    review: (
-      <>
-        <rect x="3" y="3" width="12" height="12" rx="2" />
-        <path d="M6 9.2l2.2 2.2 4-4.4" />
-      </>
-    ),
-    "money-flow": <path d="M3 13.5l3.8-3.8 3 3 5.2-5.7" />,
-    jobs: <path d="M5 4.5h8M5 9h8M5 13.5h5" />,
-    settings: (
-      <>
-        <circle cx="9" cy="9" r="2.2" />
-        <path d="M9 3v2.1M9 12.9V15M3 9h2.1M12.9 9H15M5.2 5.2l1.5 1.5M11.3 11.3l1.5 1.5M12.8 5.2l-1.5 1.5M6.7 11.3l-1.5 1.5" />
-      </>
-    ),
-    assistant: (
-      <path d="M4 3.5h10a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-4.5 3v-12a1.5 1.5 0 0 1 .5-1z" />
-    ),
-  };
-  return (
-    <svg
-      aria-hidden="true"
-      className="vault-nav-icon"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="1.5"
-      viewBox="0 0 18 18"
-    >
-      {shapes[name]}
-    </svg>
-  );
 }
