@@ -37,7 +37,7 @@ describe("App local inbox orchestration", () => {
 
     expect(container.textContent).toContain("CanCan Inbox couldn’t be checked");
     expect(container.textContent).toContain(availableDocument.originalFilename);
-    await click("Retry");
+    await click("Try again");
     await act(async () => {
       await settle();
     });

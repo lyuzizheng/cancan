@@ -1,12 +1,21 @@
 import { useState } from "react";
 
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@cancan/ui";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  MonogramTile,
+  Panel,
+  Select,
+} from "@cancan/ui";
 
 import type {
   MoneySourceSummary,
   SourceConfirmationPrompt,
 } from "./command-contracts";
-import { providerDisplayName, providerSuggestedSourceType, sourceInitials } from "./format";
+import { providerDisplayName, providerSuggestedSourceType } from "./format";
 
 export interface SourceConfirmationCardListProps {
   busyKey: string | null;
@@ -26,7 +35,7 @@ export function SourceConfirmationCardList(props: SourceConfirmationCardListProp
     return null;
   }
   return (
-    <ul className="attention-card-list">
+    <ul className="m-0 grid list-none gap-3 p-0">
       {props.prompts.map((prompt) => (
         <SourceConfirmationCard
           busy={props.busyKey !== null}
@@ -76,98 +85,92 @@ function SourceConfirmationCard({
   );
 
   return (
-    <li className="attention-card">
-      <span className="attention-tile" aria-hidden="true">
-        {sourceInitials(displayName)}
-      </span>
-      <div className="attention-card-body">
-        <p className="attention-card-title">
-          {parked ? `Kept unassigned: ${displayName}` : `New source detected: ${displayName}`}
-        </p>
-        <p className="source-confirm-meta">
-          {prompt.latestDocumentTitle !== null
-            ? `${prompt.latestDocumentTitle} · ${documentLine}`
-            : documentLine}
-        </p>
-        <p className="attention-card-copy">
-          {parked
-            ? `This evidence stays parked and unassigned. Create ${displayName} or choose an existing source when you are ready to route it.`
-            : `CanCan detected ${displayName} in this evidence, but no ${displayName} Money Source exists yet. Confirm it once and CanCan routes the waiting evidence and keeps future ${displayName} statements together.`}
-        </p>
-        <div className="attention-card-actions">
-          <button
-            className="button button-strong"
-            disabled={busy}
-            onClick={() => onConfirm(
-              prompt,
-              displayName,
-              providerSuggestedSourceType(prompt.providerKey),
-            )}
-            type="button"
-          >
-            {confirming ? "Routing…" : "Create source and continue"}
-          </button>
-          {existingSources.length > 0 ? (
-            <button
-              aria-expanded={chooserOpen}
-              className="button button-quiet"
+    <li>
+      <Panel className="flex gap-3 p-4">
+        <MonogramTile className="shrink-0" name={displayName} size={32} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-ledger-ink">
+            {parked ? `Kept unassigned: ${displayName}` : `New source detected: ${displayName}`}
+          </p>
+          <p className="mt-0.5 font-mono text-xs text-ledger-text-muted">
+            {prompt.latestDocumentTitle !== null
+              ? `${prompt.latestDocumentTitle} · ${documentLine}`
+              : documentLine}
+          </p>
+          <p className="mt-2 text-sm text-ledger-text-muted">
+            {parked
+              ? `This evidence stays parked and unassigned. Create ${displayName} or choose an existing source when you are ready to route it.`
+              : `CanCan detected ${displayName} in this evidence, but no ${displayName} Money Source exists yet. Confirm it once and CanCan routes the waiting evidence and keeps future ${displayName} statements together.`}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
               disabled={busy}
-              onClick={() => setChooserOpen((open) => !open)}
-              type="button"
+              onClick={() => onConfirm(
+                prompt,
+                displayName,
+                providerSuggestedSourceType(prompt.providerKey),
+              )}
             >
-              Choose an existing source
-            </button>
-          ) : null}
-          {prompt.latestDocumentId !== null && onViewDocument !== undefined ? (
-            <button
-              className="button button-quiet"
-              disabled={busy}
-              onClick={() => onViewDocument(prompt)}
-              type="button"
-            >
-              View document
-            </button>
-          ) : null}
-          {!parked ? (
-            <button
-              className="button button-text"
-              disabled={busy}
-              onClick={() => onKeepUnassigned(prompt)}
-              type="button"
-            >
-              {parking ? "Parking…" : "Keep unassigned"}
-            </button>
+              {confirming ? "Routing…" : "Create source and continue"}
+            </Button>
+            {existingSources.length > 0 ? (
+              <Button
+                aria-expanded={chooserOpen}
+                disabled={busy}
+                onClick={() => setChooserOpen((open) => !open)}
+                variant="quiet"
+              >
+                Choose an existing source
+              </Button>
+            ) : null}
+            {prompt.latestDocumentId !== null && onViewDocument !== undefined ? (
+              <Button
+                disabled={busy}
+                onClick={() => onViewDocument(prompt)}
+                variant="quiet"
+              >
+                View document
+              </Button>
+            ) : null}
+            {!parked ? (
+              <Button
+                disabled={busy}
+                onClick={() => onKeepUnassigned(prompt)}
+                variant="text"
+              >
+                {parking ? "Parking…" : "Keep unassigned"}
+              </Button>
+            ) : null}
+          </div>
+          {chooserOpen && existingSources.length > 0 ? (
+            <div className="mt-3 flex items-center gap-2">
+              <div className="w-56">
+                <Select
+                  ariaLabel={`Existing Money Source for ${displayName}`}
+                  disabled={busy}
+                  onValueChange={setSelectedSourceId}
+                  options={existingSources.map((source) => ({
+                    label: source.displayName,
+                    value: source.moneySourceId,
+                  }))}
+                  value={selectedSourceId}
+                />
+              </div>
+              <Button
+                disabled={busy || selectedSource === undefined}
+                onClick={() => {
+                  if (selectedSource !== undefined) {
+                    onConfirm(prompt, selectedSource.displayName, selectedSource.sourceType);
+                  }
+                }}
+                variant="strong"
+              >
+                {confirming ? "Routing…" : `Use ${selectedSource?.displayName ?? "this source"}`}
+              </Button>
+            </div>
           ) : null}
         </div>
-        {chooserOpen && existingSources.length > 0 ? (
-          <div className="source-confirm-chooser">
-            <select
-              aria-label={`Existing Money Source for ${displayName}`}
-              disabled={busy}
-              onChange={(event) => setSelectedSourceId(event.target.value)}
-              value={selectedSourceId}
-            >
-              {existingSources.map((source) => (
-                <option key={source.moneySourceId} value={source.moneySourceId}>
-                  {source.displayName}
-                </option>
-              ))}
-            </select>
-            <button
-              className="button button-strong"
-              disabled={busy || selectedSource === undefined}
-              onClick={() => {
-                if (selectedSource !== undefined) {
-                  onConfirm(prompt, selectedSource.displayName, selectedSource.sourceType);
-                }
-              }}
-              type="button"
-            >
-              {confirming ? "Routing…" : `Use ${selectedSource?.displayName ?? "this source"}`}
-            </button>
-          </div>
-        ) : null}
-      </div>
+      </Panel>
     </li>
   );
 }
@@ -197,19 +200,21 @@ export function FocusedSourceConfirmationDialog(props: FocusedSourceConfirmation
       }}
       open={props.focusedCandidate !== undefined}
     >
-      <DialogContent>
+      <DialogContent onPointerDownOutside={(event) => event.preventDefault()}>
         <DialogTitle>Confirm detected source</DialogTitle>
         <DialogDescription>
           Route the waiting evidence to a Money Source, or keep it parked until you are ready.
         </DialogDescription>
-        <SourceConfirmationCardList
-          busyKey={props.busyKey}
-          existingSources={props.existingSources}
-          onConfirm={props.onConfirm}
-          onKeepUnassigned={props.onKeepUnassigned}
-          onViewDocument={props.onViewDocument}
-          prompts={props.focusedCandidate ? [props.focusedCandidate] : []}
-        />
+        <div className="mt-4">
+          <SourceConfirmationCardList
+            busyKey={props.busyKey}
+            existingSources={props.existingSources}
+            onConfirm={props.onConfirm}
+            onKeepUnassigned={props.onKeepUnassigned}
+            onViewDocument={props.onViewDocument}
+            prompts={props.focusedCandidate ? [props.focusedCandidate] : []}
+          />
+        </div>
       </DialogContent>
     </Dialog>
   );

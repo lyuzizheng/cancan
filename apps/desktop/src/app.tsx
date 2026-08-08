@@ -17,6 +17,7 @@ import type {
   Tasks,
 } from "./command-contracts";
 import {
+  DeleteSourceDocumentDialog,
   DocumentPreview,
   DocumentUnlock,
   DocumentViewer,
@@ -37,6 +38,7 @@ import {
 import { createSourceConfirmationActions } from "./source-confirmation-actions";
 import { FocusedSourceConfirmationDialog } from "./source-confirmation";
 import { SourcesView, type MoneySourceDocuments } from "./sources-view";
+import { createStatementUnlockActions } from "./statement-unlock-actions";
 import { createTaskDestinationActions } from "./task-destination-actions";
 import { TasksView } from "./tasks-view";
 import {
@@ -63,6 +65,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [busy, setBusy] = useState(true);
   const [activeView, setActiveView] = useState<AppView>("overview");
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<SourceDocumentSummary | null>(
+    null,
+  );
   const [password, setPassword] = useState("");
   const [rememberedOnThisMac, setRememberedOnThisMac] = useState<boolean | null>(
     false,
@@ -173,6 +178,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     clearPreview();
     unlockRequestId.current += 1;
     setUnlockingDocument(null);
+    setDeletingDocumentId(null);
+    setConfirmingDelete(null);
     setVaultStatus(nextStatus);
     setActiveView("overview");
     setError(null);
@@ -632,7 +639,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       } finally {
         await loadDocuments();
       }
-    }).finally(() => setDeletingDocumentId(null));
+    }).finally(() => {
+      setDeletingDocumentId(null);
+      setConfirmingDelete(null);
+    });
   };
 
   const saveSourceCopy = (documentId: string) => {
@@ -656,142 +666,19 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     });
   };
 
-  const trySavedStatementPassword = async (
-    documentId: string,
-    moneySourceId: string,
-    requestId: number,
-  ) => {
-    setUnlockingDocument((current) => current?.documentId === documentId
-      ? { ...current, busy: true, error: null, savedPasswordStatus: null }
-      : current);
-    try {
-      const result = await api.trySavedStatementPassword(documentId, moneySourceId);
-      if (unlockRequestId.current !== requestId) {
-        return;
-      }
-      if (result === "unlocked") {
-        setUnlockingDocument(null);
-        setNotice({
-          body: "The saved password worked. This statement is ready to view and route for this Vault session.",
-          tone: "success",
-          title: "Statement unlocked",
-        });
-        await loadDocuments();
-        return;
-      }
-      setUnlockingDocument((current) => current?.documentId === documentId
-        ? { ...current, busy: false, savedPasswordStatus: result }
-        : current);
-    } catch (nextError) {
-      if (unlockRequestId.current === requestId) {
-        setUnlockingDocument((current) => current?.documentId === documentId
-          ? { ...current, busy: false, error: commandErrorMessage(nextError) }
-          : current);
-      }
-    }
-  };
-
-  const selectUnlockSource = (moneySourceId: string) => {
-    const current = unlockingDocument;
-    if (!current) {
-      return;
-    }
-    const requestId = unlockRequestId.current + 1;
-    unlockRequestId.current = requestId;
-    setUnlockingDocument({
-      ...current,
-      busy: false,
-      error: null,
-      password: "",
-      savedPasswordStatus: null,
-      selectedMoneySourceId: moneySourceId,
-    });
-    if (current.sources?.find((source) => source.moneySourceId === moneySourceId)?.hasSavedPassword) {
-      void trySavedStatementPassword(current.documentId, moneySourceId, requestId);
-    }
-  };
-
-  const loadUnlockSources = (documentId: string, documentTitle: string) => {
-    const requestId = unlockRequestId.current + 1;
-    unlockRequestId.current = requestId;
-    setUnlockingDocument({
-      busy: true,
-      documentId,
-      documentTitle,
-      error: null,
-      password: "",
-      savedPasswordStatus: null,
-      selectedMoneySourceId: "",
-      sources: null,
-    });
-    void api.listStatementPasswordSources().then((sources) => {
-      if (unlockRequestId.current !== requestId) {
-        return;
-      }
-      const onlySource = sources.length === 1 ? sources[0] : undefined;
-      const selectedMoneySourceId = onlySource?.moneySourceId ?? "";
-      setUnlockingDocument((current) => current?.documentId === documentId
-        ? { ...current, busy: false, selectedMoneySourceId, sources }
-        : current);
-      if (onlySource?.hasSavedPassword) {
-        void trySavedStatementPassword(documentId, selectedMoneySourceId, requestId);
-      }
-    }).catch((nextError) => {
-      if (unlockRequestId.current === requestId) {
-        setUnlockingDocument((current) => current?.documentId === documentId
-          ? { ...current, busy: false, error: commandErrorMessage(nextError), sources: [] }
-          : current);
-      }
-    });
-  };
-
-  const openDocumentUnlock = (document: SourceDocumentSummary) => {
-    loadUnlockSources(document.documentId, document.originalFilename);
-  };
-
-  const submitDocumentPassword = (updateSavedPassword: boolean) => {
-    const current = unlockingDocument;
-    if (!current) {
-      return;
-    }
-    if (!current.selectedMoneySourceId) {
-      setUnlockingDocument({ ...current, error: "Choose the Money Source for this statement." });
-      return;
-    }
-    if (!current.password) {
-      setUnlockingDocument({ ...current, error: "Enter the statement password to continue." });
-      return;
-    }
-    const requestId = unlockRequestId.current + 1;
-    unlockRequestId.current = requestId;
-    const password = current.password;
-    setUnlockingDocument({ ...current, busy: true, error: null, password: "" });
-    void api.unlockSourceDocument(
-      current.documentId,
-      current.selectedMoneySourceId,
-      password,
-      updateSavedPassword,
-    ).then(async () => {
-      if (unlockRequestId.current !== requestId) {
-        return;
-      }
-      setUnlockingDocument(null);
-      setNotice({
-        body: updateSavedPassword
-          ? "The verified password replaced this Money Source’s saved password. This statement is ready to view and route."
-          : "This statement is ready to view and route until the Vault locks.",
-        tone: "success",
-        title: "Statement unlocked",
-      });
-      await loadDocuments();
-    }).catch((nextError) => {
-      if (unlockRequestId.current === requestId) {
-        setUnlockingDocument((latest) => latest?.documentId === current.documentId
-          ? { ...latest, busy: false, error: commandErrorMessage(nextError), password: "" }
-          : latest);
-      }
-    });
-  };
+  const {
+    loadUnlockSources,
+    openDocumentUnlock,
+    selectUnlockSource,
+    submitDocumentPassword,
+  } = createStatementUnlockActions({
+    api,
+    loadDocuments,
+    setNotice,
+    setUnlockingDocument,
+    unlockingDocument,
+    unlockRequestId,
+  });
 
   const { loadDocumentPreview, loadViewerPage } = createViewerActions({
     api,
@@ -1443,7 +1330,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   });
 
   const modalOpen = viewer !== null || preview !== null || unlockingDocument !== null
-    || focusedCandidateId !== null;
+    || focusedCandidateId !== null || confirmingDelete !== null;
   const unlocked = vaultStatus === "unlocked";
   const existingSources = sourceDocuments.map((entry) => entry.source);
   const focusedCandidate = focusedCandidateId === null ? undefined
@@ -1549,7 +1436,6 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             accountPrompts={accountPrompts ?? []}
             attentionBusyKey={attentionBusyKey}
             busy={busy}
-            deletingDocumentId={deletingDocumentId}
             existingSources={existingSources}
             importing={importing}
             inbox={localInbox}
@@ -1562,7 +1448,6 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onConfirmSourceCandidate={(prompt, displayName, sourceType) =>
               void confirmSourceCandidate(prompt, displayName, sourceType)}
             onDecideAccounts={(prompt, decisions) => void decideAccounts(prompt, decisions)}
-            onDelete={deleteDocument}
             onImport={importDocument}
             onInboxCancelDisable={() => setInboxConfirmingDisable(false)}
             onInboxChoose={() => void chooseInboxFolder()}
@@ -1576,6 +1461,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onOpenUnlock={openDocumentUnlock}
             onRefresh={() => void refreshVaultStatus()}
             onRememberedChange={updateRemembered}
+            onRequestDelete={setConfirmingDelete}
             onRestoreAccount={(accountId) => void restoreAccount(accountId)}
             onSelectMoneySource={selectMoneySource}
             onSaveRecoveryFile={saveRecoveryFile}
@@ -1630,6 +1516,18 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           onSourceChange={selectUnlockSource}
           onSubmit={submitDocumentPassword}
           state={unlockingDocument}
+        />
+      ) : null}
+      {unlocked ? (
+        <DeleteSourceDocumentDialog
+          deleting={deletingDocumentId !== null}
+          document={confirmingDelete}
+          onCancel={() => setConfirmingDelete(null)}
+          onConfirm={() => {
+            if (confirmingDelete) {
+              deleteDocument(confirmingDelete.documentId);
+            }
+          }}
         />
       ) : null}
       {unlocked ? (

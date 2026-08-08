@@ -1,4 +1,14 @@
-import { Button, LedgerHeader } from "@cancan/ui";
+import {
+  Button,
+  EmptyState,
+  LedgerHeader,
+  MonogramTile,
+  Panel,
+  SectionHeader,
+  Skeleton,
+  StatusPoint,
+  type StatusPointTone,
+} from "@cancan/ui";
 
 import type {
   AccountConfirmationPrompt,
@@ -22,7 +32,6 @@ export interface SourcesViewProps {
   accountPrompts: AccountConfirmationPrompt[];
   attentionBusyKey: string | null;
   busy: boolean;
-  deletingDocumentId: string | null;
   existingSources: MoneySourceSummary[];
   importing: boolean;
   inbox: LocalInboxStatus | null;
@@ -41,7 +50,6 @@ export interface SourcesViewProps {
     prompt: AccountConfirmationPrompt,
     decisions: CandidateAccountDecisionInput[],
   ) => void;
-  onDelete: (documentId: string) => void;
   onImport: () => void;
   onInboxCancelDisable: () => void;
   onInboxChoose: () => void;
@@ -55,6 +63,7 @@ export interface SourcesViewProps {
   onOpenUnlock: (document: SourceDocumentSummary) => void;
   onRefresh: () => void;
   onRememberedChange: (remembered: boolean) => void;
+  onRequestDelete: (document: SourceDocumentSummary) => void;
   onRestoreAccount: (accountId: string) => void;
   onSelectMoneySource: (moneySourceId: string) => void;
   onSaveRecoveryFile: () => void;
@@ -87,9 +96,10 @@ export function SourcesView(props: SourcesViewProps) {
       <LedgerHeader
         actions={
           <>
-            <label className="remember-vault-control">
+            <label className="flex h-8 cursor-pointer items-center gap-2 px-1 text-sm text-ledger-text-muted">
               <input
                 checked={props.rememberedOnThisMac === true}
+                className="size-3.5 accent-accent-go-deep"
                 disabled={props.busy || props.normalizingDocumentId !== null || props.rememberedOnThisMac === null}
                 onChange={(event) => props.onRememberedChange(event.target.checked)}
                 type="checkbox"
@@ -108,33 +118,32 @@ export function SourcesView(props: SourcesViewProps) {
         title="Secure file intake"
       />
 
-      <section className="intake-content" aria-label="Manual import">
-        {!props.recoveryConfigured ? (
-          <section className="todo-panel" aria-labelledby="todo-heading">
-            <div className="todo-panel-heading">
-              <h2 id="todo-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />To do</h2>
-              <span className="attention-count" aria-label="1 task">1</span>
-            </div>
-            <ul className="todo-list">
-              <li className="todo-row">
-                <div>
-                  <p className="todo-title">Save your recovery file</p>
-                  <p className="todo-copy">Use it to recover your Vault if you lose access to this Mac or forget your password. Anyone with the file can recover compatible Vault data, so store it privately.</p>
-                </div>
-                <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onSaveRecoveryFile} type="button">
-                  {props.savingRecoveryFile ? "Saving…" : "Save recovery file"}
-                </button>
-              </li>
-            </ul>
-          </section>
-        ) : null}
-
-        <section className="intake-intro">
-          <h2>Add a statement or export</h2>
-          <p>Choose a PDF, CSV, PNG, or JPEG. CanCan saves it in your Vault before checking its configured source.</p>
-        </section>
+      <div className="grid gap-10 pt-6">
+        <p className="text-sm text-ledger-text-muted">
+          Add a PDF, CSV, PNG, or JPEG — CanCan saves it in your Vault before checking its configured source.
+        </p>
 
         {props.notice ? <Feedback {...props.notice} /> : null}
+
+        {!props.recoveryConfigured ? (
+          <section aria-label="To do">
+            <Panel className="flex items-center gap-4 p-4">
+              <StatusPoint className="shrink-0" tone="attention" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-ledger-ink">Save your recovery file</p>
+                <p className="mt-0.5 text-sm text-ledger-text-muted">
+                  Use it to recover your Vault if you lose access to this Mac or forget your password. Anyone with the file can recover compatible Vault data, so store it privately.
+                </p>
+              </div>
+              <Button
+                disabled={props.busy || props.normalizingDocumentId !== null}
+                onClick={props.onSaveRecoveryFile}
+              >
+                {props.savingRecoveryFile ? "Saving…" : "Save recovery file"}
+              </Button>
+            </Panel>
+          </section>
+        ) : null}
 
         <InboxPanel
           busy={props.inboxBusy}
@@ -149,91 +158,118 @@ export function SourcesView(props: SourcesViewProps) {
           status={props.inbox}
         />
 
-        <section className="source-panel" aria-labelledby="sources-heading">
-          <div className="source-panel-heading">
-            <h2 id="sources-heading"><span className="panel-dot panel-dot-emerald" aria-hidden="true" />Money Sources</h2>
-            <span className="source-count" aria-label={`${props.sourceDocuments.length} ${props.sourceDocuments.length === 1 ? "source" : "sources"}`}>
-              {props.sourceDocuments.length}
-            </span>
-          </div>
-          {props.loadingDocuments ? <p className="panel-status" role="status">Refreshing sources…</p> : null}
-          {!props.loadingDocuments && props.sourceDocuments.length === 0 ? (
-            <p className="panel-status">No Money Sources are configured yet.</p>
-          ) : null}
-          {props.sourceDocuments.map(({ documents, source }) => {
-            const selected = props.selectedMoneySourceId === source.moneySourceId;
-            return (
-              <section className="source-documents" key={source.moneySourceId}>
-                <div className="source-documents-heading">
-                  <div>
-                    <h3>{source.displayName}</h3>
-                    <p>{sourceTypeLabel(source.sourceType)}</p>
-                  </div>
-                  <button
-                    aria-expanded={selected}
-                    aria-label={`View documents for ${source.displayName}`}
-                    className="button button-quiet"
-                    disabled={props.loadingDocuments}
-                    onClick={() => props.onSelectMoneySource(source.moneySourceId)}
-                    type="button"
-                  >
-                    {selected && documents !== null
-                      ? "Refresh documents"
-                      : "View documents"}
-                  </button>
-                </div>
-              {selected && documents === null && props.loadingDocuments ? (
-                <p className="panel-status" role="status">Loading documents…</p>
-              ) : null}
-              {selected && documents?.length === 0 ? (
-                <p className="panel-status">No routed documents yet.</p>
-              ) : null}
-              {selected && documents && documents.length > 0 ? (
-                <EvidenceDocumentGroups documents={documents} props={props} />
-              ) : null}
-              </section>
-            );
-          })}
-        </section>
-
-        <section className="attention-panel" aria-labelledby="attention-heading">
-          <div className="attention-panel-heading">
-            <h2 id="attention-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />Needs attention</h2>
-            <span className="attention-count" aria-label={`${attentionCount} to check`}>
-              {attentionCount}
-            </span>
-          </div>
-
-          {!props.loadingDocuments && attentionCount === 0 && props.sourcePrompts.length === 0 && props.accountPrompts.length === 0 ? (
-            <p className="panel-status">No evidence needs your attention.</p>
-          ) : null}
-          <SourceConfirmationCardList
-            busyKey={props.attentionBusyKey}
-            existingSources={props.existingSources}
-            onConfirm={props.onConfirmSourceCandidate}
-            onKeepUnassigned={props.onKeepSourceCandidateUnassigned}
-            onViewDocument={props.onViewPromptDocument}
-            prompts={props.sourcePrompts}
+        <section aria-label="Money Sources">
+          <SectionHeader
+            count={props.sourceDocuments.length > 0 ? props.sourceDocuments.length : undefined}
+            title="Money Sources"
+            tone="healthy"
           />
-          {props.accountPrompts.length > 0 ? (
-            <ul className="attention-card-list">
-              {props.accountPrompts.map((prompt) => (
-                <AccountConfirmationCard
-                  busy={props.attentionBusyKey !== null}
-                  deciding={props.attentionBusyKey === `account:${prompt.moneySourceId}`}
-                  key={prompt.moneySourceId}
-                  onDecide={(decisions) => props.onDecideAccounts(prompt, decisions)}
-                  onRestore={props.onRestoreAccount}
-                  prompt={prompt}
-                />
-              ))}
-            </ul>
+          {props.loadingDocuments ? (
+            <div className="grid gap-2.5 border-t border-ledger-rule py-3" role="status">
+              <span className="sr-only">Refreshing sources…</span>
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-4 w-1/3" />
+            </div>
           ) : null}
-          {props.unassignedDocuments.length > 0 ? (
-            <EvidenceDocumentGroups documents={props.unassignedDocuments} props={props} />
+          {!props.loadingDocuments && props.sourceDocuments.length === 0 ? (
+            <div className="border-t border-ledger-rule">
+              <EmptyState
+                body="Money Sources appear here once evidence is confirmed to a bank, card, or wallet."
+                icon="sources"
+                title="No Money Sources yet"
+              />
+            </div>
           ) : null}
+          <div>
+            {props.sourceDocuments.map(({ documents, source }) => {
+              const selected = props.selectedMoneySourceId === source.moneySourceId;
+              return (
+                <section
+                  aria-label={source.displayName}
+                  className="border-t border-ledger-rule py-3"
+                  key={source.moneySourceId}
+                >
+                  <div className="flex items-center gap-3">
+                    <MonogramTile className="shrink-0" name={source.displayName} />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-md font-medium text-ledger-ink">{source.displayName}</h3>
+                      <p className="mt-0.5 text-xs text-ledger-text-muted">{sourceTypeLabel(source.sourceType)}</p>
+                    </div>
+                    <Button
+                      aria-expanded={selected}
+                      aria-label={`View documents for ${source.displayName}`}
+                      disabled={props.loadingDocuments}
+                      onClick={() => props.onSelectMoneySource(source.moneySourceId)}
+                      size="sm"
+                      variant="quiet"
+                    >
+                      {selected && documents !== null
+                        ? "Refresh documents"
+                        : "View documents"}
+                    </Button>
+                  </div>
+                  {selected && documents === null && props.loadingDocuments ? (
+                    <p className="py-3 text-sm text-ledger-text-muted" role="status">Loading documents…</p>
+                  ) : null}
+                  {selected && documents?.length === 0 ? (
+                    <p className="py-3 text-sm text-ledger-text-muted">
+                      No {source.displayName} documents yet. Add a file or set up CanCan Inbox.
+                    </p>
+                  ) : null}
+                  {selected && documents && documents.length > 0 ? (
+                    <EvidenceDocumentGroups documents={documents} props={props} />
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
         </section>
-      </section>
+
+        <section aria-label="Needs attention">
+          <SectionHeader
+            count={attentionCount > 0 ? attentionCount : undefined}
+            title="Needs attention"
+            tone={attentionCount > 0 ? "attention" : "healthy"}
+          />
+          <div className="mt-2 grid gap-4">
+            {!props.loadingDocuments && attentionCount === 0 && props.sourcePrompts.length === 0 && props.accountPrompts.length === 0 ? (
+              <p className="border-t border-ledger-rule py-3 text-sm text-ledger-text-muted">
+                No evidence needs your attention.
+              </p>
+            ) : null}
+            <SourceConfirmationCardList
+              busyKey={props.attentionBusyKey}
+              existingSources={props.existingSources}
+              onConfirm={props.onConfirmSourceCandidate}
+              onKeepUnassigned={props.onKeepSourceCandidateUnassigned}
+              onViewDocument={props.onViewPromptDocument}
+              prompts={props.sourcePrompts}
+            />
+            {props.accountPrompts.length > 0 ? (
+              <ul className="m-0 grid list-none gap-3 p-0">
+                {props.accountPrompts.map((prompt) => (
+                  <AccountConfirmationCard
+                    busy={props.attentionBusyKey !== null}
+                    deciding={props.attentionBusyKey === `account:${prompt.moneySourceId}`}
+                    key={prompt.moneySourceId}
+                    onDecide={(decisions) => props.onDecideAccounts(prompt, decisions)}
+                    onRestore={props.onRestoreAccount}
+                    prompt={prompt}
+                  />
+                ))}
+              </ul>
+            ) : null}
+            {props.unassignedDocuments.length > 0 ? (
+              <div>
+                <p className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+                  Unassigned evidence
+                </p>
+                <EvidenceDocumentGroups documents={props.unassignedDocuments} props={props} />
+              </div>
+            ) : null}
+          </div>
+        </section>
+      </div>
     </>
   );
 }
@@ -246,14 +282,12 @@ function EvidenceDocumentGroups({
   props: SourcesViewProps;
 }) {
   return groupEvidenceByMonth(documents).map((group) => (
-    <section className="evidence-group" key={group.key}>
-      <p className="evidence-group-label">
+    <section aria-label={group.label} className="mt-3" key={group.key}>
+      <p className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
         {group.label}
-        <span className="evidence-group-count">
-          {group.documents.length} {group.documents.length === 1 ? "document" : "documents"}
-        </span>
+        <span className="normal-case"> · {group.documents.length} {group.documents.length === 1 ? "document" : "documents"}</span>
       </p>
-      <ul className="evidence-list">
+      <ul className="m-0 mt-1 list-none border-t border-ledger-rule p-0">
         {group.documents.map((document) => {
           const passwordRequired = document.documentStatus === "needs_attention"
             && document.attentionReason === "password_required";
@@ -262,45 +296,72 @@ function EvidenceDocumentGroups({
           const routingAvailable = fileAvailable
             && (document.documentStatus === "ready" || document.documentStatus === "needs_attention")
             && !passwordRequired;
-          const attentionRequired = document.documentStatus === "needs_attention";
-          const deleting = props.deletingDocumentId === document.documentId;
           const normalizing = props.normalizingDocumentId === document.documentId;
           const savingCopy = props.savingCopyDocumentId === document.documentId;
           return (
-            <li className="evidence-row" key={document.documentId}>
-              <span className="document-kind" aria-hidden="true">{document.mimeType === "application/pdf" ? "PDF" : document.mimeType === "text/csv" ? "CSV" : document.mimeType === "image/png" ? "PNG" : "JPEG"}</span>
-              <div className="evidence-details">
-                <p>{document.originalFilename}</p>
-                <span className="evidence-meta">{evidenceMeta(document)}</span>
+            <li
+              className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-ledger-rule py-2.5"
+              key={document.documentId}
+            >
+              <span className="shrink-0 rounded-sm border border-ledger-rule px-1.5 py-0.5 font-mono text-xs text-ledger-text-muted">
+                {document.mimeType === "application/pdf" ? "PDF" : document.mimeType === "text/csv" ? "CSV" : document.mimeType === "image/png" ? "PNG" : "JPEG"}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-ledger-ink">{document.originalFilename}</p>
+                <p className="mt-0.5 font-mono text-xs text-ledger-text-muted">{evidenceMeta(document)}</p>
               </div>
-              <p className={`doc-status doc-status-${document.documentStatus === "processing" ? "processing" : attentionRequired ? "attention" : document.fileState}`}>
-                <span className="doc-status-dot" aria-hidden="true" />
+              <span className="flex shrink-0 items-center gap-1.5 text-xs text-ledger-text-muted">
+                <StatusPoint tone={documentStatusTone(document)} />
                 {documentStatusLabel(document)}
-              </p>
-              <div className="evidence-actions">
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
                 {passwordRequired ? (
-                  <button className="button button-primary" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onOpenUnlock(document)} type="button">
+                  <Button
+                    disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null}
+                    onClick={() => props.onOpenUnlock(document)}
+                    size="sm"
+                  >
                     Unlock
-                  </button>
+                  </Button>
                 ) : (
-                  <button className="button button-quiet" disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={(event) => props.onView(document, event.currentTarget)} type="button">
+                  <Button
+                    disabled={!viewingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null}
+                    onClick={(event) => props.onView(document, event.currentTarget)}
+                    size="sm"
+                    variant="quiet"
+                  >
                     {!viewingAvailable ? "View unavailable" : "View document"}
-                  </button>
+                  </Button>
                 )}
                 {!passwordRequired ? (
-                  <button className="button button-quiet" disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onNormalize(document.documentId)} type="button">
+                  <Button
+                    disabled={!routingAvailable || props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null}
+                    onClick={() => props.onNormalize(document.documentId)}
+                    size="sm"
+                    variant="quiet"
+                  >
                     {!routingAvailable ? "Parser unavailable" : normalizing ? "Re-running…" : "Re-run parser"}
-                  </button>
+                  </Button>
                 ) : null}
                 {fileAvailable ? (
-                  <button className="button button-quiet" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onSaveSourceCopy(document.documentId)} type="button">
+                  <Button
+                    disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null}
+                    onClick={() => props.onSaveSourceCopy(document.documentId)}
+                    size="sm"
+                    variant="quiet"
+                  >
                     {savingCopy ? "Saving copy…" : "Save a copy"}
-                  </button>
+                  </Button>
                 ) : null}
                 {fileAvailable ? (
-                  <button className="button button-quiet button-danger" disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null} onClick={() => props.onDelete(document.documentId)} type="button">
-                    {deleting ? "Deleting…" : "Delete source file"}
-                  </button>
+                  <Button
+                    disabled={props.busy || props.normalizingDocumentId !== null || props.savingCopyDocumentId !== null}
+                    onClick={() => props.onRequestDelete(document)}
+                    size="sm"
+                    variant="danger"
+                  >
+                    Delete source file
+                  </Button>
                 ) : null}
               </div>
             </li>
@@ -313,6 +374,21 @@ function EvidenceDocumentGroups({
 
 function sourceTypeLabel(sourceType: string) {
   return sourceType.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function documentStatusTone(document: SourceDocumentSummary): StatusPointTone {
+  switch (document.documentStatus) {
+    case "needs_attention":
+      return "attention";
+    case "processing":
+      return "idle";
+    case "file_deleted":
+      return "idle";
+    case "missing":
+      return "risk";
+    case "ready":
+      return "healthy";
+  }
 }
 
 function documentStatusLabel(document: SourceDocumentSummary) {

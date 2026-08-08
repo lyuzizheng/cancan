@@ -10,13 +10,16 @@ import type {
 } from "./command-contracts";
 import {
   availableDocument,
+  bodyDialog,
   click,
+  clickDialogButton,
   container,
   createApi,
   deferred,
   enterPassword,
   installAppHarness,
   mount,
+  noBodyDialog,
   settle,
 } from "./test-support/app-harness";
 
@@ -50,7 +53,7 @@ describe("App vault-locked event and viewer race orchestration", () => {
 
     await mount(api, "sources");
     await click("View document");
-    expect(container.querySelector("img")).not.toBeNull();
+    expect(bodyDialog().querySelector("img")).not.toBeNull();
 
     await act(async () => {
       notifyVaultLocked();
@@ -59,8 +62,8 @@ describe("App vault-locked event and viewer race orchestration", () => {
 
     expect(api.lockVault).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Unlock your Vault");
-    expect(container.textContent).not.toContain(availableDocument.originalFilename);
-    expect(container.querySelector("img")).toBeNull();
+    expect(document.body.textContent).not.toContain(availableDocument.originalFilename);
+    expect(document.body.querySelector("img")).toBeNull();
   });
 
   it("does not restore an unlocked view from a status request started before the host reports the Vault is locked", async () => {
@@ -147,8 +150,8 @@ describe("App vault-locked event and viewer race orchestration", () => {
 
     await mount(api, "sources");
     await click("View document");
-    await click("Next");
-    await click("Close");
+    await clickDialogButton("Next");
+    await clickDialogButton("Close");
     await act(async () => {
       nextPage.resolve({
         pageCount: 2,
@@ -158,8 +161,8 @@ describe("App vault-locked event and viewer race orchestration", () => {
       await settle();
     });
 
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.querySelector("img")).toBeNull();
+    noBodyDialog();
+    expect(document.body.querySelector("img")).toBeNull();
   });
 
   it("ignores a page render failure after the viewer closes", async () => {
@@ -180,15 +183,15 @@ describe("App vault-locked event and viewer race orchestration", () => {
 
     await mount(api, "sources");
     await click("View document");
-    await click("Next");
-    await click("Close");
+    await clickDialogButton("Next");
+    await clickDialogButton("Close");
     await act(async () => {
       nextPage.reject({ code: "document_render_failed" });
       await settle();
     });
 
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.querySelector("img")).toBeNull();
+    noBodyDialog();
+    expect(document.body.querySelector("img")).toBeNull();
     expect(container.textContent).not.toContain("CanCan couldn’t render that document.");
   });
 
@@ -211,10 +214,10 @@ describe("App vault-locked event and viewer race orchestration", () => {
 
     await mount(api, "sources");
     await click("View document");
-    await click("Next");
+    await clickDialogButton("Next");
 
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.querySelector("img")).toBeNull();
+    noBodyDialog();
+    expect(document.body.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("CanCan couldn’t render that document.");
     expect(container.textContent).not.toContain("Core Graphics detail");
   });

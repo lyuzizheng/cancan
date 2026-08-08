@@ -18,8 +18,12 @@ export const DialogClose = DialogPrimitive.Close;
 export function DialogContent({
   className,
   children,
+  width = "md",
   ...rest
-}: ComponentProps<typeof DialogPrimitive.Content>) {
+}: ComponentProps<typeof DialogPrimitive.Content> & {
+  /** `md` for decisions and forms; `3xl` for document viewing surfaces. */
+  width?: "md" | "3xl";
+}) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay
@@ -30,7 +34,8 @@ export function DialogContent({
       />
       <DialogPrimitive.Content
         className={cx(
-          "fixed left-1/2 top-1/2 z-50 w-11/12 max-w-md -translate-x-1/2 -translate-y-1/2 rounded-md border border-ledger-rule bg-ledger-porcelain p-6",
+          "fixed left-1/2 top-1/2 z-50 w-11/12 -translate-x-1/2 -translate-y-1/2 rounded-md border border-ledger-rule bg-ledger-porcelain p-6",
+          width === "md" ? "max-w-md" : "max-w-3xl",
           "focus:outline-none",
           "data-[state=open]:animate-dialog-in data-[state=closed]:animate-dialog-out motion-reduce:animate-none",
           className,
