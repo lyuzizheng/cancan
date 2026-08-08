@@ -18,7 +18,7 @@ Canonical visual behavior remains in [`docs/specs/0008-design-system.md`](../../
 | [`05-precision-vaultpunk-porcelain.png`](05-precision-vaultpunk-porcelain.png) | Material comparison | The white precision material was elegant, but it lost the strong Vault boundary the product needs |
 | [`06-approved-palette.png`](06-approved-palette.png) | **Selected palette reference** | Obsidian, mineral white, emerald, amber, and restrained cinnabar provide the accepted semantic palette |
 
-The palette board still prints the exploratory easing curve `(0.23, 1, 0.32, 1)`. That value is superseded. The canonical motion token is `cubic-bezier(0.22, 1, 0.36, 1)` in the design specs; archived image annotations never override canonical text.
+The palette board still prints the exploratory easing curve `(0.23, 1, 0.32, 1)`. That value is superseded. The canonical motion token was `cubic-bezier(0.22, 1, 0.36, 1)` at version 1 and is `ease.mech cubic-bezier(0.19, 1, 0.22, 1)` since the 2026-08-08 version-2 amendment in the design specs; archived image annotations never override canonical text.
 
 ## Selected direction
 
