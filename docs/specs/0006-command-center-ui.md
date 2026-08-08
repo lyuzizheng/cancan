@@ -115,9 +115,9 @@ excellent empty/loading/error states
 
 ## Component library strategy
 
-Kimi Code CLI owns the renderer implementation choice. It may use Hero UI, shadcn/Radix-style primitives, or a lighter code-native approach, but there is no preferred library before a concrete screen needs it.
+Kimi Code CLI owns the renderer implementation choice. The component foundation is decided (2026-08-08): shadcn/Radix primitives + Tailwind v4, recorded in `0008-design-system.md` §Component strategy; Hero UI was considered and rejected.
 
-Choose the smallest pinned dependency set that satisfies the accepted design and accessibility contract. Reuse solid basic controls instead of hand-rolling them, but do not add wrappers, tables, charts, icons, motion libraries, or styling systems speculatively. Shared CanCan components belong in `packages/ui` only after real repeated use exists.
+Choose the smallest pinned dependency set that satisfies the accepted design and accessibility contract. Reuse solid basic controls instead of hand-rolling them, but do not add wrappers, tables, charts, icons, motion libraries, or styling systems speculatively. Common primitives and patterns are wrapped once as CanCan-branded components in `packages/ui` per `0008`; beyond that foundation, shared components still belong in `packages/ui` only after real repeated use exists.
 - Keep theme tokens centralized.
 - Avoid mixing multiple visual systems.
 - DaisyUI can be used for prototyping inspiration, but should not define final brand identity.

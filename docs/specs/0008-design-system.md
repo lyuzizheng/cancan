@@ -6,7 +6,7 @@ Define CanCan's visual design direction before UI implementation.
 
 ## Implementation ownership
 
-The core visual direction, semantic palette, typography direction, and motion rhythm are accepted. Kimi Code CLI owns customer-facing renderer craft: it may select the component foundation and exact pinned versions, decide whether Figma is useful as an exploratory artifact or omit it, and structure the renderer implementation freely within the accepted visual, accessibility, privacy, and product-state contracts.
+The core visual direction, semantic palette, typography direction, and motion rhythm are accepted. Kimi Code CLI owns customer-facing renderer craft within the foundation decision recorded in §Component strategy: it selects the exact pinned versions, decides whether Figma is useful as an exploratory artifact or omits it, and structures the renderer implementation freely within the accepted visual, accessibility, privacy, and product-state contracts.
 
 The production code and canonical specs remain authoritative. Figma is never required as an implementation input and cannot redefine finance, evidence, job, or security behavior. Component and Figma choices therefore do not block backend business-logic work or the `review-ledger-ui` slice.
 
@@ -71,16 +71,17 @@ Material Design 1/2:
   oversized rounded cards, generic card grids, and chat-first visual framing
 ```
 
-Also avoid fake terminal/cyberpunk styling, neon outlines, decorative grids/scanlines, black-and-gold luxury banking, and fashionable editorial serif-plus-mono templates. Familiar controls should remain familiar; originality belongs in the product's composition, material language, source identity, and state behavior.
+Also avoid fake terminal/cyberpunk styling, neon outlines, decorative grids/scanlines, black-and-gold luxury banking, and generic editorial serif-plus-mono templates. The scoped Fraunces display role in the typography direction is a deliberate, bounded brand choice — not that template: it never pairs with mono body copy, never leaves its Ledger-side display moments, and never touches UI chrome. Familiar controls should remain familiar; originality belongs in the product's composition, material language, source identity, and state behavior.
 
 ## Typography direction
 
-Use `Geologica` for interface hierarchy and body roles. Use `Martian Mono` only for dates, counts, identifiers, hashes, and machine-origin metadata where fixed-width alignment carries meaning.
+Use `Geologica` for interface hierarchy and body roles. Use `Martian Mono` only for dates, counts, identifiers, hashes, and machine-origin metadata where fixed-width alignment carries meaning. Use `Fraunces Variable` as the display/editorial serif, scoped to Ledger-side display moments only: page titles, the Vault gate, and empty states.
 
 Rules:
 
 - self-host pinned font files when implementation begins; do not introduce a runtime Google Fonts dependency;
 - keep UI labels, buttons, and financial body copy in Geologica;
+- Fraunces never appears in the Vault Spine, UI chrome, labels, buttons, tables, or financial body copy; it stays at or below `text.2xl` (1.5rem), at weights 430–560, WONK 0, optical size auto;
 - never turn the whole product into a monospace terminal;
 - use tabular numerals for financial values even outside the mono role;
 - use a fixed product type scale and no giant marketing typography inside the app;
@@ -88,9 +89,9 @@ Rules:
 
 ## Component strategy
 
-Kimi Code CLI should use the smallest mature React foundation that supports the accepted design and accessibility requirements. Any introduced dependency must be pinned and justified by the renderer implementation that uses it. Avoid mixing component systems or adding wrappers, charting, table, or motion libraries before a concrete screen needs them.
+The accepted component foundation is shadcn/Radix primitives + Tailwind v4 (decided 2026-08-08): styles-as-source with maximum brand control, and every dependency pinned. Hero UI was considered and rejected.
 
-The choice may include Hero UI, shadcn/Radix, or a lighter code-native approach. No option is canonical in advance, and library defaults must not define CanCan's final brand identity.
+Radix supplies behavior and accessibility; CanCan tokens (`0011-visual-design-tokens.md`) supply identity. Library defaults such as shadcn zinc/blue must never define the shipped brand. Tailwind utilities resolve through the `@theme` token mapping only — arbitrary-value syntax and `dark:` variants are banned, because the app is a per-region hybrid theme rather than a light/dark toggle. Common components are wrapped once in `packages/ui`; avoid adding wrapper, charting, table, or motion libraries before a concrete screen needs them.
 
 ## Layout
 
@@ -108,6 +109,8 @@ Optional right rail: asset snapshot, insight, freshness, assistant context
 
 Home should be multi-dimensional but not overwhelming.
 
+Controls are compact — 28–32px heights — and paired with deliberate whitespace: dense where data asks for it, open where the eye rests. Whitespace is part of the composition, not leftover space; do not fill it with decoration, and do not pad controls into friendliness.
+
 Command Center should include:
 
 - money source activity/flows;
@@ -116,6 +119,10 @@ Command Center should include:
 - AI insight module;
 - the unified Tasks projection for review/evidence/setup work;
 - but not a wall of dense tables on first load.
+
+## Geometry
+
+No large radius. Controls stay at or below `radius.sm` (6px), content panels at or below `radius.md` (8px); larger geometry belongs to the window chassis only. `radius.pill` is reserved for a true pill/tag control.
 
 ## Command Center priority
 
@@ -150,7 +157,7 @@ Insurance: policy value, premiums, valuation date, confidence/freshness
 
 ## Motion and interaction
 
-Motion should feel like precision equipment responding. It must communicate state, relationship, and feedback rather than decorate the page.
+Motion is a first-class system, on the same footing as palette and typography: it is tokenized in `packages/ui` and every component consumes the shared duration/easing tokens rather than ad-hoc values. Motion should feel like precision equipment responding. It must communicate state, relationship, and feedback rather than decorate the page.
 
 Primary rhythm:
 
@@ -158,8 +165,10 @@ Primary rhythm:
 120 ms  direct feedback
 180 ms  state change
 240 ms  page/structural transition
-easing  ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1)
+easing  ease.mech: cubic-bezier(0.19, 1, 0.22, 1)
 ```
+
+`ease.mech` is the single signature curve shared with the public site (per `0011-visual-design-tokens.md`); do not introduce a second easing curve.
 
 Signature opportunities:
 
