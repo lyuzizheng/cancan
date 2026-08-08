@@ -55,6 +55,20 @@ The app shell migrated to the token foundation: `AppShell` flex chassis, obsidia
 | [`slice2-vault-gate-locked-1440.png`](slice2-vault-gate-locked-1440.png) / [`slice2-vault-gate-locked-760.png`](slice2-vault-gate-locked-760.png) | 1440/760 | Vault gate, Touch ID path |
 | [`slice2-vault-gate-create-1440.png`](slice2-vault-gate-create-1440.png) | 1440 | Vault gate, create path |
 
+## Slice-3 Command Center evidence
+
+The unified Tasks surface (spec 0006): one Tasks section on Overview (host-ordered rows, group captions, consequence labels, needs-action count, `View all`), the full Tasks route with the four group filters, the Tasks nav entry with the needs-action pill, and the focused source-confirmation dialog as the `source_confirmation` deep-link target. The interim Needs-attention / Review-status / Jobs cards are gone; account-confirmation cards moved to their owning Sources attention panel (frozen-contract boundary). These captures also caught and now evidence the fix for unstyled bare `<button>` elements under a dark-UA `color-scheme` (rows/chips now set explicit `bg-transparent`).
+
+| Artifact | Width | State |
+| --- | --- | --- |
+| [`slice3-overview.png`](slice3-overview.png) | 1440 | Overview: Tasks section + Money Overview + Recent activity |
+| [`slice3-overview-empty.png`](slice3-overview-empty.png) | 1440 | Caught-up + first-run empty states |
+| [`slice3-tasks.png`](slice3-tasks.png) | 1440 | Full Tasks route, Needs action filter |
+| [`slice3-tasks-parked.png`](slice3-tasks-parked.png) | 1440 | Full Tasks route, Parked filter |
+| [`slice3-source-confirm.png`](slice3-source-confirm.png) | 1440 | Focused source-confirmation dialog over inert ledger |
+| [`slice3-overview-760.png`](slice3-overview-760.png) | 760 | Narrow: top-bar spine, rows truncate without overlap |
+| [`slice3-tasks-reduced-motion.png`](slice3-tasks-reduced-motion.png) | 1440 | `prefers-reduced-motion` render |
+
 ## Implementation boundary
 
 Do not ship these PNGs in the desktop bundle. Baselines document what the slices replace; the spike image documents toolchain feasibility only. Implementation must use semantic HTML/React, accessible states, centralized tokens, and code-native motion.

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type {
   MoneyOverview,
   RecentActivitySummary,
+  Tasks,
 } from "./command-contracts";
 import { OverviewView, type OverviewViewProps } from "./overview";
 
@@ -54,25 +55,32 @@ const activity: RecentActivitySummary[] = [
   },
 ];
 
+const tasks: Tasks = {
+  needsActionCount: 1,
+  rows: [
+    {
+      consequence: "password_needed",
+      destination: { documentId: "document-1", kind: "password", moneySourceId: "source-1" },
+      group: "needs_action",
+      rowKey: "task:password:document-1",
+      timestamp: "2026-07-19 09:00",
+      title: "June statement.pdf",
+    },
+  ],
+};
+
 const baseProps: OverviewViewProps = {
-  accountPrompts: [],
-  attentionBusyKey: null,
-  existingSources: [],
   loading: false,
   moneyOverview: overview,
   notice: null,
-  onConfirmSourceCandidate: () => undefined,
-  onDecideAccounts: () => undefined,
-  onKeepSourceCandidateUnassigned: () => undefined,
   onLock: () => undefined,
-  onOpenReview: () => undefined,
   onOpenSources: () => undefined,
+  onOpenTask: () => undefined,
   onRefresh: () => undefined,
-  onRestoreAccount: () => undefined,
   onUndo: () => undefined,
+  onViewAllTasks: () => undefined,
   recentActivity: activity,
-  reviewCount: 0,
-  sourcePrompts: [],
+  tasks,
   undoingEventId: null,
 };
 
@@ -94,23 +102,26 @@ describe("OverviewView", () => {
     expect(markup).not.toContain("Net Worth");
   });
 
+  it("renders the unified Tasks section with a View all action", () => {
+    const markup = render();
+
+    expect(markup).toContain("Tasks");
+    expect(markup).toContain("View all");
+    expect(markup).toContain("Password needed");
+    expect(markup).toContain("June statement.pdf");
+  });
+
   it("guides to Sources when no balances exist yet", () => {
     const markup = render({
       moneyOverview: { assets: [], liabilities: [] },
       recentActivity: [],
+      tasks: { needsActionCount: 0, rows: [] },
     });
 
     expect(markup).toContain("Balances appear here after your first records are added");
     expect(markup).toContain("Add a statement from Sources");
     expect(markup).toContain("Nothing added yet");
-    expect(markup).toContain("Nothing needs your check");
-  });
-
-  it("summarizes the review queue and links to Review", () => {
-    const markup = render({ reviewCount: 3 });
-
-    expect(markup).toContain("3 records need your check");
-    expect(markup).toContain("Open Review");
+    expect(markup).toContain("all caught up");
   });
 
   it("renders recent activity with one-click Undo only when allowed", () => {
@@ -130,10 +141,11 @@ describe("OverviewView", () => {
       loading: true,
       moneyOverview: null,
       recentActivity: null,
-      reviewCount: null,
+      tasks: null,
     });
 
     expect(markup).toContain("Loading your balances…");
     expect(markup).toContain("Loading recent activity…");
+    expect(markup).toContain("Loading tasks…");
   });
 });

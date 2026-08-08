@@ -21,6 +21,7 @@ const existingSources: MoneySourceSummary[] = [
 const pendingPrompt: SourceConfirmationPrompt = {
   candidateId: "candidate-dbs",
   documentCount: 2,
+  latestDocumentId: "document-1",
   latestDocumentTitle: "June statement.pdf",
   providerKey: "dbs",
   scopeKind: "provider_singleton",
@@ -101,5 +102,22 @@ describe("SourceConfirmationCardList", () => {
     expect(html).toContain("Routing…");
     const disabledCount = (html.match(/disabled=""/g) ?? []).length;
     expect(disabledCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("offers View document only when a handler and document id exist", () => {
+    const withHandler = render({
+      onViewDocument: () => undefined,
+      prompts: [pendingPrompt],
+    });
+    expect(withHandler).toContain("View document");
+
+    const withoutHandler = render({ prompts: [pendingPrompt] });
+    expect(withoutHandler).not.toContain("View document");
+
+    const withoutDocument = render({
+      onViewDocument: () => undefined,
+      prompts: [{ ...pendingPrompt, latestDocumentId: null }],
+    });
+    expect(withoutDocument).not.toContain("View document");
   });
 });

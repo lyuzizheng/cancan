@@ -3,75 +3,17 @@ import { useState } from "react";
 import type {
   AccountConfirmationPrompt,
   CandidateAccountDecisionInput,
-  MoneySourceSummary,
-  SourceConfirmationPrompt,
 } from "./command-contracts";
 import { accountTypeLabel, sourceInitials } from "./format";
-import { SourceConfirmationCardList } from "./source-confirmation";
 
-export interface AttentionSectionProps {
-  accountPrompts: AccountConfirmationPrompt[];
-  attentionBusyKey: string | null;
-  existingSources: MoneySourceSummary[];
-  onConfirmSourceCandidate: (
-    prompt: SourceConfirmationPrompt,
-    displayName: string,
-    sourceType: string,
-  ) => void;
-  onDecideAccounts: (
-    prompt: AccountConfirmationPrompt,
-    decisions: CandidateAccountDecisionInput[],
-  ) => void;
-  onKeepSourceCandidateUnassigned: (prompt: SourceConfirmationPrompt) => void;
-  onRestoreAccount: (accountId: string) => void;
-  sourcePrompts: SourceConfirmationPrompt[];
-}
-
-export function AttentionSection(props: AttentionSectionProps) {
-  const total = props.accountPrompts.reduce(
-    (count, prompt) => count + prompt.candidateAccounts.length,
-    0,
-  ) + props.sourcePrompts.length;
-  if (props.accountPrompts.length === 0 && props.sourcePrompts.length === 0) {
-    return null;
-  }
-  return (
-    <section className="attention-panel" aria-labelledby="overview-attention-heading">
-      <div className="money-panel-heading">
-        <h2 id="overview-attention-heading">
-          <span className="panel-dot panel-dot-amber" aria-hidden="true" />
-          Needs attention
-        </h2>
-        {total > 0 ? (
-          <span className="attention-count" aria-label={`${total} to check`}>
-            {total}
-          </span>
-        ) : null}
-      </div>
-      <SourceConfirmationCardList
-        busyKey={props.attentionBusyKey}
-        existingSources={props.existingSources}
-        onConfirm={props.onConfirmSourceCandidate}
-        onKeepUnassigned={props.onKeepSourceCandidateUnassigned}
-        prompts={props.sourcePrompts}
-      />
-      <ul className="attention-card-list">
-        {props.accountPrompts.map((prompt) => (
-          <AccountConfirmationCard
-            busy={props.attentionBusyKey !== null}
-            deciding={props.attentionBusyKey === `account:${prompt.moneySourceId}`}
-            key={prompt.moneySourceId}
-            onDecide={(decisions) => props.onDecideAccounts(prompt, decisions)}
-            onRestore={props.onRestoreAccount}
-            prompt={prompt}
-          />
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function AccountConfirmationCard({
+/**
+ * Account-confirmation card — the owning surface for candidate-account
+ * decisions. Rendered inside the Sources attention panel (account prompts
+ * belong to a Money Source, so Sources is their owning view); the interim
+ * Overview `Needs attention` section is superseded by the unified Tasks
+ * section per spec 0006.
+ */
+export function AccountConfirmationCard({
   busy,
   deciding,
   onDecide,

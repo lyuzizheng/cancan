@@ -80,7 +80,7 @@ describe("App review and overview orchestration", () => {
     expect(container.textContent).toContain("Money Overview");
     expect(container.textContent).toContain("SGD 6,245.00");
     expect(container.textContent).toContain("SGD -512.34");
-    expect(container.textContent).toContain("2 records need your check.");
+    expect(container.textContent).toContain("You're all caught up");
     expect(container.textContent).toContain("Purchase");
     expect(container.textContent).toContain("Spending");
     expect(container.textContent).toContain("25 Jul 2026 · DBS");
@@ -381,7 +381,7 @@ describe("App review and overview orchestration", () => {
     await mount(api);
 
     expect(container.textContent).toContain("Money Overview");
-    expect(container.textContent).toContain("2 records need your check.");
+    expect(navItem("Review").textContent).toContain("2");
 
     await act(async () => {
       notifyLocked?.();
@@ -401,7 +401,7 @@ describe("App review and overview orchestration", () => {
     });
 
     expect(container.textContent).toContain("Money Overview");
-    expect(container.textContent).toContain("2 records need your check.");
+    expect(navItem("Review").textContent).toContain("2");
     expect(listReviewItems).toHaveBeenCalled();
   });
 

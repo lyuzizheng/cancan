@@ -32,6 +32,7 @@ const source: MoneySourceSummary = {
 };
 
 const baseProps: SourcesViewProps = {
+  accountPrompts: [],
   attentionBusyKey: null,
   busy: false,
   deletingDocumentId: null,
@@ -45,6 +46,7 @@ const baseProps: SourcesViewProps = {
   normalizingDocumentId: null,
   notice: null,
   onConfirmSourceCandidate: () => undefined,
+  onDecideAccounts: () => undefined,
   onDelete: () => undefined,
   onImport: () => undefined,
   onInboxCancelDisable: () => undefined,
@@ -59,10 +61,12 @@ const baseProps: SourcesViewProps = {
   onOpenUnlock: () => undefined,
   onRefresh: () => undefined,
   onRememberedChange: () => undefined,
+  onRestoreAccount: () => undefined,
   onSelectMoneySource: () => undefined,
   onSaveRecoveryFile: () => undefined,
   onSaveSourceCopy: () => undefined,
   onView: () => undefined,
+  onViewPromptDocument: () => undefined,
   recoveryConfigured: false,
   rememberedOnThisMac: false,
   savingCopyDocumentId: null,

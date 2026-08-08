@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@cancan/ui";
+
 import type {
   MoneySourceSummary,
   SourceConfirmationPrompt,
@@ -15,6 +17,7 @@ export interface SourceConfirmationCardListProps {
     sourceType: string,
   ) => void;
   onKeepUnassigned: (prompt: SourceConfirmationPrompt) => void;
+  onViewDocument?: (prompt: SourceConfirmationPrompt) => void;
   prompts: SourceConfirmationPrompt[];
 }
 
@@ -32,6 +35,7 @@ export function SourceConfirmationCardList(props: SourceConfirmationCardListProp
           key={prompt.candidateId}
           onConfirm={props.onConfirm}
           onKeepUnassigned={props.onKeepUnassigned}
+          onViewDocument={props.onViewDocument}
           prompt={prompt}
         />
       ))}
@@ -45,6 +49,7 @@ function SourceConfirmationCard({
   existingSources,
   onConfirm,
   onKeepUnassigned,
+  onViewDocument,
   prompt,
 }: {
   busy: boolean;
@@ -52,6 +57,7 @@ function SourceConfirmationCard({
   existingSources: MoneySourceSummary[];
   onConfirm: SourceConfirmationCardListProps["onConfirm"];
   onKeepUnassigned: SourceConfirmationCardListProps["onKeepUnassigned"];
+  onViewDocument: SourceConfirmationCardListProps["onViewDocument"];
   prompt: SourceConfirmationPrompt;
 }) {
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -112,6 +118,16 @@ function SourceConfirmationCard({
               Choose an existing source
             </button>
           ) : null}
+          {prompt.latestDocumentId !== null && onViewDocument !== undefined ? (
+            <button
+              className="button button-quiet"
+              disabled={busy}
+              onClick={() => onViewDocument(prompt)}
+              type="button"
+            >
+              View document
+            </button>
+          ) : null}
           {!parked ? (
             <button
               className="button button-text"
@@ -153,5 +169,48 @@ function SourceConfirmationCard({
         ) : null}
       </div>
     </li>
+  );
+}
+
+export interface FocusedSourceConfirmationDialogProps {
+  busyKey: string | null;
+  existingSources: MoneySourceSummary[];
+  focusedCandidate: SourceConfirmationPrompt | undefined;
+  onClose: () => void;
+  onConfirm: SourceConfirmationCardListProps["onConfirm"];
+  onKeepUnassigned: (prompt: SourceConfirmationPrompt) => void;
+  onViewDocument: (prompt: SourceConfirmationPrompt) => void;
+}
+
+/**
+ * Focused modal for a single detected source — the deep-link target of
+ * `source_confirmation` task rows (spec 0006). Confirming or parking the
+ * candidate removes it from the host's prompts, which closes the dialog.
+ */
+export function FocusedSourceConfirmationDialog(props: FocusedSourceConfirmationDialogProps) {
+  return (
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) {
+          props.onClose();
+        }
+      }}
+      open={props.focusedCandidate !== undefined}
+    >
+      <DialogContent>
+        <DialogTitle>Confirm detected source</DialogTitle>
+        <DialogDescription>
+          Route the waiting evidence to a Money Source, or keep it parked until you are ready.
+        </DialogDescription>
+        <SourceConfirmationCardList
+          busyKey={props.busyKey}
+          existingSources={props.existingSources}
+          onConfirm={props.onConfirm}
+          onKeepUnassigned={props.onKeepUnassigned}
+          onViewDocument={props.onViewDocument}
+          prompts={props.focusedCandidate ? [props.focusedCandidate] : []}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }

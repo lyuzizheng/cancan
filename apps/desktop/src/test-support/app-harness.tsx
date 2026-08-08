@@ -25,6 +25,7 @@ import type {
   SourceConfirmationPrompt,
   SourceDocumentPreview,
   SourceDocumentSummary,
+  Tasks,
   UndoOutcome,
   VaultAccessStatus,
   VaultStatus,
@@ -114,6 +115,7 @@ export const inboxEnabled: LocalInboxStatus = {
 export const sourceConfirmationPrompt: SourceConfirmationPrompt = {
   candidateId: "candidate-dbs",
   documentCount: 2,
+  latestDocumentId: "document-1",
   latestDocumentTitle: "June statement.pdf",
   providerKey: "dbs",
   scopeKind: "provider_singleton",
@@ -233,6 +235,7 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     listReviewItems: vi.fn(async (): Promise<ReviewItemSummary[]> => []),
     listSourceDocuments: vi.fn(async (): Promise<SourceDocumentSummary[]> => []),
     listStatementPasswordSources: vi.fn(async () => []),
+    listTasks: vi.fn(async (): Promise<Tasks> => ({ needsActionCount: 0, rows: [] })),
     listUnassignedSourceDocuments: vi.fn(
       async (): Promise<SourceDocumentSummary[]> => [],
     ),

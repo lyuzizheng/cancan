@@ -153,7 +153,7 @@ describe("App candidate-account decisions", () => {
         .mockResolvedValueOnce([accountConfirmationPrompt])
         .mockResolvedValue([]),
     });
-    await mount(api);
+    await mount(api, "sources");
 
     await click("Save choices");
     await act(async () => {
@@ -181,7 +181,7 @@ describe("App candidate-account decisions", () => {
     const api = createApi({
       listAccountConfirmationPrompts: vi.fn(async () => [prompt]),
     });
-    await mount(api);
+    await mount(api, "sources");
 
     await click("Restore");
     await act(async () => {
@@ -200,7 +200,7 @@ describe("App candidate-account decisions", () => {
       ),
       listAccountConfirmationPrompts: vi.fn(async () => [accountConfirmationPrompt]),
     });
-    await mount(api);
+    await mount(api, "sources");
 
     await click("Save choices");
     await act(async () => {
@@ -219,7 +219,7 @@ describe("App candidate-account decisions", () => {
       ),
       listAccountConfirmationPrompts: vi.fn(async () => [accountConfirmationPrompt]),
     });
-    await mount(api);
+    await mount(api, "sources");
 
     await click("Save choices");
     await act(async () => {

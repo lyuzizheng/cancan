@@ -496,6 +496,7 @@ fn source_confirmation_prompts_and_confirm_requeue_parse_job() {
         prompt.latest_document_title.as_deref(),
         Some("Latest statement.pdf")
     );
+    assert_eq!(prompt.latest_document_id.as_deref(), Some("doc-2"));
     assert!(matches!(
         prompt.scope_kind,
         SourceConfirmationScopeKind::ProviderSingleton
