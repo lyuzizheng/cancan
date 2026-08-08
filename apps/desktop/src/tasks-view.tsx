@@ -28,8 +28,9 @@ export interface TasksViewProps {
 
 /**
  * Full Tasks route — the four group filters over the host's complete
- * projection (spec 0006 `View all` destination). Filter and scroll context
- * survive deep-link returns via app-level state.
+ * projection (spec 0006 `View all` destination). The filter selection
+ * survives deep-link returns via app-level state; scroll restore is a
+ * tracked follow-up.
  */
 export function TasksView(props: TasksViewProps) {
   const counts = new Map<TaskGroup, number>();
