@@ -40,6 +40,21 @@ Captured from the dev-only `?state=primitives` / `?state=primitives-dialog` gall
 
 Product views were not changed in slice 1; the legacy shell was verified pixel-identical against the baseline captures above (0 changed pixels at 1440 for overview, overview-attention, and review-detail).
 
+## Slice-2 app shell evidence
+
+The app shell migrated to the token foundation: `AppShell` flex chassis, obsidian Vault Spine (240px, mono metadata labels, square-cap icons, amber count pill, go-bright active dot), `LedgerHeader` (mono eyebrow + scoped Fraunces page title + quiet actions over a hairline), the 60rem left-anchored `LedgerColumn` measure with deliberate right whitespace, and the Vault gate as a porcelain panel with status-point eyebrow, Fraunces title, and the go-fill Touch ID moment. Below 760px the spine becomes a top bar whose nav stays available as a horizontal scroll strip (the legacy shell lost nav entirely there). Content below the migrated headers stays legacy until slices 3–5.
+
+| Artifact | Width | State |
+| --- | --- | --- |
+| [`slice2-overview-1440.png`](slice2-overview-1440.png) | 1440 | Overview with new shell |
+| [`slice2-overview-attention-1440.png`](slice2-overview-attention-1440.png) | 1440 | Overview with interim Needs-attention cards |
+| [`slice2-overview-1180.png`](slice2-overview-1180.png) / [`slice2-overview-760.png`](slice2-overview-760.png) | 1180/760 | Narrow shell + horizontal nav strip |
+| [`slice2-overview-reduced-motion.png`](slice2-overview-reduced-motion.png) | 1440 | `prefers-reduced-motion` render |
+| [`slice2-review-1440.png`](slice2-review-1440.png) | 1440 | Review queue, active nav count + dot |
+| [`slice2-sources-inbox-enabled-1440.png`](slice2-sources-inbox-enabled-1440.png) | 1440 | Sources, Inbox enabled |
+| [`slice2-vault-gate-locked-1440.png`](slice2-vault-gate-locked-1440.png) / [`slice2-vault-gate-locked-760.png`](slice2-vault-gate-locked-760.png) | 1440/760 | Vault gate, Touch ID path |
+| [`slice2-vault-gate-create-1440.png`](slice2-vault-gate-create-1440.png) | 1440 | Vault gate, create path |
+
 ## Implementation boundary
 
 Do not ship these PNGs in the desktop bundle. Baselines document what the slices replace; the spike image documents toolchain feasibility only. Implementation must use semantic HTML/React, accessible states, centralized tokens, and code-native motion.

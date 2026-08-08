@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { Button } from "../primitives/button";
 import { ActionBar } from "./action-bar";
 import { EmptyState } from "./empty-state";
+import { LedgerHeader } from "./ledger-header";
 import { MetricRow } from "./metric-row";
 import { MonogramTile, monogramInitials } from "./monogram-tile";
 import { Panel } from "./panel";
@@ -52,6 +53,26 @@ describe("SectionHeader", () => {
     expect(markup).toContain(">3</span>");
     expect(markup).toContain("View all");
     expect(markup).toContain("ml-auto");
+  });
+});
+
+describe("LedgerHeader", () => {
+  it("renders the mono eyebrow, the scoped serif page title, and actions", () => {
+    const markup = renderToStaticMarkup(
+      <LedgerHeader
+        actions={<Button variant="quiet">Refresh</Button>}
+        eyebrow="Command Center"
+        title="Your money, organized"
+      />,
+    );
+
+    expect(markup).toContain("Command Center");
+    expect(markup).toContain("tracking-mono-label");
+    expect(markup).toContain("font-serif");
+    expect(markup).toContain("font-display");
+    expect(markup).toContain("Your money, organized");
+    expect(markup).toContain("Refresh");
+    expect(markup).toContain("border-ledger-rule");
   });
 });
 

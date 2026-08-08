@@ -17,7 +17,7 @@ const variants: Record<ButtonVariant, string> = {
   strong: "bg-accent-go-bright text-accent-go-ink hover:bg-accent-go",
   quiet:
     "border border-ledger-rule bg-ledger-porcelain text-ledger-ink hover:bg-ledger-mineral",
-  text: "text-ledger-ink hover:bg-ledger-mineral hover:text-accent-go-deep",
+  text: "bg-transparent text-ledger-ink hover:bg-ledger-mineral hover:text-accent-go-deep",
   danger:
     "border border-ledger-rule bg-ledger-porcelain text-signal-danger-text hover:border-signal-cinnabar",
 };

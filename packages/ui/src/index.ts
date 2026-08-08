@@ -1,4 +1,4 @@
-export { AppShell } from "./app-shell";
+export { AppShell, LedgerColumn, LedgerRegion } from "./app-shell";
 export { cx } from "./cx";
 export { easeMech, motion, prefersReducedMotion, transitionFor } from "./motion";
 export { Icon, type IconName, type IconProps } from "./icons/icon";
@@ -22,6 +22,10 @@ export { Tooltip, type TooltipProps } from "./primitives/tooltip";
 export { ActionBar, type ActionBarProps } from "./patterns/action-bar";
 export { EmptyState, type EmptyStateProps } from "./patterns/empty-state";
 export { MetricRow, type MetricRowProps } from "./patterns/metric-row";
+export {
+  LedgerHeader,
+  type LedgerHeaderProps,
+} from "./patterns/ledger-header";
 export {
   MonogramTile,
   type MonogramTileProps,

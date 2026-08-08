@@ -66,124 +66,8 @@ button:disabled {
   cursor: progress;
 }
 
-.vault-app {
-  display: grid;
-  min-height: 100vh;
-  grid-template-columns: minmax(232px, 17vw) minmax(0, 1fr);
-  background: var(--ledger-mineral);
-}
+/* ---------- Spine remnants (legacy Review job panel + modal eyebrows) ---------- */
 
-/* ---------- Vault Spine ---------- */
-
-.vault-spine {
-  display: flex;
-  min-height: 100%;
-  flex-direction: column;
-  padding: 22px 14px 18px;
-  color: var(--vault-text);
-  background: var(--vault-obsidian);
-  border-right: 1px solid var(--vault-seam);
-  box-shadow: inset -1px 0 var(--vault-graphite);
-}
-
-.vault-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 8px;
-  font-size: 1.15rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
-
-.vault-mark {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  color: var(--signal-emerald);
-  border: 1px solid var(--vault-seam);
-  border-radius: var(--radius-md);
-  background: var(--vault-graphite);
-  box-shadow: inset 0 0 0 1px var(--vault-seam);
-  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.vault-nav {
-  margin-top: 30px;
-}
-
-.vault-nav-label {
-  margin: 0 0 8px;
-  padding: 0 8px;
-  color: var(--vault-text-muted);
-  font-size: 0.66rem;
-  font-weight: 650;
-  letter-spacing: 0.105em;
-  text-transform: uppercase;
-}
-
-.vault-nav-list {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  gap: 2px;
-  list-style: none;
-}
-
-.vault-nav-item {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 8px;
-  gap: 10px;
-  color: var(--vault-text-muted);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-base);
-  font-weight: 560;
-}
-
-.vault-nav-icon {
-  width: 16px;
-  height: 16px;
-  flex: none;
-  opacity: 0.85;
-}
-
-.vault-nav-item-active {
-  color: var(--vault-text);
-  background: var(--vault-graphite);
-  border-color: var(--vault-seam);
-}
-
-.vault-nav-dot {
-  width: 6px;
-  height: 6px;
-  margin-left: auto;
-  border-radius: 50%;
-  background: var(--signal-emerald);
-}
-
-.vault-nav-upcoming {
-  opacity: 0.55;
-}
-
-.vault-assistant {
-  margin-top: auto;
-  padding-top: 14px;
-  border-top: 1px solid var(--vault-seam);
-}
-
-.vault-spine-status {
-  margin-top: 14px;
-  padding: 14px 8px 0;
-  border-top: 1px solid var(--vault-seam);
-}
-
-.vault-spine-label,
 .ledger-eyebrow {
   margin: 0;
   color: var(--ledger-text-muted);
@@ -191,20 +75,6 @@ button:disabled {
   font-weight: 650;
   letter-spacing: 0.105em;
   text-transform: uppercase;
-}
-
-.vault-spine-label {
-  color: var(--vault-text-muted);
-}
-
-.vault-spine-state {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 5px;
-  color: var(--vault-text);
-  font-size: var(--text-base);
-  font-weight: 600;
 }
 
 .vault-status-light {
@@ -218,56 +88,8 @@ button:disabled {
   animation: status-pulse 1.6s ease-in-out infinite;
 }
 
-.vault-status-unlocked {
-  background: var(--signal-emerald);
-}
-
-.vault-status-locked,
-.vault-status-not_created {
-  background: var(--signal-amber);
-}
-
-.vault-spine-copy,
-.vault-spine-footnote {
-  margin: 0;
-  color: var(--vault-text-muted);
-  font-size: 0.78rem;
-  line-height: 1.55;
-}
-
-.vault-spine-footnote {
-  margin-top: 14px;
-  padding: 12px 8px 0;
-  border-top: 1px solid var(--vault-seam);
-}
-
 /* ---------- Light Ledger ---------- */
 
-.ledger {
-  min-width: 0;
-  padding: clamp(24px, 4vw, 56px);
-  background: var(--ledger-mineral);
-}
-
-.ledger-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--ledger-rule);
-}
-
-.ledger-header h1 {
-  margin: 6px 0 0;
-  color: var(--ledger-ink);
-  font-size: var(--text-2xl);
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-
-.vault-gate h2,
 .intake-intro h2,
 .attention-panel h2,
 .todo-panel h2 {
@@ -279,19 +101,8 @@ button:disabled {
   line-height: 1.25;
 }
 
-.vault-gate h2 {
-  font-size: var(--text-xl);
-}
-
 .intake-intro h2 {
   font-size: var(--text-xl);
-}
-
-.ledger-actions,
-.vault-password-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
 }
 
 .remember-vault-control {
@@ -419,67 +230,19 @@ input:focus-visible {
   border-color: var(--ledger-rule);
 }
 
-/* ---------- Vault gate ---------- */
-
-.vault-gate {
-  width: min(560px, 100%);
-  margin-top: clamp(32px, 5vw, 64px);
-  padding: 26px 28px;
-  border: 1px solid var(--ledger-rule);
-  border-left: 3px solid var(--signal-emerald);
-  background: var(--ledger-porcelain);
-}
+/* ---------- Intake intro ---------- */
 
 .intake-content {
   width: min(860px, 100%);
   margin-top: 28px;
 }
 
-.vault-gate > p,
 .intake-intro > p {
   max-width: 560px;
   margin: 10px 0 0;
   color: var(--ledger-text-muted);
   font-size: 0.9rem;
   line-height: 1.55;
-}
-
-.vault-password-form {
-  display: grid;
-  margin-top: 20px;
-  gap: 8px;
-}
-
-.vault-keychain-unlock {
-  margin-top: 16px;
-}
-
-.vault-keychain-status {
-  margin-top: 14px;
-  color: var(--ledger-text-muted);
-  font-size: 0.85rem;
-}
-
-.vault-password-form label {
-  color: var(--ledger-ink);
-  font-size: 0.82rem;
-  font-weight: 610;
-}
-
-.vault-password-controls input {
-  min-width: min(100%, 300px);
-  flex: 1 1 240px;
-  min-height: 38px;
-  padding: 0 12px;
-  color: var(--ledger-ink);
-  border: 1px solid var(--ledger-rule);
-  border-radius: var(--radius-sm);
-  background: var(--ledger-porcelain);
-  transition: border-color var(--motion-state) var(--ease-precision);
-}
-
-.vault-password-controls input:focus-visible {
-  border-color: var(--signal-emerald);
 }
 
 /* ---------- Feedback ---------- */
@@ -1007,38 +770,6 @@ input:focus-visible {
   50% {
     opacity: 0.35;
   }
-}
-
-/* ---------- Vault Spine navigation ---------- */
-
-button.vault-nav-item {
-  width: 100%;
-  border: 0;
-  background: none;
-  text-align: left;
-}
-
-button.vault-nav-item:not(.vault-nav-item-active):hover {
-  color: var(--vault-text);
-}
-
-.vault-nav-count {
-  display: grid;
-  min-width: 20px;
-  height: 20px;
-  margin-left: auto;
-  padding: 0 5px;
-  place-items: center;
-  color: var(--signal-amber);
-  border: 1px solid var(--vault-seam);
-  border-radius: 50%;
-  background: var(--vault-graphite);
-  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.64rem;
-}
-
-.vault-nav-item-active .vault-nav-count {
-  border-color: var(--signal-amber);
 }
 
 /* ---------- Overview ---------- */
@@ -1802,79 +1533,12 @@ button.vault-nav-item:not(.vault-nav-item-active):hover {
 }
 
 @media (max-width: 760px) {
-  .vault-app {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-  }
-
-  .vault-spine {
-    min-height: auto;
-    padding: 16px 20px;
-    border-right: 0;
-    border-bottom: 1px solid var(--vault-seam);
-  }
-
-  .vault-brand {
-    padding: 0;
-  }
-
-  .vault-nav,
-  .vault-assistant,
-  .vault-spine-copy,
-  .vault-spine-footnote {
-    display: none;
-  }
-
-  .vault-spine-status {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    column-gap: 12px;
-    align-items: center;
-    margin-top: 12px;
-    padding: 12px 0 0;
-    border-top: 1px solid var(--vault-seam);
-  }
-
-  .vault-spine-label {
-    grid-column: 1;
-  }
-
-  .vault-spine-state {
-    grid-column: 2;
-    grid-row: 1;
-    margin: 0;
-  }
-
-  .ledger {
-    padding: 24px 20px 42px;
-  }
-
-  .ledger-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .ledger-actions,
-  .ledger-actions .button {
-    width: 100%;
-  }
-
   .remember-vault-control {
     width: 100%;
   }
 
-  .vault-gate {
-    margin-top: 28px;
-    padding: 22px 20px;
-  }
-
   .intake-content {
     margin-top: 24px;
-  }
-
-  .vault-password-controls,
-  .vault-password-controls .button {
-    width: 100%;
   }
 
   .feedback {

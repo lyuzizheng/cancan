@@ -1,4 +1,4 @@
-import { AppShell } from "@cancan/ui";
+import { AppShell, LedgerColumn, LedgerRegion } from "@cancan/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
@@ -1464,12 +1464,12 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         vaultStatus={vaultStatus}
       />
 
-      <section
+      <LedgerRegion
         aria-hidden={modalOpen ? true : undefined}
-        className="ledger"
         inert={modalOpen}
         aria-busy={vaultStatus === "loading"}
       >
+        <LedgerColumn>
         {error ? (
           <Feedback tone="error" title="Something needs your attention" body={error} action={() => void refreshVaultStatus()} />
         ) : null}
@@ -1597,7 +1597,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             updatingRemembered={updatingRemembered}
           />
         ) : null}
-      </section>
+        </LedgerColumn>
+      </LedgerRegion>
       {unlocked && viewer ? (
         <DocumentViewer
           onClose={clearViewer}

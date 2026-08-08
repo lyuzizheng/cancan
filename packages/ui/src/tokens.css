@@ -77,6 +77,11 @@
   /* One signature curve; durations 120/180/240 via duration-<n> + motion.ts */
   --ease-mech: cubic-bezier(0.19, 1, 0.22, 1);
 
+  /* Ledger layout doctrine — gutter breathing room plus a capped, left-anchored
+     reading measure with deliberate whitespace beyond (spec 0008 density) */
+  --spacing-ledger-gutter: clamp(1.5rem, 4vw, 3.5rem);
+  --spacing-ledger-measure: 60rem;
+
   /* Overlay/dialog motion — entrance only; exits run at ~75% duration.
      Reduced-motion consumers disable these via motion-reduce:animate-none. */
   --animate-overlay-in: overlay-in 180ms var(--ease-mech) both;

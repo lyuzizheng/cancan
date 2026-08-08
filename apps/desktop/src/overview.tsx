@@ -1,3 +1,5 @@
+import { Button, LedgerHeader } from "@cancan/ui";
+
 import type {
   AccountConfirmationPrompt,
   CandidateAccountDecisionInput,
@@ -51,20 +53,20 @@ export function OverviewView(props: OverviewViewProps) {
 
   return (
     <>
-      <header className="ledger-header">
-        <div>
-          <p className="ledger-eyebrow">Command Center</p>
-          <h1>Your money, organized</h1>
-        </div>
-        <div className="ledger-actions">
-          <button className="button button-quiet" onClick={props.onRefresh} type="button">
-            Refresh
-          </button>
-          <button className="button button-quiet" onClick={props.onLock} type="button">
-            Lock Vault
-          </button>
-        </div>
-      </header>
+      <LedgerHeader
+        actions={
+          <>
+            <Button onClick={props.onRefresh} variant="quiet">
+              Refresh
+            </Button>
+            <Button onClick={props.onLock} variant="quiet">
+              Lock Vault
+            </Button>
+          </>
+        }
+        eyebrow="Command Center"
+        title="Your money, organized"
+      />
 
       <section className="overview-content" aria-label="Money overview">
         {props.notice ? <Feedback {...props.notice} /> : null}
