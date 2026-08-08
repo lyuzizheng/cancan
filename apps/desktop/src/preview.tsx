@@ -2,13 +2,17 @@
  * Dev-only visual inspection harness. Renders the Command Center views with
  * deterministic fixtures, selected via `?state=` (overview, overview-attention,
  * overview-empty, review, review-empty, review-detail, review-job,
- * sources-inbox-disabled, sources-inbox-enabled, sources-inbox-reauth).
+ * sources-inbox-disabled, sources-inbox-enabled, sources-inbox-reauth,
+ * primitives, primitives-dialog).
  * Not part of the shipped bundle: `vite build` only bundles index.html.
  */
 import { AppShell } from "@cancan/ui";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@cancan/ui/foundation.css";
+import "@cancan/ui/fonts.css";
+import "./app.css";
+
+import { PrimitivesGallery } from "./preview-gallery";
 
 import type {
   AccountConfirmationPrompt,
@@ -229,6 +233,10 @@ function navigate(view: AppView) {
 function Preview() {
   const params = new URLSearchParams(window.location.search);
   const state = params.get("state") ?? "overview";
+
+  if (state === "primitives" || state === "primitives-dialog") {
+    return <PrimitivesGallery dialogOpen={state === "primitives-dialog"} />;
+  }
 
   let content = null;
   let activeView: AppView = "overview";

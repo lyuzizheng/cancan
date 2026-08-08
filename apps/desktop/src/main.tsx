@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@cancan/ui/foundation.css";
+import "@cancan/ui/fonts.css";
+import "./app.css";
 
 import { App } from "./app";
 
