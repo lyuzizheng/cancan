@@ -200,6 +200,22 @@ export function providerSuggestedSourceType(providerKey: string): string {
   return PROVIDER_PRESENTATION[providerKey]?.sourceType ?? "bank";
 }
 
+/**
+ * Two-letter monogram for a source/prompt display name, used by the attention
+ * tile: first letters of the first two words, or of a single word.
+ */
+export function sourceInitials(displayName: string): string {
+  const words = displayName.trim().split(/\s+/).filter((word) => word.length > 0);
+  if (words.length === 0) {
+    return "··";
+  }
+  const first = words[0]!;
+  if (words.length === 1) {
+    return first.slice(0, 2).toUpperCase();
+  }
+  return `${first[0]!}${words[1]![0]!}`.toUpperCase();
+}
+
 /** Builds a calm plain-language sentence from a sanitized inbox scan summary. */
 export function localInboxScanSummaryText(summary: {
   alreadyPresent: number;
