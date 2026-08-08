@@ -21,7 +21,7 @@ rust, distressed metal, steampunk, or literal safe hardware
 black-and-gold luxury finance
 ```
 
-## Version-1 palette
+## Palette
 
 Hex values are included for asset/tool interoperability. Product CSS should use the OKLCH value.
 
@@ -164,10 +164,11 @@ spacing.comfortable for onboarding and settings
 radius.xs 3px
 radius.sm 6px
 radius.md 8px
+radius.lg 10px, chassis only — never content
 radius.pill only for a true pill/tag control
 ```
 
-`radius.lg` is retired for content. Controls stay at or below `radius.sm` (6px) and content panels at or below `radius.md` (8px); larger geometry is chassis-only, reserved for the Vault Spine window/application boundary. Prefer open ledgers, rules, and alignment over card containment.
+`radius.lg` is retired for content. Controls stay at or below `radius.sm` (6px) and content panels at or below `radius.md` (8px); `radius.lg` (10px) and larger geometry are chassis-only, reserved for the Vault Spine window/application boundary. Prefer open ledgers, rules, and alignment over card containment.
 
 ## Material tokens
 

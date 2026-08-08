@@ -6,7 +6,7 @@ Define CanCan's visual design direction before UI implementation.
 
 ## Implementation ownership
 
-The core visual direction, semantic palette, typography direction, and motion rhythm are accepted. Kimi Code CLI owns customer-facing renderer craft: it may select the component foundation and exact pinned versions, decide whether Figma is useful as an exploratory artifact or omit it, and structure the renderer implementation freely within the accepted visual, accessibility, privacy, and product-state contracts.
+The core visual direction, semantic palette, typography direction, and motion rhythm are accepted. Kimi Code CLI owns customer-facing renderer craft within the foundation decision recorded in §Component strategy: it selects the exact pinned versions, decides whether Figma is useful as an exploratory artifact or omits it, and structures the renderer implementation freely within the accepted visual, accessibility, privacy, and product-state contracts.
 
 The production code and canonical specs remain authoritative. Figma is never required as an implementation input and cannot redefine finance, evidence, job, or security behavior. Component and Figma choices therefore do not block backend business-logic work or the `review-ledger-ui` slice.
 
