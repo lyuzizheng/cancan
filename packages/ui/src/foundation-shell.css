@@ -1634,6 +1634,40 @@ button.vault-nav-item:not(.vault-nav-item-active):hover {
   font-weight: 620;
 }
 
+.source-confirm-meta {
+  margin: 4px 0 0;
+  color: var(--ledger-text-muted);
+  font-family: "Martian Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: var(--text-xs);
+}
+
+.source-confirm-chooser {
+  display: grid;
+  max-width: 320px;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.source-confirm-chooser select {
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--ledger-ink);
+  border: 1px solid var(--ledger-rule);
+  border-radius: var(--radius-sm);
+  background: var(--ledger-porcelain);
+  font: inherit;
+  transition: border-color var(--motion-state) var(--ease-precision);
+}
+
+.source-confirm-chooser select:focus-visible {
+  border-color: var(--signal-emerald);
+  outline: none;
+}
+
+.source-confirm-chooser .button {
+  justify-self: start;
+}
+
 /* ---------- Narrow layout ---------- */
 
 @media (min-width: 761px) and (max-width: 1180px) {

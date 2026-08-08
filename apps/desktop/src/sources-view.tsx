@@ -1,10 +1,12 @@
 import type {
   LocalInboxStatus,
   MoneySourceSummary,
+  SourceConfirmationPrompt,
   SourceDocumentSummary,
 } from "./command-contracts";
 import { Feedback, type Notice } from "./feedback";
 import { InboxPanel } from "./inbox";
+import { SourceConfirmationCardList } from "./source-confirmation";
 
 export interface MoneySourceDocuments {
   documents: SourceDocumentSummary[] | null;
@@ -12,8 +14,10 @@ export interface MoneySourceDocuments {
 }
 
 export interface SourcesViewProps {
+  attentionBusyKey: string | null;
   busy: boolean;
   deletingDocumentId: string | null;
+  existingSources: MoneySourceSummary[];
   importing: boolean;
   inbox: LocalInboxStatus | null;
   inboxError: string | null;
@@ -22,6 +26,11 @@ export interface SourcesViewProps {
   loadingDocuments: boolean;
   normalizingDocumentId: string | null;
   notice: Notice | null;
+  onConfirmSourceCandidate: (
+    prompt: SourceConfirmationPrompt,
+    displayName: string,
+    sourceType: string,
+  ) => void;
   onDelete: (documentId: string) => void;
   onImport: () => void;
   onInboxCancelDisable: () => void;
@@ -30,6 +39,7 @@ export interface SourcesViewProps {
   onInboxRequestDisable: () => void;
   onInboxRescan: () => void;
   onInboxRetry: () => void;
+  onKeepSourceCandidateUnassigned: (prompt: SourceConfirmationPrompt) => void;
   onLock: () => void;
   onNormalize: (documentId: string) => void;
   onOpenUnlock: (document: SourceDocumentSummary) => void;
@@ -48,6 +58,7 @@ export interface SourcesViewProps {
   savingRecoveryFile: boolean;
   selectedMoneySourceId: string | null;
   sourceDocuments: MoneySourceDocuments[];
+  sourcePrompts: SourceConfirmationPrompt[];
   unassignedDocuments: SourceDocumentSummary[];
   updatingRemembered: boolean;
 }
@@ -170,14 +181,21 @@ export function SourcesView(props: SourcesViewProps) {
         <section className="attention-panel" aria-labelledby="attention-heading">
           <div className="attention-panel-heading">
             <h2 id="attention-heading"><span className="panel-dot panel-dot-amber" aria-hidden="true" />Needs attention</h2>
-            <span className="attention-count" aria-label={`${props.unassignedDocuments.length} documents`}>
-              {props.unassignedDocuments.length}
+            <span className="attention-count" aria-label={`${props.unassignedDocuments.length + props.sourcePrompts.filter((prompt) => prompt.status === "pending").length} to check`}>
+              {props.unassignedDocuments.length + props.sourcePrompts.filter((prompt) => prompt.status === "pending").length}
             </span>
           </div>
 
-          {!props.loadingDocuments && props.unassignedDocuments.length === 0 ? (
+          {!props.loadingDocuments && props.unassignedDocuments.length === 0 && props.sourcePrompts.length === 0 ? (
             <p className="panel-status">No evidence needs your attention.</p>
           ) : null}
+          <SourceConfirmationCardList
+            busyKey={props.attentionBusyKey}
+            existingSources={props.existingSources}
+            onConfirm={props.onConfirmSourceCandidate}
+            onKeepUnassigned={props.onKeepSourceCandidateUnassigned}
+            prompts={props.sourcePrompts}
+          />
           {props.unassignedDocuments.length > 0 ? (
             <EvidenceDocumentGroups documents={props.unassignedDocuments} props={props} />
           ) : null}

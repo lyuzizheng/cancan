@@ -3,7 +3,9 @@ import type {
   CandidateAccountDecisionInput,
   MoneyOverview,
   MoneyOverviewAmount,
+  MoneySourceSummary,
   RecentActivitySummary,
+  SourceConfirmationPrompt,
 } from "./command-contracts";
 import { AttentionSection } from "./attention";
 import { Feedback, type Notice } from "./feedback";
@@ -16,13 +18,20 @@ import {
 export interface OverviewViewProps {
   accountPrompts: AccountConfirmationPrompt[];
   attentionBusyKey: string | null;
+  existingSources: MoneySourceSummary[];
   loading: boolean;
   moneyOverview: MoneyOverview | null;
   notice: Notice | null;
+  onConfirmSourceCandidate: (
+    prompt: SourceConfirmationPrompt,
+    displayName: string,
+    sourceType: string,
+  ) => void;
   onDecideAccounts: (
     prompt: AccountConfirmationPrompt,
     decisions: CandidateAccountDecisionInput[],
   ) => void;
+  onKeepSourceCandidateUnassigned: (prompt: SourceConfirmationPrompt) => void;
   onLock: () => void;
   onOpenReview: () => void;
   onOpenSources: () => void;
@@ -31,6 +40,7 @@ export interface OverviewViewProps {
   onUndo: (eventId: string) => void;
   recentActivity: RecentActivitySummary[] | null;
   reviewCount: number | null;
+  sourcePrompts: SourceConfirmationPrompt[];
   undoingEventId: string | null;
 }
 
@@ -62,8 +72,12 @@ export function OverviewView(props: OverviewViewProps) {
         <AttentionSection
           accountPrompts={props.accountPrompts}
           attentionBusyKey={props.attentionBusyKey}
+          existingSources={props.existingSources}
+          onConfirmSourceCandidate={props.onConfirmSourceCandidate}
           onDecideAccounts={props.onDecideAccounts}
+          onKeepSourceCandidateUnassigned={props.onKeepSourceCandidateUnassigned}
           onRestoreAccount={props.onRestoreAccount}
+          sourcePrompts={props.sourcePrompts}
         />
 
         <section className="money-panel" aria-labelledby="money-overview-heading">

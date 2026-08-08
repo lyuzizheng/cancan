@@ -2,6 +2,18 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-08-08
+
+### Completed
+
+- Implemented the customer-facing source-confirmation card UI for `phase1-intake-experience` on `feat/source-confirmation-card`. A shared `SourceConfirmationCardList` renders each prompt with only currently proven facts (safe file label, waiting-document count, detected provider label) and the three actions from `docs/specs/0017-evidence-documents-source-ux.md`: primary `Create source and continue`, an inline `Choose an existing source` chooser over `list_money_sources`, and `Keep unassigned`. The spec's fourth secondary action, `View document`, is intentionally omitted: the frozen `SourceConfirmationPrompt` presentation type carries no document id, so wiring it requires a host presentation-type change owned by the pending Tasks renderer checkpoint. All actions go through the pre-staged host commands (`confirm_source_candidate`, `park_source_candidate`) with expected-version concurrency; every outcome reloads prompts and documents so a stale version fails closed into fresh host state. Pending candidates appear in the Overview `Needs attention` section (one badge joining account and source prompts) and the Sources attention panel; kept-unassigned candidates disappear from the actionable counts and stay reopenable on Sources with correction actions. Added `providerDisplayName`/`providerSuggestedSourceType` presentation helpers (`dbs`/`hsbc` plus a cleaned-up fallback), extracted the orchestration into `source-confirmation-actions.ts` to keep `app.tsx` inside the ratchet file-size guardrail, and added a dev-preview fixture state for the card.
+- Gates: `pnpm typecheck`, `pnpm test:unit` (29 files, 292 tests, including 7 static card-markup, 4 provider-label, and 5 App interaction flows covering create, choose-existing, park, parked-reopen on Sources, and host-error reload), `pnpm check:file-size`, `cargo test` (200 passed, 1 ignored), `cargo fmt --check`, `cargo clippy --locked -D warnings`, and `pnpm build:web` all pass.
+- The owner waived browser visual inspection for this checkpoint. The card still requires Kimi Code CLI's designer-level desktop/narrow/accessibility/reduced-motion review, routed together with the Tasks renderer checkpoint.
+
+### Next
+
+- Continue `phase1-intake-experience` with the customer-facing Command Center / full Tasks / deep-link / park / reminder renderer integration (including the `View document` presentation-type change and the focused confirmation surface), then the bounded saved-password iteration limit, canonical-content duplicate handling, phone Shortcut, opt-in batch notification delivery, and menu-bar/notification reopen paths for the background window.
+
 ## 2026-08-07
 
 ### Completed

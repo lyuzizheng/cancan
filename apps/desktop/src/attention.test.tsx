@@ -31,8 +31,12 @@ const prompt: AccountConfirmationPrompt = {
 const baseProps: AttentionSectionProps = {
   accountPrompts: [],
   attentionBusyKey: null,
+  existingSources: [],
+  onConfirmSourceCandidate: () => undefined,
   onDecideAccounts: () => undefined,
+  onKeepSourceCandidateUnassigned: () => undefined,
   onRestoreAccount: () => undefined,
+  sourcePrompts: [],
 };
 
 function render(props: Partial<AttentionSectionProps> = {}): string {

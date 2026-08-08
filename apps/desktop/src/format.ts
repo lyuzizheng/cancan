@@ -175,6 +175,31 @@ export function accountTypeLabel(accountType: string): string {
   return words.length === 0 ? "Account" : `${words[0]!.toUpperCase()}${words.slice(1)}`;
 }
 
+// Presentation for trusted classifier provider keys. The key arrives from the
+// host classification path, never from a filename or renderer guess.
+const PROVIDER_PRESENTATION: Record<string, { displayName: string; sourceType: string }> = {
+  dbs: { displayName: "DBS", sourceType: "bank" },
+  hsbc: { displayName: "HSBC", sourceType: "bank" },
+};
+
+/** Human display name for a trusted provider key, used when confirming a new Money Source. */
+export function providerDisplayName(providerKey: string): string {
+  const known = PROVIDER_PRESENTATION[providerKey];
+  if (known) {
+    return known.displayName;
+  }
+  const words = providerKey.replaceAll("_", " ").trim();
+  return words.length === 0 ? "Detected provider" : `${words[0]!.toUpperCase()}${words.slice(1)}`;
+}
+
+/**
+ * Suggested Money Source type for first-source confirmation. The host stores
+ * the value after its own validation; unknown providers default to `bank`.
+ */
+export function providerSuggestedSourceType(providerKey: string): string {
+  return PROVIDER_PRESENTATION[providerKey]?.sourceType ?? "bank";
+}
+
 /** Builds a calm plain-language sentence from a sanitized inbox scan summary. */
 export function localInboxScanSummaryText(summary: {
   alreadyPresent: number;

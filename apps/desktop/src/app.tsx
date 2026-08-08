@@ -10,6 +10,7 @@ import type {
   RelationshipCandidateSummary,
   ReviewItemSummary,
   ReviewJobSummary,
+  SourceConfirmationPrompt,
   SourceDocumentSummary,
   RecentActivitySummary,
 } from "./command-contracts";
@@ -31,6 +32,7 @@ import {
   type ReviewEditState,
   type ReviewJobPanelState,
 } from "./review";
+import { createSourceConfirmationActions } from "./source-confirmation-actions";
 import { SourcesView, type MoneySourceDocuments } from "./sources-view";
 import {
   commandErrorMessage,
@@ -99,6 +101,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const [inboxConfirmingDisable, setInboxConfirmingDisable] = useState(false);
   const [accountPrompts, setAccountPrompts] = useState<
     AccountConfirmationPrompt[] | null
+  >(null);
+  const [sourcePrompts, setSourcePrompts] = useState<
+    SourceConfirmationPrompt[] | null
   >(null);
   const [attentionBusyKey, setAttentionBusyKey] = useState<string | null>(null);
   const viewerRequestId = useRef(0);
@@ -182,6 +187,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setInboxBusy(false);
     setInboxConfirmingDisable(false);
     setAccountPrompts(null);
+    setSourcePrompts(null);
     setAttentionBusyKey(null);
     setBusy(false);
     return nextSessionId;
@@ -271,11 +277,12 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           }
         },
       );
-      const [items, overview, activity, accounts] = await Promise.all([
+      const [items, overview, activity, accounts, sourceConfirmations] = await Promise.all([
         api.listReviewItems(),
         api.getMoneyOverview(),
         api.listRecentActivity(),
         api.listAccountConfirmationPrompts(),
+        api.listSourceConfirmationPrompts(),
       ]);
       if (
         vaultSessionId.current === sessionId
@@ -285,6 +292,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setMoneyOverview(overview);
         setRecentActivity(activity);
         setAccountPrompts(accounts);
+        setSourcePrompts(sourceConfirmations);
         setSelectedReviewIds((current) => new Set(
           [...current].filter((id) =>
             items.some((item) => item.reviewItemId === id)
@@ -1427,10 +1435,24 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   };
 
+  const { confirmSourceCandidate, parkSourceCandidate } = createSourceConfirmationActions({
+    api,
+    attentionBusyKey,
+    loadDocuments,
+    loadFinanceData,
+    setAttentionBusyKey,
+    setNotice,
+    vaultSessionId,
+  });
+
   const modalOpen = viewer !== null
     || preview !== null
     || unlockingDocument !== null;
   const unlocked = vaultStatus === "unlocked";
+  const existingSources = sourceDocuments.map((entry) => entry.source);
+  const pendingSourcePrompts = (sourcePrompts ?? []).filter(
+    (prompt) => prompt.status === "pending",
+  );
 
   return (
     <AppShell>
@@ -1473,10 +1495,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           <OverviewView
             accountPrompts={accountPrompts ?? []}
             attentionBusyKey={attentionBusyKey}
+            existingSources={existingSources}
             loading={moneyOverview === null && recentActivity === null}
             moneyOverview={moneyOverview}
             notice={notice}
+            onConfirmSourceCandidate={(prompt, displayName, sourceType) =>
+              void confirmSourceCandidate(prompt, displayName, sourceType)}
             onDecideAccounts={(prompt, decisions) => void decideAccounts(prompt, decisions)}
+            onKeepSourceCandidateUnassigned={(prompt) => void parkSourceCandidate(prompt)}
             onLock={() => void requestVaultLock()}
             onOpenReview={() => navigate("review")}
             onOpenSources={() => navigate("sources")}
@@ -1485,6 +1511,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onUndo={undoCommittedEvent}
             recentActivity={recentActivity}
             reviewCount={reviewItems?.length ?? null}
+            sourcePrompts={pendingSourcePrompts}
             undoingEventId={undoingEventId}
           />
         ) : null}
@@ -1520,8 +1547,10 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
 
         {unlocked && activeView === "sources" ? (
           <SourcesView
+            attentionBusyKey={attentionBusyKey}
             busy={busy}
             deletingDocumentId={deletingDocumentId}
+            existingSources={existingSources}
             importing={importing}
             inbox={localInbox}
             inboxError={localInboxError}
@@ -1530,6 +1559,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             loadingDocuments={loadingDocuments}
             normalizingDocumentId={normalizingDocumentId}
             notice={notice}
+            onConfirmSourceCandidate={(prompt, displayName, sourceType) =>
+              void confirmSourceCandidate(prompt, displayName, sourceType)}
             onDelete={deleteDocument}
             onImport={importDocument}
             onInboxCancelDisable={() => setInboxConfirmingDisable(false)}
@@ -1538,6 +1569,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onInboxRequestDisable={() => setInboxConfirmingDisable(true)}
             onInboxRescan={() => void rescanInbox()}
             onInboxRetry={() => void loadFinanceData()}
+            onKeepSourceCandidateUnassigned={(prompt) => void parkSourceCandidate(prompt)}
             onLock={() => void requestVaultLock()}
             onNormalize={normalizeDocument}
             onOpenUnlock={openDocumentUnlock}
@@ -1560,6 +1592,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             savingRecoveryFile={savingRecoveryFile}
             selectedMoneySourceId={selectedMoneySourceId}
             sourceDocuments={sourceDocuments}
+            sourcePrompts={sourcePrompts ?? []}
             unassignedDocuments={unassignedDocuments}
             updatingRemembered={updatingRemembered}
           />

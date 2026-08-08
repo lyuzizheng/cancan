@@ -3,25 +3,36 @@ import { useState } from "react";
 import type {
   AccountConfirmationPrompt,
   CandidateAccountDecisionInput,
+  MoneySourceSummary,
+  SourceConfirmationPrompt,
 } from "./command-contracts";
 import { accountTypeLabel } from "./format";
+import { SourceConfirmationCardList } from "./source-confirmation";
 
 export interface AttentionSectionProps {
   accountPrompts: AccountConfirmationPrompt[];
   attentionBusyKey: string | null;
+  existingSources: MoneySourceSummary[];
+  onConfirmSourceCandidate: (
+    prompt: SourceConfirmationPrompt,
+    displayName: string,
+    sourceType: string,
+  ) => void;
   onDecideAccounts: (
     prompt: AccountConfirmationPrompt,
     decisions: CandidateAccountDecisionInput[],
   ) => void;
+  onKeepSourceCandidateUnassigned: (prompt: SourceConfirmationPrompt) => void;
   onRestoreAccount: (accountId: string) => void;
+  sourcePrompts: SourceConfirmationPrompt[];
 }
 
 export function AttentionSection(props: AttentionSectionProps) {
   const total = props.accountPrompts.reduce(
     (count, prompt) => count + prompt.candidateAccounts.length,
     0,
-  );
-  if (props.accountPrompts.length === 0) {
+  ) + props.sourcePrompts.length;
+  if (props.accountPrompts.length === 0 && props.sourcePrompts.length === 0) {
     return null;
   }
   return (
@@ -37,6 +48,13 @@ export function AttentionSection(props: AttentionSectionProps) {
           </span>
         ) : null}
       </div>
+      <SourceConfirmationCardList
+        busyKey={props.attentionBusyKey}
+        existingSources={props.existingSources}
+        onConfirm={props.onConfirmSourceCandidate}
+        onKeepUnassigned={props.onKeepSourceCandidateUnassigned}
+        prompts={props.sourcePrompts}
+      />
       <ul className="attention-card-list">
         {props.accountPrompts.map((prompt) => (
           <AccountConfirmationCard

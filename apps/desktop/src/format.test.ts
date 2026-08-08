@@ -11,6 +11,8 @@ import {
   formatNativeAmount,
   localInboxScanSummaryText,
   localIsoToday,
+  providerDisplayName,
+  providerSuggestedSourceType,
   reviewConflictMessage,
   reviewReasonLabel,
 } from "./format";
@@ -203,5 +205,28 @@ describe("localInboxScanSummaryText", () => {
         suppressed: 0,
       }),
     ).toBe("1 added.");
+  });
+});
+
+describe("providerDisplayName", () => {
+  it("maps supported provider keys to human names", () => {
+    expect(providerDisplayName("dbs")).toBe("DBS");
+    expect(providerDisplayName("hsbc")).toBe("HSBC");
+  });
+
+  it("falls back to a cleaned-up label for unknown providers", () => {
+    expect(providerDisplayName("first_tiger_bank")).toBe("First tiger bank");
+    expect(providerDisplayName("")).toBe("Detected provider");
+  });
+});
+
+describe("providerSuggestedSourceType", () => {
+  it("suggests bank for the supported providers", () => {
+    expect(providerSuggestedSourceType("dbs")).toBe("bank");
+    expect(providerSuggestedSourceType("hsbc")).toBe("bank");
+  });
+
+  it("defaults unknown providers to bank", () => {
+    expect(providerSuggestedSourceType("future_provider")).toBe("bank");
   });
 });

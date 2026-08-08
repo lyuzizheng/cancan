@@ -57,10 +57,13 @@ const activity: RecentActivitySummary[] = [
 const baseProps: OverviewViewProps = {
   accountPrompts: [],
   attentionBusyKey: null,
+  existingSources: [],
   loading: false,
   moneyOverview: overview,
   notice: null,
+  onConfirmSourceCandidate: () => undefined,
   onDecideAccounts: () => undefined,
+  onKeepSourceCandidateUnassigned: () => undefined,
   onLock: () => undefined,
   onOpenReview: () => undefined,
   onOpenSources: () => undefined,
@@ -69,6 +72,7 @@ const baseProps: OverviewViewProps = {
   onUndo: () => undefined,
   recentActivity: activity,
   reviewCount: 0,
+  sourcePrompts: [],
   undoingEventId: null,
 };
 
