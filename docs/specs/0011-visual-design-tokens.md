@@ -4,7 +4,7 @@
 
 Define the accepted semantic visual tokens for CanCan's `Precision Vaultpunk — Obsidian Spine + Light Ledger` direction.
 
-These are the version-1 implementation values. Visual inspection may tune a value only when contrast, platform rendering, or state clarity supplies concrete evidence; any role change belongs back in this spec.
+These are the implementation values. The 2026-08-08 version-2 amendment adds the editorial accent family, the scoped Fraunces display role, the retirement of `radius.lg` for content, and the unified `ease.mech` curve; every other version-1 value stands. Visual inspection may tune a value only when contrast, platform rendering, or state clarity supplies concrete evidence; any role change belongs back in this spec.
 
 ## Palette strategy
 
@@ -43,6 +43,11 @@ color.signal.amber        oklch(62.8% 0.123 69.1)   #B87924
 color.signal.amberText    oklch(48.3% 0.100 67.8)   #83520F
 color.signal.cinnabar     oklch(53.9% 0.151 31.4)   #B54432
 color.signal.dangerText   oklch(43.7% 0.126 29.9)   #8A2F24
+
+color.accent.goBright     oklch(77.7% 0.177 153.4)  #3ED67F
+color.accent.go           oklch(68.2% 0.165 153.3)  #22B566
+color.accent.goDeep       oklch(46.8% 0.105 155.7)  #166B40
+color.accent.goInk        oklch(21.8% 0.042 159.4)  #052013
 ```
 
 Verified contrast examples:
@@ -55,9 +60,20 @@ vault.textMuted on vault.obsidian       7.80:1
 signal.emerald on ledger.mineral        4.54:1
 signal.amberText on ledger.mineral      5.98:1
 signal.dangerText on ledger.mineral     7.57:1
+
+accent.goBright on ledger.mineral       1.71:1
+accent.go on ledger.mineral             2.42:1
+accent.goDeep on ledger.mineral         5.92:1
+accent.goBright on vault.obsidian      10.17:1
+accent.go on vault.obsidian             7.19:1
+accent.goDeep on vault.obsidian         2.93:1
+accent.goInk on accent.goBright         9.10:1
+accent.goInk on accent.go               6.44:1
 ```
 
 `signal.amber` is an indicator/fill color, not small text. Use `signal.amberText` for labels. Status must never rely on color alone.
+
+The `accent.go*` family is the editorial accent borrowed from the public site's brighter green. `accent.goBright` and `accent.go` measure below 3:1 on `ledger.mineral`, so they are Vault-Spine/dark-surface accents and large fills only — never Ledger text or hairline indicators. `accent.goInk` is their verified on-fill text pair. Ledger text and labels keep the `signal.emerald`/`amberText`/`dangerText` pairs; `accent.goDeep` is the verified Ledger editorial-text accent. On the Vault Spine, prefer `accent.goBright`/`accent.go` — `accent.goDeep` falls below 3:1 on `vault.obsidian`.
 
 ## Accent/status tokens
 
@@ -67,6 +83,11 @@ color.signal.amber       Review / pending / needs action indicator
 color.signal.amberText   Accessible attention text on the Light Ledger
 color.signal.cinnabar    Restrained source identity or high-salience risk marker
 color.signal.dangerText  Accessible error/risk text on the Light Ledger
+
+color.accent.goBright    Editorial accent on dark surfaces and large fills
+color.accent.go          Editorial accent on dark surfaces and large fills
+color.accent.goDeep      Editorial text accent on the Light Ledger
+color.accent.goInk       Text on goBright/go fills
 ```
 
 ## Semantic usage
@@ -103,10 +124,13 @@ potential data loss
 
 ## Typography
 
-Version-1 roles:
+Version-1 roles, with the version-2 display addition:
 
 ```text
 UI hierarchy/body: Geologica variable sans
+Display/editorial: Fraunces Variable, scoped per 0008 — Ledger-side display moments
+  (page titles, vault gate, empty states) only; WONK 0, optical size auto,
+  weights 430–560, capped at text.2xl 1.50rem
 Machine metadata: Martian Mono
 Numbers: tabular numerals enabled
 Weights: regular, medium, semibold; bold only when a financial hierarchy requires it
@@ -132,7 +156,7 @@ Requirements:
 
 ## Spacing and radius
 
-Version-1 geometry:
+Version-2 geometry:
 
 ```text
 spacing.compact for tables and dense lists
@@ -140,11 +164,10 @@ spacing.comfortable for onboarding and settings
 radius.xs 3px
 radius.sm 6px
 radius.md 8px
-radius.lg 10px
 radius.pill only for a true pill/tag control
 ```
 
-The Vault Spine may use larger outer chassis geometry only where it describes the window/application boundary. Content panels and controls stay at or below 10px. Prefer open ledgers, rules, and alignment over card containment.
+`radius.lg` is retired for content. Controls stay at or below `radius.sm` (6px) and content panels at or below `radius.md` (8px); larger geometry is chassis-only, reserved for the Vault Spine window/application boundary. Prefer open ledgers, rules, and alignment over card containment.
 
 ## Material tokens
 
@@ -173,10 +196,10 @@ motion.feedback    120ms
 motion.state       180ms
 motion.transition  240ms
 motion.slow        320ms only for onboarding or Vault creation/unlock explanation
-ease.precision     cubic-bezier(0.22, 1, 0.36, 1)
+ease.mech          cubic-bezier(0.19, 1, 0.22, 1)
 ```
 
-Exit transitions should normally use roughly 75% of the entrance duration. Reduced motion must replace movement with instant state or a short crossfade. Do not use bounce, elastic, ornamental page-load staggering, or perpetual animation; an active processing status may use a bounded low-frequency optical pulse.
+`ease.mech` is the one signature curve for the whole product, replacing the version-1 `ease.precision`; do not introduce a second easing curve. Exit transitions should normally use roughly 75% of the entrance duration. Reduced motion must replace movement with instant state or a short crossfade. Do not use bounce, elastic, ornamental page-load staggering, or perpetual animation; an active processing status may use a bounded low-frequency optical pulse.
 
 ## Chart tokens
 
@@ -194,11 +217,11 @@ Avoid rainbow chart palettes in MVP.
 
 ## Component library mapping
 
-If using Hero UI:
+The accepted component foundation is shadcn/Radix primitives + Tailwind v4, wrapped as CanCan-branded components in `packages/ui`:
 
-- Map Hero UI theme tokens to CanCan semantic tokens.
-- Wrap common components in `packages/ui`.
-- Ensure default Hero UI styling is overridden enough to feel like CanCan.
+- Map every Tailwind utility through the `@theme` token layer. Arbitrary-value syntax (`w-[317px]`, `text-[13px]`, `bg-[#…]`) is banned outside `tokens.css`.
+- Radix supplies behavior and accessibility only; visual identity comes from CanCan tokens. Default shadcn zinc/blue styling must never ship.
+- No `dark:` variant: the app is a per-region hybrid theme (Spine/Ledger token groups), not a light/dark mode toggle.
 
 ## Acceptance criteria
 
