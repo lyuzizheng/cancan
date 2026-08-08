@@ -14,10 +14,12 @@ import type {
   AccountConfirmationPrompt,
   LocalInboxStatus,
   MoneyOverview,
+  MoneySourceSummary,
   RecentActivitySummary,
   RelationshipCandidateSummary,
   ReviewItemDetail,
   ReviewItemSummary,
+  SourceConfirmationPrompt,
 } from "./command-contracts";
 import { InboxPanel } from "./inbox";
 import { OverviewView } from "./overview";
@@ -168,6 +170,26 @@ const accountPrompts: AccountConfirmationPrompt[] = [
   },
 ];
 
+const existingSources: MoneySourceSummary[] = [
+  {
+    displayName: "Wise",
+    moneySourceId: "source-wise",
+    sourceType: "wallet",
+  },
+];
+
+const sourcePrompts: SourceConfirmationPrompt[] = [
+  {
+    candidateId: "candidate-dbs",
+    documentCount: 2,
+    latestDocumentTitle: "June statement.pdf",
+    providerKey: "dbs",
+    scopeKind: "provider_singleton",
+    status: "pending",
+    version: 1,
+  },
+];
+
 const inboxDisabled: LocalInboxStatus = {
   accessState: "disabled",
   backupsPrepared: false,
@@ -217,10 +239,13 @@ function Preview() {
       <OverviewView
         accountPrompts={withAttention ? accountPrompts : []}
         attentionBusyKey={null}
+        existingSources={withAttention ? existingSources : []}
         loading={false}
         moneyOverview={empty ? { assets: [], liabilities: [] } : moneyOverview}
         notice={null}
+        onConfirmSourceCandidate={noop}
         onDecideAccounts={noop}
+        onKeepSourceCandidateUnassigned={noop}
         onLock={noop}
         onOpenReview={() => navigate("review")}
         onOpenSources={() => navigate("sources")}
@@ -229,6 +254,7 @@ function Preview() {
         onUndo={noop}
         recentActivity={empty ? [] : recentActivity}
         reviewCount={empty ? 0 : reviewItems.length}
+        sourcePrompts={withAttention ? sourcePrompts : []}
         undoingEventId={null}
       />
     );

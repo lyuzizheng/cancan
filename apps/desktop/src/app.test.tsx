@@ -32,8 +32,10 @@ const source: MoneySourceSummary = {
 };
 
 const baseProps: SourcesViewProps = {
+  attentionBusyKey: null,
   busy: false,
   deletingDocumentId: null,
+  existingSources: [],
   importing: false,
   inbox: null,
   inboxError: null,
@@ -42,6 +44,7 @@ const baseProps: SourcesViewProps = {
   loadingDocuments: false,
   normalizingDocumentId: null,
   notice: null,
+  onConfirmSourceCandidate: () => undefined,
   onDelete: () => undefined,
   onImport: () => undefined,
   onInboxCancelDisable: () => undefined,
@@ -50,6 +53,7 @@ const baseProps: SourcesViewProps = {
   onInboxRequestDisable: () => undefined,
   onInboxRescan: () => undefined,
   onInboxRetry: () => undefined,
+  onKeepSourceCandidateUnassigned: () => undefined,
   onLock: () => undefined,
   onNormalize: () => undefined,
   onOpenUnlock: () => undefined,
@@ -65,6 +69,7 @@ const baseProps: SourcesViewProps = {
   savingRecoveryFile: false,
   selectedMoneySourceId: null,
   sourceDocuments: [],
+  sourcePrompts: [],
   unassignedDocuments: [],
   updatingRemembered: false,
 };

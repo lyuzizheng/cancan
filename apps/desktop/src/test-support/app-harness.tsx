@@ -22,6 +22,7 @@ import type {
   SourceDocumentImportOutcome,
   RenderedDocumentPage,
   SavedStatementPasswordResult,
+  SourceConfirmationPrompt,
   SourceDocumentPreview,
   SourceDocumentSummary,
   UndoOutcome,
@@ -108,6 +109,16 @@ export const inboxEnabled: LocalInboxStatus = {
   enabled: true,
   inboxLabel: "Inbox",
   lastScan: null,
+};
+
+export const sourceConfirmationPrompt: SourceConfirmationPrompt = {
+  candidateId: "candidate-dbs",
+  documentCount: 2,
+  latestDocumentTitle: "June statement.pdf",
+  providerKey: "dbs",
+  scopeKind: "provider_singleton",
+  status: "pending",
+  version: 1,
 };
 
 export const accountConfirmationPrompt: AccountConfirmationPrompt = {
