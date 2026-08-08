@@ -27,6 +27,19 @@ Captured from the dev-only `preview.html?state=…` fixture harness at the recor
 
 [`spike-radix-tailwind-oklch.png`](spike-radix-tailwind-oklch.png) — one Radix `Dialog` themed purely by the 0011 OKLCH tokens through the Tailwind v4 `@theme` mapping (Vault-obsidian overlay, porcelain panel at 8px radius, go-bright fill with go-ink text, go-deep editorial text). Verified on Vite 8.1.4 + React 19.2.7 with `tailwindcss@4.3.3`, `@tailwindcss/vite@4.3.3`, and `@radix-ui/react-dialog@1.1.23`: production build passes, dev HMR serves hot-updated modules, and token-driven utilities compile. The spike code was disposable and reverted; slice 1 re-pins these exact versions when building the real foundation.
 
+## Slice-1 foundation gallery evidence
+
+Captured from the dev-only `?state=primitives` / `?state=primitives-dialog` gallery, which exercises every shipped primitive and pattern on one Ledger surface plus a Vault-dark strip for the accent usage rule.
+
+| Artifact | What it evidences |
+| --- | --- |
+| [`slice1-primitives-1440.png`](slice1-primitives-1440.png) | Full gallery at desktop width: Fraunces display moment (≤1.5rem, 560), button variants (primary/strong/quiet/text/danger at 32/28px), inputs/select/tooltip, badges/status points/monogram tiles, SectionHeader + MetricRow + ActionBar rhythm, EmptyState, Skeleton pulse, Vault-dark accent pairs |
+| [`slice1-primitives-1180.png`](slice1-primitives-1180.png) / [`slice1-primitives-760.png`](slice1-primitives-760.png) | Narrow compositions wrap without overflow |
+| [`slice1-primitives-dialog-1440.png`](slice1-primitives-dialog-1440.png) | Radix Dialog over the obsidian scrim: radius.md porcelain panel, ease-mech entrance, focus outline in `accent.goDeep` |
+| [`slice1-primitives-reduced-motion.png`](slice1-primitives-reduced-motion.png) | `prefers-reduced-motion` render — animations degrade per the motion contract |
+
+Product views were not changed in slice 1; the legacy shell was verified pixel-identical against the baseline captures above (0 changed pixels at 1440 for overview, overview-attention, and review-detail).
+
 ## Implementation boundary
 
 Do not ship these PNGs in the desktop bundle. Baselines document what the slices replace; the spike image documents toolchain feasibility only. Implementation must use semantic HTML/React, accessible states, centralized tokens, and code-native motion.
