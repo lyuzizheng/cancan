@@ -15,18 +15,23 @@ import type {
 } from "./command-contracts";
 import {
   availableDocument,
+  bodyDialog,
   button,
   buttons,
   click,
+  clickDialogButton,
   container,
   createApi,
   deferred,
-  enterInput,
+  dialogButton,
+  dialogInput,
+  enterDialogInput,
   enterPassword,
   installAppHarness,
   moneySource,
   mount,
   navItem,
+  noBodyDialog,
   otherMoneySource,
   settle,
   sourceDocument,
@@ -282,7 +287,7 @@ describe("App manual import orchestration", () => {
 
     await mount(api, "sources");
     const checkbox = container.querySelector<HTMLInputElement>(
-      '.remember-vault-control input[type="checkbox"]',
+      'input[type="checkbox"]',
     );
     expect(checkbox?.checked).toBe(false);
 
@@ -312,7 +317,7 @@ describe("App manual import orchestration", () => {
 
     await mount(api, "sources");
     const checkbox = container.querySelector<HTMLInputElement>(
-      '.remember-vault-control input[type="checkbox"]',
+      'input[type="checkbox"]',
     );
     await act(async () => {
       checkbox!.click();
@@ -423,37 +428,37 @@ describe("App manual import orchestration", () => {
       "document-1",
       "source-dbs",
     );
-    expect(container.textContent).toContain(
+    expect(bodyDialog().textContent).toContain(
       "The saved password did not work.",
     );
     expect(
-      container.querySelector<HTMLSelectElement>("#statement-money-source")?.value,
-    ).toBe("source-dbs");
+      bodyDialog().querySelector<HTMLButtonElement>(
+        'button[aria-label="Money Source for this statement"]',
+      )?.textContent,
+    ).toContain("DBS");
 
-    await enterInput("#statement-password", "wrong-password");
-    await click("Use once");
+    await enterDialogInput("#statement-password", "wrong-password");
+    await clickDialogButton("Use once");
     expect(unlockSourceDocument).toHaveBeenLastCalledWith(
       "document-1",
       "source-dbs",
       "wrong-password",
       false,
     );
-    expect(container.textContent).toContain(
+    expect(bodyDialog().textContent).toContain(
       "That password did not unlock this statement.",
     );
-    expect(
-      container.querySelector<HTMLInputElement>("#statement-password")?.value,
-    ).toBe("");
+    expect(dialogInput("#statement-password").value).toBe("");
 
-    await enterInput("#statement-password", "current-password");
-    await click("Update saved password");
+    await enterDialogInput("#statement-password", "current-password");
+    await clickDialogButton("Update saved password");
     expect(unlockSourceDocument).toHaveBeenLastCalledWith(
       "document-1",
       "source-dbs",
       "current-password",
       true,
     );
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    noBodyDialog();
     expect(container.textContent).toContain("Statement unlocked");
     expect(container.textContent).toContain("View document");
     expect(container.textContent).not.toContain("Parser remains unavailable");
@@ -517,13 +522,11 @@ describe("App manual import orchestration", () => {
 
     await mount(api, "sources");
 
-    const statusFor = (filename: string) => [...container.querySelectorAll(".evidence-row")]
-      .find((row) => row.textContent?.includes(filename))
-      ?.querySelector(".doc-status")
-      ?.textContent;
-    expect(statusFor("Protected.pdf")).toBe("Ready");
-    expect(statusFor("Corrupt.pdf")).toBe("Needs attention");
-    expect(statusFor("Unavailable.pdf")).toBe("Missing");
+    const rowFor = (filename: string) => [...container.querySelectorAll("li")]
+      .find((row) => row.textContent?.includes(filename));
+    expect(rowFor("Protected.pdf")?.textContent).toContain("Ready");
+    expect(rowFor("Corrupt.pdf")?.textContent).toContain("Needs attention");
+    expect(rowFor("Unavailable.pdf")?.textContent).toContain("Missing");
   });
 
   it("distinguishes a missing device-local saved password from an invalid one", async () => {
@@ -545,10 +548,10 @@ describe("App manual import orchestration", () => {
     await mount(api, "sources");
     await click("Unlock");
 
-    expect(container.textContent).toContain(
+    expect(bodyDialog().textContent).toContain(
       "The saved password is not available on this Mac.",
     );
-    expect(container.textContent).not.toContain(
+    expect(bodyDialog().textContent).not.toContain(
       "The saved password did not work.",
     );
   });
@@ -573,12 +576,14 @@ describe("App manual import orchestration", () => {
 
     await mount(api, "sources");
     await click("Unlock");
-    expect(container.textContent).toContain("Money Sources couldn’t be loaded");
-    expect(container.textContent).not.toContain("No Money Source is configured");
+    expect(bodyDialog().textContent).toContain("Money Sources couldn’t be loaded");
+    expect(bodyDialog().textContent).not.toContain("No Money Source is configured");
 
-    await click("Try again");
+    await clickDialogButton("Try again");
     expect(listSources).toHaveBeenCalledTimes(2);
-    expect(container.querySelector("#statement-money-source")).not.toBeNull();
+    expect(
+      bodyDialog().querySelector('button[aria-label="Money Source for this statement"]'),
+    ).not.toBeNull();
   });
 
   it("does not restore protected-document UI after a native Vault lock", async () => {
@@ -613,7 +618,7 @@ describe("App manual import orchestration", () => {
       await settle();
     });
 
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    noBodyDialog();
     expect(container.textContent).toContain("Unlock your Vault");
     expect(container.textContent).not.toContain("June statement.pdf");
     expect(container.textContent).not.toContain("Statement unlocked");
@@ -697,7 +702,7 @@ describe("App manual import orchestration", () => {
       await settle();
     });
 
-    expect(container.querySelectorAll(".evidence-row")).toHaveLength(0);
+    expect(container.textContent).not.toContain(availableDocument.originalFilename);
     expect(container.textContent).toContain("No evidence needs your attention.");
     expect(buttons("Re-run parser")).toHaveLength(0);
   });
@@ -753,53 +758,44 @@ describe("App manual import orchestration", () => {
     await click("View document");
 
     expect(api.renderSourceDocumentPage).toHaveBeenLastCalledWith("document-1", 1);
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+    const dialog = bodyDialog();
+    expect(dialog.querySelector("img")?.getAttribute("src")).toBe(
       "data:image/png;base64,cmVuZGVyZWQtcGFnZQ==",
     );
-    expect(container.textContent).toContain("Page 1 of 2");
+    expect(dialog.textContent).toContain("Page 1 of 2");
     expect(container.querySelector("main > section")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector("main > aside")?.hasAttribute("inert")).toBe(true);
 
-    const close = button("Close");
-    const next = button("Next");
-    viewTrigger.focus();
-    await act(async () => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
-      await settle();
-    });
-    expect(document.activeElement).toBe(close);
-    viewTrigger.focus();
-    await act(async () => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true }));
-      await settle();
-    });
-    expect(document.activeElement).toBe(next);
+    const close = dialogButton("Close");
+    const next = dialogButton("Next");
+    expect(dialog.contains(document.activeElement)).toBe(true);
     close.focus();
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true }));
+      close.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Tab" }));
       await settle();
     });
     expect(document.activeElement).toBe(next);
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+      next.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Tab", shiftKey: true }),
+      );
       await settle();
     });
     expect(document.activeElement).toBe(close);
 
-    await click("Next");
+    await clickDialogButton("Next");
     expect(api.renderSourceDocumentPage).toHaveBeenLastCalledWith("document-1", 2);
-    expect(container.textContent).toContain("Page 2 of 2");
+    expect(bodyDialog().textContent).toContain("Page 2 of 2");
 
-    await click("Close");
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.querySelector("img")).toBeNull();
+    await clickDialogButton("Close");
+    noBodyDialog();
+    expect(document.body.querySelector("img")).toBeNull();
     expect(document.activeElement).toBe(viewTrigger);
 
     await click("View document");
     await click("Lock Vault");
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.querySelector("img")).toBeNull();
+    noBodyDialog();
+    expect(document.body.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("Unlock your Vault");
   });
 
@@ -826,10 +822,10 @@ describe("App manual import orchestration", () => {
 
     expect(api.renderSourceDocumentPage).toHaveBeenCalledWith("document-image", 1);
     expect(api.previewSourceDocument).not.toHaveBeenCalled();
-    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+    expect(bodyDialog().querySelector("img")?.getAttribute("src")).toBe(
       "data:image/png;base64,cmVuZGVyZWQtaW1hZ2U=",
     );
-    expect(container.textContent).toContain("Page 1 of 1");
+    expect(bodyDialog().textContent).toContain("Page 1 of 1");
   });
 
   it("opens a bounded CSV preview and clears it on close or Vault lock", async () => {
@@ -856,20 +852,19 @@ describe("App manual import orchestration", () => {
 
     expect(api.previewSourceDocument).toHaveBeenCalledWith("document-csv");
     expect(api.renderSourceDocumentPage).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(container.textContent).toContain("memo,partial content");
-    expect(container.textContent).toContain(
+    expect(bodyDialog().textContent).toContain("memo,partial content");
+    expect(bodyDialog().textContent).toContain(
       "Preview truncated. Displaying content from 1 of 1 line; the final displayed line may be partial. Save a copy to view the full file.",
     );
 
-    await click("Close");
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    await clickDialogButton("Close");
+    noBodyDialog();
     expect(document.activeElement).toBe(viewTrigger);
 
     await click("View document");
     await click("Lock Vault");
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.textContent).not.toContain("memo,partial content");
+    noBodyDialog();
+    expect(document.body.textContent).not.toContain("memo,partial content");
     expect(container.textContent).toContain("Unlock your Vault");
   });
 
@@ -905,9 +900,9 @@ describe("App manual import orchestration", () => {
       await settle();
     });
 
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    noBodyDialog();
     expect(container.textContent).toContain("Unlock your Vault");
-    expect(container.textContent).not.toContain("date,amount");
+    expect(document.body.textContent).not.toContain("date,amount");
   });
 
   it("does not surface a preview failure that lands after native Vault lock", async () => {
@@ -937,7 +932,7 @@ describe("App manual import orchestration", () => {
       await settle();
     });
 
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    noBodyDialog();
     expect(container.textContent).toContain("Unlock your Vault");
     expect(container.textContent).not.toContain("Unlock your Vault to continue.");
   });
@@ -956,9 +951,20 @@ describe("App manual import orchestration", () => {
     await mount(api, "sources");
     await click("Delete source file");
 
+    expect(api.deleteSourceDocument).not.toHaveBeenCalled();
+    expect(bodyDialog().textContent).toContain(
+      `Delete the current Vault copy of ${availableDocument.originalFilename}?`,
+    );
+    expect(bodyDialog().textContent).toContain(
+      "The document registry entry, record history, audit trail, and ledger links remain.",
+    );
+
+    await clickDialogButton("Delete source file");
+
     expect(api.deleteSourceDocument).toHaveBeenCalledWith(
       availableDocument.documentId,
     );
+    noBodyDialog();
     expect(container.textContent).toContain("Source file deleted");
     expect(container.textContent).toContain(availableDocument.originalFilename);
     expect(container.textContent).toContain("File deleted");
@@ -1019,19 +1025,18 @@ describe("App manual import orchestration", () => {
 
   it("keeps an available source file when deletion confirmation is cancelled", async () => {
     const listUnassignedSourceDocuments = vi.fn(async () => [availableDocument]);
-    const api = createApi({
-      deleteSourceDocument: vi.fn(async () => false),
-      listUnassignedSourceDocuments,
-    });
+    const api = createApi({ listUnassignedSourceDocuments });
 
     await mount(api, "sources");
     await click("Delete source file");
+    await clickDialogButton("Cancel");
 
-    expect(api.deleteSourceDocument).toHaveBeenCalledTimes(1);
+    expect(api.deleteSourceDocument).not.toHaveBeenCalled();
+    noBodyDialog();
     expect(container.textContent).toContain(availableDocument.originalFilename);
     expect(container.textContent).toContain("Delete source file");
     expect(container.textContent).not.toContain("Source file deleted");
-    expect(listUnassignedSourceDocuments).toHaveBeenCalledTimes(2);
+    expect(listUnassignedSourceDocuments).toHaveBeenCalledTimes(1);
   });
 
   it("shows the deleted tombstone when storage removal fails after the decision commits", async () => {
@@ -1052,7 +1057,9 @@ describe("App manual import orchestration", () => {
 
     await mount(api, "sources");
     await click("Delete source file");
+    await clickDialogButton("Delete source file");
 
+    noBodyDialog();
     expect(container.textContent).toContain("File deleted");
     expect(container.textContent).toContain(
       "CanCan couldn’t finish removing this Vault file.",

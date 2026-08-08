@@ -2,8 +2,9 @@
  * Dev-only visual inspection harness. Renders the Command Center views with
  * deterministic fixtures, selected via `?state=` (overview, overview-empty,
  * tasks, tasks-parked, source-confirm, review, review-empty, review-detail,
- * review-job, sources-inbox-disabled, sources-inbox-enabled,
- * sources-inbox-reauth, vault-gate-loading, vault-gate-create,
+ * review-job, sources, sources-inbox-disabled, sources-inbox-enabled,
+ * sources-inbox-reauth, document-viewer, document-preview, document-unlock,
+ * delete-confirm, vault-gate-loading, vault-gate-create,
  * vault-gate-locked, primitives, primitives-dialog).
  * Not part of the shipped bundle: `vite build` only bundles index.html.
  */
@@ -16,6 +17,7 @@ import "./app.css";
 import { PrimitivesGallery } from "./preview-gallery";
 
 import type {
+  AccountConfirmationPrompt,
   LocalInboxStatus,
   MoneyOverview,
   MoneySourceSummary,
@@ -24,15 +26,26 @@ import type {
   ReviewItemDetail,
   ReviewItemSummary,
   SourceConfirmationPrompt,
+  SourceDocumentSummary,
   Tasks,
 } from "./command-contracts";
+import {
+  DeleteSourceDocumentDialog,
+  DocumentPreview,
+  DocumentUnlock,
+  DocumentViewer,
+} from "./document-modals";
 import { InboxPanel } from "./inbox";
 import { OverviewView } from "./overview";
 import { ReviewView, type ReviewDetailState, type ReviewJobPanelState } from "./review";
 import { FocusedSourceConfirmationDialog } from "./source-confirmation";
+import { SourcesView } from "./sources-view";
 import { TasksView } from "./tasks-view";
 import { VaultGate } from "./vault-gate";
 import { VaultSpine, type AppView } from "./vault-spine";
+
+// Dev-only rendered page fixture (generated statement-page PNG, base64).
+import statementPagePng from "./preview-statement-page.b64?raw";
 
 const moneyOverview: MoneyOverview = {
   assets: [
@@ -260,7 +273,134 @@ const inboxReauth: LocalInboxStatus = {
   lastScan: null,
 };
 
+const previewMoneySources: MoneySourceSummary[] = [
+  { displayName: "DBS", moneySourceId: "source-dbs", sourceType: "bank" },
+  { displayName: "Wise", moneySourceId: "source-wise", sourceType: "wallet" },
+];
+
+const dbsDocuments: SourceDocumentSummary[] = [
+  {
+    attentionReason: null,
+    byteSize: 248_000,
+    documentId: "document-1",
+    documentStatus: "ready",
+    fileState: "available",
+    mimeType: "application/pdf",
+    originalFilename: "June statement.pdf",
+    receivedAt: "2026-07-19T09:12:00Z",
+  },
+  {
+    attentionReason: "password_required",
+    byteSize: 196_000,
+    documentId: "document-2",
+    documentStatus: "needs_attention",
+    fileState: "available",
+    mimeType: "application/pdf",
+    originalFilename: "May statement.pdf",
+    receivedAt: "2026-05-18T08:03:00Z",
+  },
+  {
+    attentionReason: null,
+    byteSize: 84_000,
+    documentId: "document-3",
+    documentStatus: "file_deleted",
+    fileState: "deleted",
+    mimeType: "text/csv",
+    originalFilename: "wise-export.csv",
+    receivedAt: "2026-05-02T17:20:00Z",
+  },
+];
+
+const unassignedEvidence: SourceDocumentSummary[] = [
+  {
+    attentionReason: null,
+    byteSize: 312_000,
+    documentId: "document-9",
+    documentStatus: "processing",
+    fileState: "available",
+    mimeType: "image/png",
+    originalFilename: "phone-receipt.png",
+    receivedAt: "2026-07-21T10:40:00Z",
+  },
+];
+
+const accountPrompts: AccountConfirmationPrompt[] = [
+  {
+    candidateAccounts: [
+      {
+        accountId: "account-dbs",
+        accountType: "deposit_account",
+        currency: "SGD",
+        displayName: "DBS Multiplier Account",
+        maskedIdentifier: "•••• 1234",
+      },
+    ],
+    dismissedAccounts: [],
+    displayName: "DBS",
+    moneySourceId: "source-dbs",
+    proposalVersion: "proposal-version-1",
+  },
+];
+
 const noop = () => undefined;
+
+const documentModalStates = new Set([
+  "delete-confirm",
+  "document-preview",
+  "document-unlock",
+  "document-viewer",
+]);
+
+const sourcesContent = (
+  <SourcesView
+    accountPrompts={accountPrompts}
+    attentionBusyKey={null}
+    busy={false}
+    existingSources={previewMoneySources}
+    importing={false}
+    inbox={inboxEnabled}
+    inboxError={null}
+    inboxBusy={false}
+    inboxConfirmingDisable={false}
+    loadingDocuments={false}
+    normalizingDocumentId={null}
+    notice={null}
+    onConfirmSourceCandidate={noop}
+    onDecideAccounts={noop}
+    onImport={noop}
+    onInboxCancelDisable={noop}
+    onInboxChoose={noop}
+    onInboxConfirmDisable={noop}
+    onInboxRequestDisable={noop}
+    onInboxRescan={noop}
+    onInboxRetry={noop}
+    onKeepSourceCandidateUnassigned={noop}
+    onLock={noop}
+    onNormalize={noop}
+    onOpenUnlock={noop}
+    onRefresh={noop}
+    onRememberedChange={noop}
+    onRequestDelete={noop}
+    onRestoreAccount={noop}
+    onSelectMoneySource={noop}
+    onSaveRecoveryFile={noop}
+    onSaveSourceCopy={noop}
+    onView={noop}
+    onViewPromptDocument={noop}
+    recoveryConfigured={false}
+    rememberedOnThisMac
+    savingCopyDocumentId={null}
+    savingRecoveryFile={false}
+    selectedMoneySourceId="source-dbs"
+    sourceDocuments={[
+      { documents: dbsDocuments, source: previewMoneySources[0]! },
+      { documents: null, source: previewMoneySources[1]! },
+    ]}
+    sourcePrompts={sourcePrompts}
+    unassignedDocuments={unassignedEvidence}
+    updatingRemembered={false}
+  />
+);
 
 function navigate(view: AppView) {
   const state = view === "sources" ? "sources-inbox-enabled" : view;
@@ -330,6 +470,9 @@ function Preview() {
         status={status}
       />
     );
+  } else if (state === "sources" || documentModalStates.has(state)) {
+    activeView = "sources";
+    content = sourcesContent;
   } else if (state === "vault-gate-loading" || state === "vault-gate-create" || state === "vault-gate-locked") {
     content = state === "vault-gate-loading" ? (
       <VaultGate busy title="Checking your Vault" body="Confirming the local Vault state before showing evidence." />
@@ -383,17 +526,18 @@ function Preview() {
     );
   }
 
+  const modalPreview = state === "source-confirm" || documentModalStates.has(state);
   return (
     <AppShell>
       <VaultSpine
         activeView={activeView}
-        inert={state === "source-confirm"}
+        inert={modalPreview}
         onNavigate={navigate}
         reviewCount={state === "overview-empty" || state === "review-empty" ? 0 : reviewItems.length}
         tasksCount={state === "overview-empty" ? 0 : commandCenterTasks.needsActionCount}
         vaultStatus="unlocked"
       />
-      <LedgerRegion inert={state === "source-confirm"}>
+      <LedgerRegion inert={modalPreview}>
         <LedgerColumn>{content}</LedgerColumn>
       </LedgerRegion>
       {state === "source-confirm" ? (
@@ -405,6 +549,69 @@ function Preview() {
           onConfirm={noop}
           onKeepUnassigned={noop}
           onViewDocument={noop}
+        />
+      ) : null}
+      {state === "document-viewer" ? (
+        <DocumentViewer
+          onClose={noop}
+          onPage={noop}
+          viewer={{
+            documentId: "document-1",
+            documentTitle: "June statement.pdf",
+            page: { pageCount: 3, pageNumber: 1, pngBase64: statementPagePng.trim() },
+          }}
+          viewingPage={false}
+        />
+      ) : null}
+      {state === "document-preview" ? (
+        <DocumentPreview
+          onClose={noop}
+          state={{
+            documentTitle: "wise-export.csv",
+            preview: {
+              lineCount: 241,
+              previewLines: 120,
+              previewText: [
+                "Booking Date,Payee,Amount SGD",
+                "2026-07-18,FAIRPRICE FINEST,-82.40",
+                "2026-07-17,GRAB RIDES,-18.60",
+                "2026-07-15,DBS VISA PAYMENT,-512.34",
+                "2026-07-12,APPLE SERVICES,-14.98",
+                "…",
+              ].join("\n"),
+              truncated: true,
+            },
+          }}
+        />
+      ) : null}
+      {state === "document-unlock" ? (
+        <DocumentUnlock
+          onClose={noop}
+          onPasswordChange={noop}
+          onRetrySources={noop}
+          onSourceChange={noop}
+          onSubmit={noop}
+          state={{
+            busy: false,
+            documentId: "document-2",
+            documentTitle: "May statement.pdf",
+            error: null,
+            password: "",
+            savedPasswordStatus: null,
+            selectedMoneySourceId: "",
+            sources: [
+              { displayName: "DBS", hasSavedPassword: true, moneySourceId: "source-dbs" },
+              { displayName: "Wise", hasSavedPassword: false, moneySourceId: "source-wise" },
+            ],
+          }}
+        />
+      ) : null}
+      {state === "delete-confirm" ? (
+        <DeleteSourceDocumentDialog
+          deleting={false}
+          document={dbsDocuments[0]!}
+          onCancel={noop}
+          onConfirm={noop}
         />
       ) : null}
     </AppShell>

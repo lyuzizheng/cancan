@@ -5,15 +5,19 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { TaskFilter, TaskRow, Tasks } from "./command-contracts";
 import {
+  bodyDialog,
   button,
   buttons,
+  chooseDialogSelectOption,
   click,
+  clickDialogButton,
   container,
   createApi,
   installAppHarness,
   moneySource,
   mount,
   navItem,
+  noBodyDialog,
   otherMoneySource,
   settle,
   sourceConfirmationPrompt,
@@ -41,39 +45,6 @@ function tasksWith(...rows: TaskRow[]) {
   }));
 }
 
-function focusedDialog(): HTMLElement {
-  const dialog = [...document.body.querySelectorAll<HTMLElement>('[role="dialog"]')]
-    .find((element) => !container.contains(element));
-  expect(dialog).toBeDefined();
-  return dialog!;
-}
-
-function dialogButton(label: string): HTMLButtonElement {
-  const matches = [...focusedDialog().querySelectorAll("button")].filter(
-    (element) => element.textContent?.trim() === label,
-  );
-  expect(matches).toHaveLength(1);
-  return matches[0]!;
-}
-
-async function clickDialogButton(label: string) {
-  await act(async () => {
-    dialogButton(label).click();
-    await settle();
-  });
-}
-
-async function closeFocusedDialog() {
-  const close = focusedDialog().querySelector<HTMLButtonElement>(
-    'button[aria-label="Close"]',
-  );
-  expect(close).not.toBeNull();
-  await act(async () => {
-    close!.click();
-    await settle();
-  });
-}
-
 async function openFocusedDialog(rowTitle = sourceConfirmationRow.title) {
   const row = [...container.querySelectorAll("button")].find(
     (element) => element.textContent?.includes(rowTitle),
@@ -81,19 +52,6 @@ async function openFocusedDialog(rowTitle = sourceConfirmationRow.title) {
   expect(row).toBeDefined();
   await act(async () => {
     row!.click();
-    await settle();
-  });
-}
-
-async function changeSelect(select: HTMLSelectElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
-  expect(setter).toBeDefined();
-  await act(async () => {
-    setter!.call(select, value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
     await settle();
   });
 }
@@ -113,8 +71,8 @@ describe("App source confirmation", () => {
 
     await openFocusedDialog();
 
-    expect(focusedDialog().textContent).toContain("New source detected: DBS");
-    expect(focusedDialog().textContent).toContain("June statement.pdf · 2 documents waiting");
+    expect(bodyDialog().textContent).toContain("New source detected: DBS");
+    expect(bodyDialog().textContent).toContain("June statement.pdf · 2 documents waiting");
 
     await clickDialogButton("Create source and continue");
     await act(async () => {
@@ -162,11 +120,7 @@ describe("App source confirmation", () => {
 
     await openFocusedDialog();
     await clickDialogButton("Choose an existing source");
-    const select = focusedDialog().querySelector<HTMLSelectElement>(
-      'select[aria-label="Existing Money Source for DBS"]',
-    );
-    expect(select).not.toBeNull();
-    await changeSelect(select!, otherMoneySource.moneySourceId);
+    await chooseDialogSelectOption("Existing Money Source for DBS", "Another Bank");
 
     await clickDialogButton("Use Another Bank");
     await act(async () => {
@@ -199,7 +153,12 @@ describe("App source confirmation", () => {
     });
 
     expect(api.renderSourceDocumentPage).toHaveBeenCalledWith("document-1", 1);
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(
+      [...document.body.querySelectorAll('[role="dialog"]')].filter(
+        (element) => !container.contains(element),
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(document.body.textContent).toContain("Page 1 of 2");
   });
 
   it("closes the focused dialog without deciding", async () => {
@@ -211,13 +170,9 @@ describe("App source confirmation", () => {
     await mount(api);
 
     await openFocusedDialog();
-    await closeFocusedDialog();
+    await clickDialogButton("Close");
 
-    expect(
-      [...document.body.querySelectorAll('[role="dialog"]')].filter(
-        (element) => !container.contains(element),
-      ),
-    ).toHaveLength(0);
+    noBodyDialog();
   });
 
   it("opens the unlock modal from a password task row", async () => {
@@ -242,7 +197,7 @@ describe("App source confirmation", () => {
       await settle();
     });
 
-    expect(container.textContent).toContain("Unlock June statement.pdf");
+    expect(document.body.textContent).toContain("Unlock June statement.pdf");
     expect(api.listStatementPasswordSources).toHaveBeenCalled();
   });
 

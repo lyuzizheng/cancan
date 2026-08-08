@@ -1,3 +1,7 @@
+// @vitest-environment happy-dom
+
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -35,7 +39,6 @@ const baseProps: SourcesViewProps = {
   accountPrompts: [],
   attentionBusyKey: null,
   busy: false,
-  deletingDocumentId: null,
   existingSources: [],
   importing: false,
   inbox: null,
@@ -47,7 +50,6 @@ const baseProps: SourcesViewProps = {
   notice: null,
   onConfirmSourceCandidate: () => undefined,
   onDecideAccounts: () => undefined,
-  onDelete: () => undefined,
   onImport: () => undefined,
   onInboxCancelDisable: () => undefined,
   onInboxChoose: () => undefined,
@@ -61,6 +63,7 @@ const baseProps: SourcesViewProps = {
   onOpenUnlock: () => undefined,
   onRefresh: () => undefined,
   onRememberedChange: () => undefined,
+  onRequestDelete: () => undefined,
   onRestoreAccount: () => undefined,
   onSelectMoneySource: () => undefined,
   onSaveRecoveryFile: () => undefined,
@@ -192,7 +195,7 @@ describe("SourcesView", () => {
     };
     const markup = render({ unassignedDocuments: [processing, failed] });
 
-    expect(markup).toContain("doc-status doc-status-processing");
+    expect(markup).toContain("Processing");
     expect(markup.match(/View document/g)).toHaveLength(2);
   });
 
@@ -216,7 +219,7 @@ describe("SourcesView", () => {
 
     const configured = render({ recoveryConfigured: true });
     expect(configured).not.toContain("Save your recovery file");
-    expect(configured).toContain("Add a statement or export");
+    expect(configured).toContain("No Money Sources yet");
   });
 
   it("renders the active normalization state", () => {
@@ -230,27 +233,41 @@ describe("SourcesView", () => {
 });
 
 describe("DocumentViewer", () => {
-  it("renders only page pixels and bounded viewer navigation", () => {
-    const markup = renderToStaticMarkup(
-      <DocumentViewer
-        onClose={() => undefined}
-        onPage={() => undefined}
-        viewer={{
-          documentId: document.documentId,
-          documentTitle: document.originalFilename,
-          page: {
-            pageCount: 2,
-            pageNumber: 1,
-            pngBase64: "cmVuZGVyZWQtcGFnZQ==",
-          },
-        }}
-        viewingPage={false}
-      />,
-    );
+  it("renders only page pixels and bounded viewer navigation", async () => {
+    (
+      globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+    const host = globalThis.document.createElement("div");
+    globalThis.document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <DocumentViewer
+          onClose={() => undefined}
+          onPage={() => undefined}
+          viewer={{
+            documentId: document.documentId,
+            documentTitle: document.originalFilename,
+            page: {
+              pageCount: 2,
+              pageNumber: 1,
+              pngBase64: "cmVuZGVyZWQtcGFnZQ==",
+            },
+          }}
+          viewingPage={false}
+        />,
+      );
+    });
 
-    expect(markup).toContain("data:image/png;base64,cmVuZGVyZWQtcGFnZQ==");
-    expect(markup).toContain("Page 1 of 2");
-    expect(markup).not.toContain("%PDF");
+    const dialog = globalThis.document.body.querySelector('[role="dialog"]');
+    expect(dialog?.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,cmVuZGVyZWQtcGFnZQ==",
+    );
+    expect(dialog?.textContent).toContain("Page 1 of 2");
+    expect(dialog?.textContent).not.toContain("%PDF");
+
+    await act(async () => root.unmount());
+    host.remove();
   });
 });
 

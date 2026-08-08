@@ -1,8 +1,18 @@
-import { useEffect, useRef } from "react";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  Input,
+  Select,
+} from "@cancan/ui";
 
 import type {
   RenderedDocumentPage,
   SourceDocumentPreview,
+  SourceDocumentSummary,
   StatementPasswordSourceSummary,
 } from "./command-contracts";
 import { Feedback } from "./feedback";
@@ -29,6 +39,8 @@ export interface DocumentUnlockState {
   sources: StatementPasswordSourceSummary[] | null;
 }
 
+const fieldLabelClass = "mb-1 block text-xs font-medium text-ledger-text-muted";
+
 export function DocumentUnlock({
   onClose,
   onPasswordChange,
@@ -45,51 +57,28 @@ export function DocumentUnlock({
   state: DocumentUnlockState;
 }) {
   const hasSources = state.sources !== null && state.sources.length > 0;
-  const dialog = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const containKeyboardFocus = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab") {
-        return;
-      }
-      const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>(
-        "button:not(:disabled), input:not(:disabled), select:not(:disabled)",
-      ) ?? [])];
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (!first || !last) {
-        event.preventDefault();
-      } else if (!dialog.current?.contains(document.activeElement)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      } else if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", containKeyboardFocus);
-    return () => window.removeEventListener("keydown", containKeyboardFocus);
-  }, [onClose]);
 
   return (
-    <div className="viewer-backdrop">
-      <section aria-labelledby="document-unlock-title" aria-modal="true" className="document-unlock" ref={dialog} role="dialog">
-        <header className="document-unlock-header">
-          <div>
-            <p className="ledger-eyebrow">Protected statement</p>
-            <h2 id="document-unlock-title">Unlock {state.documentTitle}</h2>
-          </div>
-          <button autoFocus className="button button-quiet" onClick={onClose} type="button">Close</button>
-        </header>
-        <div className="document-unlock-body">
-          {state.sources === null ? <p className="panel-status" role="status">Loading Money Sources…</p> : null}
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      open
+    >
+      <DialogContent onPointerDownOutside={(event) => event.preventDefault()}>
+        <p className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+          Protected statement
+        </p>
+        <DialogTitle className="mt-1">Unlock {state.documentTitle}</DialogTitle>
+        <DialogDescription>
+          The password decrypts this statement locally in your Vault. It never leaves this Mac.
+        </DialogDescription>
+        <div className="mt-4">
+          {state.sources === null ? (
+            <p className="text-sm text-ledger-text-muted" role="status">Loading Money Sources…</p>
+          ) : null}
           {state.sources?.length === 0 && state.error ? (
             <Feedback
               body={state.error}
@@ -98,7 +87,9 @@ export function DocumentUnlock({
             />
           ) : null}
           {state.sources?.length === 0 && state.error ? (
-            <button className="button button-primary" onClick={onRetrySources} type="button">Try again</button>
+            <div className="mt-3">
+              <Button onClick={onRetrySources} variant="quiet">Try again</Button>
+            </div>
           ) : null}
           {state.sources?.length === 0 && !state.error ? (
             <Feedback
@@ -109,22 +100,22 @@ export function DocumentUnlock({
           ) : null}
           {hasSources ? (
             <form onSubmit={(event) => { event.preventDefault(); onSubmit(false); }}>
-              <label htmlFor="statement-money-source">Money Source</label>
-              <select
+              <span className={fieldLabelClass} id="statement-money-source-label">Money Source</span>
+              <Select
+                ariaLabel="Money Source for this statement"
                 disabled={state.busy}
-                id="statement-money-source"
-                onChange={(event) => onSourceChange(event.target.value)}
+                onValueChange={onSourceChange}
+                options={(state.sources ?? []).map((source) => ({
+                  label: `${source.displayName}${source.hasSavedPassword ? " — saved password" : ""}`,
+                  value: source.moneySourceId,
+                }))}
+                placeholder="Choose a Money Source"
                 value={state.selectedMoneySourceId}
-              >
-                <option value="">Choose a Money Source</option>
-                {state.sources?.map((source) => (
-                  <option key={source.moneySourceId} value={source.moneySourceId}>
-                    {source.displayName}{source.hasSavedPassword ? " — saved password" : ""}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="statement-password">Statement password</label>
-              <input
+              />
+              <label className={`${fieldLabelClass} mt-3`} htmlFor="statement-password">
+                Statement password
+              </label>
+              <Input
                 autoComplete="off"
                 disabled={state.busy || !state.selectedMoneySourceId}
                 id="statement-password"
@@ -132,20 +123,45 @@ export function DocumentUnlock({
                 type="password"
                 value={state.password}
               />
-              {state.busy ? <p className="panel-status" role="status">Trying the statement password locally…</p> : null}
-              {state.savedPasswordStatus === "invalid" ? <p className="unlock-hint">The saved password did not work. Enter the current password below.</p> : null}
-              {state.savedPasswordStatus === "unavailable" ? <p className="unlock-hint">The saved password is not available on this Mac. Enter it again below.</p> : null}
-              {state.error ? <p className="unlock-error" role="alert">{state.error}</p> : null}
-              <div className="document-unlock-actions">
-                <button className="button button-quiet" disabled={state.busy || !state.password} type="submit">Use once</button>
-                <button className="button button-primary" disabled={state.busy || !state.password} onClick={() => onSubmit(true)} type="button">Update saved password</button>
-              </div>
-              <p className="unlock-footnote">Use once is forgotten when the Vault locks. Updating saves one verified password for this Money Source in this Mac’s Keychain.</p>
+              {state.busy ? (
+                <p className="mt-3 text-sm text-ledger-text-muted" role="status">
+                  Trying the statement password locally…
+                </p>
+              ) : null}
+              {state.savedPasswordStatus === "invalid" ? (
+                <p className="mt-3 text-sm text-ledger-text-muted">
+                  The saved password did not work. Enter the current password below.
+                </p>
+              ) : null}
+              {state.savedPasswordStatus === "unavailable" ? (
+                <p className="mt-3 text-sm text-ledger-text-muted">
+                  The saved password is not available on this Mac. Enter it again below.
+                </p>
+              ) : null}
+              {state.error ? (
+                <p className="mt-3 text-sm text-signal-danger-text" role="alert">{state.error}</p>
+              ) : null}
+              <DialogActions>
+                <Button disabled={state.busy || !state.password} type="submit" variant="quiet">
+                  Use once
+                </Button>
+                <Button
+                  disabled={state.busy || !state.password}
+                  onClick={() => onSubmit(true)}
+                  type="button"
+                >
+                  Update saved password
+                </Button>
+              </DialogActions>
+              <p className="mt-3 text-xs text-ledger-text-muted">
+                Use once is forgotten when the Vault locks. Updating saves one verified password
+                for this Money Source in this Mac’s Keychain.
+              </p>
             </form>
           ) : null}
         </div>
-      </section>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -160,60 +176,54 @@ export function DocumentViewer({
   viewer: DocumentViewerState;
   viewingPage: boolean;
 }) {
-  const dialog = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const containKeyboardFocus = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab") {
-        return;
-      }
-      const focusable = [...(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (!first || !last) {
-        event.preventDefault();
-      } else if (!dialog.current?.contains(document.activeElement)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      } else if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", containKeyboardFocus);
-    return () => window.removeEventListener("keydown", containKeyboardFocus);
-  }, [onClose]);
-
   return (
-    <div className="viewer-backdrop">
-      <section aria-labelledby="document-viewer-title" aria-modal="true" className="document-viewer" ref={dialog} role="dialog">
-        <header className="document-viewer-header">
-          <div>
-            <h2 id="document-viewer-title">{viewer.documentTitle}</h2>
-          </div>
-          <button autoFocus className="button button-quiet" onClick={onClose} type="button">Close</button>
-        </header>
-        <div className="document-page" aria-busy={viewingPage}>
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      open
+    >
+      <DialogContent className="flex max-h-screen flex-col" width="3xl">
+        <DialogTitle>{viewer.documentTitle}</DialogTitle>
+        <DialogDescription>
+          Rendered locally from encrypted evidence. Page buffers are released when this viewer closes.
+        </DialogDescription>
+        <div
+          aria-busy={viewingPage}
+          className="mt-4 min-h-0 flex-1 overflow-auto rounded-sm border border-ledger-rule bg-ledger-mineral"
+        >
           <img
             alt={`Page ${viewer.page.pageNumber} of ${viewer.page.pageCount}`}
+            className="mx-auto max-w-full"
             src={`data:image/png;base64,${viewer.page.pngBase64}`}
           />
-          {viewingPage ? <p className="viewer-loading" role="status">Rendering page…</p> : null}
+          {viewingPage ? (
+            <p className="p-3 text-sm text-ledger-text-muted" role="status">Rendering page…</p>
+          ) : null}
         </div>
-        <footer className="document-viewer-footer">
-          <button className="button button-quiet" disabled={viewingPage || viewer.page.pageNumber === 1} onClick={() => onPage(viewer.page.pageNumber - 1)} type="button">Previous</button>
-          <p>Page {viewer.page.pageNumber} of {viewer.page.pageCount}</p>
-          <button className="button button-quiet" disabled={viewingPage || viewer.page.pageNumber === viewer.page.pageCount} onClick={() => onPage(viewer.page.pageNumber + 1)} type="button">Next</button>
-        </footer>
-      </section>
-    </div>
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <Button
+            disabled={viewingPage || viewer.page.pageNumber === 1}
+            onClick={() => onPage(viewer.page.pageNumber - 1)}
+            variant="quiet"
+          >
+            Previous
+          </Button>
+          <p className="text-sm text-ledger-text-muted">
+            Page {viewer.page.pageNumber} of {viewer.page.pageCount}
+          </p>
+          <Button
+            disabled={viewingPage || viewer.page.pageNumber === viewer.page.pageCount}
+            onClick={() => onPage(viewer.page.pageNumber + 1)}
+            variant="quiet"
+          >
+            Next
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -224,64 +234,88 @@ export function DocumentPreview({
   onClose: () => void;
   state: DocumentPreviewState;
 }) {
-  const dialog = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const containKeyboardFocus = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab") {
-        return;
-      }
-      const focusable = [...(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (!first || !last) {
-        event.preventDefault();
-      } else if (!dialog.current?.contains(document.activeElement)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      } else if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", containKeyboardFocus);
-    return () => window.removeEventListener("keydown", containKeyboardFocus);
-  }, [onClose]);
-
   const { lineCount, previewLines, previewText, truncated } = state.preview;
   const lineUnit = lineCount === 1 ? "line" : "lines";
   return (
-    <div className="viewer-backdrop">
-      <section aria-labelledby="document-preview-title" aria-modal="true" className="document-viewer" ref={dialog} role="dialog">
-        <header className="document-viewer-header">
-          <div>
-            <p className="ledger-eyebrow">Encrypted evidence</p>
-            <h2 id="document-preview-title">{state.documentTitle}</h2>
-          </div>
-          <button autoFocus className="button button-quiet" onClick={onClose} type="button">Close</button>
-        </header>
-        <div className="document-page document-preview-page">
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      open
+    >
+      <DialogContent className="flex max-h-screen flex-col" width="3xl">
+        <p className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+          Encrypted evidence
+        </p>
+        <DialogTitle className="mt-1">{state.documentTitle}</DialogTitle>
+        <DialogDescription>
+          Text extracted locally from the encrypted Vault file. Nothing is uploaded for preview.
+        </DialogDescription>
+        <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-sm border border-ledger-rule bg-ledger-mineral p-3">
           {lineCount === 0 ? (
-            <p className="panel-status">This file is empty.</p>
+            <p className="text-sm text-ledger-text-muted">This file is empty.</p>
           ) : (
-            <pre className="document-preview-text">{previewText}</pre>
+            <pre className="whitespace-pre-wrap font-mono text-xs text-ledger-ink">{previewText}</pre>
           )}
         </div>
-        <footer className="document-viewer-footer">
-          <p>
-            {truncated
-              ? `Preview truncated. Displaying content from ${previewLines} of ${lineCount} ${lineUnit}; the final displayed line may be partial. Save a copy to view the full file.`
-              : `${lineCount} ${lineUnit}`}
-          </p>
-        </footer>
-      </section>
-    </div>
+        <p className="mt-4 text-sm text-ledger-text-muted">
+          {truncated
+            ? `Preview truncated. Displaying content from ${previewLines} of ${lineCount} ${lineUnit}; the final displayed line may be partial. Save a copy to view the full file.`
+            : `${lineCount} ${lineUnit}`}
+        </p>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Destructive confirmation for `Delete source file` (spec 0017): the current
+ * encrypted Vault file is removed while the tombstone, record history, audit
+ * trail, and ledger links remain.
+ */
+export function DeleteSourceDocumentDialog({
+  deleting,
+  document,
+  onCancel,
+  onConfirm,
+}: {
+  deleting: boolean;
+  document: SourceDocumentSummary | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open && !deleting) {
+          onCancel();
+        }
+      }}
+      open={document !== null}
+    >
+      <DialogContent>
+        <DialogTitle>Delete source file?</DialogTitle>
+        <DialogDescription>
+          {document ? `Delete the current Vault copy of ${document.originalFilename}?` : null}
+        </DialogDescription>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-ledger-text-muted">
+          <li>The current Vault file will be deleted.</li>
+          <li>The document registry entry, record history, audit trail, and ledger links remain.</li>
+          <li>Linked views will show Source file deleted.</li>
+          <li>Future backups will not include the deleted file.</li>
+          <li>Older immutable backups or copies previously saved outside CanCan may still contain it.</li>
+        </ul>
+        <DialogActions>
+          <Button disabled={deleting} onClick={onCancel} variant="quiet">
+            Cancel
+          </Button>
+          <Button disabled={deleting} onClick={onConfirm} variant="danger">
+            {deleting ? "Deleting…" : "Delete source file"}
+          </Button>
+        </DialogActions>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -367,6 +367,76 @@ export async function click(label: string) {
   });
 }
 
+/** The single modal rendered outside `container` (Radix portals to body). */
+export function bodyDialog(): HTMLElement {
+  const dialogs = [...document.body.querySelectorAll<HTMLElement>('[role="dialog"]')]
+    .filter((element) => !container.contains(element));
+  expect(dialogs).toHaveLength(1);
+  return dialogs[0]!;
+}
+
+export function noBodyDialog() {
+  const dialogs = [...document.body.querySelectorAll<HTMLElement>('[role="dialog"]')]
+    .filter((element) => !container.contains(element));
+  expect(dialogs).toHaveLength(0);
+}
+
+export function dialogButton(label: string): HTMLButtonElement {
+  const matches = [...bodyDialog().querySelectorAll("button")].filter(
+    (element) => element.textContent?.trim() === label
+      || element.getAttribute("aria-label") === label,
+  );
+  expect(matches).toHaveLength(1);
+  return matches[0]!;
+}
+
+export async function clickDialogButton(label: string) {
+  await act(async () => {
+    dialogButton(label).click();
+    await settle();
+  });
+}
+
+export function dialogInput(selector: string): HTMLInputElement {
+  const input = bodyDialog().querySelector<HTMLInputElement>(selector);
+  expect(input).not.toBeNull();
+  return input!;
+}
+
+export async function enterDialogInput(selector: string, value: string) {
+  const input = dialogInput(selector);
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  expect(setter).toBeDefined();
+
+  await act(async () => {
+    setter!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await settle();
+  });
+}
+
+/** Opens the token Select inside the active dialog and picks an option. */
+export async function chooseDialogSelectOption(ariaLabel: string, optionLabel: string) {
+  await act(async () => {
+    const trigger = bodyDialog().querySelector<HTMLButtonElement>(
+      `button[aria-label="${ariaLabel}"]`,
+    );
+    expect(trigger).not.toBeNull();
+    trigger!.click();
+    await settle();
+  });
+  const options = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')]
+    .filter((element) => element.textContent?.trim().startsWith(optionLabel));
+  expect(options).toHaveLength(1);
+  await act(async () => {
+    options[0]!.click();
+    await settle();
+  });
+}
+
 export async function enterPassword(password: string) {
   await enterInput("#vault-password", password);
 }

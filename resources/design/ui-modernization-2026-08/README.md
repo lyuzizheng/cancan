@@ -69,6 +69,21 @@ The unified Tasks surface (spec 0006): one Tasks section on Overview (host-order
 | [`slice3-overview-760.png`](slice3-overview-760.png) | 760 | Narrow: top-bar spine, rows truncate without overlap |
 | [`slice3-tasks-reduced-motion.png`](slice3-tasks-reduced-motion.png) | 1440 | `prefers-reduced-motion` render |
 
+## Slice-4 Sources / Evidence evidence
+
+The Sources intake surface on the token foundation: LedgerHeader actions (Touch ID opt-in, Lock Vault, Add file), the recovery to-do Panel, the CanCan Inbox panel (SectionHeader + token controls), Money Sources with MonogramTile rows and month-grouped evidence lists (kind chip, mono metadata, StatusPoint + the 0017 five-state label, quiet/danger sm actions), the Needs-attention zone with token source/account confirmation cards, and the four Radix document modals — the 3xl-wide rendered page viewer, the bounded CSV preview, the protected-statement unlock form (token Select + Input), and the spec-0017 destructive `Delete source file` confirmation.
+
+| Artifact | Width | State |
+| --- | --- | --- |
+| [`slice4-sources.png`](slice4-sources.png) | 1440 | Sources: recovery to-do, Inbox on, Money Sources + evidence rows |
+| [`slice4-document-viewer.png`](slice4-document-viewer.png) | 1440 | Rendered page viewer (3xl dialog, pager footer) |
+| [`slice4-document-preview.png`](slice4-document-preview.png) | 1440 | Bounded CSV preview with truncation note |
+| [`slice4-document-unlock.png`](slice4-document-unlock.png) | 1440 | Protected-statement unlock: token Select + password Input |
+| [`slice4-delete-confirm.png`](slice4-delete-confirm.png) | 1440 | `Delete source file` destructive confirmation (0017 consequence list) |
+| [`slice4-source-confirm.png`](slice4-source-confirm.png) | 1440 | Focused source-confirmation dialog (regression check) |
+| [`slice4-sources-760.png`](slice4-sources-760.png) | 760 | Narrow: top-bar spine, sections stack without overlap |
+| [`slice4-delete-confirm-reduced-motion.png`](slice4-delete-confirm-reduced-motion.png) | 1440 | `prefers-reduced-motion` render |
+
 ## Implementation boundary
 
 Do not ship these PNGs in the desktop bundle. Baselines document what the slices replace; the spike image documents toolchain feasibility only. Implementation must use semantic HTML/React, accessible states, centralized tokens, and code-native motion.
