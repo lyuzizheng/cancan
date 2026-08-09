@@ -1,0 +1,73 @@
+name: UI review finding
+description: File a design/UI review finding from a designer-level or audit pass (polish, spec drift, a11y, motion)
+title: "[UI]: "
+labels: ["ui-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is for **design and UI review findings** — visual defects, spec-0011/0008 drift, accessibility polish, motion/rhythm inconsistency — typically produced by a designer-level review or audit pass. Functional bugs go to the **Bug report** form; proposals that are still taking shape belong in [Discussions → Ideas](https://github.com/lyuzizheng/cancan/discussions).
+
+        Design authority: UX direction and the final designer-level review of customer-facing UI are routed per `AGENTS.md` §9. Findings here are tracked work, not open design questions.
+
+        **Never attach real financial data, account numbers, or statement files.** Redact, or capture dev-preview states with synthetic data.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which surface the finding belongs to.
+      options:
+        - App shell / Vault Spine
+        - Command Center (Overview)
+        - Tasks
+        - Sources / Evidence
+        - Review
+        - Vault gate
+        - Dialogs / overlays
+        - packages/ui primitives or patterns
+        - Tokens / tokens.css
+        - Preview harness / dev gallery
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: P1 = obvious defect or paradigm violation; P2 = experience blemish or spec text not delivered; P3 = style inconsistency or bookkeeping item.
+      options:
+        - P1 — obvious defect
+        - P2 — experience blemish / spec not delivered
+        - P3 — style inconsistency / bookkeeping
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior and evidence
+      description: What renders today. Cite exact `path:line` locations and attach screenshots or pixel-diff notes where relevant.
+      placeholder: |
+        `apps/desktop/src/example.tsx:42` renders …
+        Screenshot: …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior and spec reference
+      description: What the design system or spec requires. Quote the spec clause (for example docs/specs/0011 motion discipline) when one exists.
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Fix approach
+      description: The agreed fix direction, if the review already settled one. Leave blank when the approach is still open — do not guess product, financial, or security decisions here.
+    validations:
+      required: false
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification notes (optional)
+      description: How the fix will be proven — preview states to screenshot, widths (1440/1180/760), reduced-motion, pixel-diff pairs, gates (`pnpm verify:fast`, ui-discipline).
+    validations:
+      required: false
