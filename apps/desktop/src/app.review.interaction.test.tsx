@@ -259,7 +259,7 @@ describe("App review and overview orchestration", () => {
     );
     expect(container.textContent).toContain("Linked");
     const checkboxes = [...container.querySelectorAll<HTMLInputElement>(
-      ".review-select input[type='checkbox']",
+      "input[type='checkbox']",
     )];
     expect(checkboxes).toHaveLength(2);
     for (const checkbox of checkboxes) {

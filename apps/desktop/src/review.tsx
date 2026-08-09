@@ -1,4 +1,15 @@
-import { Button, LedgerHeader } from "@cancan/ui";
+import {
+  ActionBar,
+  Badge,
+  Button,
+  EmptyState,
+  Input,
+  LedgerHeader,
+  Panel,
+  SectionHeader,
+  Skeleton,
+  StatusPoint,
+} from "@cancan/ui";
 
 import type {
   RelationshipCandidateSummary,
@@ -67,6 +78,7 @@ export interface ReviewViewProps {
 export function ReviewView(props: ReviewViewProps) {
   const items = props.items;
   const committing = props.job?.status === "running";
+  const reviewCount = items?.length ?? 0;
   return (
     <>
       <LedgerHeader
@@ -84,75 +96,76 @@ export function ReviewView(props: ReviewViewProps) {
         title="Review"
       />
 
-      <section className="review-content" aria-label="Review queue">
+      <section className="grid gap-10 pt-6" aria-label="Review queue">
         {props.notice ? <Feedback {...props.notice} /> : null}
 
         {props.job ? <ReviewJobPanel job={props.job} /> : null}
 
-        <section className="review-panel" aria-labelledby="review-queue-heading">
-          <div className="review-panel-heading">
-            <h2 id="review-queue-heading">
-              <span className="panel-dot panel-dot-amber" aria-hidden="true" />
-              Needs your check
-            </h2>
-            {items !== null && items.length > 0 ? (
-              <span className="attention-count" aria-label={`${items.length} ${items.length === 1 ? "record" : "records"}`}>
-                {items.length}
-              </span>
-            ) : null}
-          </div>
+        <section aria-label="Needs your check">
+          <SectionHeader
+            title="Needs your check"
+            tone={reviewCount > 0 ? "attention" : "healthy"}
+            count={reviewCount > 0 ? reviewCount : undefined}
+          />
 
           {items === null ? (
-            <p className="panel-status" role="status">Loading review items…</p>
+            <div role="status" className="grid gap-3 pt-6">
+              <span className="sr-only">Loading review items…</span>
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-4 w-5/6" />
+            </div>
           ) : null}
 
           {items !== null && items.length === 0 && !committing ? (
-            <div className="panel-empty">
-              <p>Nothing needs your check. New evidence that CanCan can’t place confidently lands here first.</p>
-            </div>
+            <EmptyState
+              icon="review"
+              title="Nothing needs your check"
+              body="New evidence that CanCan can’t place confidently lands here first."
+            />
           ) : null}
 
           {items !== null && items.length > 0 ? (
             <>
-              <div className="review-batch-bar">
-                <p className="review-batch-count">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-ledger-rule py-3">
+                <p className="m-0 text-sm text-ledger-text-muted">
                   {props.selectedIds.size === 0
                     ? "None selected"
                     : `${props.selectedIds.size} selected`}
                 </p>
-                <div className="review-batch-actions">
-                  <button
-                    className="button button-quiet"
+                <ActionBar align="end">
+                  <Button
+                    variant="quiet"
+                    size="sm"
                     disabled={committing || props.selectedIds.size === items.length}
                     onClick={props.onSelectAll}
-                    type="button"
                   >
                     Select all
-                  </button>
-                  <button
-                    className="button button-quiet"
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    size="sm"
                     disabled={committing || props.selectedIds.size === 0}
                     onClick={props.onClearSelection}
-                    type="button"
                   >
                     Clear
-                  </button>
-                  <button
-                    className="button button-primary"
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
                     disabled={committing || props.selectedIds.size === 0}
                     onClick={props.onEnqueue}
-                    type="button"
                   >
                     {committing
                       ? "Adding…"
                       : props.selectedIds.size === 0
                       ? "Add selected"
                       : `Add selected (${props.selectedIds.size})`}
-                  </button>
-                </div>
+                  </Button>
+                </ActionBar>
               </div>
 
-              <ul className="review-list">
+              <ul className="m-0 list-none p-0">
                 {items.map((item) => (
                   <ReviewRow
                     detail={props.detail?.reviewItemId === item.reviewItemId ? props.detail : null}
@@ -219,37 +232,39 @@ function ReviewRow({
   selectionDisabled: boolean;
 }) {
   const expanded = detail !== null;
+  const reasonLabel = reviewReasonLabel(item.reasonCode);
   return (
-    <li className={`review-row${expanded ? " review-row-expanded" : ""}`}>
-      <div className="review-row-main">
-        <label className="review-select">
-          <input
-            aria-label={`Select ${formatCurrencyAmount(item.currency, item.amountValue)} for ${item.accountLabel}`}
-            checked={selected}
-            disabled={selectionDisabled}
-            onChange={() => onToggleSelect(item.reviewItemId)}
-            type="checkbox"
-          />
-        </label>
-        <div className="review-details">
-          <p className="review-amount">{formatCurrencyAmount(item.currency, item.amountValue)}</p>
-          <span className="review-meta">
+    <li className="border-b border-ledger-rule">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+        <input
+          aria-label={`Select ${formatCurrencyAmount(item.currency, item.amountValue)} for ${item.accountLabel}`}
+          checked={selected}
+          className="size-3.5 shrink-0 accent-accent-go-deep"
+          disabled={selectionDisabled}
+          onChange={() => onToggleSelect(item.reviewItemId)}
+          type="checkbox"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="m-0 text-md font-medium tabular-nums text-ledger-ink">
+            {formatCurrencyAmount(item.currency, item.amountValue)}
+          </p>
+          <p className="m-0 mt-0.5 text-xs text-ledger-text-muted">
             {item.accountLabel}
             {item.postedOn ? ` · ${formatLedgerDate(item.postedOn)}` : " · No date"}
-          </span>
+          </p>
         </div>
-        <p className="review-reason">
-          <span className="review-reason-dot" aria-hidden="true" />
-          {reviewReasonLabel(item.reasonCode)}
+        <p className="m-0 flex items-center gap-1.5 text-xs text-ledger-text-muted">
+          <StatusPoint tone="attention" />
+          {reasonLabel}
         </p>
-        <button
+        <Button
           aria-expanded={expanded}
-          className="button button-quiet"
+          variant="quiet"
+          size="sm"
           onClick={() => (expanded ? onCloseDetail() : onOpenDetail(item))}
-          type="button"
         >
           {expanded ? "Close details" : "Review details"}
-        </button>
+        </Button>
       </div>
       {expanded ? (
         <ReviewDetail
@@ -297,49 +312,63 @@ function ReviewDetail({
 }) {
   const { detail } = state;
   return (
-    <div className="review-detail">
+    <div className="grid gap-4 border-t border-ledger-rule py-4">
       {detail === null ? (
-        <p className="panel-status" role="status">Loading details…</p>
+        <div role="status" className="grid gap-2">
+          <span className="sr-only">Loading details…</span>
+          <Skeleton className="h-3.5 w-full" />
+          <Skeleton className="h-3.5 w-3/4" />
+          <Skeleton className="h-3.5 w-5/6" />
+        </div>
       ) : (
-        <dl className="review-detail-meta">
+        <dl className="m-0 grid gap-3 sm:grid-cols-3">
           <div>
-            <dt>From</dt>
-            <dd>{detail.sourceLabel}</dd>
+            <dt className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+              From
+            </dt>
+            <dd className="m-0 mt-0.5 text-sm text-ledger-ink">{detail.sourceLabel}</dd>
           </div>
           <div>
-            <dt>Document</dt>
-            <dd>{detail.documentLabel}</dd>
+            <dt className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+              Document
+            </dt>
+            <dd className="m-0 mt-0.5 text-sm text-ledger-ink">{detail.documentLabel}</dd>
           </div>
           <div>
-            <dt>Type</dt>
-            <dd>{eventTypeLabel(detail.eventType)}</dd>
+            <dt className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+              Type
+            </dt>
+            <dd className="m-0 mt-0.5 text-sm text-ledger-ink">{eventTypeLabel(detail.eventType)}</dd>
           </div>
         </dl>
       )}
 
       {state.editing ? (
         <form
-          className="review-edit"
+          className="grid gap-3"
           onSubmit={(event) => {
             event.preventDefault();
             onSaveEdit();
           }}
         >
-          <div className="review-edit-grid">
-            <label>
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="block text-xs font-medium text-ledger-text-muted">
               Amount
-              <input
+              <Input
                 aria-label="Amount"
+                className="mt-1"
                 disabled={state.editing.saving}
                 inputMode="decimal"
+                numeric
                 onChange={(event) => onEditChange({ amountValue: event.target.value })}
                 value={state.editing.amountValue}
               />
             </label>
-            <label>
+            <label className="block text-xs font-medium text-ledger-text-muted">
               Date
-              <input
+              <Input
                 aria-label="Date"
+                className="mt-1"
                 disabled={state.editing.saving}
                 inputMode="numeric"
                 onChange={(event) => onEditChange({ postedOn: event.target.value })}
@@ -347,92 +376,110 @@ function ReviewDetail({
                 value={state.editing.postedOn}
               />
             </label>
-            <label>
+            <label className="block text-xs font-medium text-ledger-text-muted">
               Balance change
-              <input
+              <Input
                 aria-label="Balance change"
+                className="mt-1"
                 disabled={state.editing.saving}
                 inputMode="decimal"
+                numeric
                 onChange={(event) => onEditChange({ accountBalanceDelta: event.target.value })}
                 placeholder="Leave blank to keep current"
                 value={state.editing.accountBalanceDelta}
               />
             </label>
           </div>
-          <p className="review-edit-hint">
+          <p className="m-0 text-xs text-ledger-text-muted">
             Balance change is the signed effect on this account. Leave it blank to keep the current value.
           </p>
-          {state.editing.error ? <p className="review-edit-error" role="alert">{state.editing.error}</p> : null}
-          <div className="review-detail-actions">
-            <button className="button button-primary" disabled={state.editing.saving} type="submit">
+          {state.editing.error ? (
+            <p className="m-0 text-sm text-signal-danger-text" role="alert">{state.editing.error}</p>
+          ) : null}
+          <ActionBar>
+            <Button variant="primary" disabled={state.editing.saving} type="submit">
               {state.editing.saving ? "Saving…" : "Save edit"}
-            </button>
-            <button className="button button-quiet" disabled={state.editing.saving} onClick={onCancelEdit} type="button">
+            </Button>
+            <Button variant="quiet" disabled={state.editing.saving} onClick={onCancelEdit}>
               Cancel
-            </button>
-          </div>
+            </Button>
+          </ActionBar>
         </form>
       ) : (
-        <div className="review-detail-actions">
-          <button className="button button-quiet" disabled={mutating} onClick={onStartEdit} type="button">
+        <ActionBar align="start">
+          <Button variant="quiet" size="sm" disabled={mutating} onClick={onStartEdit}>
             Edit record
-          </button>
+          </Button>
           {state.confirmingRemove ? (
-            <span className="review-remove-confirm" role="group" aria-label="Confirm remove">
-              <span>Remove this record from Review?</span>
-              <button className="button button-quiet button-danger" disabled={mutating} onClick={onConfirmRemove} type="button">
+            <span role="group" aria-label="Confirm remove" className="flex items-center gap-2">
+              <span className="text-sm text-ledger-text-muted">Remove this record from Review?</span>
+              <Button variant="danger" size="sm" disabled={mutating} onClick={onConfirmRemove}>
                 {mutating ? "Removing…" : "Confirm remove"}
-              </button>
-              <button className="button button-quiet" disabled={mutating} onClick={onCancelRemove} type="button">
+              </Button>
+              <Button variant="quiet" size="sm" disabled={mutating} onClick={onCancelRemove}>
                 Keep
-              </button>
+              </Button>
             </span>
           ) : (
-            <button className="button button-quiet button-danger" disabled={mutating} onClick={onRemove} type="button">
+            <Button variant="danger" size="sm" disabled={mutating} onClick={onRemove}>
               Remove record
-            </button>
+            </Button>
           )}
-        </div>
+        </ActionBar>
       )}
 
-      <section className="review-candidates" aria-label="Looks related">
-        <h3>Looks related</h3>
+      <section aria-label="Looks related" className="grid gap-3">
+        <h3 className="m-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+          Looks related
+        </h3>
         {state.candidates === null ? (
-          <p className="panel-status" role="status">Looking for related records…</p>
+          <div role="status" className="grid gap-2">
+            <span className="sr-only">Looking for related records…</span>
+            <Skeleton className="h-3.5 w-full" />
+            <Skeleton className="h-3.5 w-4/5" />
+          </div>
         ) : null}
         {state.candidates !== null && state.candidates.length === 0 ? (
-          <p className="panel-status">No related records found.</p>
+          <p className="m-0 text-sm text-ledger-text-muted">No related records found.</p>
         ) : null}
         {state.candidates?.map((candidate) => (
-          <div className="review-candidate" key={candidate.recordId}>
-            <div className="review-candidate-compare">
+          <Panel className="grid gap-3 p-4" key={candidate.recordId}>
+            <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <p className="review-candidate-label">This record</p>
-                <p className="review-amount">{formatCurrencyAmount(item.currency, item.amountValue)}</p>
-                <span className="review-meta">
+                <p className="m-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+                  This record
+                </p>
+                <p className="m-0 mt-1 text-md font-medium tabular-nums text-ledger-ink">
+                  {formatCurrencyAmount(item.currency, item.amountValue)}
+                </p>
+                <p className="m-0 mt-0.5 text-xs text-ledger-text-muted">
                   {item.accountLabel}
                   {item.postedOn ? ` · ${formatLedgerDate(item.postedOn)}` : " · No date"}
-                </span>
+                </p>
               </div>
               <div>
-                <p className="review-candidate-label">{eventTypeLabel(candidate.eventType)}</p>
-                <p className="review-amount">{formatCurrencyAmount(candidate.currency, candidate.amountValue)}</p>
-                <span className="review-meta">
+                <p className="m-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+                  {eventTypeLabel(candidate.eventType)}
+                </p>
+                <p className="m-0 mt-1 text-md font-medium tabular-nums text-ledger-ink">
+                  {formatCurrencyAmount(candidate.currency, candidate.amountValue)}
+                </p>
+                <p className="m-0 mt-0.5 text-xs text-ledger-text-muted">
                   {candidate.accountLabel} · {formatLedgerDate(candidate.postedOn)}
-                </span>
+                </p>
               </div>
             </div>
-            <div className="review-candidate-actions">
-              <button
-                className="button button-quiet"
+            <ActionBar align="start">
+              <Button
+                variant="quiet"
+                size="sm"
                 disabled={mutating}
                 onClick={() => onAcceptCandidate(candidate)}
-                type="button"
               >
                 {mutating ? "Linking…" : "Accept link"}
-              </button>
-            </div>
-          </div>
+              </Button>
+            </ActionBar>
+          </Panel>
         ))}
       </section>
     </div>
@@ -442,36 +489,42 @@ function ReviewDetail({
 function ReviewJobPanel({ job }: { job: ReviewJobPanelState }) {
   if (job.status === "running") {
     return (
-      <section className="review-job" aria-live="polite" aria-label="Add records status">
-        <p className="review-job-running">
-          <span className="vault-status-light vault-status-loading" aria-hidden="true" />
+      <Panel aria-live="polite" aria-label="Add records status" className="p-4">
+        <p className="m-0 flex items-center gap-2.5 text-sm text-ledger-ink">
+          <StatusPoint tone="idle" />
           Adding your records…
         </p>
-      </section>
+      </Panel>
     );
   }
   if (job.status === "failed") {
     return (
-      <section className="review-job review-job-failed" aria-live="polite" aria-label="Add records status">
-        <p>CanCan couldn’t finish adding records. Refresh and try again.</p>
-      </section>
+      <Panel aria-live="polite" aria-label="Add records status" className="p-4">
+        <p className="m-0 text-sm text-signal-danger-text">
+          CanCan couldn’t finish adding records. Refresh and try again.
+        </p>
+      </Panel>
     );
   }
   const followUps = job.outcomes.filter((outcome) => outcome.status !== "committed");
   return (
-    <section className="review-job" aria-live="polite" aria-label="Add records status">
-      <p className="review-job-summary">{batchOutcomeSummary(job.outcomes)}</p>
+    <Panel aria-live="polite" aria-label="Add records status" className="grid gap-3 p-4">
+      <p className="m-0 text-sm text-ledger-ink">{batchOutcomeSummary(job.outcomes)}</p>
       {followUps.length > 0 ? (
-        <ul className="review-job-outcomes">
+        <ul className="m-0 grid list-none gap-2 p-0">
           {followUps.map((outcome, index) => (
-            <li key={`${outcome.status}-${index}`}>
-              <span className="review-job-status">{batchGroupStatusLabel(outcome.status)}</span>
-              {` ${batchGroupRecordCount(outcome)} ${batchGroupRecordCount(outcome) === 1 ? "record" : "records"} — ${batchGroupReasonLabel(outcome.reason)}.`}
+            <li className="flex flex-wrap items-center gap-2 text-sm" key={`${outcome.status}-${index}`}>
+              <Badge tone={outcome.status === "already_committed" ? "neutral" : "attention"}>
+                {batchGroupStatusLabel(outcome.status)}
+              </Badge>
+              <span className="text-ledger-text-muted">
+                {`${batchGroupRecordCount(outcome)} ${batchGroupRecordCount(outcome) === 1 ? "record" : "records"} — ${batchGroupReasonLabel(outcome.reason)}.`}
+              </span>
             </li>
           ))}
         </ul>
       ) : null}
-    </section>
+    </Panel>
   );
 }
 
