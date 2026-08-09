@@ -12,5 +12,8 @@ Choose the workflow by intent, not by brittle keyword matching. Chinese and Engl
 | UI, visual polish, 界面, 视觉 | [cancan-ui-quality](./skills/cancan-ui-quality/SKILL.md) | [refine-ui](./workflows/refine-ui.md) |
 | Connector, Gmail, source integration, 数据源 | [cancan-implementation-cycle](./skills/cancan-implementation-cycle/SKILL.md) | [plugin-work](./workflows/plugin-work.md) |
 | Orientation, status, plan, 进度, 规划 | [cancan-docs-orientation](./skills/cancan-docs-orientation/SKILL.md) | [development-cycle](./workflows/development-cycle.md) |
+| Issue, triage, track, 工单, 追踪, 闭环 | [cancan-issue-triage](./skills/cancan-issue-triage/SKILL.md) | [issue-delivery](./workflows/issue-delivery.md) |
 
 For mixed intents, resolve the earliest blocker first. Product, money-correctness, security, and irreversible data ambiguities block implementation. Unknown intent defaults to orientation, never implementation.
+
+Implementation intents (Implement, Review, Test, and similar rows) assume a tracked GitHub issue already exists for the work (AGENTS.md §10). If none exists, start with `cancan-issue-triage` / `issue-delivery` instead — implementation never starts issue-less.

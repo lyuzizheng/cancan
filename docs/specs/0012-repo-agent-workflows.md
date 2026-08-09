@@ -46,6 +46,7 @@ AGENTS.md
     development-cycle.md
     design-grill.md
     implement-feature.md
+    issue-delivery.md
     plugin-work.md
     refine-architecture.md
     refine-ui.md
@@ -57,6 +58,7 @@ AGENTS.md
     cancan-design-grill/
     cancan-docs-orientation/
     cancan-implementation-cycle/
+    cancan-issue-triage/
     cancan-testing-simulation/
     cancan-ui-quality/
   scripts/
@@ -76,7 +78,7 @@ AGENTS.md
     new-spec.sh
 ```
 
-Narrative role layers, repeated product/security/UI/testing rules, generic report templates, placeholder plugin guidance, keyword-routing scripts, and copied priority lists are intentionally excluded. `.codex/agents/` contains only executable bindings; detailed loops stay in `.agents/workflows/`.
+Narrative role layers, repeated product/security/UI/testing rules, generic report templates, placeholder plugin guidance, keyword-routing scripts, and copied priority lists are intentionally excluded. `.codex/agents/` contains only executable bindings; detailed loops stay in `.agents/workflows/`. Exception: the `issue-delivery` workflow carries its own category/priority/scope rubric as in-workflow policy (declared canonical in that file); it duplicates no spec truth.
 
 ## Deterministic gate
 
