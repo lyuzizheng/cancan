@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./foundation.css": "./src/foundation-shell.css",
     "./tokens.css": "./src/tokens.css",
     "./fonts.css": "./src/fonts.css"
   },
