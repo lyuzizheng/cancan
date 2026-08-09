@@ -459,7 +459,7 @@ export async function enterInput(selector: string, value: string) {
 
 
 export async function enterField(label: string, value: string) {
-  const input = [...container.querySelectorAll<HTMLInputElement>(".review-edit-grid input")]
+  const input = [...container.querySelectorAll<HTMLInputElement>("input[aria-label]")]
     .find((element) => element.getAttribute("aria-label") === label);
   expect(input).toBeDefined();
   const setter = Object.getOwnPropertyDescriptor(

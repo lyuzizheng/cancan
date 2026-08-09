@@ -84,6 +84,19 @@ The Sources intake surface on the token foundation: LedgerHeader actions (Touch 
 | [`slice4-sources-760.png`](slice4-sources-760.png) | 760 | Narrow: top-bar spine, sections stack without overlap |
 | [`slice4-delete-confirm-reduced-motion.png`](slice4-delete-confirm-reduced-motion.png) | 1440 | `prefers-reduced-motion` render |
 
+## Slice-5 Review evidence
+
+The Review queue on the token foundation: SectionHeader with attention count, the batch bar (selection count + Select all / Clear / Add selected), token checkbox rows (tabular amount, account · date metadata, StatusPoint + reason label, quiet `Review details`), the expandable detail (mono-caption fact grid, edit form with token Inputs, quiet/danger actions with the inline remove-confirm group), side-by-side `Looks related` candidate Panels with `Accept link`, and the add-records job Panel (running / failed / done with outcome Badges). Copy and interaction logic are unchanged — this slice swaps the skeleton only. Legacy CSS drains to the token `:root` + resets + the global reduced-motion guard (739 → 78 lines): the `.button` system, `.review-*`, `.panel-*`, `.money-*`, `.activity-*`, and the narrow-layout block are all gone.
+
+| Artifact | Width | State |
+| --- | --- | --- |
+| [`slice5-review.png`](slice5-review.png) | 1440 | Queue: batch bar, selected rows, reason labels |
+| [`slice5-review-detail.png`](slice5-review-detail.png) | 1440 | Expanded detail: facts, edit/remove actions, candidate Panel |
+| [`slice5-review-job.png`](slice5-review-job.png) | 1440 | Finished add-records job with follow-up Badge |
+| [`slice5-review-empty.png`](slice5-review-empty.png) | 1440 | EmptyState: `Nothing needs your check` |
+| [`slice5-review-760.png`](slice5-review-760.png) | 760 | Narrow: top-bar spine, detail grid stacks |
+| [`slice5-review-reduced-motion.png`](slice5-review-reduced-motion.png) | 1440 | `prefers-reduced-motion` render |
+
 ## Implementation boundary
 
 Do not ship these PNGs in the desktop bundle. Baselines document what the slices replace; the spike image documents toolchain feasibility only. Implementation must use semantic HTML/React, accessible states, centralized tokens, and code-native motion.
