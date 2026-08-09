@@ -14,9 +14,6 @@
  *   5. No radius utilities larger than the md panel cap
  *      (`rounded-xl`/`2xl`/`3xl`; `rounded-full` → use `rounded-pill`).
  *      `rounded-lg` is the window-chassis token and stays allowed.
- *
- * Legacy foundation-shell.css is exempt: it only shrinks and is deleted in
- * the final modernization slice.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -24,7 +21,6 @@ import { join, relative } from "node:path";
 const root = new URL("..", import.meta.url).pathname;
 const scanRoots = ["apps/desktop/src", "packages/ui/src"];
 const extensions = new Set([".ts", ".tsx", ".css"]);
-const exempt = new Set(["packages/ui/src/foundation-shell.css"]);
 
 const rules = [
   {
@@ -65,9 +61,6 @@ let violations = 0;
 for (const scanRoot of scanRoots) {
   for (const file of walk(join(root, scanRoot))) {
     const rel = relative(root, file);
-    if (exempt.has(rel)) {
-      continue;
-    }
     const lines = readFileSync(file, "utf8").split("\n");
     lines.forEach((line, index) => {
       for (const rule of rules) {

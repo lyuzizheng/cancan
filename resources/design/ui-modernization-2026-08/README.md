@@ -97,6 +97,17 @@ The Review queue on the token foundation: SectionHeader with attention count, th
 | [`slice5-review-760.png`](slice5-review-760.png) | 760 | Narrow: top-bar spine, detail grid stacks |
 | [`slice5-review-reduced-motion.png`](slice5-review-reduced-motion.png) | 1440 | `prefers-reduced-motion` render |
 
+## Slice-6 final polish evidence
+
+The legacy shell is gone: `packages/ui/src/foundation-shell.css` is deleted, and the handful of global resets it still carried (`:root` color/background/font, `box-sizing`, body margin, `button`/`input` font inheritance, cursor rules) moved into `apps/desktop/src/app.css`'s `base` layer against `tokens.css` custom properties, alongside the global reduced-motion guard. The `@cancan/ui/foundation.css` export and the `legacy` cascade layer are removed; the ui-discipline gate's exemption list is gone with them. Regression proof: 14 compared preview states (overview, overview-empty, tasks, sources, review, review-detail, delete-confirm, document-unlock, vault-gate-locked, primitives at 1440 + four at 760) are byte-for-byte pixel-identical before and after the deletion (8 re-verified after the `color-scheme` addition) — Chrome's headless encoder is deterministic, so `cmp` equality means zero changed pixels. The dark-UA audit closes with `color-scheme: light` on `:root`: every remaining native control is token-styled (token Inputs, Radix Selects, accent-colored checkboxes, explicit-background Buttons), and the declaration keeps UA scrollbars/form chrome light on dark-OS hosts. The narrow audit below re-verifies 1180/760 after the change.
+
+| Artifact | Width | State |
+| --- | --- | --- |
+| [`slice6-overview-1180.png`](slice6-overview-1180.png) | 1180 | Overview: spine + ledger rhythm intact mid-width |
+| [`slice6-review-detail-1180.png`](slice6-review-detail-1180.png) | 1180 | Review detail: fact grid + candidate Panel mid-width |
+| [`slice6-sources-760.png`](slice6-sources-760.png) | 760 | Sources: top-bar spine, sections stack |
+| [`slice6-tasks-760.png`](slice6-tasks-760.png) | 760 | Tasks: filter pills + rows stack without overlap |
+
 ## Implementation boundary
 
 Do not ship these PNGs in the desktop bundle. Baselines document what the slices replace; the spike image documents toolchain feasibility only. Implementation must use semantic HTML/React, accessible states, centralized tokens, and code-native motion.

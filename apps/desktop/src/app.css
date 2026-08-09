@@ -1,17 +1,62 @@
 /*
  * Desktop CSS entry.
- * Layer order matters: legacy sits between theme and utilities, so token
- * utilities always win over legacy rules in migrated views.
- * Preflight is intentionally NOT imported: the legacy shell predates it and
- * must render untouched until slice 6 deletes it; migrated views and
- * primitives are explicitly styled through tokens and carry no UA-default
- * dependency.
+ * The legacy shell is gone (slice 6): `@cancan/ui/tokens.css` is the single
+ * token source of truth, and the few global resets the app still relies on
+ * live in the `base` layer below.
+ * Preflight is intentionally NOT imported: migrated views and primitives are
+ * explicitly styled through tokens and carry no UA-default dependency, and
+ * preflight would rewrite line-heights/weights across the app.
  */
-@layer theme, base, legacy, components, utilities;
+@layer theme, base, components, utilities;
 
 @import "tailwindcss/theme.css";
 @import "tailwindcss/utilities.css";
 @import "@cancan/ui/tokens.css";
-@import "@cancan/ui/foundation.css" layer(legacy);
 
 @source "../../../packages/ui/src";
+
+@layer base {
+  :root {
+    color: var(--color-ledger-ink);
+    background: var(--color-ledger-mineral);
+    color-scheme: light;
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    font-variant-numeric: tabular-nums;
+    text-rendering: optimizeLegibility;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: progress;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
