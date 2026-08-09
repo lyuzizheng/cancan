@@ -30,10 +30,14 @@ A pull request must pass the same harness as `main` before it can merge.
 
 Before writing code, read the spec section that governs your change and the slice notes that apply. Do not implement through a slice's documented blockers.
 
+## How work is tracked (issues)
+
+GitHub issues are the single entry point for all work — fixes, features, refactors, docs. A feature request is an `enhancement`-category issue whose body proposes the spec change (a spec is never written before its issue exists); the issue's first PR lands the spec change and the implementation together. Categories, priority, and scope policy live in `.agents/workflows/issue-delivery.md`.
+
 ## Pull request requirements
 
 - Keep pull requests small and reviewable; one concern per pull request.
-- Link an issue or a `docs/specs/` section whenever behavior changes.
+- Every PR closes an issue: `Closes #<n>` in the description. Link the `docs/specs/` section the PR changes whenever behavior changes; a feature issue's first PR lands spec + implementation together.
 - Include tests or other deterministic evidence for the change. Bug fixes should add a regression test where the project already has tests.
 - Use conventional branch names (`feat/...`, `fix/...`, `chore/...`) and Conventional Commit subjects.
 - Never include real financial data, account numbers, or secrets in tests, fixtures, screenshots, or pull request descriptions — synthetic fixtures only.

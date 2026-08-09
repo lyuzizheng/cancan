@@ -2,6 +2,12 @@
 
 Use this file to keep future AI coding agents oriented. Add a dated entry whenever product decisions, implementation scope, or architecture assumptions change.
 
+## 2026-08-10
+
+### Completed
+
+- Established the GitHub issue closed loop (`.agents/workflows/issue-delivery.md` + `.agents/skills/cancan-issue-triage/SKILL.md`): GitHub issues are now the single entry point for all work — fixes, features, refactors, docs. `docs/specs/` remains the behavior authority; an issue is the tracking shell and its **Spec change** section is a proposal (a feature's spec is written in the issue's first PR, never before the issue). First PR of a feature lands spec + implementation together (`Closes #n`); specs gain an optional `## Tracked by` section. Added category labels (`refactor`, `performance`, `security`, `infrastructure`, `test`), `priority:p0–p3`, and `scope:small–large`; upgraded the GitHub issue forms (feature request = six sections + spec-change proposal; bug report = six sections) and the pull-request template (Closes required). Implementation workflows (`development-cycle`, `implement-feature`) and the ROUTER now require a tracked issue before implementation starts. Policy is embedded in the `issue-delivery` workflow file itself.
+
 ## 2026-08-08
 
 ### Completed

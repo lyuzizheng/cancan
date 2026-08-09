@@ -1,24 +1,52 @@
 name: Feature request
-description: Propose an implementation-ready improvement
-title: "[Feature]: "
+description: Propose an implementation-ready improvement — a feature is an issue, tracked through one PR that lands spec + code together
+title: "feat(<area>): "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Early-stage ideas and open design questions are better discussed first in [Discussions → Ideas](https://github.com/lyuzizheng/cancan/discussions). File this form when the proposal is concrete enough to implement.
+        Early-stage ideas and open design questions are better discussed first in [Discussions → Ideas](https://github.com/lyuzizheng/cancan/discussions). File this form when the proposal is concrete enough to implement. The issue's first PR lands the spec change and the implementation together (`Closes #<n>`); the spec is never written before the issue.
   - type: textarea
     id: problem
     attributes:
       label: Problem
-      description: What problem does this solve for you? What can you not do today?
+      description: What problem does this solve for you? What can you not do today? This is the capability gap.
     validations:
       required: true
   - type: textarea
-    id: proposal
+    id: expected
     attributes:
-      label: Proposed behavior
+      label: Expected behavior
       description: What should CanCan do? Describe the behavior, not just the UI. Note where it touches local-first, privacy, or evidence-traceability guarantees.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who benefits and how much? Feeds the priority rubric (a feature that unblocks a core flow is priority:p1, polish is priority:p3).
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Proposed scope
+      description: What is included, what is explicitly out of scope, which packages/apps are touched.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Acceptance checks that prove the capability (tests, manual walkthrough steps, gate names).
+    validations:
+      required: true
+  - type: textarea
+    id: spec_change
+    attributes:
+      label: Spec change
+      description: How docs/specs/ will change — the new spec's outline, or exactly which sections of an existing spec change. This is a proposal; the first PR lands it together with the implementation.
     validations:
       required: true
   - type: textarea

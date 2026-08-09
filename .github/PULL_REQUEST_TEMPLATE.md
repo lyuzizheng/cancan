@@ -4,9 +4,10 @@
 
 ## Links
 
-<!-- Link the issue or docs/specs section this implements. Required when behavior changes. -->
+<!-- Every PR closes an issue: `Closes #<n>`. Behavior changes also link the spec section this PR lands — the first PR of a feature issue lands spec + implementation together. -->
 
-- Issue/spec:
+- Closes: #<issue number>
+- Spec: `docs/specs/<NNNN-….md>` §<section> (required when behavior changes; `No spec change` otherwise)
 
 ## Evidence
 
