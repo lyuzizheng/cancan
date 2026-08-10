@@ -37,6 +37,9 @@ Do not load every spec by default unless the task spans the whole system.
 
 Add a new spec only when no existing spec can own the decision.
 
+Spec numbers are assigned once and never reused; a gap in the sequence just
+means a spec was removed and its topic now lives elsewhere.
+
 Required format:
 
 ```text
