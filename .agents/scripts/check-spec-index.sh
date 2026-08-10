@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-cd "$ROOT"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+require_tools rg
 
 index="docs/specs/README.md"
 fail=0
 
-specs="$(find docs/specs -maxdepth 1 -type f -name '[0-9][0-9][0-9][0-9]-*.md' | sort)"
+specs="$(spec_files)"
 numbers="$(printf '%s\n' "$specs" | sed -E 's#docs/specs/([0-9]{4})-.*#\1#')"
 duplicates="$(printf '%s\n' "$numbers" | sort | uniq -d)"
 

@@ -138,6 +138,13 @@ stays the local narrative log; the issue is the canonical status.
 - Re-read the issue against `docs/agent/current-state.md` and the affected
   spec sections; check the slice's packet readiness
   (`STOP` / `EVIDENCE ONLY` / `READY`).
+- **Verify before you trust** (critical-fix doctrine, `.agents/workflows/fix-issue.md`):
+  the issue text is a hypothesis — reproduce its claims against current
+  code and correct the issue in a comment when a cited site is wrong or
+  already compliant. Fix the shared root cause and sweep sibling call
+  sites (举一反三) in the same PR; escalate new separable findings as
+  follow-up issues (through `cancan-issue-filing`'s dedup gate) or
+  comments, linked both ways.
 - If the spec proposal or priority/scope is unclear, grill the reporter
   (`.agents/workflows/design-grill.md`) or comment on the issue — never infer
   unresolved product, financial, security, or irreversible data decisions.

@@ -4,7 +4,7 @@
 
 Define how CanCan tests source-evidence flows, protects sensitive fixtures, keeps LLM-dependent behavior deterministic, and gates application changes.
 
-This spec is canonical for fixture policy, parser/reconciliation test expectations, database reset safety, and future application CI gates. `0012-repo-agent-workflows.md` owns the docs/agent harness.
+This spec is canonical for fixture policy, parser/reconciliation test expectations, database reset safety, and future application CI gates. The docs/agent harness itself lives in `.agents/` (see `.agents/README.md`).
 
 ## Stable decisions
 
@@ -16,7 +16,7 @@ This spec is canonical for fixture policy, parser/reconciliation test expectatio
 - DB reset must only affect test databases, never a real vault.
 - UI work requires visual inspection when app code exists.
 - App/typecheck/test/build gates are added only when real app/package scripts exist; the app-foundation commands now satisfy that boundary.
-- When the consequence-based path in `0012-repo-agent-workflows.md` justifies a separate tester, that tester verifies the stable implementation diff and reports reproducible failures instead of patching production code.
+- When the consequence-based path in `.agents/workflows/development-cycle.md` justifies a separate tester, that tester verifies the stable implementation diff and reports reproducible failures instead of patching production code.
 
 ## Fixture privacy layers
 
@@ -319,7 +319,7 @@ pnpm test:fixtures
 
 ## Application automation gates
 
-The docs/agent harness and its CI workflow are owned by `0012-repo-agent-workflows.md`.
+The docs/agent harness lives in `.agents/` (see `.agents/README.md`); its CI workflow is `.github/workflows/docs-harness.yml`.
 
 Once app code exists, every feature slice should run the strongest relevant subset:
 

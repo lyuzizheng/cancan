@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-cd "$ROOT"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 base="${1:-HEAD}"
 git rev-parse --verify "$base" >/dev/null

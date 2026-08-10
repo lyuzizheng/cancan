@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-cd "$ROOT"
-
-if ! command -v ruby >/dev/null 2>&1; then
-  echo "Missing required agent-config dependency: ruby"
-  exit 1
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+require_tools ruby
 
 # Parse only the small TOML subset used by project agent bindings. Keeping the
 # parser constrained makes duplicate keys and unsupported syntax fail closed
