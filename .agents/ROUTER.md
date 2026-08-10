@@ -13,6 +13,8 @@ Choose the workflow by intent, not by brittle keyword matching. Chinese and Engl
 | Connector, Gmail, source integration, 数据源 | [cancan-implementation-cycle](./skills/cancan-implementation-cycle/SKILL.md) | [plugin-work](./workflows/plugin-work.md) |
 | Orientation, status, plan, 进度, 规划 | [cancan-docs-orientation](./skills/cancan-docs-orientation/SKILL.md) | [development-cycle](./workflows/development-cycle.md) |
 | Issue, triage, track, 工单, 追踪, 闭环 | [cancan-issue-triage](./skills/cancan-issue-triage/SKILL.md) | [issue-delivery](./workflows/issue-delivery.md) |
+| File an issue, report a finding, 提issue, 报问题 | [cancan-issue-filing](./skills/cancan-issue-filing/SKILL.md) | [file-issues](./workflows/file-issues.md) |
+| Fix an issue, close an issue, 修issue, 处理issue | [cancan-issue-fixing](./skills/cancan-issue-fixing/SKILL.md) | [fix-issue](./workflows/fix-issue.md) |
 
 For mixed intents, resolve the earliest blocker first. Product, money-correctness, security, and irreversible data ambiguities block implementation. Unknown intent defaults to orientation, never implementation.
 

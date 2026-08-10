@@ -10,8 +10,19 @@ description: File, classify, and prioritize CanCan issues — write the five-sec
 Features are issues too: a feature request is an `enhancement`-category issue
 triaged exactly like a fix.
 
-1. **Search first** (`gh issue list` + keyword search). If an issue exists,
-   add the new evidence as a comment; do not duplicate.
+1. **Run the Dedup gate first** — the full procedure lives in
+   `cancan-issue-filing` (`.agents/workflows/file-issues.md`); verdicts:
+   - Search open issues with **component × defect-class** vocabulary
+     families (the affected area and synonyms × the symptom class).
+   - **Same component + same defect class → duplicate**: comment on the
+     original with the new evidence; never create a second issue.
+   - **Same defect class + shared root cause across components → one
+     issue** naming the root cause and listing every affected site.
+   - **Different defect class or independent root causes → new issue**,
+     linked to the related issue in both bodies.
+   - **Closed + re-appearing or materially different → new issue**
+     referencing the closed one.
+   - Record the verdict in the issue body: `**Dedup check**: …`.
 2. **Write the body** with the six sections from `.agents/workflows/issue-delivery.md` (Policy → Issue template):
    Problem / Expected / Impact / Proposed scope / Verification / **Spec change**.
    - *Bug:* concrete repro steps, logs, app version; Spec change = the
