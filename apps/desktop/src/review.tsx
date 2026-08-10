@@ -106,6 +106,7 @@ export function ReviewView(props: ReviewViewProps) {
             title="Needs your check"
             tone={reviewCount > 0 ? "attention" : "healthy"}
             count={reviewCount > 0 ? reviewCount : undefined}
+            countUnit="record"
           />
 
           {items === null ? (
@@ -236,14 +237,18 @@ function ReviewRow({
   return (
     <li className="border-b border-ledger-rule">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
-        <input
-          aria-label={`Select ${formatCurrencyAmount(item.currency, item.amountValue)} for ${item.accountLabel}`}
-          checked={selected}
-          className="size-3.5 shrink-0 accent-accent-go-deep"
-          disabled={selectionDisabled}
-          onChange={() => onToggleSelect(item.reviewItemId)}
-          type="checkbox"
-        />
+        {/* The negative-margin label widens the 14px checkbox to a 26px
+            pointer target (WCAG 2.5.8) without shifting the row layout. */}
+        <label className="-m-1.5 flex shrink-0 cursor-pointer p-1.5 has-[:disabled]:cursor-default">
+          <input
+            aria-label={`Select ${formatCurrencyAmount(item.currency, item.amountValue)} for ${item.accountLabel}`}
+            checked={selected}
+            className="size-3.5 accent-accent-go-deep"
+            disabled={selectionDisabled}
+            onChange={() => onToggleSelect(item.reviewItemId)}
+            type="checkbox"
+          />
+        </label>
         <div className="min-w-0 flex-1">
           <p className="m-0 text-md font-medium tabular-nums text-ledger-ink">
             {formatCurrencyAmount(item.currency, item.amountValue)}

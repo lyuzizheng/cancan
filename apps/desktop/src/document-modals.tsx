@@ -185,7 +185,7 @@ export function DocumentViewer({
       }}
       open
     >
-      <DialogContent className="flex max-h-screen flex-col" width="3xl">
+      <DialogContent className="flex flex-col" width="3xl">
         <DialogTitle>{viewer.documentTitle}</DialogTitle>
         <DialogDescription>
           Rendered locally from encrypted evidence. Page buffers are released when this viewer closes.
@@ -245,7 +245,7 @@ export function DocumentPreview({
       }}
       open
     >
-      <DialogContent className="flex max-h-screen flex-col" width="3xl">
+      <DialogContent className="flex flex-col" width="3xl">
         <p className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
           Encrypted evidence
         </p>

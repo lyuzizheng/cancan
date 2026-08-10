@@ -107,6 +107,7 @@ export function PrimitivesGallery({ dialogOpen = false }: { dialogOpen?: boolean
               </Button>
             }
             count={5}
+            countUnit="task"
             title="Tasks"
             tone="attention"
           />

@@ -158,6 +158,7 @@ export function TasksSection(props: TasksSectionProps) {
           </Button>
         )}
         count={needsAction > 0 ? needsAction : undefined}
+        countUnit="task"
         title="Tasks"
         tone={needsAction > 0 ? "attention" : "healthy"}
       />

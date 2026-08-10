@@ -63,6 +63,7 @@ export function VaultSpine(props: VaultSpineProps) {
           <NavEntry
             active={props.activeView === "tasks"}
             count={props.tasksCount}
+            countLabel={(count) => `${count} ${count === 1 ? "needs" : "need"} action`}
             icon="jobs"
             label="Tasks"
             onNavigate={() => props.onNavigate("tasks")}
@@ -78,6 +79,7 @@ export function VaultSpine(props: VaultSpineProps) {
           <NavEntry
             active={props.activeView === "review"}
             count={props.reviewCount}
+            countLabel={(count) => `${count} to review`}
             icon="review"
             label="Review"
             onNavigate={() => props.onNavigate("review")}
@@ -120,12 +122,15 @@ export function VaultSpine(props: VaultSpineProps) {
 function NavEntry({
   active,
   count,
+  countLabel,
   icon,
   label,
   onNavigate,
 }: {
   active: boolean;
   count?: number | null;
+  /** Screen-reader phrase for the count pill (the visible digit is aria-hidden). */
+  countLabel?: (count: number) => string;
   icon: IconName;
   label: string;
   onNavigate: () => void;
@@ -151,13 +156,13 @@ function NavEntry({
           <span className="ml-2 flex items-center gap-2 md:ml-auto">
             {hasCount ? (
               <span
-                aria-label={`${count} to review`}
                 className={cx(
                   "grid h-5 min-w-5 place-items-center rounded-pill border bg-vault-graphite px-1.5 font-mono text-xs text-signal-amber",
                   active ? "border-signal-amber" : "border-vault-seam",
                 )}
               >
-                {count}
+                <span aria-hidden="true">{count}</span>
+                <span className="sr-only">{countLabel ? countLabel(count) : `${count} items`}</span>
               </span>
             ) : null}
             {active ? (

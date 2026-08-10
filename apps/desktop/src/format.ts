@@ -6,11 +6,6 @@ const LEDGER_MONTHS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ] as const;
 
-const LEDGER_MONTHS_FULL = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-] as const;
-
 /**
  * Groups the integer part of a host-supplied exact decimal string without
  * float conversion, preserving the source decimal scale.
@@ -54,26 +49,6 @@ export function formatLedgerDate(iso: string): string {
 export function isRealIsoDate(value: string): boolean {
   const date = new Date(`${value}T00:00:00.000Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-}
-
-/** Renders the month of a host ISO date or month string, such as "June 2026". */
-export function formatLedgerMonth(iso: string): string {
-  const match = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(iso);
-  if (!match) {
-    return iso;
-  }
-  const month = Number(match[2]);
-  if (month < 1 || month > 12) {
-    return iso;
-  }
-  return `${LEDGER_MONTHS_FULL[month - 1]} ${match[1]}`;
-}
-
-/** Returns the local calendar date as YYYY-MM-DD without timezone conversion. */
-export function localIsoToday(now: Date = new Date()): string {
-  const month = `${now.getMonth() + 1}`.padStart(2, "0");
-  const day = `${now.getDate()}`.padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
 }
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -198,22 +173,6 @@ export function providerDisplayName(providerKey: string): string {
  */
 export function providerSuggestedSourceType(providerKey: string): string {
   return PROVIDER_PRESENTATION[providerKey]?.sourceType ?? "bank";
-}
-
-/**
- * Two-letter monogram for a source/prompt display name, used by the attention
- * tile: first letters of the first two words, or of a single word.
- */
-export function sourceInitials(displayName: string): string {
-  const words = displayName.trim().split(/\s+/).filter((word) => word.length > 0);
-  if (words.length === 0) {
-    return "··";
-  }
-  const first = words[0]!;
-  if (words.length === 1) {
-    return first.slice(0, 2).toUpperCase();
-  }
-  return `${first[0]!}${words[1]![0]!}`.toUpperCase();
 }
 
 /** Builds a calm plain-language sentence from a sanitized inbox scan summary. */

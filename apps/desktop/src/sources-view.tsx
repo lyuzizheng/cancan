@@ -106,6 +106,9 @@ export function SourcesView(props: SourcesViewProps) {
               />
               <span>{props.updatingRemembered ? "Updating…" : props.rememberedOnThisMac === null ? "Touch ID unavailable" : "Unlock with Touch ID"}</span>
             </label>
+            <Button onClick={props.onRefresh} variant="quiet">
+              Refresh
+            </Button>
             <Button disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onLock} variant="quiet">
               Lock Vault
             </Button>
@@ -161,6 +164,7 @@ export function SourcesView(props: SourcesViewProps) {
         <section aria-label="Money Sources">
           <SectionHeader
             count={props.sourceDocuments.length > 0 ? props.sourceDocuments.length : undefined}
+            countUnit="source"
             title="Money Sources"
             tone="healthy"
           />
@@ -228,6 +232,7 @@ export function SourcesView(props: SourcesViewProps) {
         <section aria-label="Needs attention">
           <SectionHeader
             count={attentionCount > 0 ? attentionCount : undefined}
+            countUnit="item"
             title="Needs attention"
             tone={attentionCount > 0 ? "attention" : "healthy"}
           />

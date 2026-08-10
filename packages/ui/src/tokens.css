@@ -82,6 +82,9 @@
   --spacing-ledger-gutter: clamp(1.5rem, 4vw, 3.5rem);
   --spacing-ledger-measure: 60rem;
 
+  /* Dialog viewport margin — document surfaces never touch the window edge */
+  --spacing-dialog-margin: 1.5rem;
+
   /* Overlay/dialog motion — entrance only; exits run at ~75% duration.
      Reduced-motion consumers disable these via motion-reduce:animate-none. */
   --animate-overlay-in: overlay-in 180ms var(--ease-mech) both;
@@ -122,4 +125,10 @@
       transform: translateY(-2px);
     }
   }
+}
+
+/* 3xl document dialogs keep --spacing-dialog-margin above and below the
+   panel so tall content never pins against the viewport edge. */
+@utility max-h-dialog-viewport {
+  max-height: calc(100vh - 2 * var(--spacing-dialog-margin));
 }
