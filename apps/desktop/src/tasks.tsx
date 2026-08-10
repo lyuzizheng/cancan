@@ -45,7 +45,7 @@ const consequenceLabels: Record<TaskConsequence, string> = {
   already_in_cancan: "Already in CanCan",
   file_not_added: "File not added",
   import_interrupted: "Import interrupted",
-  inbox_file_could_not_be_added: "Inbox file couldn't be added",
+  inbox_file_could_not_be_added: "Inbox file couldn’t be added",
   inbox_file_parked: "Inbox file parked",
   needs_attention: "Needs attention",
   needs_review: "Needs review",
@@ -78,11 +78,11 @@ export interface TaskRowButtonProps {
 export function TaskRowButton({ onOpenTask, row }: TaskRowButtonProps) {
   return (
     <button
-      className="group flex w-full items-center gap-2.5 border-b border-ledger-rule bg-transparent px-1 py-2.5 text-left transition-colors duration-120 ease-mech hover:bg-ledger-mineral focus-visible:outline-2 focus-visible:outline-accent-go-deep focus-visible:outline-offset-2"
+      className="group flex w-full items-center gap-2.5 border-b border-ledger-rule bg-transparent py-2.5 text-left transition-colors duration-120 ease-mech hover:bg-ledger-mineral focus-visible:outline-2 focus-visible:outline-accent-go-deep focus-visible:outline-offset-2"
       onClick={() => onOpenTask(row)}
       type="button"
     >
-      <StatusPoint className="ml-1" tone={taskGroupTone(row.group)} />
+      <StatusPoint tone={taskGroupTone(row.group)} />
       <span className="shrink-0 text-xs text-ledger-text-muted">
         {taskConsequenceLabel(row.consequence)}
       </span>
@@ -118,22 +118,22 @@ export function TaskRowList({
 }) {
   let lastGroup: TaskGroup | null = null;
   return (
-    <div>
+    <ul className="m-0 list-none p-0">
       {rows.map((row) => {
         const caption = captions && row.group !== lastGroup ? row.group : null;
         lastGroup = row.group;
         return (
-          <div key={row.rowKey}>
+          <li key={row.rowKey}>
             {caption !== null ? (
-              <p className="mt-3 px-1 pt-1 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted first:mt-0">
+              <p className="mt-3 pt-1 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted first:mt-0">
                 {taskGroupLabel(caption)}
               </p>
             ) : null}
             <TaskRowButton onOpenTask={onOpenTask} row={row} />
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }
 
@@ -162,18 +162,19 @@ export function TasksSection(props: TasksSectionProps) {
         title="Tasks"
         tone={needsAction > 0 ? "attention" : "healthy"}
       />
-      <div className="mt-2">
+      <div className="mt-2 border-t border-ledger-rule">
         {props.tasks === null ? (
           <div className="grid gap-2.5 py-3" role="status">
             <span className="sr-only">Loading tasks…</span>
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
           </div>
         ) : props.tasks.rows.length === 0 ? (
           <EmptyState
             body="New work from Add, CanCan Inbox, and Review lands here first."
             icon="check"
-            title="You're all caught up"
+            title="You’re all caught up"
           />
         ) : (
           <TaskRowList onOpenTask={props.onOpenTask} rows={props.tasks.rows} />

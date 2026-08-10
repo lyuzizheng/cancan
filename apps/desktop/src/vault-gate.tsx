@@ -35,9 +35,9 @@ export function VaultGate({
         <StatusPoint tone={acceptsPassword ? "attention" : "idle"} />
         Local Vault
       </p>
-      <h2 className="mt-3 font-serif text-xl font-display text-ledger-ink" id="vault-gate-title">
+      <h1 className="mt-3 font-serif text-xl font-display text-ledger-ink" id="vault-gate-title">
         {title}
-      </h2>
+      </h1>
       <p className="mt-2.5 text-sm text-ledger-text-muted">{body}</p>
       {rememberedOnThisMac === null ? (
         <p className="mt-4 text-sm text-ledger-text-muted">

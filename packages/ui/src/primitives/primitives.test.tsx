@@ -107,7 +107,7 @@ describe("Skeleton", () => {
   it("uses the bounded pulse with a reduced-motion escape", () => {
     const markup = renderToStaticMarkup(<Skeleton className="h-3 w-24" />);
 
-    expect(markup).toContain("motion-safe:animate-pulse");
+    expect(markup).toContain("motion-safe:animate-pulse-bounded");
     expect(markup).toContain('aria-hidden="true"');
   });
 });

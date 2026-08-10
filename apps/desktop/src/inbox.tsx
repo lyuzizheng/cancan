@@ -47,12 +47,17 @@ export function InboxPanel(props: InboxPanelProps) {
         {status === null && props.error === null ? (
           <div className="grid gap-2.5 py-3" role="status">
             <span className="sr-only">Checking CanCan Inbox…</span>
-            <Skeleton className="h-4 w-1/2" />
             <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-7 w-24" />
           </div>
         ) : null}
 
         {status?.accessState === "disabled" ? (
+          /* "Cancan folder" is the real on-disk folder name (host literal in
+             src-tauri local_inbox.rs), deliberately distinct from the CanCan
+             app name — do not "fix" the casing. */
           <EmptyState
             action={(
               <Button disabled={props.busy} onClick={props.onChoose}>

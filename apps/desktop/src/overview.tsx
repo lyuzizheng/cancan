@@ -80,8 +80,9 @@ export function OverviewView(props: OverviewViewProps) {
             {props.loading && props.moneyOverview === null ? (
               <div className="grid gap-2.5 py-3" role="status">
                 <span className="sr-only">Loading your balances…</span>
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
               </div>
             ) : null}
             {!props.loading && overviewEmpty ? (
@@ -111,8 +112,9 @@ export function OverviewView(props: OverviewViewProps) {
             {props.loading && props.recentActivity === null ? (
               <div className="grid gap-2.5 py-3" role="status">
                 <span className="sr-only">Loading recent activity…</span>
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
               </div>
             ) : null}
             {!props.loading && props.recentActivity !== null && props.recentActivity.length === 0 ? (

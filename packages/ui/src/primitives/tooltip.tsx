@@ -8,8 +8,9 @@ export interface TooltipProps {
 }
 
 /**
- * CanCan tooltip — Vault-obsidian chip, 120ms-class feedback, never used for
- * information the user cannot reach another way.
+ * CanCan tooltip — Vault-obsidian chip, 180ms pop-in / 140ms pop-out pair,
+ * 150ms hover-intent delay (JS-side, outside the motion rhythm table), never
+ * used for information the user cannot reach another way.
  */
 export function Tooltip({ content, children, side = "top" }: TooltipProps) {
   return (
@@ -18,7 +19,7 @@ export function Tooltip({ content, children, side = "top" }: TooltipProps) {
         <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
         <TooltipPrimitive.Portal>
           <TooltipPrimitive.Content
-            className="z-50 max-w-64 rounded-xs bg-vault-obsidian px-2 py-1 text-xs text-vault-text data-[state=delayed-open]:animate-pop-in motion-reduce:animate-none"
+            className="z-50 max-w-64 rounded-xs bg-vault-obsidian px-2 py-1 text-xs text-vault-text data-[state=delayed-open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none"
             side={side}
             sideOffset={4}
           >

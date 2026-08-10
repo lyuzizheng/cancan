@@ -36,7 +36,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
       <SelectPrimitive.Trigger
         aria-label={ariaLabel}
         className={cx(
-          "inline-flex w-full items-center justify-between gap-2 rounded-sm border border-ledger-rule bg-ledger-porcelain px-2.5 text-sm text-ledger-ink transition-colors duration-120 ease-mech",
+          "inline-flex w-full items-center justify-between gap-2 rounded-sm border border-ledger-rule bg-ledger-porcelain px-2.5 text-sm text-ledger-ink transition duration-120 ease-mech",
           "hover:bg-ledger-mineral focus-visible:outline-2 focus-visible:outline-accent-go-deep focus-visible:outline-offset-1",
           "disabled:cursor-not-allowed disabled:opacity-60 data-[placeholder]:text-ledger-text-muted",
           size === "md" ? "h-8" : "h-7",
@@ -50,7 +50,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
         <SelectPrimitive.Content
-          className="z-50 overflow-hidden rounded-md border border-ledger-rule bg-ledger-porcelain p-1 data-[state=open]:animate-pop-in motion-reduce:animate-none"
+          className="z-50 overflow-hidden rounded-md border border-ledger-rule bg-ledger-porcelain p-1 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none"
           position="popper"
           sideOffset={4}
         >
@@ -58,7 +58,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
             {options.map((option) => (
               <SelectPrimitive.Item
                 className={cx(
-                  "flex h-7 cursor-pointer items-center justify-between gap-2 rounded-xs px-2 text-sm text-ledger-ink outline-none",
+                  "flex h-7 cursor-pointer items-center justify-between gap-2 rounded-xs px-2 text-sm text-ledger-ink outline-none transition-colors duration-120 ease-mech",
                   "data-[highlighted]:bg-ledger-mineral data-[state=checked]:font-medium",
                 )}
                 key={option.value}

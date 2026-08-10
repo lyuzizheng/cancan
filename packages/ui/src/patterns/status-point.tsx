@@ -23,7 +23,7 @@ export function StatusPoint({ tone = "idle", className, ...rest }: StatusPointPr
   return (
     <span
       aria-hidden="true"
-      className={cx("inline-block size-1.5 rounded-pill", tones[tone], className)}
+      className={cx("inline-block size-1.5 rounded-pill transition-colors duration-120 ease-mech", tones[tone], className)}
       {...rest}
     />
   );

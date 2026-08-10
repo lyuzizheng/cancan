@@ -24,12 +24,14 @@ export function AccountConfirmationCard({
   onDecide,
   onRestore,
   prompt,
+  restoringAccountId,
 }: {
   busy: boolean;
   deciding: boolean;
   onDecide: (decisions: CandidateAccountDecisionInput[]) => void;
   onRestore: (accountId: string) => void;
   prompt: AccountConfirmationPrompt;
+  restoringAccountId: string | null;
 }) {
   const [choices, setChoices] = useState<Record<string, "accept" | "dismiss">>({});
   const decisions = prompt.candidateAccounts.map((account) => ({
@@ -92,7 +94,7 @@ export function AccountConfirmationCard({
             <ul className="m-0 list-none p-0">
               {prompt.dismissedAccounts.map((account) => (
                 <li
-                  className="flex items-center justify-between gap-3 py-2"
+                  className="flex items-center justify-between gap-3 py-2.5"
                   key={account.accountId}
                 >
                   <p className="truncate text-sm text-ledger-text-muted">
@@ -104,7 +106,7 @@ export function AccountConfirmationCard({
                     size="sm"
                     variant="quiet"
                   >
-                    Restore
+                    {restoringAccountId === account.accountId ? "Restoring…" : "Restore"}
                   </Button>
                 </li>
               ))}

@@ -67,10 +67,10 @@ export function PrimitivesGallery({ dialogOpen = false }: { dialogOpen?: boolean
           </Row>
           <Row label="Inputs + select">
             <div className="w-56">
-              <Input placeholder="Plain input" />
+              <Input aria-label="Plain input" placeholder="Plain input" />
             </div>
             <div className="w-40">
-              <Input numeric placeholder="12,456.78" />
+              <Input aria-label="Numeric amount" numeric placeholder="12,456.78" />
             </div>
             <div className="w-48">
               <Select
@@ -144,7 +144,7 @@ export function PrimitivesGallery({ dialogOpen = false }: { dialogOpen?: boolean
               <DialogContent>
                 <DialogTitle>Statement locked</DialogTitle>
                 <DialogDescription>
-                  This PDF needs its statement password once. CanCan keeps it in this Mac's
+                  This PDF needs its statement password once. CanCan keeps it in this Mac’s
                   Keychain, scoped to the source.
                 </DialogDescription>
                 <Input aria-label="Statement password" className="mt-4" placeholder="Password" type="password" />

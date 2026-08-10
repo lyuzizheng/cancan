@@ -92,6 +92,11 @@
   --animate-dialog-in: dialog-in 240ms var(--ease-mech) both;
   --animate-dialog-out: dialog-out 180ms var(--ease-mech) both;
   --animate-pop-in: pop-in 180ms var(--ease-mech) both;
+  --animate-pop-out: pop-out 140ms var(--ease-mech) both;
+
+  /* Bounded low-frequency optical pulse — the spec 0011 processing-status
+     exception: finite iterations on the one signature curve, never perpetual. */
+  --animate-pulse-bounded: pulse-bounded 2.4s var(--ease-mech) 2;
 
   @keyframes overlay-in {
     from {
@@ -123,6 +128,19 @@
     from {
       opacity: 0;
       transform: translateY(-2px);
+    }
+  }
+
+  @keyframes pop-out {
+    to {
+      opacity: 0;
+      transform: translateY(-2px);
+    }
+  }
+
+  @keyframes pulse-bounded {
+    50% {
+      opacity: 0.55;
     }
   }
 }

@@ -110,20 +110,23 @@ export function ReviewView(props: ReviewViewProps) {
           />
 
           {items === null ? (
-            <div role="status" className="grid gap-3 pt-6">
+            <div role="status" className="mt-2 grid gap-3 border-t border-ledger-rule py-3">
               <span className="sr-only">Loading review items…</span>
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-7 w-64" />
+              <Skeleton className="h-11 w-full" />
+              <Skeleton className="h-11 w-full" />
+              <Skeleton className="h-11 w-full" />
             </div>
           ) : null}
 
           {items !== null && items.length === 0 && !committing ? (
-            <EmptyState
-              icon="review"
-              title="Nothing needs your check"
-              body="New evidence that CanCan can’t place confidently lands here first."
-            />
+            <div className="mt-2 border-t border-ledger-rule">
+              <EmptyState
+                icon="review"
+                title="Nothing needs your check"
+                body="New evidence that CanCan can’t place confidently lands here first."
+              />
+            </div>
           ) : null}
 
           {items !== null && items.length > 0 ? (
@@ -134,7 +137,7 @@ export function ReviewView(props: ReviewViewProps) {
                     ? "None selected"
                     : `${props.selectedIds.size} selected`}
                 </p>
-                <ActionBar align="end">
+                <ActionBar>
                   <Button
                     variant="quiet"
                     size="sm"
@@ -238,12 +241,13 @@ function ReviewRow({
     <li className="border-b border-ledger-rule">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
         {/* The negative-margin label widens the 14px checkbox to a 26px
-            pointer target (WCAG 2.5.8) without shifting the row layout. */}
-        <label className="-m-1.5 flex shrink-0 cursor-pointer p-1.5 has-[:disabled]:cursor-default">
+            pointer target (WCAG 2.5.8) without shifting the row layout;
+            self-start keeps the box on the first text line. */}
+        <label className="-m-1.5 flex shrink-0 cursor-pointer self-start p-1.5 has-[:disabled]:cursor-default">
           <input
             aria-label={`Select ${formatCurrencyAmount(item.currency, item.amountValue)} for ${item.accountLabel}`}
             checked={selected}
-            className="size-3.5 accent-accent-go-deep"
+            className="mt-0.5 size-3.5 accent-accent-go-deep"
             disabled={selectionDisabled}
             onChange={() => onToggleSelect(item.reviewItemId)}
             type="checkbox"
@@ -321,9 +325,8 @@ function ReviewDetail({
       {detail === null ? (
         <div role="status" className="grid gap-2">
           <span className="sr-only">Loading details…</span>
-          <Skeleton className="h-3.5 w-full" />
-          <Skeleton className="h-3.5 w-3/4" />
-          <Skeleton className="h-3.5 w-5/6" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
         </div>
       ) : (
         <dl className="m-0 grid gap-3 sm:grid-cols-3">
@@ -402,10 +405,10 @@ function ReviewDetail({
             <p className="m-0 text-sm text-signal-danger-text" role="alert">{state.editing.error}</p>
           ) : null}
           <ActionBar>
-            <Button variant="primary" disabled={state.editing.saving} type="submit">
+            <Button variant="primary" size="sm" disabled={state.editing.saving} type="submit">
               {state.editing.saving ? "Saving…" : "Save edit"}
             </Button>
-            <Button variant="quiet" disabled={state.editing.saving} onClick={onCancelEdit}>
+            <Button variant="quiet" size="sm" disabled={state.editing.saving} onClick={onCancelEdit}>
               Cancel
             </Button>
           </ActionBar>
@@ -440,8 +443,7 @@ function ReviewDetail({
         {state.candidates === null ? (
           <div role="status" className="grid gap-2">
             <span className="sr-only">Looking for related records…</span>
-            <Skeleton className="h-3.5 w-full" />
-            <Skeleton className="h-3.5 w-4/5" />
+            <Skeleton className="h-16 w-full" />
           </div>
         ) : null}
         {state.candidates !== null && state.candidates.length === 0 ? (

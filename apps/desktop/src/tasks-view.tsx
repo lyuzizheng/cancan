@@ -11,10 +11,10 @@ const filterOrder: TaskGroup[] = [
 ];
 
 const emptyFilterCopy: Record<TaskGroup, string> = {
-  in_progress: "No work in progress.",
-  needs_action: "Nothing needs action.",
-  parked: "Nothing parked.",
-  recently_completed: "Nothing completed in the last week.",
+  in_progress: "No work in progress",
+  needs_action: "Nothing needs action",
+  parked: "Nothing parked",
+  recently_completed: "Nothing completed in the last week",
 };
 
 export interface TasksViewProps {
@@ -61,42 +61,45 @@ export function TasksView(props: TasksViewProps) {
         title="Tasks"
       />
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        {filterOrder.map((group) => {
-          const active = group === props.filter;
-          return (
-            <button
-              aria-pressed={active}
-              className={cx(
-                "inline-flex h-7 items-center gap-1.5 rounded-pill border bg-transparent px-3 text-xs font-medium transition-colors duration-120 ease-mech",
-                "focus-visible:outline-2 focus-visible:outline-accent-go-deep focus-visible:outline-offset-2",
-                active
-                  ? "border-accent-go-deep text-accent-go-deep"
-                  : "border-ledger-rule text-ledger-text-muted hover:text-ledger-ink",
-              )}
-              key={group}
-              onClick={() => props.onFilterChange(group)}
-              type="button"
-            >
-              {taskGroupLabel(group)}
-              <span className="font-mono tabular-nums">{counts.get(group) ?? 0}</span>
-            </button>
-          );
-        })}
-      </div>
+      <div className="grid gap-4 pt-6">
+        <div className="flex flex-wrap gap-2">
+          {filterOrder.map((group) => {
+            const active = group === props.filter;
+            return (
+              <button
+                aria-pressed={active}
+                className={cx(
+                  "inline-flex h-7 items-center gap-1.5 rounded-pill border bg-transparent px-3 text-xs font-medium transition-colors duration-120 ease-mech",
+                  "focus-visible:outline-2 focus-visible:outline-accent-go-deep focus-visible:outline-offset-2",
+                  active
+                    ? "border-accent-go-deep text-accent-go-deep"
+                    : "border-ledger-rule text-ledger-text-muted hover:text-ledger-ink",
+                )}
+                key={group}
+                onClick={() => props.onFilterChange(group)}
+                type="button"
+              >
+                {taskGroupLabel(group)}
+                <span className="font-mono tabular-nums">{counts.get(group) ?? 0}</span>
+              </button>
+            );
+          })}
+        </div>
 
-      <div className="mt-4">
-        {props.tasks === null ? (
-          <div className="grid gap-2.5 py-3" role="status">
-            <span className="sr-only">Loading tasks…</span>
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-1/2" />
-          </div>
-        ) : visibleRows.length > 0 ? (
-          <TaskRowList captions={false} onOpenTask={props.onOpenTask} rows={visibleRows} />
-        ) : (
-          <EmptyState icon="check" title={emptyFilterCopy[props.filter]} />
-        )}
+        <div className="border-t border-ledger-rule">
+          {props.tasks === null ? (
+            <div className="grid gap-2.5 py-3" role="status">
+              <span className="sr-only">Loading tasks…</span>
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : visibleRows.length > 0 ? (
+            <TaskRowList captions={false} onOpenTask={props.onOpenTask} rows={visibleRows} />
+          ) : (
+            <EmptyState icon="check" title={emptyFilterCopy[props.filter]} />
+          )}
+        </div>
       </div>
     </>
   );

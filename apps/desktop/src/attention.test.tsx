@@ -39,6 +39,7 @@ function render(
         onDecide={() => undefined}
         onRestore={() => undefined}
         prompt={prompt}
+        restoringAccountId={null}
         {...overrides}
       />
     </ul>,
@@ -75,5 +76,12 @@ describe("AccountConfirmationCard", () => {
     expect(html).not.toContain("Save choices");
     expect(html).toContain("Wise USD Balance · dismissed");
     expect(html).toContain("Restore");
+  });
+
+  it("marks the in-flight restore with progress text", () => {
+    const html = render({ busy: true, restoringAccountId: "account-wise" });
+
+    expect(html).toContain("Restoring…");
+    expect(html).not.toContain(">Restore</button>");
   });
 });

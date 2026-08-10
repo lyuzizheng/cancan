@@ -102,7 +102,7 @@ export function VaultSpine(props: VaultSpineProps) {
         </p>
         <p className="flex items-center gap-2 text-sm font-medium text-vault-text md:mt-2">
           <StatusPoint
-            className={props.vaultStatus === "loading" ? "animate-pulse motion-reduce:animate-none" : undefined}
+            className={props.vaultStatus === "loading" ? "animate-pulse-bounded motion-reduce:animate-none" : undefined}
             tone={statusTone(props.vaultStatus)}
           />
           {vaultStatusLabel(props.vaultStatus)}
