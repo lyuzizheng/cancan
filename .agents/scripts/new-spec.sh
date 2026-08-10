@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-cd "$ROOT"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 title="${*:-}"
 if [ -z "$title" ]; then
-  echo "Usage: .agents/scripts/new-spec.sh \"Spec Title\""
-  exit 2
+  usage "Usage: .agents/scripts/new-spec.sh \"Spec Title\""
 fi
 
-last="$(find docs/specs -maxdepth 1 -type f -name '[0-9][0-9][0-9][0-9]-*.md' | sed -E 's#.*docs/specs/([0-9]{4})-.*#\1#' | sort | tail -1)"
+last="$(spec_files | sed -E 's#.*/([0-9]{4})-.*#\1#' | tail -1)"
 if [ -n "$last" ]; then
   next_num="$(printf '%04d' "$((10#$last + 1))")"
 else
@@ -18,14 +16,12 @@ else
 fi
 slug="$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-//; s/-$//')"
 if [ -z "$slug" ]; then
-  echo "Title must contain at least one ASCII letter or number for the filename."
-  exit 2
+  usage "Title must contain at least one ASCII letter or number for the filename."
 fi
 path="docs/specs/${next_num}-${slug}.md"
 
 if [ -f "$path" ]; then
-  echo "Spec already exists: $path"
-  exit 1
+  die "Spec already exists: $path"
 fi
 
 cat > "$path" <<SPEC

@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-cd "$ROOT"
-
-if ! command -v ruby >/dev/null 2>&1; then
-  echo "Missing required harness dependency: ruby"
-  exit 1
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+require_tools ruby
 
 ruby - .github/workflows/docs-harness.yml <<'RUBY'
 require "json"

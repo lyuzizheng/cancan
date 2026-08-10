@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+require_tools ruby
 
 if [ "$#" -ne 1 ]; then
-  echo "Usage: .agents/scripts/context-for-slice.sh <slice-id>"
-  exit 1
+  usage "Usage: .agents/scripts/context-for-slice.sh <slice-id>"
 fi
 
 exec ruby "$ROOT/.agents/scripts/implementation-slices.rb" context "$1"

@@ -43,7 +43,7 @@ required doc updates
 
 ## 4. Implement in small slices
 
-Size execution by consequence using `.agents/workflows/development-cycle.md`. Fast PR-comment maintenance stays in the root thread with focused checks and PR CI. Standard work adds at most one independent role when it provides material evidence. High-risk app changes use one production-code writer, applicable independent code review, and one final full relevant app gate after that review passes. Docs/harness changes run preflight and harness self-test before semantic review. After a finding, rerun affected focused checks and re-review the entire cumulative diff; do not repeat unrelated full builds. Never run multiple source-writing agents concurrently.
+Size execution by consequence using the canonical risk tiers in `.agents/workflows/development-cycle.md`; that workflow owns the Fast/Standard/High-risk definitions and the tier-sized verification order. Never run multiple source-writing agents concurrently.
 
 Prefer slices that produce a verifiable result:
 

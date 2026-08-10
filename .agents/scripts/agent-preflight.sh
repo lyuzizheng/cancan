@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-cd "$ROOT"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+require_tools rg ruby
 
 required=(
   "AGENTS.md"
@@ -19,9 +19,14 @@ required=(
   ".agents/README.md"
   ".agents/ROUTER.md"
   ".agents/docs-semantic-review.md"
-  ".agents/scripts/check-codex-agents.sh"
+  ".agents/scripts/lib.sh"
+  ".agents/scripts/check-agent-skills.sh"
   ".agents/scripts/check-ci-workflow.sh"
+  ".agents/scripts/check-codex-agents.sh"
+  ".agents/scripts/check-docs-consistency.sh"
   ".agents/scripts/check-implementation-slices.sh"
+  ".agents/scripts/check-links.sh"
+  ".agents/scripts/check-spec-index.sh"
   ".agents/scripts/context-for-slice.sh"
   ".agents/scripts/docs-review-packet.sh"
   ".agents/scripts/harness-self-test.sh"

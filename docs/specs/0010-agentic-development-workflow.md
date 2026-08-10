@@ -14,10 +14,10 @@ For each feature slice:
 3. Obey the packet's STOP, EVIDENCE ONLY, or READY boundary
 4. For EVIDENCE ONLY, run only the named disposable spike/test work and add no production code
 5. Plan files, tests, build, and docs impact from the packet
-6. Select the smallest consequence-based execution tier and only the roles justified by 0012-repo-agent-workflows.md and .agents/workflows/development-cycle.md
+6. Select the smallest consequence-based execution tier and only the roles justified by `.agents/workflows/development-cycle.md`
 7. Let one production-code writer complete the smallest READY-slice change, focused tests, and required docs/progress updates
 8. Freeze the cumulative diff and generate the compact implementation review packet when the selected tier requires review; reviewers generate the same slice source index separately and open the complete repository diff directly
-9. Route findings back to the writer, rerun affected focused checks, and re-review the cumulative diff as required by 0012
+9. Route findings back to the writer, rerun affected focused checks, and re-review the cumulative diff as required by `.agents/workflows/development-cycle.md`
 10. Run the selected tier's final relevant gate once after required code review passes; docs/harness changes follow their deterministic-then-semantic order
 11. Ask the user whenever product, security, or data decisions remain unresolved
 ```
@@ -36,7 +36,7 @@ Acceptable tools may include:
 - Playwright screenshots;
 - installed repo-local skills/workflows.
 
-The repo-local harness is defined in `0012-repo-agent-workflows.md`. UI tooling remains flexible, but the visual-inspection outcome is required.
+The repo-local harness lives in `.agents/` (see `.agents/README.md`). UI tooling remains flexible, but the visual-inspection outcome is required.
 
 ## Done criteria
 
@@ -49,7 +49,7 @@ A feature is not done until:
 - UI was visually inspected if UI changed;
 - docs/specs/progress are updated;
 - unresolved decisions are recorded or asked.
-- the repo harness gates required by `0012-repo-agent-workflows.md` pass.
+- the repo harness gates run by `.agents/scripts/agent-preflight.sh` pass.
 
 ## Integration test expectations
 
@@ -85,8 +85,8 @@ Ask instead of guessing when the decision affects:
 
 - Agents have a repeatable loop for autonomous development.
 - Every implementation, testing, or review role used for a task shares one machine-checked readiness and canonical source index, opens every indexed source in full from the exact working tree/head, and records that evidence rather than choosing different contracts.
-- One writer owns production-code changes; independent testing and review are applied only when required by the consequence-based path in `0012-repo-agent-workflows.md`.
-- Documentation/harness validation follows `0012-repo-agent-workflows.md`.
+- One writer owns production-code changes; independent testing and review are applied only when required by the consequence-based path in `.agents/workflows/development-cycle.md`.
+- Documentation/harness validation follows `.agents/docs-semantic-review.md`.
 - UI changes cannot be completed without visual inspection.
 - Integration flows require database reset coverage.
 - Docs remain part of the implementation contract.

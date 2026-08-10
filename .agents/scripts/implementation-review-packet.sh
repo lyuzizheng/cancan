@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-cd "$ROOT"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
-  echo "Usage: .agents/scripts/implementation-review-packet.sh <slice-id> [base]"
-  exit 1
+  usage "Usage: .agents/scripts/implementation-review-packet.sh <slice-id> [base]"
 fi
 
 slice_id="$1"
