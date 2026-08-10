@@ -691,7 +691,7 @@ pub(super) fn statement_password_storage_key(money_source_id: &str) -> String {
     format!("money-source:{money_source_id}")
 }
 
-const VAULT_CANDIDATE_PREFIX: &str = ".vault-create-";
+pub(super) const VAULT_CANDIDATE_PREFIX: &str = ".vault-create-";
 
 pub(super) fn candidate_name() -> String {
     let mut random = [0_u8; 8];
@@ -702,39 +702,6 @@ pub(super) fn candidate_name() -> String {
         write!(&mut name, "{byte:02x}").expect("writing to String cannot fail");
     }
     name
-}
-
-pub(super) fn cleanup_inactive_vault_candidates(parent: &Path) {
-    let Ok(entries) = fs::read_dir(parent) else {
-        return;
-    };
-    let prefix = VAULT_CANDIDATE_PREFIX;
-    let prefix_len = prefix.len();
-    let expected_len = prefix_len + 16;
-    let mut removed_any = false;
-    for entry in entries.flatten() {
-        let file_name = entry.file_name();
-        let name = match file_name.to_str() {
-            Some(name) => name,
-            None => continue,
-        };
-        if name.len() != expected_len
-            || !name.starts_with(prefix)
-            || !name[prefix_len..].chars().all(|c| c.is_ascii_hexdigit())
-        {
-            continue;
-        }
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        if fs::remove_dir_all(&path).is_ok() {
-            removed_any = true;
-        }
-    }
-    if removed_any {
-        let _ = sync_directory(parent);
-    }
 }
 
 pub(super) fn write_new_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
