@@ -1364,7 +1364,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         {vaultStatus === "not_created" || vaultStatus === "locked" ? (
           <VaultGate
             busy={busy}
-            body={vaultStatus === "not_created" ? "Create a local Vault before adding your first statement or export." : "Unlock your local Vault to add a file or check its routing. While CanCan stays open, background intake keeps working and your Mac's login session protects the live Vault; CanCan locks only when you lock it or quit the app."}
+            body={vaultStatus === "not_created" ? "Create a local Vault before adding your first statement or export." : "Unlock your local Vault to add a file or check its routing. While CanCan stays open, background intake keeps working and your Mac’s login session protects the live Vault; CanCan locks only when you lock it or quit the app."}
             password={password}
             rememberedOnThisMac={rememberedOnThisMac}
             title={vaultStatus === "not_created" ? "Create your Vault" : "Unlock your Vault"}

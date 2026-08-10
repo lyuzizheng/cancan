@@ -143,7 +143,7 @@ describe("TasksView", () => {
       <TasksView {...baseViewProps} filter="in_progress" tasks={{ needsActionCount: 0, rows: [] }} />,
     );
 
-    expect(html).toContain("No work in progress.");
+    expect(html).toContain("No work in progress");
   });
 });
 

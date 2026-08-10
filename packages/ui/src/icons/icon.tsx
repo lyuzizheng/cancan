@@ -23,10 +23,7 @@ export type IconName =
   | "chevron-right"
   | "x"
   | "lock"
-  | "refresh"
-  | "file"
-  | "alert"
-  | "eye";
+  | "file";
 
 const shapes: Record<IconName, ReactNode> = {
   overview: (
@@ -84,29 +81,10 @@ const shapes: Record<IconName, ReactNode> = {
       <path d="M9 11V8a3 3 0 0 1 6 0v3" />
     </>
   ),
-  refresh: (
-    <>
-      <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" />
-      <path d="M19.8 3.5v3.6h-3.6" />
-    </>
-  ),
   file: (
     <>
       <path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20V4a.5.5 0 0 1 .5-.5z" />
       <path d="M14 3.5V8h4.5" />
-    </>
-  ),
-  alert: (
-    <>
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 7.5V13" />
-      <path d="M12 15.75v1" />
-    </>
-  ),
-  eye: (
-    <>
-      <path d="M3 12s3.5-6.5 9-6.5S21 12 21 12s-3.5 6.5-9 6.5S3 12 3 12z" />
-      <circle cx="12" cy="12" r="2.6" />
     </>
   ),
 };

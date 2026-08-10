@@ -3,11 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="light" />
     <link rel="icon" href="/app-icon.svg" type="image/svg+xml" />
     <title>CanCan</title>
   </head>
-  <body>
+  <!-- The literal fallback mirrors --color-ledger-mineral in
+       packages/ui/src/tokens.css so the pre-CSS first frame already paints
+       the app background; once tokens.css loads the var wins. -->
+  <body style="background-color: var(--color-ledger-mineral, oklch(96.6% 0.004 121.6));">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

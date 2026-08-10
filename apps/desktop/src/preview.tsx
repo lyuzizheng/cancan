@@ -35,7 +35,6 @@ import {
   DocumentUnlock,
   DocumentViewer,
 } from "./document-modals";
-import { InboxPanel } from "./inbox";
 import { OverviewView } from "./overview";
 import { ReviewView, type ReviewDetailState, type ReviewJobPanelState } from "./review";
 import { FocusedSourceConfirmationDialog } from "./source-confirmation";
@@ -351,56 +350,58 @@ const documentModalStates = new Set([
   "document-viewer",
 ]);
 
-const sourcesContent = (
-  <SourcesView
-    accountPrompts={accountPrompts}
-    attentionBusyKey={null}
-    busy={false}
-    existingSources={previewMoneySources}
-    importing={false}
-    inbox={inboxEnabled}
-    inboxError={null}
-    inboxBusy={false}
-    inboxConfirmingDisable={false}
-    loadingDocuments={false}
-    normalizingDocumentId={null}
-    notice={null}
-    onConfirmSourceCandidate={noop}
-    onDecideAccounts={noop}
-    onImport={noop}
-    onInboxCancelDisable={noop}
-    onInboxChoose={noop}
-    onInboxConfirmDisable={noop}
-    onInboxRequestDisable={noop}
-    onInboxRescan={noop}
-    onInboxRetry={noop}
-    onKeepSourceCandidateUnassigned={noop}
-    onLock={noop}
-    onNormalize={noop}
-    onOpenUnlock={noop}
-    onRefresh={noop}
-    onRememberedChange={noop}
-    onRequestDelete={noop}
-    onRestoreAccount={noop}
-    onSelectMoneySource={noop}
-    onSaveRecoveryFile={noop}
-    onSaveSourceCopy={noop}
-    onView={noop}
-    onViewPromptDocument={noop}
-    recoveryConfigured={false}
-    rememberedOnThisMac
-    savingCopyDocumentId={null}
-    savingRecoveryFile={false}
-    selectedMoneySourceId="source-dbs"
-    sourceDocuments={[
-      { documents: dbsDocuments, source: previewMoneySources[0]! },
-      { documents: null, source: previewMoneySources[1]! },
-    ]}
-    sourcePrompts={sourcePrompts}
-    unassignedDocuments={unassignedEvidence}
-    updatingRemembered={false}
-  />
-);
+function renderSourcesView(inbox: LocalInboxStatus) {
+  return (
+    <SourcesView
+      accountPrompts={accountPrompts}
+      attentionBusyKey={null}
+      busy={false}
+      existingSources={previewMoneySources}
+      importing={false}
+      inbox={inbox}
+      inboxError={null}
+      inboxBusy={false}
+      inboxConfirmingDisable={false}
+      loadingDocuments={false}
+      normalizingDocumentId={null}
+      notice={null}
+      onConfirmSourceCandidate={noop}
+      onDecideAccounts={noop}
+      onImport={noop}
+      onInboxCancelDisable={noop}
+      onInboxChoose={noop}
+      onInboxConfirmDisable={noop}
+      onInboxRequestDisable={noop}
+      onInboxRescan={noop}
+      onInboxRetry={noop}
+      onKeepSourceCandidateUnassigned={noop}
+      onLock={noop}
+      onNormalize={noop}
+      onOpenUnlock={noop}
+      onRefresh={noop}
+      onRememberedChange={noop}
+      onRequestDelete={noop}
+      onRestoreAccount={noop}
+      onSelectMoneySource={noop}
+      onSaveRecoveryFile={noop}
+      onSaveSourceCopy={noop}
+      onView={noop}
+      onViewPromptDocument={noop}
+      recoveryConfigured={false}
+      rememberedOnThisMac
+      savingCopyDocumentId={null}
+      savingRecoveryFile={false}
+      selectedMoneySourceId="source-dbs"
+      sourceDocuments={[
+        { documents: dbsDocuments, source: previewMoneySources[0]! },
+        { documents: null, source: previewMoneySources[1]! },
+      ]}
+      sourcePrompts={sourcePrompts}
+      unassignedDocuments={unassignedEvidence}
+      updatingRemembered={false}
+    />
+  );
+}
 
 function navigate(view: AppView) {
   const state = view === "sources" ? "sources-inbox-enabled" : view;
@@ -456,23 +457,10 @@ function Preview() {
       : state === "sources-inbox-reauth"
         ? inboxReauth
         : inboxDisabled;
-    content = (
-      <InboxPanel
-        busy={false}
-        confirmingDisable={false}
-        error={null}
-        onCancelDisable={noop}
-        onChoose={noop}
-        onConfirmDisable={noop}
-        onRequestDisable={noop}
-        onRescan={noop}
-        onRetry={noop}
-        status={status}
-      />
-    );
+    content = renderSourcesView(status);
   } else if (state === "sources" || documentModalStates.has(state)) {
     activeView = "sources";
-    content = sourcesContent;
+    content = renderSourcesView(inboxEnabled);
   } else if (state === "vault-gate-loading" || state === "vault-gate-create" || state === "vault-gate-locked") {
     content = state === "vault-gate-loading" ? (
       <VaultGate busy title="Checking your Vault" body="Confirming the local Vault state before showing evidence." />

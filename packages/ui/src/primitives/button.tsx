@@ -4,7 +4,7 @@ import { cx } from "../cx";
 
 /**
  * CanCan button — the single action control.
- * Geometry: 32/28px heights, radius.sm, 120ms ease-mech color feedback.
+ * Geometry: 32/28px heights, radius.sm, 120ms ease-mech color/opacity feedback.
  * `strong` is the editorial confirmation moment (go fill + go-ink text,
  * a verified 9.10:1 pair); green stays a deliberate choice, never the
  * default for every action (spec 0011 semantic usage).
@@ -45,7 +45,7 @@ export function Button({
   return (
     <button
       className={cx(
-        "inline-flex select-none items-center justify-center gap-1.5 rounded-sm font-medium transition-colors duration-120 ease-mech",
+        "inline-flex select-none items-center justify-center gap-1.5 rounded-sm font-medium transition duration-120 ease-mech",
         "focus-visible:outline-2 focus-visible:outline-accent-go-deep focus-visible:outline-offset-2",
         "disabled:cursor-progress disabled:opacity-60",
         variants[variant],

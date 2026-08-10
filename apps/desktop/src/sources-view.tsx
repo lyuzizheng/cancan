@@ -106,6 +106,9 @@ export function SourcesView(props: SourcesViewProps) {
               />
               <span>{props.updatingRemembered ? "Updating…" : props.rememberedOnThisMac === null ? "Touch ID unavailable" : "Unlock with Touch ID"}</span>
             </label>
+            <Button onClick={props.onRefresh} variant="quiet">
+              Refresh
+            </Button>
             <Button disabled={props.busy || props.normalizingDocumentId !== null} onClick={props.onLock} variant="quiet">
               Lock Vault
             </Button>
@@ -161,18 +164,19 @@ export function SourcesView(props: SourcesViewProps) {
         <section aria-label="Money Sources">
           <SectionHeader
             count={props.sourceDocuments.length > 0 ? props.sourceDocuments.length : undefined}
+            countUnit="source"
             title="Money Sources"
             tone="healthy"
           />
           {props.loadingDocuments ? (
-            <div className="grid gap-2.5 border-t border-ledger-rule py-3" role="status">
+            <div className="mt-2 grid gap-2.5 border-t border-ledger-rule py-3" role="status">
               <span className="sr-only">Refreshing sources…</span>
-              <Skeleton className="h-4 w-1/2" />
-              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
             </div>
           ) : null}
           {!props.loadingDocuments && props.sourceDocuments.length === 0 ? (
-            <div className="border-t border-ledger-rule">
+            <div className="mt-2 border-t border-ledger-rule">
               <EmptyState
                 body="Money Sources appear here once evidence is confirmed to a bank, card, or wallet."
                 icon="sources"
@@ -180,7 +184,7 @@ export function SourcesView(props: SourcesViewProps) {
               />
             </div>
           ) : null}
-          <div>
+          <div className="mt-2">
             {props.sourceDocuments.map(({ documents, source }) => {
               const selected = props.selectedMoneySourceId === source.moneySourceId;
               return (
@@ -228,12 +232,13 @@ export function SourcesView(props: SourcesViewProps) {
         <section aria-label="Needs attention">
           <SectionHeader
             count={attentionCount > 0 ? attentionCount : undefined}
+            countUnit="item"
             title="Needs attention"
             tone={attentionCount > 0 ? "attention" : "healthy"}
           />
-          <div className="mt-2 grid gap-4">
+          <div className="mt-2 grid gap-4 border-t border-ledger-rule">
             {!props.loadingDocuments && attentionCount === 0 && props.sourcePrompts.length === 0 && props.accountPrompts.length === 0 ? (
-              <p className="border-t border-ledger-rule py-3 text-sm text-ledger-text-muted">
+              <p className="py-3 text-sm text-ledger-text-muted">
                 No evidence needs your attention.
               </p>
             ) : null}
@@ -255,6 +260,9 @@ export function SourcesView(props: SourcesViewProps) {
                     onDecide={(decisions) => props.onDecideAccounts(prompt, decisions)}
                     onRestore={props.onRestoreAccount}
                     prompt={prompt}
+                    restoringAccountId={props.attentionBusyKey?.startsWith("restore:")
+                      ? props.attentionBusyKey.slice("restore:".length)
+                      : null}
                   />
                 ))}
               </ul>

@@ -277,7 +277,7 @@ describe("App manual import orchestration", () => {
     await mount(api);
 
     expect(container.textContent).toContain(
-      "background intake keeps working and your Mac's login session protects the live Vault",
+      "background intake keeps working and your Mac’s login session protects the live Vault",
     );
     expect(container.textContent).toContain("locks only when you lock it or quit");
   });

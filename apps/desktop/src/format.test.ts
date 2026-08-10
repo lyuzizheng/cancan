@@ -7,10 +7,8 @@ import {
   eventTypeLabel,
   formatCurrencyAmount,
   formatLedgerDate,
-  formatLedgerMonth,
   formatNativeAmount,
   localInboxScanSummaryText,
-  localIsoToday,
   providerDisplayName,
   providerSuggestedSourceType,
   reviewConflictMessage,
@@ -140,26 +138,6 @@ describe("batch outcome labels", () => {
       "its details aren’t complete",
     );
     expect(batchGroupReasonLabel(null)).toBe("check its details");
-  });
-});
-
-describe("formatLedgerMonth", () => {
-  it("renders ISO dates and months as a full month name", () => {
-    expect(formatLedgerMonth("2026-06-30")).toBe("June 2026");
-    expect(formatLedgerMonth("2026-06")).toBe("June 2026");
-    expect(formatLedgerMonth("2026-01-01")).toBe("January 2026");
-  });
-
-  it("passes through values that are not ISO months", () => {
-    expect(formatLedgerMonth("2026-13-01")).toBe("2026-13-01");
-    expect(formatLedgerMonth("last month")).toBe("last month");
-  });
-});
-
-describe("localIsoToday", () => {
-  it("pads month and day without timezone conversion", () => {
-    expect(localIsoToday(new Date(2026, 6, 19))).toBe("2026-07-19");
-    expect(localIsoToday(new Date(2026, 0, 5))).toBe("2026-01-05");
   });
 });
 

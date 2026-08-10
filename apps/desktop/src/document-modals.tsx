@@ -80,16 +80,16 @@ export function DocumentUnlock({
             <p className="text-sm text-ledger-text-muted" role="status">Loading Money Sources…</p>
           ) : null}
           {state.sources?.length === 0 && state.error ? (
-            <Feedback
-              body={state.error}
-              title="Money Sources couldn’t be loaded"
-              tone="attention"
-            />
-          ) : null}
-          {state.sources?.length === 0 && state.error ? (
-            <div className="mt-3">
-              <Button onClick={onRetrySources} variant="quiet">Try again</Button>
-            </div>
+            <>
+              <Feedback
+                body={state.error}
+                title="Money Sources couldn’t be loaded"
+                tone="attention"
+              />
+              <div className="mt-3">
+                <Button onClick={onRetrySources} variant="quiet">Try again</Button>
+              </div>
+            </>
           ) : null}
           {state.sources?.length === 0 && !state.error ? (
             <Feedback
@@ -100,7 +100,7 @@ export function DocumentUnlock({
           ) : null}
           {hasSources ? (
             <form onSubmit={(event) => { event.preventDefault(); onSubmit(false); }}>
-              <span className={fieldLabelClass} id="statement-money-source-label">Money Source</span>
+              <span className={fieldLabelClass}>Money Source</span>
               <Select
                 ariaLabel="Money Source for this statement"
                 disabled={state.busy}
@@ -185,7 +185,7 @@ export function DocumentViewer({
       }}
       open
     >
-      <DialogContent className="flex max-h-screen flex-col" width="3xl">
+      <DialogContent className="flex flex-col" width="3xl">
         <DialogTitle>{viewer.documentTitle}</DialogTitle>
         <DialogDescription>
           Rendered locally from encrypted evidence. Page buffers are released when this viewer closes.
@@ -245,7 +245,7 @@ export function DocumentPreview({
       }}
       open
     >
-      <DialogContent className="flex max-h-screen flex-col" width="3xl">
+      <DialogContent className="flex flex-col" width="3xl">
         <p className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
           Encrypted evidence
         </p>

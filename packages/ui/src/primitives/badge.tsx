@@ -23,7 +23,7 @@ export function Badge({ tone = "neutral", className, children, ...rest }: BadgeP
   return (
     <span
       className={cx(
-        "inline-flex h-5 min-w-5 items-center justify-center rounded-pill border bg-ledger-porcelain px-1.5 font-mono text-xs",
+        "inline-flex h-5 min-w-5 items-center justify-center rounded-pill border bg-ledger-porcelain px-1.5 font-mono text-xs transition-colors duration-120 ease-mech",
         tones[tone],
         className,
       )}

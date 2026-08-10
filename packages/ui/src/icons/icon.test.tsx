@@ -20,10 +20,7 @@ describe("Icon", () => {
       "chevron-right",
       "x",
       "lock",
-      "refresh",
       "file",
-      "alert",
-      "eye",
     ] as const;
 
     for (const name of names) {

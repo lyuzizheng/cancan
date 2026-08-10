@@ -54,6 +54,15 @@ describe("SectionHeader", () => {
     expect(markup).toContain("View all");
     expect(markup).toContain("ml-auto");
   });
+
+  it("announces the count with its unit; the bare digit is presentation-only", () => {
+    const markup = renderToStaticMarkup(
+      <SectionHeader count={1} countUnit="record" title="Needs your check" tone="attention" />,
+    );
+
+    expect(markup).toContain('aria-hidden="true">1</span>');
+    expect(markup).toContain("1 record");
+  });
 });
 
 describe("LedgerHeader", () => {

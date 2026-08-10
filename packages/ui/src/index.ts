@@ -8,7 +8,6 @@ export { Button, type ButtonProps, type ButtonVariant } from "./primitives/butto
 export {
   Dialog,
   DialogActions,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogTitle,
