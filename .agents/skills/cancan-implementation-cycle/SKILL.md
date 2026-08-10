@@ -1,6 +1,6 @@
 ---
 name: cancan-implementation-cycle
-description: Implement CanCan feature slices with docs, tests, build, UI inspection, and progress updates aligned. Use when building, fixing, or changing CanCan code or implementation specs.
+description: Implement CanCan feature slices with docs, tests, build, UI inspection, and progress updates aligned. Use when building or changing CanCan code or implementation specs; fixing a filed bug routes through cancan-issue-fixing.
 ---
 
 # CanCan Implementation Cycle
