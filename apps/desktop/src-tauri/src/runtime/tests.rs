@@ -1333,6 +1333,53 @@ fn classifies_a_missing_wrapper_consistently_as_an_invalid_vault() {
 }
 
 #[test]
+fn cleans_up_inactive_vault_create_candidates_on_construction() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let root = parent.path().join("vault");
+    let candidate = parent.path().join(candidate_name());
+    fs::create_dir(&candidate).expect("create inactive candidate");
+
+    let _runtime = VaultRuntime::new(root);
+
+    assert!(
+        !candidate.exists(),
+        "inactive candidate directory should be removed during runtime construction"
+    );
+}
+
+#[test]
+fn leaves_unrelated_entries_unchanged_when_cleaning_inactive_candidates() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let root = parent.path().join("vault");
+
+    let active_vault = parent.path().join("vault");
+    let unrelated_dir = parent.path().join("vault-create-1234567890abcdef");
+    let file_with_prefix = parent.path().join(".vault-create-1234567890abcdef");
+    let short_suffix = parent.path().join(".vault-create-1234567890abcde");
+    let non_hex_suffix = parent.path().join(".vault-create-1234567890abcdeg");
+
+    fs::create_dir(&active_vault).expect("create active vault directory");
+    fs::create_dir(&unrelated_dir).expect("create unrelated directory");
+    fs::write(&file_with_prefix, b"not a directory").expect("create file with candidate prefix");
+    fs::create_dir(&short_suffix).expect("create short-suffix directory");
+    fs::create_dir(&non_hex_suffix).expect("create non-hex-suffix directory");
+
+    let _runtime = VaultRuntime::new(root);
+
+    assert!(active_vault.exists(), "active vault directory must remain");
+    assert!(unrelated_dir.exists(), "missing-dot directory must remain");
+    assert!(
+        file_with_prefix.exists(),
+        "candidate-prefixed file must remain"
+    );
+    assert!(short_suffix.exists(), "short-suffix directory must remain");
+    assert!(
+        non_hex_suffix.exists(),
+        "non-hex-suffix directory must remain"
+    );
+}
+
+#[test]
 fn rejects_unlock_when_the_existing_vault_database_is_missing() {
     let parent = tempfile::tempdir().expect("temporary app data");
     let root = parent.path().join("vault");

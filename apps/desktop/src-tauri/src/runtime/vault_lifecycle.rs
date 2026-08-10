@@ -52,7 +52,7 @@ impl VaultRuntime {
         local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
         gmail_refresh_tokens: Arc<dyn GmailRefreshTokenStore>,
     ) -> Self {
-        Self {
+        let runtime = Self {
             inner: Arc::new(RuntimeInner {
                 document_passwords: Mutex::new(HashMap::new()),
                 gmail_refresh_tokens,
@@ -71,7 +71,11 @@ impl VaultRuntime {
                 #[cfg(test)]
                 intake_test_hooks: Mutex::new(IntakeTestHooks::default()),
             }),
+        };
+        if let Some(parent) = runtime.inner.root.parent() {
+            cleanup_inactive_vault_candidates(parent);
         }
+        runtime
     }
 
     pub(crate) fn access_status(&self) -> Result<VaultAccessStatus, RuntimeError> {
