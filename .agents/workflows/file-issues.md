@@ -36,12 +36,12 @@ GitHub forms:
   - *Feature:* the capability gap as Problem; **Spec change = the spec
     proposal** — the issue's first PR lands it together with the code.
 - **Designer-level UI findings** → the `ui_review_finding.yml` form:
-  Summary / Findings (numbered, each with `file:line` from the current
-  working tree and the spec/standard reference, e.g. WCAG 2.5.8,
-  `docs/specs/0008-design-system.md`) / Fix plan (minimal direction;
-  where a shared-component fix exists, name the shared fix and list every
-  call site that must move with it) / Verification (`pnpm verify:fast`,
-  targeted tests, preview states, design-review handoff).
+  Area / Severity / Current behavior and evidence / Expected behavior and
+  spec reference / Fix approach / Verification notes. Evidence carries
+  `file:line` from the current working tree and the spec/standard
+  reference (e.g. WCAG 2.5.8, `docs/specs/0008-design-system.md`); where
+  a shared-component fix exists, Fix approach names the shared fix and
+  every call site that must move with it.
 - Every standard issue ends with the `**Dedup check**: …` verdict from
   Step 1, so the tracker proves each issue earned its slot.
 
@@ -50,8 +50,9 @@ GitHub forms:
 - Labels follow `issue-delivery.md` → Policy exactly: one primary
   category, one `priority:p0|p1|p2|p3` (impact rubric, never difficulty),
   one `scope:small|medium|large`; `ui-review` as the companion label for
-  design findings. For UI findings the `ui_review_finding.yml` severity
-  dropdown maps 1:1 onto the `priority:p*` label (P1 → `priority:p1`, …).
+  design findings. The form's Severity dropdown values (P1 — obvious
+  defect / P2 — experience blemish / P3 — style inconsistency) map onto
+  the `priority:p*` label (`priority:p1` … `priority:p3`).
 - Never put real financial data, account numbers, or secrets in an issue.
   Screenshots only of non-sensitive states.
 - One issue = one root cause = one fix PR. If a finding bundles
