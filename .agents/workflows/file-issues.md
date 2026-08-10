@@ -23,22 +23,40 @@ Use when the user asks to report a problem or when a review/fix session discover
 
 ## Step 2 — Write the issue
 
-Follow the repo's form for the class: `.github/ISSUE_TEMPLATE/bug_report.yml` for bugs, `ui_review_finding.yml` for designer-level UI findings, `feature_request.yml` for capability asks. Body shape:
+Follow the class's canonical form — both templates are authoritative in
+`.agents/workflows/issue-delivery.md` → Policy → Issue template and in the
+GitHub forms:
 
-1. **Summary** — one sentence: what is broken and where.
-2. **Findings** — numbered, each with `file:line` from the current working tree, what exists today, and why it is wrong (spec/standard reference where one exists, e.g. WCAG 2.5.8, `docs/specs/0008-design-system.md`).
-3. **Fix plan** — minimal change direction; where a shared-component fix exists, name the shared fix and list every call site that must be updated with it.
-4. **Verification** — deterministic steps (`pnpm verify:fast`, targeted tests, preview states) and, for UI, the design-review handoff note.
-5. **Spec change** — `None expected`, or the spec that must move with the fix.
+- **Standard bugs, features, refactors, docs** → the six sections:
+  Problem / Expected / Impact / Proposed scope / Verification / **Spec
+  change** (`.github/ISSUE_TEMPLATE/bug_report.yml` for bugs,
+  `feature_request.yml` for capability asks).
+  - *Bug:* concrete repro steps, logs, app version; Spec change = the
+    contract fix or `No spec change`.
+  - *Feature:* the capability gap as Problem; **Spec change = the spec
+    proposal** — the issue's first PR lands it together with the code.
+- **Designer-level UI findings** → the `ui_review_finding.yml` form:
+  Summary / Findings (numbered, each with `file:line` from the current
+  working tree and the spec/standard reference, e.g. WCAG 2.5.8,
+  `docs/specs/0008-design-system.md`) / Fix plan (minimal direction;
+  where a shared-component fix exists, name the shared fix and list every
+  call site that must move with it) / Verification (`pnpm verify:fast`,
+  targeted tests, preview states, design-review handoff).
+- Every standard issue ends with the `**Dedup check**: …` verdict from
+  Step 1, so the tracker proves each issue earned its slot.
 
 ## Step 3 — Labels and hygiene
 
-- Labels (match `gh label list` exactly): one type (`bug`, `documentation`, `enhancement`, `infrastructure`, `performance`, `refactor`, `security`, `test`), `ui-review` for design-level UI findings, one `priority:p0|p1|p2|p3`, one `scope:small|medium|large`. Classes without their own label use the de-facto mapping: decision → `enhancement`, chore → `refactor` or `infrastructure`.
-  - p0 = blocks a release, active data loss/corruption, or privacy/secrets exposure; p1 = a core flow broken for real users or a regression on the happy path; p2 = degraded UX, correctness debt, or missing tests; p3 = polish, nice-to-have, backlog fodder.
-  - small = up to half a day, one file or one concern; medium = a few days, touches multiple packages or spec + code; large = multi-session, must be mapped to a slice and split into sub-issues.
-  - For UI findings, the `ui_review_finding.yml` severity dropdown maps 1:1 onto the `priority:p*` label (P1 → `priority:p1`, and so on).
-- Never put real financial data, account numbers, or secrets in an issue. Screenshots only of non-sensitive states.
-- One issue = one root cause = one fix PR. If a finding bundles independent defects, split it before filing (or say explicitly that the bundled findings share one root cause).
+- Labels follow `issue-delivery.md` → Policy exactly: one primary
+  category, one `priority:p0|p1|p2|p3` (impact rubric, never difficulty),
+  one `scope:small|medium|large`; `ui-review` as the companion label for
+  design findings. For UI findings the `ui_review_finding.yml` severity
+  dropdown maps 1:1 onto the `priority:p*` label (P1 → `priority:p1`, …).
+- Never put real financial data, account numbers, or secrets in an issue.
+  Screenshots only of non-sensitive states.
+- One issue = one root cause = one fix PR. If a finding bundles
+  independent defects, split it before filing (or say explicitly that the
+  bundled findings share one root cause).
 
 ## Step 4 — Close the loop
 

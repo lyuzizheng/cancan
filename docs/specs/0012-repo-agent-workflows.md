@@ -47,6 +47,8 @@ AGENTS.md
     design-grill.md
     implement-feature.md
     issue-delivery.md
+    file-issues.md
+    fix-issue.md
     plugin-work.md
     refine-architecture.md
     refine-ui.md
@@ -59,6 +61,8 @@ AGENTS.md
     cancan-docs-orientation/
     cancan-implementation-cycle/
     cancan-issue-triage/
+    cancan-issue-filing/
+    cancan-issue-fixing/
     cancan-testing-simulation/
     cancan-ui-quality/
   scripts/

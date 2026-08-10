@@ -33,7 +33,7 @@ During the fix, anything that is wrong but NOT part of this issue's root cause g
 ## Step 5 — Land it
 
 1. Conventional branch name (`fix/…`, `chore/…`, `feat/…`), Conventional Commit subject, concise PR title/body per `.github/PULL_REQUEST_TEMPLATE.md`. No Jira linkage; no `gh-create-pr-from-branch`.
-2. PR links the issue (`Fixes #N`); body lists divergences from the issue text with reasons.
+2. PR links the issue (`Closes #n` in the description, per `issue-delivery.md`); body lists divergences from the issue text with reasons.
 3. Update `docs/agent/progress-log.md` with a dated entry (gates + scope).
 4. When docs/`.agents`/`.codex`/`AGENTS.md` changed, run the independent semantic review gate (`.agents/docs-semantic-review.md`) — the reviewer must not be the patch author.
 5. Close the issue after merge (or leave closing to the owner when they want to verify first).
