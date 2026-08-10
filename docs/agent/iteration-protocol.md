@@ -25,21 +25,7 @@ build/package
 
 ## 3. Plan from specs
 
-For implementation work, select a slice from `docs/agent/implementation-slices.md` and generate `.agents/scripts/context-for-slice.sh <slice-id>`. If no slice/spec owns the behavior, update the focused plan/spec before coding.
-
-Obey the generated readiness result. `STOP` blocks coding. `EVIDENCE ONLY` permits only the bounded disposable spike/test work named by the slice and never production code. `READY` permits implementation.
-
-A coding plan should include:
-
-```text
-files/packages touched
-schema/migration impact
-service/API impact
-UI impact
-test strategy
-build/run validation
-required doc updates
-```
+Plan implementation with `.agents/workflows/implement-feature.md` (Stage 2 of the issue loop): select a slice from `docs/agent/implementation-slices.md`, generate `.agents/scripts/context-for-slice.sh <slice-id>`, and obey the generated `STOP` / `EVIDENCE ONLY` / `READY` readiness. The plan checklist (files/packages, schema, service/API, UI, tests, build/run validation, docs) is canonical in `issue-delivery.md` Stage 1. If no slice/spec owns the behavior, update the focused plan/spec before coding.
 
 ## 4. Implement in small slices
 

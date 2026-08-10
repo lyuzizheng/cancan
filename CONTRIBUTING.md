@@ -37,7 +37,7 @@ GitHub issues are the single entry point for all work — fixes, features, refac
 ## Pull request requirements
 
 - Keep pull requests small and reviewable; one concern per pull request.
-- Every PR closes an issue: `Closes #<n>` in the description. Link the `docs/specs/` section the PR changes whenever behavior changes; a feature issue's first PR lands spec + implementation together.
+- Every PR closes an issue: `Closes #<n>` in the description — except trivial no-behavior fixes (typo, comment, formatting, dead link), which may ship without an issue. Link the `docs/specs/` section the PR changes whenever behavior changes; a feature issue's first PR lands spec + implementation together.
 - Include tests or other deterministic evidence for the change. Bug fixes should add a regression test where the project already has tests.
 - Use conventional branch names (`feat/...`, `fix/...`, `chore/...`) and Conventional Commit subjects.
 - Never include real financial data, account numbers, or secrets in tests, fixtures, screenshots, or pull request descriptions — synthetic fixtures only.

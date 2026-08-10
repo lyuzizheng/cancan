@@ -207,7 +207,7 @@ cp "$router" "$router.bak"
 sed 's#\./workflows/design-grill[.]md#./workflows/missing-design-grill.md#' "$router.bak" > "$router"
 restore_expect "$router" "broken router target" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-links.sh"
 
-skill="$TEST_ROOT/.agents/skills/cancan-docs-orientation/SKILL.md"
+skill="$TEST_ROOT/.agents/skills/cancan-code-review/SKILL.md"
 cp "$skill" "$skill.bak"
 sed '2s/.*/name: wrong-name/' "$skill.bak" > "$skill"
 restore_expect "$skill" "skill name mismatch" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-agent-skills.sh"
