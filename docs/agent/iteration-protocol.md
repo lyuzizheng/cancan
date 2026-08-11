@@ -72,7 +72,7 @@ Use the narrowest layer that proves the change. Add Tauri and UI flow evidence o
 
 At the end of a meaningful change:
 
-- update `docs/agent/progress-log.md`;
+- update `docs/agent/progress-log.md` when a product decision, implementation scope, or architecture assumption changes (otherwise the PR body is the record);
 - update `docs/agent/current-state.md` when focus or decisions change;
 - update `docs/specs/` when implementation contracts change;
 - update ADRs when a major architecture decision is accepted or replaced.

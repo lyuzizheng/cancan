@@ -92,7 +92,7 @@ scripts/test-setup-dev.sh
 echo
 echo "Read order: docs/agent/reading-order.md"
 
-echo "Semantic review rule: required for changes under docs/, .agents/, .codex/, AGENTS.md, or the docs-harness workflow"
+echo "Semantic review rule: required for docs/harness/agent-config changes per .agents/docs-semantic-review.md (append-only progress-log is author-self-checked)"
 echo "Deterministic CI does not attest semantic review."
 echo "Packet: .agents/scripts/docs-review-packet.sh <base>"
 echo "Slices: .agents/scripts/implementation-slices.rb list"
