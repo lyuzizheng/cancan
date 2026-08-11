@@ -4,6 +4,13 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-08-11 (harness)
+
+### Completed
+
+- Trimmed the over-triggered semantic review and progress-log churn (issue #123, `chore/harness-trim-review-loop`). `.agents/docs-semantic-review.md` (canonical trigger) now exempts a change confined to append-only narrative memory (`progress-log.md`/archive) from an independent reviewer — the author self-checks it and the PR body carries the record — while every product-truth/authority surface stays fully gated; `AGENTS.md` §7 and the `agent-preflight.sh` echo point at that canonical rule instead of restating a drifting scope list. The reviewer output now scopes each finding `introduced` vs `pre-existing`; only `introduced` P0/P1 can force `fail`/`needs_design`, and `fix-issue.md` gained a matching blast-radius rule (pre-existing, out-of-scope defects are follow-ups, never PR scope-creep). The progress-log update obligation in `fix-issue.md` Step 5 and `iteration-protocol.md` §6 was reconciled to the log's own bar (meaning changes only). Follow-up #124 reconciles `reading-order.md`/`consistency-checklist.md` to the same bar.
+- Gates: `.agents/scripts/agent-preflight.sh`, `.agents/scripts/harness-self-test.sh` — pass. Independent semantic review (non-author subagent) — pass.
+
 ## 2026-08-10
 
 ### Completed
