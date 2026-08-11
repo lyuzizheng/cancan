@@ -13,7 +13,7 @@ export function DocsPage() {
       <h2 id="vault">Your Vault</h2>
       <ul>
         <li><strong>Create</strong> a Vault with one password on first launch. It encrypts your documents and data on this Mac.</li>
-        <li><strong>Unlock</strong> with that password each session, or let CanCan remember the Vault on this Mac — the key stays in your macOS Keychain and you can forget it anytime.</li>
+        <li><strong>Unlock</strong> with that password each session, or opt in to Touch ID on this Mac — the key stays in your macOS Keychain. If Touch ID is unavailable or your enrolled fingerprints change, the Vault password is the only fallback.</li>
         <li><strong>Save your recovery file</strong> when prompted and store it privately. Anyone holding it can recover compatible Vault data.</li>
         <li><strong>Lock Vault</strong> from the header whenever you step away; all finance and review state clears immediately.</li>
       </ul>
@@ -21,7 +21,7 @@ export function DocsPage() {
       <h2 id="evidence">Adding evidence</h2>
       <ul>
         <li><strong>Add file</strong> in Sources to import statement PDFs, CSVs, PNGs, or JPEGs. CanCan saves a verified copy into your Vault before parsing.</li>
-        <li><strong>CanCan Inbox</strong>: choose your Cancan folder in iCloud Drive once. CanCan creates or reuses only its Inbox and Backups children, reads statements only from Inbox, and never modifies, moves, or deletes the source files you place there.</li>
+        <li><strong>CanCan Inbox</strong>: choose your Cancan folder in iCloud Drive once, then use the phone Share Shortcut to save statements from your bank app, or add files directly on your Mac. CanCan creates or reuses only its Inbox and Backups children, reads statements only from Inbox, and never modifies, moves, or deletes the source files you place there.</li>
         <li>Documents show truthful states — Ready, Processing, Needs attention, File deleted — so you always know what is happening.</li>
       </ul>
 

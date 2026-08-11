@@ -4,6 +4,18 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-08-11
+
+### Completed
+
+- Fixed website copy for issues #82 and #121 (`fix/website-gmail-preview-copy`). Corrected `apps/website/src/pages/HomePage.tsx` and `PrivacyPage.tsx` (#82) so the first-preview floor is stated as local file ingestion plus the phone Share Shortcut into the `Cancan` iCloud Drive Inbox, source coverage is DBS/HSBC/UOB, and Gmail is marked as an optional, independently gated capability that ships only after Google verification — not a first-preview blocker. Also corrected `apps/website/src/pages/DocsPage.tsx` and `SecurityPage.tsx` (#121) to describe Touch ID as the only opt-in remembered unlock with the Vault password as fallback, and to mention the phone Share Shortcut for the `Cancan` Inbox. No spec change; `0018` and `0009` already own the positioning.
+- Gates: `pnpm --filter @cancan/website typecheck`, `pnpm check:website`, `.agents/scripts/agent-preflight.sh` — pass.
+
+### Next
+
+- Continue remaining open issues: #89 inactive `.vault-create-*` cleanup, and phase1-intake-experience checkpoints noted on 2026-08-08.
+- Remaining UI-review findings: #78 and the #74 disclosure-transition item — held for an owner design decision, no code yet.
+
 ## 2026-08-10
 
 ### Completed

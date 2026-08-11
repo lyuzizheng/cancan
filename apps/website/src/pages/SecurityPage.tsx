@@ -13,7 +13,7 @@ export function SecurityPage() {
       <h2 id="model">How CanCan protects your data</h2>
       <ul>
         <li>The Vault is a SQLCipher-encrypted database and encrypted file store on your Mac, unlocked by your password with an Argon2id-derived key.</li>
-        <li>Vault keys, remembered unlock, statement passwords, and OAuth refresh tokens live in the macOS Keychain.</li>
+        <li>Vault keys, Touch ID-protected unlock, statement passwords, and OAuth refresh tokens live in the macOS Keychain.</li>
         <li>Document viewing renders in memory — no plaintext temp files. Source files are copied into the Vault with verified bytes and SHA-256 identity; duplicates and deleted files are handled deterministically.</li>
         <li>The renderer never receives raw file bytes, filesystem paths, hashes, locators, or database handles — only bounded, presentation-safe read models.</li>
         <li>Network access exists only for connections you enable: Gmail (official API, read-only scope), your own AI provider, and optional update checks that verify signed metadata.</li>
@@ -59,7 +59,7 @@ export function SecurityPage() {
         <div className="meta-row">
           <dt>Secrets</dt>
           <dd>
-            Vault keys, remembered unlock, OAuth refresh tokens, and statement
+            Vault keys, Touch ID-protected unlock, OAuth refresh tokens, and statement
             passwords live in the macOS Keychain — never in the database or in
             plain files.
           </dd>
