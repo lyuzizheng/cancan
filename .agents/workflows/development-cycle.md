@@ -4,7 +4,7 @@ Use this workflow for any non-trivial coding or documentation task.
 
 ## Loop
 
-0. Ensure a tracked GitHub issue exists for this work (search first; if none, file one with the `cancan-issue-triage` skill — policy in the `issue-delivery` workflow). Implementation never starts issue-less.
+0. Ensure a tracked GitHub issue exists for this work (search first; if none, file one with the `cancan-issue-triage` skill — policy in the `issue-delivery` workflow). Implementation never starts issue-less, except the trivial no-behavior carve-out in `AGENTS.md` §10 (typo/comment/formatting/dead link).
 1. Run `.agents/scripts/agent-preflight.sh`.
 2. Route the prompt with `.agents/ROUTER.md`.
 3. Read the selected skill and workflow.

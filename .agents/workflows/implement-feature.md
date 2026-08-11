@@ -1,35 +1,22 @@
 # Implement Feature Workflow
 
-Use this when the user asks to build, add, fix, or change behavior.
+Implementing a slice is **Stage 2 of the issue loop**. The canonical steps and
+the plan checklist live in `.agents/workflows/issue-delivery.md` (Stages 1–2),
+and the verification order lives in `.agents/workflows/development-cycle.md`.
+This file is the operational reminder; it does not restate the loop.
 
-## Steps
-
-1. Ensure a tracked GitHub issue exists for this work (search first; if none, file one with the `cancan-issue-triage` skill — `issue-delivery` Stage 0). Implementation never starts issue-less.
+1. Ensure a tracked issue exists (or the trivial carve-out in `AGENTS.md` §10 applies).
 2. Run `.agents/scripts/agent-preflight.sh`.
-3. Select one ID from `docs/agent/implementation-slices.md`.
-4. Generate `.agents/scripts/context-for-slice.sh <slice-id>`. Open the full contents of every source listed by the generated index from the exact working tree and head before planning or coding; record that head and source list for review. Use this bounded spec/ADR set instead of reading unrelated specs.
-5. Obey the packet's readiness result:
-   - `STOP`: do not code the slice;
-   - `EVIDENCE ONLY`: run only the bounded disposable spike/test work named by the slice; do not add production code;
-   - `READY`: implementation may proceed.
-6. If no slice owns the behavior, update the implementation-slice plan before coding.
-7. State assumptions and success criteria.
-8. Plan the smallest complete part of that vertical slice:
-   - files/packages touched;
-   - schema impact;
-   - service/API impact;
-   - UI impact;
-   - fixture/test strategy;
-   - docs updates.
-9. Implement it.
-   - When delegated, the implementer is the only production-code writer.
-   - The implementer owns focused tests for the changed behavior and failure paths.
-10. Use the risk-sized verification order in `.agents/workflows/development-cycle.md`; run focused checks while iterating and the applicable final app gate once after required code review passes.
-11. For data changes, reset only the test DB once a DB exists.
-12. For parser/AI changes, use deterministic mocked/stored AI outputs.
-13. For UI changes, inspect visually once an app exists.
-14. Update docs/progress and generate `.agents/scripts/implementation-review-packet.sh <slice-id> <base>` for review.
+3. Select one slice ID from `docs/agent/implementation-slices.md` and generate
+   `.agents/scripts/context-for-slice.sh <slice-id>`; open every listed source in
+   full from the exact working tree and head, and record that head and source list.
+4. Obey the packet readiness: `STOP` blocks coding; `EVIDENCE ONLY` permits only
+   the named disposable spike/test work and no production code; `READY` permits
+   implementation. If no slice owns the behavior, update the slice plan first.
+5. Make the smallest complete change (spec + code together when behavior changes),
+   own focused tests for the changed behavior and its failure paths, and verify
+   sized to the tier in `development-cycle.md`.
+6. For any required independent review, freeze the cumulative diff and generate
+   `.agents/scripts/implementation-review-packet.sh <slice-id> <base>`.
 
-Freeze the cumulative diff before any required independent review. Route findings back to the production-code writer instead of allowing concurrent fixes; do not add tester/reviewer roles that the selected execution tier does not justify.
-
-Read current implementation state directly from the indexed `docs/agent/current-state.md`; the compact packet does not contain or replace that source. Do not copy state or planned command names into this workflow.
+One production-code writer; never run source-writing agents concurrently.
