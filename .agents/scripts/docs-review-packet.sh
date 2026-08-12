@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-cd "$ROOT"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 base="${1:-HEAD}"
 git rev-parse --verify "$base" >/dev/null
 
-sed -n '1,240p' .agents/docs-semantic-review.md
+cat .agents/docs-semantic-review.md
 
 echo
 echo "## Changed files against $base"

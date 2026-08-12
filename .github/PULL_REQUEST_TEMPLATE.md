@@ -4,9 +4,9 @@
 
 ## Links
 
-<!-- Every PR closes an issue: `Closes #<n>`. Behavior changes also link the spec section this PR lands — the first PR of a feature issue lands spec + implementation together. -->
+<!-- Every PR closes an issue: `Closes #<n>` (except trivial no-behavior fixes — typo, comment, formatting, dead link — per AGENTS.md §10). Behavior changes also link the spec section this PR lands — the first PR of a feature issue lands spec + implementation together. -->
 
-- Closes: #<issue number>
+- Closes: #<issue number> <!-- or `trivial — no issue` for a typo/formatting-only PR -->
 - Spec: `docs/specs/<NNNN-….md>` §<section> (required when behavior changes; `No spec change` otherwise)
 
 ## Evidence

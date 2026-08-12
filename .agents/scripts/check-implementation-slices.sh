@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${CANCAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+require_tools rg ruby
+
+# This gate validates structural wiring, required headings, and the review-packet
+# generator's own output contract. It deliberately does NOT grep for exact English
+# sentences in human-authored docs (AGENTS.md, .agents/workflows/*.md): those
+# behavioral rules have one canonical home and are reviewed semantically, not by
+# string match. Coupling the gate to prose made benign rewording break CI.
 
 required=(
   ".agents/scripts/implementation-slices.rb"
@@ -50,22 +57,8 @@ if ! rg -q 'context-for-slice[.]sh' "$ROOT/.agents/workflows/simulated-testing.m
 fi
 
 development_cycle="$ROOT/.agents/workflows/development-cycle.md"
-implement_workflow="$ROOT/.agents/workflows/implement-feature.md"
 review_workflow="$ROOT/.agents/workflows/review-code.md"
-testing_workflow="$ROOT/.agents/workflows/simulated-testing.md"
 review_packet="$ROOT/.agents/scripts/implementation-review-packet.sh"
-
-if ! rg -q 'open the full contents of every listed source from the exact working tree and head' "$ROOT/AGENTS.md"; then
-  echo "Root instructions must require full canonical-source inspection from the exact working tree and head."
-  exit 1
-fi
-
-for workflow in "$implement_workflow" "$review_workflow" "$testing_workflow"; do
-  if ! rg -qi 'open the full contents of every source listed by the generated index' "$workflow"; then
-    echo "Implementation, review, and testing must retain full indexed-source inspection: $workflow"
-    exit 1
-  fi
-done
 
 if ! rg -q '[.]agents/scripts/agent-preflight[.]sh' "$development_cycle"; then
   echo "Development cycle must retain the repository preflight."
@@ -80,40 +73,6 @@ fi
 cleanup_gate_count="$(rg -c '^## Critical cleanup gate$' "$review_workflow" || true)"
 if [ "${cleanup_gate_count:-0}" -ne 1 ]; then
   echo "Review workflow must contain exactly one Critical cleanup gate."
-  exit 1
-fi
-
-cleanup_anchors=(
-  'Reject overengineering:'
-  'superseded paths and diff-created orphans'
-  'package boundaries and public APIs'
-  'magic logic:.*tests that hit the active path'
-)
-for anchor in "${cleanup_anchors[@]}"; do
-  if ! rg -q "$anchor" "$review_workflow"; then
-    echo "Critical cleanup gate is missing required review content: $anchor"
-    exit 1
-  fi
-done
-
-if ! rg -q 're-review the entire cumulative diff' "$development_cycle" ||
-   ! rg -q 're-review the entire cumulative diff' "$review_workflow"; then
-  echo "Testing and review must repeat over the entire cumulative diff after fixes."
-  exit 1
-fi
-
-if ! rg -q 'Do not duplicate the root transcript or tool history' "$development_cycle"; then
-  echo "Independent roles must receive a compact handoff instead of the root transcript."
-  exit 1
-fi
-
-if ! rg -q 'canonical sources inspected at the exact head commit' "$development_cycle"; then
-  echo "Independent role handoffs must record canonical-source inspection at the exact head."
-  exit 1
-fi
-
-if ! rg -q 'inspect the complete cumulative diff directly from the shared repository' "$review_workflow"; then
-  echo "Review workflow must inspect the complete cumulative diff from the shared repository."
   exit 1
 fi
 

@@ -25,7 +25,6 @@ Do not load every spec by default unless the task spans the whole system.
 | `0009-backup-restore-versioning.md` | Backup bundles, restore, schema/version compatibility, secrets policy |
 | `0010-agentic-development-workflow.md` | Build/test/package/inspect workflow for AI coding agents |
 | `0011-visual-design-tokens.md` | Colors, typography, spacing, radius, motion tokens |
-| `0012-repo-agent-workflows.md` | Repo-local agent harness, deterministic gates, and semantic review |
 | `0013-ledger-assets-valuation.md` | Ledger, valuations, snapshots, trades, multi-currency behavior |
 | `0014-money-overview-source-taxonomy.md` | Money Overview, no base currency, source/account/instrument taxonomy |
 | `0015-job-engine-error-model.md` | Durable jobs, blocked states, retry, recovery, errors |
@@ -37,6 +36,9 @@ Do not load every spec by default unless the task spans the whole system.
 ## Adding a new spec
 
 Add a new spec only when no existing spec can own the decision.
+
+Spec numbers are assigned once and never reused; a gap in the sequence just
+means a spec was removed and its topic now lives elsewhere.
 
 Required format:
 

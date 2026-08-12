@@ -4,7 +4,9 @@ One issue, one loop, one PR. This workflow is the end-to-end executor for
 **all** CanCan work — fixes, features, refactors, docs: every slice of work
 enters as a GitHub issue and runs the same stages. A feature request is an
 `enhancement`-category issue; its body proposes the spec change and its
-**first PR lands the spec change and the implementation together**.
+**first PR lands the spec change and the implementation together**. The only
+exception is the trivial no-behavior carve-out in `AGENTS.md` §10 (typo,
+comment, formatting, dead link), which may ship without an issue.
 
 `docs/specs/` owns intended product and implementation behavior; this
 workflow owns the issue procedure only. Implementation mechanics stay in
@@ -138,11 +140,20 @@ stays the local narrative log; the issue is the canonical status.
 - Re-read the issue against `docs/agent/current-state.md` and the affected
   spec sections; check the slice's packet readiness
   (`STOP` / `EVIDENCE ONLY` / `READY`).
+- **Verify before you trust** (critical-fix doctrine, `.agents/workflows/fix-issue.md`):
+  the issue text is a hypothesis — reproduce its claims against current
+  code and correct the issue in a comment when a cited site is wrong or
+  already compliant. Fix the shared root cause and sweep sibling call
+  sites (举一反三) in the same PR; escalate new separable findings as
+  follow-up issues (through `cancan-issue-filing`'s dedup gate) or
+  comments, linked both ways.
 - If the spec proposal or priority/scope is unclear, grill the reporter
   (`.agents/workflows/design-grill.md`) or comment on the issue — never infer
   unresolved product, financial, security, or irreversible data decisions.
-- Comment the plan: files/packages touched, spec sections to change, test
-  strategy, execution tier from `development-cycle.md`.
+- Comment the plan — this is the canonical implement checklist: files/packages
+  touched, schema/migration impact, service/API impact, UI impact,
+  test/fixture strategy, docs to update, the spec sections to change, and the
+  execution tier from `development-cycle.md`.
 
 ### Stage 2 — Implement (test-first, spec + code together)
 
