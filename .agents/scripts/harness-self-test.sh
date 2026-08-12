@@ -411,6 +411,10 @@ cp "$workflow" "$workflow.bak"
 sed 's#actions/checkout@v7#actions/checkout@v4#' "$workflow.bak" > "$workflow"
 restore_expect "$workflow" "docs CI uses deprecated action runtime" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 
+cp "$workflow" "$workflow.bak"
+grep -v '^  cancel-in-progress: true$' "$workflow.bak" > "$workflow"
+restore_expect "$workflow" "docs CI loses superseded-run cancellation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
 application_workflow="$TEST_ROOT/.github/workflows/application.yml"
 cp "$application_workflow" "$application_workflow.bak"
 grep -v '^        run: pnpm verify:fast$' "$application_workflow.bak" > "$application_workflow"
@@ -419,6 +423,10 @@ restore_expect "$application_workflow" "fast application CI missing verify gate"
 cp "$application_workflow" "$application_workflow.bak"
 grep -v '^  cancel-in-progress: true$' "$application_workflow.bak" > "$application_workflow"
 restore_expect "$application_workflow" "fast application CI loses superseded-run cancellation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
+cp "$application_workflow" "$application_workflow.bak"
+sed 's#      - apps/desktop/[*][*]#      - apps/**#' "$application_workflow.bak" > "$application_workflow"
+restore_expect "$application_workflow" "fast application CI regains isolated website trigger" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 
 native_workflow="$TEST_ROOT/.github/workflows/application-native.yml"
 cp "$native_workflow" "$native_workflow.bak"
@@ -463,10 +471,35 @@ cp "$runtime_workflow" "$runtime_workflow.bak"
 ruby -0pi -e 'sub("      - .github/workflows/document-normalizer-runtime.yml\n", "      - .github/workflows/document-normalizer-runtime.yml\n      - unrelated/**\n")' "$runtime_workflow"
 restore_expect "$runtime_workflow" "runtime CI gains unrelated trigger path" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 
+cp "$runtime_workflow" "$runtime_workflow.bak"
+grep -v '^  cancel-in-progress: true$' "$runtime_workflow.bak" > "$runtime_workflow"
+restore_expect "$runtime_workflow" "runtime CI loses superseded-run cancellation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
 vault_workflow="$TEST_ROOT/.github/workflows/vault-security-validation.yml"
 cp "$vault_workflow" "$vault_workflow.bak"
 grep -v '^        run: bash spikes/vault-security-validation/scripts/verify[.]sh$' "$vault_workflow.bak" > "$vault_workflow"
 restore_expect "$vault_workflow" "vault CI missing security validation gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
+cp "$vault_workflow" "$vault_workflow.bak"
+grep -v '^  cancel-in-progress: true$' "$vault_workflow.bak" > "$vault_workflow"
+restore_expect "$vault_workflow" "vault CI loses superseded-run cancellation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
+website_workflow="$TEST_ROOT/.github/workflows/website.yml"
+cp "$website_workflow" "$website_workflow.bak"
+grep -v '^        run: pnpm check:website$' "$website_workflow.bak" > "$website_workflow"
+restore_expect "$website_workflow" "website CI missing check:website gate" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
+cp "$website_workflow" "$website_workflow.bak"
+grep -v '^  cancel-in-progress: true$' "$website_workflow.bak" > "$website_workflow"
+restore_expect "$website_workflow" "website CI loses superseded-run cancellation" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
+cp "$website_workflow" "$website_workflow.bak"
+sed 's#runs-on: ubuntu-24.04#runs-on: macos-14#' "$website_workflow.bak" > "$website_workflow"
+restore_expect "$website_workflow" "website CI escalates to a paid macOS runner" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
+cp "$website_workflow" "$website_workflow.bak"
+grep -v '^        run: pnpm --filter @cancan/website typecheck$' "$website_workflow.bak" > "$website_workflow"
+restore_expect "$website_workflow" "website CI loses its typecheck" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 
 desktop_package="$TEST_ROOT/apps/desktop/package.json"
 cp "$desktop_package" "$desktop_package.bak"

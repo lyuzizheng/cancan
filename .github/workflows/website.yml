@@ -1,34 +1,26 @@
-name: Application fast
+name: Website
 
 on:
   pull_request:
     paths:
-      - apps/desktop/**
-      - packages/**
+      - apps/website/**
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
-      - tsconfig.base.json
       - .node-version
-      - rust-toolchain.toml
       - scripts/dev-toolchain.env
-      - .github/workflows/application.yml
-      - .github/workflows/application-native.yml
+      - .github/workflows/website.yml
   push:
     branches:
       - main
     paths:
-      - apps/desktop/**
-      - packages/**
+      - apps/website/**
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
-      - tsconfig.base.json
       - .node-version
-      - rust-toolchain.toml
       - scripts/dev-toolchain.env
-      - .github/workflows/application.yml
-      - .github/workflows/application-native.yml
+      - .github/workflows/website.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -38,7 +30,7 @@ permissions:
   contents: read
 
 jobs:
-  fast-application-gate:
+  website-gate:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -52,11 +44,9 @@ jobs:
           corepack enable
           corepack install --global "pnpm@$PNPM_VERSION"
           test "$(pnpm --version)" = "$PNPM_VERSION"
-      - name: Install harness dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libdigest-sha-perl ripgrep ruby
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
-      - name: Run repository preflight
-        run: .agents/scripts/agent-preflight.sh
-      - name: Run fast application gate
-        run: pnpm verify:fast
+      - name: Typecheck the website
+        run: pnpm --filter @cancan/website typecheck
+      - name: Run static website gate
+        run: pnpm check:website

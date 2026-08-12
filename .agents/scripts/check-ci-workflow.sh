@@ -41,6 +41,15 @@ abort "push must include main branch" unless push_branches.include?("main")
 permissions = document["permissions"]
 abort "Workflow must use read-only contents permission" unless permissions.is_a?(Hash) && permissions["contents"] == "read"
 
+docs_concurrency = document["concurrency"]
+unless docs_concurrency.is_a?(Hash) &&
+       docs_concurrency["cancel-in-progress"] == true &&
+       docs_concurrency["group"].to_s.include?("github.workflow") &&
+       docs_concurrency["group"].to_s.include?("github.event.pull_request.number") &&
+       docs_concurrency["group"].to_s.include?("github.ref")
+  abort "Docs harness workflow must cancel superseded runs per PR or ref"
+end
+
 jobs = document["jobs"]
 job = jobs.is_a?(Hash) ? jobs["deterministic-docs-gate"] : nil
 abort "Workflow is missing deterministic-docs-gate job" unless job.is_a?(Hash)
@@ -68,7 +77,7 @@ unless application_events.keys.map(&:to_s).sort == %w[pull_request push]
 end
 
 application_paths = [
-  "apps/**",
+  "apps/desktop/**",
   "packages/**",
   "package.json",
   "pnpm-lock.yaml",
@@ -83,8 +92,13 @@ application_paths = [
 %w[pull_request push].each do |event|
   config = application_events[event]
   abort "Application workflow is missing #{event}" unless config.is_a?(Hash)
-  missing = application_paths - Array(config["paths"])
+  paths = Array(config["paths"])
+  missing = application_paths - paths
   abort "Application #{event} is missing paths: #{missing.join(', ')}" unless missing.empty?
+  forbidden = paths & ["apps/**", "apps/website/**"]
+  unless forbidden.empty?
+    abort "Fast application #{event} must not re-trigger on the isolated website; the Website workflow owns apps/website/**"
+  end
 end
 
 application_push_branches = Array(application_events.fetch("push")["branches"])
@@ -287,6 +301,15 @@ unless runtime_permissions.is_a?(Hash) && runtime_permissions["contents"] == "re
   abort "Runtime workflow must use read-only contents permission"
 end
 
+runtime_concurrency = runtime["concurrency"]
+unless runtime_concurrency.is_a?(Hash) &&
+       runtime_concurrency["cancel-in-progress"] == true &&
+       runtime_concurrency["group"].to_s.include?("github.workflow") &&
+       runtime_concurrency["group"].to_s.include?("github.event.pull_request.number") &&
+       runtime_concurrency["group"].to_s.include?("github.ref")
+  abort "Runtime workflow must cancel superseded runs per PR or ref"
+end
+
 runtime_jobs = runtime["jobs"]
 runtime_job = runtime_jobs.is_a?(Hash) ? runtime_jobs["document-normalizer-runtime-gate"] : nil
 abort "Runtime workflow is missing document-normalizer-runtime-gate job" unless runtime_job.is_a?(Hash)
@@ -352,6 +375,15 @@ unless vault_permissions.is_a?(Hash) && vault_permissions["contents"] == "read"
   abort "Vault workflow must use read-only contents permission"
 end
 
+vault_concurrency = vault["concurrency"]
+unless vault_concurrency.is_a?(Hash) &&
+       vault_concurrency["cancel-in-progress"] == true &&
+       vault_concurrency["group"].to_s.include?("github.workflow") &&
+       vault_concurrency["group"].to_s.include?("github.event.pull_request.number") &&
+       vault_concurrency["group"].to_s.include?("github.ref")
+  abort "Vault workflow must cancel superseded runs per PR or ref"
+end
+
 vault_jobs = vault["jobs"]
 vault_job = vault_jobs.is_a?(Hash) ? vault_jobs["vault-security-validation-gate"] : nil
 abort "Vault workflow is missing vault-security-validation-gate job" unless vault_job.is_a?(Hash)
@@ -369,6 +401,87 @@ end
 vault_combined_runs = vault_runs.join("\n")
 %w[rustup\ show\ active-toolchain cargo\ clippy\ --version].each do |required|
   abort "Vault workflow is missing toolchain step: #{required}" unless vault_combined_runs.include?(required)
+end
+
+website_path = ".github/workflows/website.yml"
+website = YAML.load_file(website_path)
+abort "Workflow must be a mapping: #{website_path}" unless website.is_a?(Hash)
+
+website_events = website["on"] || website[true]
+abort "Website workflow must define pull_request and push events" unless website_events.is_a?(Hash)
+unless website_events.keys.map(&:to_s).sort == %w[pull_request push]
+  abort "Website workflow must define only pull_request and push events"
+end
+
+website_paths = [
+  "apps/website/**",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  ".node-version",
+  "scripts/dev-toolchain.env",
+  website_path
+]
+%w[pull_request push].each do |event|
+  config = website_events[event]
+  abort "Website workflow is missing #{event}" unless config.is_a?(Hash)
+  paths = Array(config["paths"])
+  unless paths.sort == website_paths.sort
+    abort "Website #{event} paths must exactly match the isolated static-site inputs"
+  end
+end
+
+website_push_branches = Array(website_events.fetch("push")["branches"])
+abort "Website push must include main branch" unless website_push_branches.include?("main")
+
+website_permissions = website["permissions"]
+unless website_permissions.is_a?(Hash) && website_permissions["contents"] == "read"
+  abort "Website workflow must use read-only contents permission"
+end
+
+website_concurrency = website["concurrency"]
+unless website_concurrency.is_a?(Hash) &&
+       website_concurrency["cancel-in-progress"] == true &&
+       website_concurrency["group"].to_s.include?("github.workflow") &&
+       website_concurrency["group"].to_s.include?("github.event.pull_request.number") &&
+       website_concurrency["group"].to_s.include?("github.ref")
+  abort "Website workflow must cancel superseded runs per PR or ref"
+end
+
+website_jobs = website["jobs"]
+website_job = website_jobs.is_a?(Hash) ? website_jobs["website-gate"] : nil
+abort "Website workflow is missing website-gate job" unless website_job.is_a?(Hash)
+abort "Website workflow must run on ubuntu-24.04" unless website_job["runs-on"] == "ubuntu-24.04"
+
+website_steps = Array(website_job["steps"])
+website_uses = website_steps.map { |step| step.is_a?(Hash) ? step["uses"] : nil }.compact
+%w[actions/checkout@v7 actions/setup-node@v6].each do |required|
+  abort "Website workflow is missing #{required}" unless website_uses.include?(required)
+end
+
+website_setup_node = website_steps.find { |step| step.is_a?(Hash) && step["uses"] == "actions/setup-node@v6" }
+unless website_setup_node.is_a?(Hash) && website_setup_node.fetch("with", {})["node-version-file"] == ".node-version"
+  abort "Website workflow must source Node from .node-version"
+end
+
+website_runs = website_steps.map { |step| step.is_a?(Hash) ? step["run"] : nil }.compact
+unless website_runs.include?("pnpm check:website")
+  abort "Website workflow is missing the pnpm check:website gate"
+end
+unless website_runs.include?("pnpm --filter @cancan/website typecheck")
+  abort "Website workflow must type-check the website, which its build does not do"
+end
+unless website_runs.include?("pnpm install --frozen-lockfile")
+  abort "Website workflow must install workspace dependencies with a frozen lockfile"
+end
+
+website_combined_runs = website_runs.join("\n")
+[
+  "source scripts/dev-toolchain.env",
+  "corepack@$COREPACK_VERSION",
+  "pnpm@$PNPM_VERSION"
+].each do |required|
+  abort "Website workflow is missing toolchain step: #{required}" unless website_combined_runs.include?(required)
 end
 
 package = JSON.parse(File.read("package.json"))
