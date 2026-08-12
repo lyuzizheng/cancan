@@ -391,7 +391,9 @@ pub(super) fn cleanup_inactive_vault_candidates(parent: &Path) {
         };
         if name.len() != expected_len
             || !name.starts_with(prefix)
-            || !name[prefix_len..].chars().all(|c| c.is_ascii_hexdigit())
+            || !name[prefix_len..]
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
         {
             continue;
         }

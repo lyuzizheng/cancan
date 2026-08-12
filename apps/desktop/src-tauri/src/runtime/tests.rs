@@ -1357,12 +1357,14 @@ fn leaves_unrelated_entries_unchanged_when_cleaning_inactive_candidates() {
     let file_with_prefix = parent.path().join(".vault-create-1234567890abcdef");
     let short_suffix = parent.path().join(".vault-create-1234567890abcde");
     let non_hex_suffix = parent.path().join(".vault-create-1234567890abcdeg");
+    let uppercase_suffix = parent.path().join(".vault-create-ABCDEF0123456789");
 
     fs::create_dir(&active_vault).expect("create active vault directory");
     fs::create_dir(&unrelated_dir).expect("create unrelated directory");
     fs::write(&file_with_prefix, b"not a directory").expect("create file with candidate prefix");
     fs::create_dir(&short_suffix).expect("create short-suffix directory");
     fs::create_dir(&non_hex_suffix).expect("create non-hex-suffix directory");
+    fs::create_dir(&uppercase_suffix).expect("create uppercase-suffix directory");
 
     let _runtime = VaultRuntime::new(root);
 
@@ -1376,6 +1378,10 @@ fn leaves_unrelated_entries_unchanged_when_cleaning_inactive_candidates() {
     assert!(
         non_hex_suffix.exists(),
         "non-hex-suffix directory must remain"
+    );
+    assert!(
+        uppercase_suffix.exists(),
+        "uppercase-suffix directory must remain"
     );
 }
 
