@@ -111,7 +111,7 @@ const SOURCES = [
   { mark: "D", name: "DBS Card", note: "Credit-card statements — parsed locally, review-first", status: "current", tag: "[ Current ]" },
   { mark: "H", name: "HSBC", note: "Bank statements — parsed locally, review-first", status: "current", tag: "[ Current ]" },
   { mark: "U", name: "UOB", note: "Targeted for the first public preview, gated on evidence", status: "coming", tag: "[ Coming ]" },
-  { mark: "G", name: "Gmail", note: "Optional statement-attachment channel — ships independently after Google verification", status: "coming", tag: "[ Optional ]" },
+  { mark: "G", name: "Gmail", note: "Optional statement-attachment channel — ships independently after Google verification", status: "optional", tag: "[ Optional ]" },
 ];
 
 const delay = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
@@ -355,7 +355,7 @@ export function HomePage() {
                         {source.name}
                       </td>
                       <td>
-                        <span className={source.status === "current" ? "tag-current" : "tag-coming"}>
+                        <span className={source.status === "current" ? "tag-current" : source.status === "optional" ? "tag-optional" : "tag-coming"}>
                           {source.tag}
                         </span>
                       </td>
@@ -366,8 +366,9 @@ export function HomePage() {
               </table>
             </div>
             <p className="table-notes">
-              A bank appears here only after a real parser profile exists for it — never on a
-              wishlist. Automatic add stays off for every source until its confidence is
+              A source appears as [ Current ] only after a real parser profile exists for it.
+              Rows marked [ Coming ] or [ Optional ] are planned or gated capabilities; they
+              stay off the automatic-add path until their confidence or external gates are
               separately qualified. Password-protected eStatements are a first-class case:
               unlock once, and the password stays in your macOS Keychain.
             </p>
