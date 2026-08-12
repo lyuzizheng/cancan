@@ -28,12 +28,13 @@ During the fix, anything that is wrong but NOT part of this issue's root cause g
 
 1. **Same defect class, more sites** → fix in this PR (Step 2).
 2. **New, separable problem** (dead code, orphan props, spec drift, a second latent bug) → file a follow-up issue through the filing skill's dedup gate, or comment on the current issue when it is the same defect class. Link both directions (`Found while fixing #N` / `Follow-up: #M`) and mention the follow-up in the PR.
-3. **The issue's own claims were wrong** → correct them in a comment on the issue, so the tracker's history tells the truth.
+3. **Pre-existing defect outside this PR's blast radius** (present before this issue, on lines/files this PR does not change, and not the shared root cause) → a follow-up issue or comment; never widen the diff to fix it. Keeping the PR to its root cause is the point — a reviewer's `pre-existing` note is not a mandate to grow the PR.
+4. **The issue's own claims were wrong** → correct them in a comment on the issue, so the tracker's history tells the truth.
 
 ## Step 5 — Land it
 
 1. Conventional branch name (`fix/…`, `chore/…`, `feat/…`), Conventional Commit subject, concise PR title/body per `.github/PULL_REQUEST_TEMPLATE.md`. No Jira linkage; no `gh-create-pr-from-branch`.
 2. PR links the issue (`Closes #n` in the description, per `issue-delivery.md`); body lists divergences from the issue text with reasons.
-3. Update `docs/agent/progress-log.md` with a dated entry (gates + scope).
+3. Update `docs/agent/progress-log.md` with a dated entry only when the change alters a product decision, implementation scope, or architecture assumption (the log's own bar). A fix that changes none of those — copy/comment/formatting/link alignment — records its gates and scope in the PR body instead. Update `docs/agent/current-state.md` only when phase, focus, or implementation state changes.
 4. When docs/`.agents`/`.codex`/`AGENTS.md` changed, run the independent semantic review gate (`.agents/docs-semantic-review.md`) — the reviewer must not be the patch author.
 5. Close the issue after merge (or leave closing to the owner when they want to verify first).
