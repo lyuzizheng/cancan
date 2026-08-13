@@ -14,6 +14,18 @@ Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progres
 - Trimmed the over-triggered semantic review and progress-log churn (issue #123, `chore/harness-trim-review-loop`). `.agents/docs-semantic-review.md` (canonical trigger) now exempts a change confined to append-only narrative memory (`progress-log.md`/archive) from an independent reviewer — the author self-checks it and the PR body carries the record — while every product-truth/authority surface stays fully gated; `AGENTS.md` §7 and the `agent-preflight.sh` echo point at that canonical rule instead of restating a drifting scope list. The reviewer output now scopes each finding `introduced` vs `pre-existing`; only `introduced` P0/P1 can force `fail`/`needs_design`, and `fix-issue.md` gained a matching blast-radius rule (pre-existing, out-of-scope defects are follow-ups, never PR scope-creep). The progress-log update obligation in `fix-issue.md` Step 5 and `iteration-protocol.md` §6 was reconciled to the log's own bar (meaning changes only). Follow-up #124 reconciles `reading-order.md`/`consistency-checklist.md` to the same bar.
 - Gates: `.agents/scripts/agent-preflight.sh`, `.agents/scripts/harness-self-test.sh` — pass. Independent semantic review (non-author subagent) — pass.
 
+## 2026-08-11 (website)
+
+### Completed
+
+- Fixed website copy for issues #82 and #121 (`fix/website-gmail-preview-copy`). Corrected `apps/website/src/pages/HomePage.tsx` and `PrivacyPage.tsx` (#82) so the first-preview floor is stated as local file ingestion plus the phone Share Shortcut into the `Cancan` iCloud Drive Inbox, source coverage is DBS/HSBC/UOB, and Gmail is marked as an optional, independently gated capability that ships only after Google verification — not a first-preview blocker. Also corrected `apps/website/src/pages/DocsPage.tsx` and `SecurityPage.tsx` (#121) to describe Touch ID as the only opt-in remembered unlock with the Vault password as fallback, and to mention the phone Share Shortcut for the `Cancan` Inbox. No spec change; `0018` and `0009` already own the positioning.
+- Gates: `pnpm --filter @cancan/website typecheck`, `pnpm check:website`, `.agents/scripts/agent-preflight.sh` — pass.
+
+### Next
+
+- Continue remaining open issues: #89 inactive `.vault-create-*` cleanup, and phase1-intake-experience checkpoints noted on 2026-08-08.
+- Remaining UI-review findings: #78 and the #74 disclosure-transition item — held for an owner design decision, no code yet.
+
 ## 2026-08-10
 
 ### Completed

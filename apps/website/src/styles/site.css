@@ -983,6 +983,7 @@ a {
 
 .tag-current,
 .tag-coming,
+.tag-optional,
 .tag-plain {
   font-family: var(--font-mono);
   font-size: 0.6rem;
@@ -997,6 +998,10 @@ a {
 
 .tag-coming {
   color: var(--flag);
+}
+
+.tag-optional {
+  color: var(--ink-dim);
 }
 
 .tag-plain {

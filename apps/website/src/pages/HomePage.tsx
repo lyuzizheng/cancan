@@ -26,7 +26,7 @@ const TYPE_ROW_B = "Brokerage · Insurance · CPF · GrabPay · Wise · Citi · 
 
 const FLOW_STEPS = [
   {
-    body: "Add statement PDFs, CSVs, or images directly — or save them to your CanCan Inbox folder in iCloud Drive and CanCan picks up new files for you. No bank credentials, no screen scraping.",
+    body: "Add statement PDFs, CSVs, or images directly — or use the phone Share Shortcut to save them to your CanCan Inbox folder in iCloud Drive, and CanCan picks up new files for you. No bank credentials, no screen scraping.",
     title: "Collect",
   },
   {
@@ -111,7 +111,7 @@ const SOURCES = [
   { mark: "D", name: "DBS Card", note: "Credit-card statements — parsed locally, review-first", status: "current", tag: "[ Current ]" },
   { mark: "H", name: "HSBC", note: "Bank statements — parsed locally, review-first", status: "current", tag: "[ Current ]" },
   { mark: "U", name: "UOB", note: "Targeted for the first public preview, gated on evidence", status: "coming", tag: "[ Coming ]" },
-  { mark: "G", name: "Gmail", note: "Statement attachments — public after Google’s verification", status: "coming", tag: "[ Coming ]" },
+  { mark: "G", name: "Gmail", note: "Optional statement-attachment channel — ships independently after Google verification", status: "optional", tag: "[ Optional ]" },
 ];
 
 const delay = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
@@ -355,7 +355,7 @@ export function HomePage() {
                         {source.name}
                       </td>
                       <td>
-                        <span className={source.status === "current" ? "tag-current" : "tag-coming"}>
+                        <span className={source.status === "current" ? "tag-current" : source.status === "optional" ? "tag-optional" : "tag-coming"}>
                           {source.tag}
                         </span>
                       </td>
@@ -366,8 +366,9 @@ export function HomePage() {
               </table>
             </div>
             <p className="table-notes">
-              A bank appears here only after a real parser profile exists for it — never on a
-              wishlist. Automatic add stays off for every source until its confidence is
+              A source appears as [ Current ] only after a real parser profile exists for it.
+              Rows marked [ Coming ] or [ Optional ] are planned or gated capabilities; they
+              stay off the automatic-add path until their confidence or external gates are
               separately qualified. Password-protected eStatements are a first-class case:
               unlock once, and the password stays in your macOS Keychain.
             </p>
@@ -397,15 +398,20 @@ export function HomePage() {
               </div>
               <h3>A pre-1.0 preview, <em>not a stability promise.</em></h3>
               <p>
-                It ships local file ingestion, the CanCan Inbox folder, statement parsing
-                with review-first control, and source-backed money views.
+                It ships local file ingestion, the phone Share Shortcut into your CanCan
+                Inbox folder in iCloud Drive, statement parsing with review-first control,
+                and source-backed money views.
               </p>
               <p>
-                Planned and gated on their own evidence: Gmail connection for statement
-                attachments and separately consented transaction-notification emails
-                (public availability follows Google’s verification), and source coverage
-                for DBS, HSBC, and UOB — some profiles start Review-only while their
-                automatic-add confidence is calibrated against held-out evidence.
+                First-preview source coverage: DBS, HSBC, and UOB — some profiles start
+                Review-only while their automatic-add confidence is calibrated against
+                held-out evidence.
+              </p>
+              <p>
+                Gmail connection for statement attachments and separately consented
+                transaction-notification emails is an optional, independently gated
+                capability; public availability follows Google’s verification and is not
+                a first-preview blocker.
               </p>
               <p>
                 Deeper AI analysis of your ledger is being qualified separately and ships

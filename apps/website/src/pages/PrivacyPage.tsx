@@ -22,12 +22,13 @@ export function PrivacyPage() {
 
       <h2 id="gmail">Gmail connection — two separate consents</h2>
       <p>
-        Gmail is an optional evidence channel, planned for the first public
-        preview and available only after Google’s required verification
-        completes. Authorization happens between your Mac and Google directly:
-        the OAuth flow (PKCE, loopback redirect) runs in the local app, tokens
-        are stored in your macOS Keychain, and mailbox data is kept in your
-        encrypted Vault. No Gmail data passes through a CanCan server — none exists.
+        Gmail is an optional evidence channel. It is not part of the first public
+        preview and will be available only after Google’s required verification
+        completes, shipping independently when ready. Authorization happens
+        between your Mac and Google directly: the OAuth flow (PKCE, loopback
+        redirect) runs in the local app, tokens are stored in your macOS
+        Keychain, and mailbox data is kept in your encrypted Vault. No Gmail data
+        passes through a CanCan server — none exists.
       </p>
       <p>
         CanCan requests only <code>gmail.readonly</code>, a Google Restricted
