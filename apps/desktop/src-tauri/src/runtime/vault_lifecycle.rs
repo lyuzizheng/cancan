@@ -52,7 +52,7 @@ impl VaultRuntime {
         local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
         gmail_refresh_tokens: Arc<dyn GmailRefreshTokenStore>,
     ) -> Self {
-        Self {
+        let runtime = Self {
             inner: Arc::new(RuntimeInner {
                 document_passwords: Mutex::new(HashMap::new()),
                 gmail_refresh_tokens,
@@ -71,7 +71,11 @@ impl VaultRuntime {
                 #[cfg(test)]
                 intake_test_hooks: Mutex::new(IntakeTestHooks::default()),
             }),
+        };
+        if let Some(parent) = runtime.inner.root.parent() {
+            cleanup_inactive_vault_candidates(parent);
         }
+        runtime
     }
 
     pub(crate) fn access_status(&self) -> Result<VaultAccessStatus, RuntimeError> {
@@ -368,6 +372,41 @@ impl VaultRuntime {
         *store = None;
         self.document_passwords()?.clear();
         self.locked_status()
+    }
+}
+
+pub(super) fn cleanup_inactive_vault_candidates(parent: &Path) {
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    let prefix = VAULT_CANDIDATE_PREFIX;
+    let prefix_len = prefix.len();
+    let expected_len = prefix_len + 16;
+    let mut removed_any = false;
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let name = match file_name.to_str() {
+            Some(name) => name,
+            None => continue,
+        };
+        if name.len() != expected_len
+            || !name.starts_with(prefix)
+            || !name[prefix_len..]
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        {
+            continue;
+        }
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if fs::remove_dir_all(&path).is_ok() {
+            removed_any = true;
+        }
+    }
+    if removed_any {
+        let _ = sync_directory(parent);
     }
 }
 

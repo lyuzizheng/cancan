@@ -691,10 +691,12 @@ pub(super) fn statement_password_storage_key(money_source_id: &str) -> String {
     format!("money-source:{money_source_id}")
 }
 
+pub(super) const VAULT_CANDIDATE_PREFIX: &str = ".vault-create-";
+
 pub(super) fn candidate_name() -> String {
     let mut random = [0_u8; 8];
     OsRng.fill_bytes(&mut random);
-    let mut name = String::from(".vault-create-");
+    let mut name = String::from(VAULT_CANDIDATE_PREFIX);
     for byte in random {
         use std::fmt::Write as _;
         write!(&mut name, "{byte:02x}").expect("writing to String cannot fail");
