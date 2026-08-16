@@ -53,7 +53,9 @@ If a conflict is found:
 2. Classify the conflict using `docs/STRUCTURE.md` and read the relevant canonical spec or ADR.
 3. If the intended answer is clear, update the stale document in the same change.
 4. If the answer needs user judgment, record the blocker in `docs/alignment-temp/alignment-progress.md` and ask the user.
-5. Record the cleanup in docs/agent/progress-log.md.
+5. Record the cleanup in docs/agent/progress-log.md when a product decision,
+   implementation scope, or architecture assumption changes; otherwise the PR
+   body is the record.
 6. Run deterministic checks and independent semantic review.
 ```
 
@@ -64,7 +66,8 @@ A task is not done until:
 ```text
 code behavior matches docs
 relevant docs match code behavior
-progress log is updated
+progress log is updated when a product decision, implementation scope, or
+architecture assumption changes (otherwise the PR body is the record)
 no known conflicts remain in touched topics
 agent-preflight passes
 independent semantic review passes whenever the change-scope trigger in `.agents/docs-semantic-review.md` matches
