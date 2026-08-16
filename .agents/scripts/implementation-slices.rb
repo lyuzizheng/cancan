@@ -34,7 +34,7 @@ def list(cell)
 end
 
 def load_slices
-  lines = File.readlines(MANIFEST, chomp: true)
+  lines = File.readlines(MANIFEST, chomp: true, encoding: "UTF-8")
   header_index = lines.index { |line| cells(line) == HEADER }
   fail!("Implementation slice table header is missing or changed.") unless header_index
 
@@ -55,7 +55,7 @@ def load_slices
 end
 
 def active_alignment_areas
-  File.readlines(ALIGNMENT, chomp: true).each_with_object([]) do |line, areas|
+  File.readlines(ALIGNMENT, chomp: true, encoding: "UTF-8").each_with_object([]) do |line, areas|
     match = line.match(/^\|\s*([^|]+?)\s*\|\s*(partial|unresolved|blocked)\s*\|/)
     areas << match[1].strip if match
   end
@@ -63,7 +63,7 @@ end
 
 def implementation_blocking_alignment_areas
   priority = nil
-  File.readlines(ALIGNMENT, chomp: true).each_with_object([]) do |line, areas|
+  File.readlines(ALIGNMENT, chomp: true, encoding: "UTF-8").each_with_object([]) do |line, areas|
     heading = line.match(/^## P([0-2]):/)
     priority = heading[1].to_i if heading
     next unless priority && priority <= 1
@@ -74,7 +74,7 @@ def implementation_blocking_alignment_areas
 end
 
 def adr_status(path)
-  lines = File.readlines(File.join(ROOT, path), chomp: true)
+  lines = File.readlines(File.join(ROOT, path), chomp: true, encoding: "UTF-8")
   heading = lines.index("## Status")
   return nil unless heading
 
@@ -189,7 +189,7 @@ def dependency_closure(slice, slices, result = [])
 end
 
 def print_source_index(path)
-  lines = File.readlines(File.join(ROOT, path), chomp: true)
+  lines = File.readlines(File.join(ROOT, path), chomp: true, encoding: "UTF-8")
   puts
   puts "## Required source: #{path}"
   headings = lines.each_with_index.each_with_object([]) do |(line, index), result|
