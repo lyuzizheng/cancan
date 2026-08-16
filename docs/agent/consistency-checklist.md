@@ -39,6 +39,6 @@ Use this before considering a docs or code change complete. This checklist verif
 ## Documentation projection
 
 - [ ] Did `docs/agent/current-state.md` change only if phase, focus, or current implementation state changed?
-- [ ] Did `docs/agent/progress-log.md` get a dated entry for meaningful progress?
+- [ ] Did `docs/agent/progress-log.md` get a dated entry only if the change altered a product decision, implementation scope, or architecture assumption (otherwise the PR body is the record)?
 - [ ] Were resolved alignment entries removed after moving decisions to their canonical home?
 - [ ] When the change-scope trigger in `.agents/docs-semantic-review.md` matched, did deterministic preflight/harness evidence run before an independent semantic reviewer returned `pass`?
