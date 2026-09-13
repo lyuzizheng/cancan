@@ -2616,6 +2616,64 @@ fn rejects_invalid_normalizer_posting_status_without_persisting_records_or_revie
         (0, 0, 0)
     );
 }
+#[test]
+fn rejects_sidecar_semantic_key_mismatch_without_persisting_records() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let source_path = parent.path().join("synthetic.csv");
+    fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+    let runtime = VaultRuntime::new(parent.path().join("vault"));
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    runtime
+        .seed_money_source(
+            "source-synthetic",
+            "synthetic-bank",
+            "Synthetic Bank",
+            "bank",
+        )
+        .expect("seed source");
+    let imported = runtime
+        .import_selected_document(&source_path)
+        .expect("capture statement");
+    let input = runtime
+        .normalization_input(&imported.document_id)
+        .expect("extract complete synthetic observations");
+    let mut mismatched = synthetic_normalizer_result();
+    let NormalizerResult::Classified {
+        semantic_document_key,
+        ..
+    } = &mut mismatched
+    else {
+        panic!("synthetic result must be classified");
+    };
+    *semantic_document_key = "synthetic-bank:tampered-2026-07".to_owned();
+
+    let outcome = runtime
+        .apply_normalizer_result(&imported.document_id, &input, mismatched)
+        .expect("reject mismatched sidecar key safely");
+    assert_eq!(
+        outcome.status,
+        crate::database::SourceDocumentRoutingStatus::NeedsAttention
+    );
+    let state = structured_parse_test_state(&runtime, &imported.document_id);
+    assert_eq!(
+        (state.parse_runs, state.records, state.open_review_items),
+        (0, 0, 0)
+    );
+}
+
+#[test]
+fn derives_semantic_document_key_like_the_typescript_canonicalizer() {
+    assert_eq!(
+        derive_semantic_document_key("synthetic-bank", None, "transfer-2026-07"),
+        "synthetic-bank:transfer-2026-07",
+    );
+    assert_eq!(
+        derive_semantic_document_key("dbs", Some("statements/2026"), "dbs-bank_statement-2026-07",),
+        "dbs:statements/2026:dbs-bank_statement-2026-07",
+    );
+}
 
 fn structured_parse_test_state(
     runtime: &VaultRuntime,
@@ -2654,6 +2712,7 @@ fn expire_reconcile_lease_for_test(runtime: &VaultRuntime, document_id: &str) {
 fn synthetic_normalizer_result() -> NormalizerResult {
     NormalizerResult::Classified {
         profile: Box::new(synthetic_normalization_profile()),
+        semantic_document_key: "synthetic-bank:transfer-2026-07".to_owned(),
         proposal: Box::new(NormalizerProposal {
             document: NormalizerDocument {
                 document_type: "transfer_export".to_owned(),
@@ -2791,6 +2850,7 @@ fn synthetic_pdf_normalizer_result() -> NormalizerResult {
 fn dbs_bank_normalizer_result() -> NormalizerResult {
     NormalizerResult::Classified {
         profile: Box::new(dbs_bank_normalization_profile()),
+        semantic_document_key: "dbs:dbs-bank_statement-2026-07".to_owned(),
         proposal: Box::new(NormalizerProposal {
             document: NormalizerDocument {
                 document_type: "bank_statement".to_owned(),
@@ -2854,6 +2914,7 @@ fn hsbc_bank_repayment_normalizer_result() -> NormalizerResult {
             "bank_statement",
             "hsbc/bank_statement@1",
         )),
+        semantic_document_key: "hsbc:hsbc-bank_statement-2026-06".to_owned(),
         proposal: Box::new(NormalizerProposal {
             document: NormalizerDocument {
                 document_type: "bank_statement".to_owned(),
@@ -2917,6 +2978,7 @@ fn dbs_card_repayment_normalizer_result() -> NormalizerResult {
             "credit_card_statement",
             "dbs/credit_card_statement@1",
         )),
+        semantic_document_key: "dbs:dbs-credit_card_statement-2026-07".to_owned(),
         proposal: Box::new(NormalizerProposal {
             document: NormalizerDocument {
                 document_type: "credit_card_statement".to_owned(),

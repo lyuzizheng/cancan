@@ -4,6 +4,7 @@ import {
   selectProviderDocumentPackage,
   type ProviderDocumentPackage,
 } from "./provider-document-package";
+import { semanticDocumentKey } from "./validate-structured-proposal";
 import {
   createSyntheticProviderStatementFixture,
   type SyntheticProviderStatementPosting,
@@ -372,18 +373,78 @@ describe("provider document packages", () => {
           return "mime_type_mismatch";
         },
       ] as const;
-
       for (const mutate of mutations) {
         const input = fixture(providerPackage, [
           { description: "GROCERIES", side: "debit", amount: "20.00" },
         ]);
         const code = mutate(input);
+        const rederived = semanticDocumentKey(input.proposal.document);
+        if (rederived !== undefined) {
+          input.semanticDocumentKey = rederived;
+        }
         const result = await providerPackage.validate(input);
         expect(result).toMatchObject({
           status: "invalid",
           errors: expect.arrayContaining([expect.objectContaining({ code })]),
         });
       }
+    },
+  );
+  it.each(packages)("$packageId grounds statement identity before use", async (providerPackage) => {
+    const grounded = fixture(providerPackage, [
+      { description: "GROCERIES", side: "debit", amount: "20.00" },
+    ]);
+    const valid = await providerPackage.validate(grounded);
+    expect(valid.status).toBe("valid");
+
+    const unlisted = fixture(providerPackage, [
+      { description: "GROCERIES", side: "debit", amount: "20.00" },
+    ]);
+    unlisted.proposal.document.statementId = "unlisted-statement-0000";
+    const rederived = semanticDocumentKey(unlisted.proposal.document);
+    if (rederived === undefined) {
+      throw new Error("mutated statement identity must remain derivable");
+    }
+    unlisted.semanticDocumentKey = rederived;
+    const rejected = await providerPackage.validate(unlisted);
+    expect(rejected).toMatchObject({
+      status: "invalid",
+      errors: expect.arrayContaining([expect.objectContaining({ code: "statement_id_not_grounded" })]),
+    });
+  });
+
+  it.each(packages)(
+    "$packageId requires a declared provider root to be grounded",
+    async (providerPackage) => {
+      const input = fixture(providerPackage, [
+        { description: "GROCERIES", side: "debit", amount: "20.00" },
+      ]);
+      input.proposal.document.providerRootId = "statements/2026";
+      const rederived = semanticDocumentKey(input.proposal.document);
+      if (rederived === undefined) {
+        throw new Error("mutated statement identity must remain derivable");
+      }
+      input.semanticDocumentKey = rederived;
+      const ungrounded = await providerPackage.validate(input);
+      expect(ungrounded).toMatchObject({
+        status: "invalid",
+        errors: expect.arrayContaining([
+          expect.objectContaining({ code: "provider_root_id_not_grounded" }),
+        ]),
+      });
+
+      const text = "Root statements/2026 archive";
+      input.extractionBundle.observations.push({
+        id: "provider-root-id",
+        kind: "native_text",
+        page: 1,
+        textSpan: { start: 0, end: text.length },
+        text,
+        engine: "synthetic-provider-fixture",
+        engineVersion: "1",
+      });
+      const grounded = await providerPackage.validate(input);
+      expect(grounded.status).toBe("valid");
     },
   );
 

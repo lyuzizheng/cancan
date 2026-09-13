@@ -1,5 +1,6 @@
 import {
   selectProviderDocumentPackage,
+  semanticDocumentKey,
   validateStructuredProposal,
   type ExtractionBundle,
   type ProviderDocumentPackage,
@@ -57,6 +58,11 @@ export type MockNormalizerResult =
       status: "classified";
       profile: NormalizationProfile;
       proposal: Extract<StructuredProposalValidation, { status: "valid" }>;
+      /**
+       * Sidecar-echoed canonical document key. The trusted host re-derives
+       * this value and rejects mismatches; it never reaches persistence.
+       */
+      semanticDocumentKey: string;
     }
   | { status: "needs_attention"; reason: "unsupported_document" };
 
@@ -197,8 +203,12 @@ async function normalizeProviderFixture(
   if (fixture.proposal.document.statementId !== statementId) {
     return { status: "needs_attention", reason: "unsupported_document" };
   }
+  const key = semanticDocumentKey(fixture.proposal.document);
+  if (key === undefined) {
+    return { status: "needs_attention", reason: "unsupported_document" };
+  }
   const validation = await providerPackage.validate({
-    semanticDocumentKey: fixture.semanticDocumentKey,
+    semanticDocumentKey: key,
     extractionBundle: input.extractionBundle,
     proposal: fixture.proposal,
   });
@@ -209,6 +219,7 @@ async function normalizeProviderFixture(
     status: "classified",
     proposal: validation,
     profile: providerProfile(providerPackage, input.extractionBundle),
+    semanticDocumentKey: key,
   };
 }
 
@@ -236,8 +247,12 @@ export async function normalizeWithMock(
       statementPeriod: { from: "2026-07-01", to: "2026-07-31" },
     },
   };
+  const key = semanticDocumentKey(proposal.document);
+  if (key === undefined) {
+    return { status: "needs_attention", reason: "unsupported_document" };
+  }
   const validation = await validateStructuredProposal({
-    semanticDocumentKey: "synthetic-bank:transfer-2026-07",
+    semanticDocumentKey: key,
     extractionBundle: input.extractionBundle,
     proposal,
     recordContract: syntheticBankRecordContract,
@@ -250,5 +265,6 @@ export async function normalizeWithMock(
     status: "classified",
     proposal: validation,
     profile: legacyProfile(input.extractionBundle),
+    semanticDocumentKey: key,
   };
 }

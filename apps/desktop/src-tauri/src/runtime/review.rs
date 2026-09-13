@@ -312,8 +312,12 @@ impl VaultRuntime {
                 serde_json::to_vec(&result).map_err(|_| RuntimeError::new("normalizer_failed"))?,
             )
         );
-        let (profile, proposal) = match result {
-            NormalizerResult::Classified { profile, proposal } => (*profile, proposal),
+        let (profile, proposal, sidecar_key) = match result {
+            NormalizerResult::Classified {
+                profile,
+                proposal,
+                semantic_document_key,
+            } => (*profile, proposal, semantic_document_key),
             NormalizerResult::NeedsAttention { reason } => {
                 let reason = if reason == "unsupported_document" {
                     "unsupported_document"
@@ -357,19 +361,21 @@ impl VaultRuntime {
                 ),
             );
         }
-        let semantic_document_key = match proposal.document.provider_root_id.as_deref() {
-            Some(root_id) => format!(
-                "{}:{}:{}",
-                proposal.document.provider_key.as_str(),
-                root_id,
-                statement_id
-            ),
-            None => format!(
-                "{}:{}",
-                proposal.document.provider_key.as_str(),
-                statement_id
-            ),
-        };
+        let semantic_document_key = super::derive_semantic_document_key(
+            proposal.document.provider_key.as_str(),
+            proposal.document.provider_root_id.as_deref(),
+            statement_id,
+        );
+        if sidecar_key != semantic_document_key {
+            return self.finish_normalizer_outcome_with_job(
+                parse_job,
+                vault_session_generation,
+                SourceDocumentRoutingOutcome::needs_attention(
+                    document_id,
+                    "classification_uncertain",
+                ),
+            );
+        }
         let account_ids = (0..proposal.accounts.len())
             .map(|_| random_identifier("account"))
             .collect::<Vec<_>>();

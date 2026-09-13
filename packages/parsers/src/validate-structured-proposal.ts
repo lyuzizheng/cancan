@@ -3,10 +3,33 @@ import type {
   ExtractionBundle,
   ProviderRecordContract,
   SourceObservation,
+  StructuredDocumentIdentity,
   StructuredParseProposal,
   StructuredProposalValidation,
   ValidatedExternalRecord,
 } from "./contracts";
+
+/**
+ * Canonical semantic document key. Byte-identical to the trusted host
+ * derivation (`derive_semantic_document_key` in
+ * `apps/desktop/src-tauri/src/runtime/mod.rs`):
+ * `providerKey` + (`:${providerRootId}` when present) + `:${statementId}`.
+ * Returns `undefined` when no canonical identity exists (missing/empty
+ * statement ID); callers must reject rather than fall back.
+ */
+export function semanticDocumentKey(
+  document: StructuredDocumentIdentity,
+): string | undefined {
+  const statementId = document.statementId;
+  if (statementId === undefined || statementId === null || statementId.length === 0) {
+    return undefined;
+  }
+  const providerRootId = document.providerRootId;
+  if (providerRootId === undefined || providerRootId === null) {
+    return `${document.providerKey}:${statementId}`;
+  }
+  return `${document.providerKey}:${providerRootId}:${statementId}`;
+}
 
 function normalized(value: string): string {
   return value.trim().replace(/\s+/g, " ");
@@ -101,17 +124,31 @@ function rawRecordIsGrounded(values: string[], bundle: ExtractionBundle): boolea
   );
 }
 
-function stableJson(value: unknown): string {
+/**
+ * Deterministic JSON serialization for financial identity hashing. Mirrors
+ * `JSON.stringify` value semantics (object `undefined` members omitted, array
+ * `undefined` holes become `null`, top-level `undefined` unrepresentable) but
+ * orders object keys by UTF-16 code-unit comparison, which — unlike
+ * `localeCompare` — is stable across ICU versions and never collapses distinct
+ * strings (e.g. `ﬀ` vs `ff`) to equal.
+ */
+function stableJson(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
   if (Array.isArray(value)) {
-    return `[${value.map(stableJson).join(",")}]`;
+    return `[${value.map((entry) => stableJson(entry) ?? "null").join(",")}]`;
   }
   if (value && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`);
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .flatMap(([key, entry]) => {
+        const encoded = stableJson(entry);
+        return encoded === undefined ? [] : [`${JSON.stringify(key)}:${encoded}`];
+      });
     return `{${entries.join(",")}}`;
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value) as string | undefined;
 }
 
 function canonicalFieldsMatch(
@@ -199,6 +236,13 @@ export async function validateStructuredProposal(input: {
   proposal: StructuredParseProposal;
   recordContract: ProviderRecordContract;
 }): Promise<StructuredProposalValidation> {
+  const semanticKeyBytes = new TextEncoder().encode(input.semanticDocumentKey).length;
+  if (input.semanticDocumentKey.length === 0 || semanticKeyBytes > 256) {
+    return { status: "invalid", errors: [{ code: "semantic_document_key_invalid" }] };
+  }
+  if (semanticDocumentKey(input.proposal.document) !== input.semanticDocumentKey) {
+    return { status: "invalid", errors: [{ code: "semantic_document_key_mismatch" }] };
+  }
   const recordInputs = [
     ...input.proposal.openingSnapshots,
     ...input.proposal.records,
@@ -262,10 +306,15 @@ export async function validateStructuredProposal(input: {
       errors.push({ proposalRecordId: record.proposalRecordId, code: "canonical_record_mismatch" });
       continue;
     }
+    const projectedIdentity = stableJson(inspection.identityProjection);
+    if (projectedIdentity === undefined) {
+      errors.push({ proposalRecordId: record.proposalRecordId, code: "canonical_record_mismatch" });
+      continue;
+    }
 
     const identity = record.providerRecordId
       ? `provider:${input.proposal.document.providerKey}:${record.providerRecordId}`
-      : await sha256(`${input.semanticDocumentKey}:${stableJson(inspection.identityProjection)}`);
+      : await sha256(`${input.semanticDocumentKey}:${projectedIdentity}`);
     const stableRecordKey = record.providerRecordId
       ? identity
       : `${identity}:${(occurrenceByIdentity.get(identity) ?? 0) + 1}`;

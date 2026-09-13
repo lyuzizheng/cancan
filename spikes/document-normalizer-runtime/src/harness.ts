@@ -1,15 +1,12 @@
 import { createHash } from "node:crypto";
 
 import {
+  semanticDocumentKey,
   validateStructuredProposal,
   type ExtractionBundle,
   type SourceObservation,
   type StructuredParseProposal,
 } from "@cancan/parsers";
-import {
-  createSyntheticTransferFixture,
-  syntheticBankRecordContract,
-} from "@cancan/parsers/testing";
 import { z } from "zod";
 
 export const toolNames = [
@@ -337,8 +334,16 @@ export class RuntimeSession {
       };
     }
     const proposalValue = parsed.data as StructuredParseProposal;
+    const key = semanticDocumentKey(proposalValue.document);
+    if (key === undefined) {
+      return {
+        status: "invalid",
+        code: "evidence_grounding_failed",
+        errors: ["statement_id_not_grounded"],
+      };
+    }
     const validation = await validateStructuredProposal({
-      semanticDocumentKey: this.fixture.semanticDocumentKey,
+      semanticDocumentKey: key,
       extractionBundle: this.fixture.extractionBundle,
       proposal: proposalValue,
       recordContract: syntheticBankRecordContract,
