@@ -153,6 +153,7 @@ describe("mock document normalizer", () => {
       ]),
       ocrEngines: [],
     });
+    expect(result.semanticDocumentKey).toBe("synthetic-bank:transfer-2026-07");
     expect(
       [
         ...result.proposal.openingSnapshots,

@@ -199,6 +199,22 @@ export async function validateStatementPackage(
   if (input.proposal.document.documentType !== providerPackage.documentType) {
     add("document_type_mismatch");
   }
+  const statementId = input.proposal.document.statementId;
+  if (
+    statementId === undefined ||
+    statementId.length === 0 ||
+    !documentGroundsValue(input.extractionBundle, statementId)
+  ) {
+    add("statement_id_not_grounded");
+  }
+  const providerRootId = input.proposal.document.providerRootId;
+  if (
+    providerRootId !== undefined &&
+    (providerRootId.length === 0 ||
+      !documentGroundsValue(input.extractionBundle, providerRootId))
+  ) {
+    add("provider_root_id_not_grounded");
+  }
   if (!providerPackage.mimeTypes.includes(input.extractionBundle.mimeType)) {
     add("mime_type_mismatch");
   }

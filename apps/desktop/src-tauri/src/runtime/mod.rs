@@ -238,15 +238,38 @@ struct NormalizerStatementPeriod {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case", tag = "status", deny_unknown_fields)]
+#[serde(
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    tag = "status",
+    deny_unknown_fields
+)]
 enum NormalizerResult {
     Classified {
         profile: Box<NormalizerProfile>,
         proposal: Box<NormalizerProposal>,
+        /// Sidecar-echoed canonical document key. The host re-derives this
+        /// value in `review.rs` and rejects mismatches; it never reaches
+        /// persistence.
+        semantic_document_key: String,
     },
     NeedsAttention {
         reason: String,
     },
+}
+
+/// Canonical semantic document key. Byte-identical to the TypeScript
+/// `semanticDocumentKey` in `packages/parsers/src/validate-structured-proposal.ts`:
+/// `providerKey` + (`:${providerRootId}` when present) + `:${statementId}`.
+pub(super) fn derive_semantic_document_key(
+    provider_key: &str,
+    provider_root_id: Option<&str>,
+    statement_id: &str,
+) -> String {
+    match provider_root_id {
+        Some(root_id) => format!("{provider_key}:{root_id}:{statement_id}"),
+        None => format!("{provider_key}:{statement_id}"),
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

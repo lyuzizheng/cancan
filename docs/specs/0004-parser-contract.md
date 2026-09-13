@@ -347,6 +347,8 @@ The import flow returns per-file outcomes as they become grounded: file capture 
 
 Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity and a provider-owned canonical identity projection of the validated raw record. That projection contains only stable source values: it excludes optional locators, OCR/model confidence, observation IDs, extraction/runtime metadata, and mutable normalized descriptions. If the source contains literally identical projected rows, an occurrence ordinal within that identical-row group distinguishes them.
 
+Semantic document identity is derived by the trusted host from grounded provider statement identity (provider statement ID, and provider root ID when present); the sidecar-supplied semanticDocumentKey is validated for equality against the host-derived value and never reaches persistence unchecked; statementId and providerRootId must be grounded to source observations before use in identity. Canonical key format is `providerKey:statementId`, or `providerKey:providerRootId:statementId` when a provider root ID is present; object keys in the deterministic identity serialization order by UTF-16 code-unit comparison. Note: changing the key derivation alters `stable_record_key` values for records without a provider record ID, so re-parsing a previously parsed statement may stage new record rows instead of versioning the old ones; re-resolve duplicates in Review rather than auto-merging.
+
 Reparse rules:
 
 ```text
