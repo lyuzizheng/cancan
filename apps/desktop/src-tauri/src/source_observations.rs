@@ -10,9 +10,10 @@ use crate::viewer::{
 
 const CSV_ENGINE: &str = "rust-csv";
 const CSV_ENGINE_VERSION: &str = "1.4.0";
-const EXTRACTION_VERSION: &str = "native-observations-v1";
+const EXTRACTION_VERSION: &str = "native-observations-v2";
 const PDF_ENGINE: &str = "pdfkit";
-const PDF_ENGINE_VERSION: &str = "macos-page-string-v1";
+const PDF_ENGINE_VERSION: &str = "macos-page-string-v2";
+const DEFAULT_OCR_ROW_Y_OVERLAP_THRESHOLD: f64 = 0.5;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -256,7 +257,7 @@ fn extract_native_pdf_observations(
         }
     }
     let page_count = unsafe { document.pageCount() };
-    let mut observations = Vec::with_capacity(page_count);
+    let mut observations = Vec::new();
     for page_index in 0..page_count {
         let page = unsafe { document.pageAtIndex(page_index) }
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "PDF page is unavailable"))?;
@@ -265,22 +266,35 @@ fn extract_native_pdf_observations(
             .unwrap_or_default();
         let page = u32::try_from(page_index + 1)
             .map_err(|_| io::Error::other("PDF page index does not fit u32"))?;
-        // JSON consumers use JavaScript string offsets, so spans are UTF-16 code units.
-        let end = u64::try_from(text.encode_utf16().count())
-            .map_err(|_| io::Error::other("PDF text length does not fit u64"))?;
-        observations.push(SourceObservation {
-            id: format!("pdf-page-{page}-native-text"),
-            kind: SourceObservationKind::NativeText,
-            page: Some(page),
-            row: None,
-            column: None,
-            text,
-            text_span: Some(TextSpan { start: 0, end }),
-            bounding_box: None,
-            engine: PDF_ENGINE.to_owned(),
-            engine_version: PDF_ENGINE_VERSION.to_owned(),
-            confidence: None,
-        });
+
+        let trimmed_text = text
+            .strip_suffix("\r\n")
+            .or_else(|| text.strip_suffix('\n'))
+            .unwrap_or(&text);
+        let lines: Vec<&str> = trimmed_text
+            .split('\n')
+            .map(|line| line.strip_suffix('\r').unwrap_or(line))
+            .collect();
+        for (line_index, line) in lines.iter().enumerate() {
+            let row = u64::try_from(line_index + 1)
+                .map_err(|_| io::Error::other("PDF line row index does not fit u64"))?;
+            // JSON consumers use JavaScript string offsets, so spans are UTF-16 code units.
+            let end = u64::try_from(line.encode_utf16().count())
+                .map_err(|_| io::Error::other("PDF text length does not fit u64"))?;
+            observations.push(SourceObservation {
+                id: format!("pdf-page-{page}-native-text-{row}"),
+                kind: SourceObservationKind::NativeText,
+                page: Some(page),
+                row: Some(row),
+                column: None,
+                text: (*line).to_owned(),
+                text_span: Some(TextSpan { start: 0, end }),
+                bounding_box: None,
+                engine: PDF_ENGINE.to_owned(),
+                engine_version: PDF_ENGINE_VERSION.to_owned(),
+                confidence: None,
+            });
+        }
     }
     Ok(observations)
 }
@@ -294,53 +308,242 @@ where
     RenderPage: FnMut(u32) -> io::Result<Zeroizing<Vec<u8>>>,
     OcrEngine: PdfOcrEngine,
 {
-    let pages_needing_ocr = observations
-        .iter()
-        .filter(|observation| {
-            observation.kind == SourceObservationKind::NativeText
-                && native_text_needs_ocr(&observation.text)
-        })
-        .map(|observation| {
+    let mut page_groups: BTreeMap<u32, Vec<&SourceObservation>> = BTreeMap::new();
+    for observation in &observations {
+        if observation.kind == SourceObservationKind::NativeText {
             let page = observation.page.ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
                     "native PDF text observation is missing a page number",
                 )
             })?;
-            Ok((page, !native_text_has_usable_content(&observation.text)))
-        })
-        .collect::<io::Result<Vec<_>>>()?;
+            page_groups.entry(page).or_default().push(observation);
+        }
+    }
+
+    let mut pages_needing_ocr = Vec::new();
+    for (page, page_obs) in page_groups {
+        let any_broken = page_obs
+            .iter()
+            .any(|obs| obs.text.chars().any(is_broken_native_character));
+        let all_blank = page_obs.iter().all(|obs| obs.text.trim().is_empty());
+        if any_broken || all_blank {
+            let has_usable = page_obs
+                .iter()
+                .any(|obs| native_text_has_usable_content(&obs.text));
+            pages_needing_ocr.push((page, !has_usable));
+        }
+    }
 
     for (page, ocr_required) in pages_needing_ocr {
         let ocr_observations = (|| {
             let rendered_page_png = render_page(page)?;
             let recognized_text = engine.recognize_page(page, &rendered_page_png)?;
-            recognized_text
-                .into_iter()
-                .enumerate()
-                .map(|(index, mut block)| {
-                    let bounding_box = vision_bounding_box_to_top_left(block.vision_bounding_box)?;
-                    Ok(SourceObservation {
-                        id: format!("pdf-page-{page}-ocr-text-{}", index + 1),
-                        kind: SourceObservationKind::OcrText,
-                        page: Some(page),
-                        row: None,
-                        column: None,
-                        text: std::mem::take(&mut block.text),
-                        text_span: None,
-                        bounding_box: Some(bounding_box),
-                        engine: engine.engine().to_owned(),
-                        engine_version: engine.engine_version().to_owned(),
-                        confidence: Some(block.confidence),
-                    })
-                })
-                .collect::<io::Result<Vec<_>>>()
+            cluster_pdf_ocr_blocks(
+                page,
+                recognized_text,
+                engine.engine(),
+                engine.engine_version(),
+                DEFAULT_OCR_ROW_Y_OVERLAP_THRESHOLD,
+            )
         })();
         match ocr_observations {
             Ok(ocr_observations) => observations.extend(ocr_observations),
             Err(error) if ocr_required => return Err(error),
             Err(_) => {}
         }
+    }
+
+    Ok(observations)
+}
+
+fn y_overlap_ratio(box_a: &BoundingBox, box_b: &BoundingBox) -> f64 {
+    let top_a = box_a.y;
+    let bottom_a = box_a.y + box_a.height;
+    let top_b = box_b.y;
+    let bottom_b = box_b.y + box_b.height;
+    let overlap = (bottom_a.min(bottom_b) - top_a.max(top_b)).max(0.0);
+    if overlap <= 0.0 {
+        return 0.0;
+    }
+    let min_height = box_a.height.min(box_b.height);
+    if min_height <= 0.0 {
+        0.0
+    } else {
+        overlap / min_height
+    }
+}
+
+struct ValidatedOcrBlock {
+    text: String,
+    confidence: f64,
+    bounding_box: BoundingBox,
+}
+
+impl Zeroize for ValidatedOcrBlock {
+    fn zeroize(&mut self) {
+        self.text.zeroize();
+    }
+}
+
+impl Drop for ValidatedOcrBlock {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+fn cluster_pdf_ocr_blocks(
+    page: u32,
+    recognized_text: Vec<OcrTextBlock>,
+    engine: &str,
+    engine_version: &str,
+    y_overlap_threshold: f64,
+) -> io::Result<Vec<SourceObservation>> {
+    if recognized_text.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut validated_blocks = Vec::with_capacity(recognized_text.len());
+    for mut block in recognized_text {
+        let bounding_box = vision_bounding_box_to_top_left(block.vision_bounding_box)?;
+        validated_blocks.push(ValidatedOcrBlock {
+            text: std::mem::take(&mut block.text),
+            confidence: block.confidence,
+            bounding_box,
+        });
+    }
+
+    let n = validated_blocks.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+
+    fn find(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+
+    fn union(parent: &mut [usize], i: usize, j: usize) {
+        let root_i = find(parent, i);
+        let root_j = find(parent, j);
+        if root_i != root_j {
+            parent[root_i] = root_j;
+        }
+    }
+
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if y_overlap_ratio(
+                &validated_blocks[i].bounding_box,
+                &validated_blocks[j].bounding_box,
+            ) >= y_overlap_threshold
+            {
+                union(&mut parent, i, j);
+            }
+        }
+    }
+
+    let mut groups: BTreeMap<usize, Vec<ValidatedOcrBlock>> = BTreeMap::new();
+    for (i, block) in validated_blocks.into_iter().enumerate() {
+        let root = find(&mut parent, i);
+        groups.entry(root).or_default().push(block);
+    }
+
+    struct Cluster {
+        min_y: f64,
+        min_x: f64,
+        bounding_box: BoundingBox,
+        avg_confidence: f64,
+        text: String,
+    }
+
+    impl Zeroize for Cluster {
+        fn zeroize(&mut self) {
+            self.text.zeroize();
+        }
+    }
+
+    impl Drop for Cluster {
+        fn drop(&mut self) {
+            self.zeroize();
+        }
+    }
+
+    let mut clusters = Vec::with_capacity(groups.len());
+    for (_, mut cluster_blocks) in groups {
+        cluster_blocks.sort_by(|a, b| {
+            a.bounding_box
+                .x
+                .total_cmp(&b.bounding_box.x)
+                .then_with(|| a.bounding_box.y.total_cmp(&b.bounding_box.y))
+        });
+
+        let min_x = cluster_blocks
+            .iter()
+            .map(|b| b.bounding_box.x)
+            .fold(f64::INFINITY, f64::min);
+        let min_y = cluster_blocks
+            .iter()
+            .map(|b| b.bounding_box.y)
+            .fold(f64::INFINITY, f64::min);
+        let max_x = cluster_blocks
+            .iter()
+            .map(|b| b.bounding_box.x + b.bounding_box.width)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let max_y = cluster_blocks
+            .iter()
+            .map(|b| b.bounding_box.y + b.bounding_box.height)
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        let bounding_box = BoundingBox {
+            x: min_x,
+            y: min_y,
+            width: max_x - min_x,
+            height: max_y - min_y,
+        };
+
+        let avg_confidence = cluster_blocks.iter().map(|b| b.confidence).sum::<f64>()
+            / (cluster_blocks.len() as f64);
+
+        let text = cluster_blocks
+            .iter()
+            .map(|b| b.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        clusters.push(Cluster {
+            min_y,
+            min_x,
+            bounding_box,
+            avg_confidence,
+            text,
+        });
+    }
+
+    clusters.sort_by(|a, b| {
+        a.min_y
+            .total_cmp(&b.min_y)
+            .then_with(|| a.min_x.total_cmp(&b.min_x))
+    });
+
+    let mut observations = Vec::with_capacity(clusters.len());
+    for (index, mut cluster) in clusters.into_iter().enumerate() {
+        let row = u64::try_from(index + 1)
+            .map_err(|_| io::Error::other("OCR row index does not fit u64"))?;
+        observations.push(SourceObservation {
+            id: format!("pdf-page-{page}-ocr-text-{row}"),
+            kind: SourceObservationKind::OcrText,
+            page: Some(page),
+            row: Some(row),
+            column: None,
+            text: std::mem::take(&mut cluster.text),
+            text_span: None,
+            bounding_box: Some(cluster.bounding_box),
+            engine: engine.to_owned(),
+            engine_version: engine_version.to_owned(),
+            confidence: Some(cluster.avg_confidence),
+        });
     }
 
     Ok(observations)
@@ -385,6 +588,7 @@ where
         .collect()
 }
 
+#[cfg(test)]
 fn native_text_needs_ocr(text: &str) -> bool {
     text.trim().is_empty() || text.chars().any(is_broken_native_character)
 }
@@ -534,387 +738,4 @@ fn extract_image_observations(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[cfg(target_os = "macos")]
-    use std::io::Write as _;
-
-    struct FakeOcrEngine {
-        blocks: Vec<OcrTextBlock>,
-        calls: Vec<u32>,
-        fails: bool,
-    }
-
-    impl PdfOcrEngine for FakeOcrEngine {
-        fn engine(&self) -> &'static str {
-            "fake-vision"
-        }
-
-        fn engine_version(&self) -> &'static str {
-            "fake-v1"
-        }
-
-        fn recognize_page(
-            &mut self,
-            page: u32,
-            _rendered_page_png: &[u8],
-        ) -> io::Result<Vec<OcrTextBlock>> {
-            self.calls.push(page);
-            if self.fails {
-                return Err(io::Error::other("fake Vision failure"));
-            }
-            Ok(std::mem::take(&mut self.blocks))
-        }
-    }
-
-    fn native_text_observation(page: u32, text: &str) -> SourceObservation {
-        SourceObservation {
-            id: format!("pdf-page-{page}-native-text"),
-            kind: SourceObservationKind::NativeText,
-            page: Some(page),
-            row: None,
-            column: None,
-            text: text.to_owned(),
-            text_span: Some(TextSpan {
-                start: 0,
-                end: text.encode_utf16().count() as u64,
-            }),
-            bounding_box: None,
-            engine: PDF_ENGINE.to_owned(),
-            engine_version: PDF_ENGINE_VERSION.to_owned(),
-            confidence: None,
-        }
-    }
-
-    #[test]
-    fn extracts_deterministic_csv_table_cells() {
-        let bundle = extract_bundle(
-            "document-csv",
-            &"a".repeat(64),
-            "text/csv",
-            b"date,memo\r\n2026-07-23,coffee\r\n",
-            None,
-        )
-        .expect("extract CSV observations");
-
-        assert_eq!(bundle.observations.len(), 4);
-        assert_eq!(bundle.observations[0].id, "csv-row-1-column-1");
-        assert_eq!(bundle.observations[0].row, Some(1));
-        assert_eq!(bundle.observations[0].column, Some(1));
-        assert_eq!(bundle.observations[3].text, "coffee");
-        assert_eq!(bundle.observations[3].engine, CSV_ENGINE);
-        assert_eq!(bundle.observations[3].engine_version, CSV_ENGINE_VERSION);
-    }
-
-    #[test]
-    fn zeroizes_job_scoped_observation_text() {
-        let mut bundle = extract_bundle(
-            "document-csv",
-            &"a".repeat(64),
-            "text/csv",
-            b"account,balance\n000-12345,100.00\n",
-            None,
-        )
-        .expect("extract sensitive CSV observations");
-
-        bundle.zeroize();
-
-        assert!(bundle.source_document_id.is_empty());
-        assert!(bundle.file_sha256.is_empty());
-        assert!(
-            bundle
-                .observations
-                .iter()
-                .all(|observation| observation.text.is_empty())
-        );
-    }
-
-    #[test]
-    fn reliable_native_text_does_not_call_vision() {
-        let native = native_text_observation(1, "Opening balance\n1,234.56 SGD");
-        let mut engine = FakeOcrEngine {
-            blocks: Vec::new(),
-            calls: Vec::new(),
-            fails: false,
-        };
-
-        let observations = extract_pdf_observations_with_ocr(
-            vec![native],
-            |_| panic!("reliable native text must not render a page for Vision"),
-            &mut engine,
-        )
-        .expect("preserve reliable native text without OCR");
-
-        assert!(engine.calls.is_empty());
-        assert_eq!(observations.len(), 1);
-        assert_eq!(observations[0].kind, SourceObservationKind::NativeText);
-    }
-
-    #[test]
-    fn broken_native_text_keeps_native_and_appends_transformed_ocr_observation() {
-        let native = native_text_observation(1, "Statement\u{fffd}");
-        let mut engine = FakeOcrEngine {
-            blocks: vec![OcrTextBlock {
-                text: "Statement total 123.45".to_owned(),
-                confidence: 0.93,
-                vision_bounding_box: BoundingBox {
-                    x: 0.1,
-                    y: 0.2,
-                    width: 0.3,
-                    height: 0.4,
-                },
-            }],
-            calls: Vec::new(),
-            fails: false,
-        };
-
-        let observations = extract_pdf_observations_with_ocr(
-            vec![native],
-            |page| {
-                assert_eq!(page, 1);
-                Ok(Zeroizing::new(vec![0x89, b'P', b'N', b'G']))
-            },
-            &mut engine,
-        )
-        .expect("append Vision observations");
-
-        assert_eq!(engine.calls, vec![1]);
-        assert_eq!(observations.len(), 2);
-        assert_eq!(observations[0].kind, SourceObservationKind::NativeText);
-        let ocr = &observations[1];
-        assert_eq!(ocr.id, "pdf-page-1-ocr-text-1");
-        assert_eq!(ocr.kind, SourceObservationKind::OcrText);
-        assert_eq!(ocr.page, Some(1));
-        assert_eq!(ocr.text, "Statement total 123.45");
-        assert_eq!(ocr.confidence, Some(0.93));
-        assert_eq!(ocr.engine, "fake-vision");
-        assert_eq!(ocr.engine_version, "fake-v1");
-        let bounding_box = ocr.bounding_box.as_ref().expect("canonical OCR box");
-        assert!((bounding_box.x - 0.1).abs() < f64::EPSILON);
-        assert!((bounding_box.y - 0.4).abs() < f64::EPSILON);
-        assert!((bounding_box.width - 0.3).abs() < f64::EPSILON);
-        assert!((bounding_box.height - 0.4).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn broken_nonempty_native_text_survives_vision_failure() {
-        let native = native_text_observation(1, "Statement total 123.45\u{fffd}");
-        let mut engine = FakeOcrEngine {
-            blocks: Vec::new(),
-            calls: Vec::new(),
-            fails: true,
-        };
-
-        let observations = extract_pdf_observations_with_ocr(
-            vec![native],
-            |_| Ok(Zeroizing::new(vec![0x89, b'P', b'N', b'G'])),
-            &mut engine,
-        )
-        .expect("preserve usable native text when supplemental OCR fails");
-
-        assert_eq!(engine.calls, vec![1]);
-        assert_eq!(observations.len(), 1);
-        assert_eq!(observations[0].kind, SourceObservationKind::NativeText);
-        assert_eq!(observations[0].text, "Statement total 123.45\u{fffd}");
-    }
-
-    #[test]
-    fn unusable_native_text_vision_failure_fails_closed() {
-        let native = native_text_observation(1, "\0");
-        let mut engine = FakeOcrEngine {
-            blocks: Vec::new(),
-            calls: Vec::new(),
-            fails: true,
-        };
-
-        let error = extract_pdf_observations_with_ocr(
-            vec![native],
-            |_| Ok(Zeroizing::new(vec![0x89, b'P', b'N', b'G'])),
-            &mut engine,
-        )
-        .expect_err("OCR failure must reject a page without usable native text");
-
-        assert_eq!(error.kind(), io::ErrorKind::Other);
-        assert_eq!(engine.calls, vec![1]);
-    }
-
-    #[test]
-    fn image_ocr_keeps_vision_provenance_without_coordinates() {
-        let mut engine = FakeOcrEngine {
-            blocks: vec![OcrTextBlock {
-                text: "TOTAL 123.45".to_owned(),
-                confidence: 0.88,
-                vision_bounding_box: BoundingBox {
-                    x: 0.2,
-                    y: 0.1,
-                    width: 0.3,
-                    height: 0.4,
-                },
-            }],
-            calls: Vec::new(),
-            fails: false,
-        };
-
-        let observations = extract_image_observations_with_ocr(b"synthetic image", &mut engine)
-            .expect("extract image OCR observations");
-
-        assert_eq!(engine.calls, vec![1]);
-        assert_eq!(observations.len(), 1);
-        let observation = &observations[0];
-        assert_eq!(observation.id, "image-ocr-text-1");
-        assert_eq!(observation.kind, SourceObservationKind::OcrText);
-        assert_eq!(observation.page, None);
-        assert_eq!(observation.text, "TOTAL 123.45");
-        assert_eq!(observation.engine, "fake-vision");
-        assert_eq!(observation.engine_version, "fake-v1");
-        assert_eq!(observation.confidence, Some(0.88));
-        assert_eq!(observation.bounding_box, None);
-    }
-
-    #[test]
-    fn image_ocr_failure_rejects_the_bundle() {
-        let mut engine = FakeOcrEngine {
-            blocks: Vec::new(),
-            calls: Vec::new(),
-            fails: true,
-        };
-
-        let error = extract_image_observations_with_ocr(b"synthetic image", &mut engine)
-            .expect_err("image OCR failure must reject the extraction bundle");
-
-        assert_eq!(error.kind(), io::ErrorKind::Other);
-        assert_eq!(engine.calls, vec![1]);
-    }
-
-    #[test]
-    fn detects_only_clear_broken_native_text_markers() {
-        assert!(native_text_needs_ocr("   \n\t"));
-        assert!(native_text_needs_ocr("bad\0text"));
-        assert!(native_text_needs_ocr("bad\u{fffd}text"));
-        assert!(native_text_needs_ocr("bad\u{001b}text"));
-        assert!(!native_text_has_usable_content("\0\u{fffd}\u{001b}"));
-        assert!(native_text_has_usable_content("good\u{fffd}"));
-        assert!(!native_text_needs_ocr(
-            "native text\nwith normal line breaks"
-        ));
-        for layout_control in ['\t', '\n', '\u{000b}', '\u{000c}', '\r', '\u{0085}'] {
-            assert!(
-                !native_text_needs_ocr(&format!("before{layout_control}after")),
-                "layout control U+{:04X} must not trigger OCR",
-                layout_control as u32
-            );
-        }
-    }
-
-    #[test]
-    fn missing_vision_result_collection_fails_closed() {
-        assert_eq!(
-            require_vision_results::<()>(None)
-                .expect_err("missing Vision results must fail")
-                .kind(),
-            io::ErrorKind::Other
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn invokes_local_vision_on_synthetic_text_png() {
-        let png = render_pdf_page_png_with_password(&synthetic_text_pdf(), 1, None)
-            .expect("render synthetic text page");
-        let mut engine = VisionOcrEngine;
-
-        let blocks = engine
-            .recognize_page(1, &png)
-            .expect("run local Vision on synthetic PNG");
-        let recognized = blocks
-            .iter()
-            .map(|block| block.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-        assert!(
-            recognized.contains("TOTAL") && recognized.contains("123.45"),
-            "Vision did not recognize the synthetic statement text: {recognized:?}"
-        );
-        assert!(
-            blocks
-                .iter()
-                .all(|block| is_unit_square_box(&block.vision_bounding_box))
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn extracts_local_image_ocr_without_location_claims() {
-        let png = render_pdf_page_png_with_password(&synthetic_text_pdf(), 1, None)
-            .expect("render synthetic text page");
-
-        let observations =
-            extract_image_observations(&png, "image/png").expect("extract image OCR text");
-        let recognized = observations
-            .iter()
-            .map(|observation| observation.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        assert!(
-            recognized.contains("TOTAL") && recognized.contains("123.45"),
-            "Vision did not recognize the synthetic statement text: {recognized:?}"
-        );
-        assert!(observations.iter().all(|observation| {
-            observation.page.is_none() && observation.bounding_box.is_none()
-        }));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn observation_text_is_nfc_normalized_across_macos_forms() {
-        use objc2_foundation::NSString;
-
-        // Decomposed form (NFD): "e" + combining acute accent, as returned
-        // by PDFKit/Vision on some macOS releases.
-        let decomposed = NSString::from_str("Cafe\u{0301}");
-        assert_eq!(nfc_normalized_text(&decomposed), "Caf\u{00e9}");
-        // Precomposed form (NFC) passes through unchanged.
-        let precomposed = NSString::from_str("Caf\u{00e9}");
-        assert_eq!(nfc_normalized_text(&precomposed), "Caf\u{00e9}");
-    }
-
-    #[cfg(target_os = "macos")]
-    fn synthetic_text_pdf() -> Vec<u8> {
-        let content = "BT /F1 56 Tf 36 80 Td (TOTAL 123.45) Tj ET";
-        let objects = [
-            "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
-            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 180] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_owned(),
-            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>".to_owned(),
-            format!(
-                "<< /Length {} >>\nstream\n{content}\nendstream",
-                content.len()
-            ),
-        ];
-        let mut pdf = b"%PDF-1.4\n".to_vec();
-        let mut offsets = Vec::with_capacity(objects.len());
-        for (index, object) in objects.iter().enumerate() {
-            offsets.push(pdf.len());
-            write!(&mut pdf, "{} 0 obj\n{}\nendobj\n", index + 1, object)
-                .expect("write PDF object");
-        }
-        let xref = pdf.len();
-        write!(
-            &mut pdf,
-            "xref\n0 {}\n0000000000 65535 f \n",
-            objects.len() + 1
-        )
-        .expect("write xref");
-        for offset in offsets {
-            writeln!(&mut pdf, "{offset:010} 00000 n ").expect("write xref entry");
-        }
-        write!(
-            &mut pdf,
-            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
-            objects.len() + 1
-        )
-        .expect("write trailer");
-        pdf
-    }
-}
+mod tests;

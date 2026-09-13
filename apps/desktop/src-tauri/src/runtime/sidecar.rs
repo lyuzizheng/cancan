@@ -440,7 +440,7 @@ pub(super) fn canonical_profile_extraction_engine(
         (
             NormalizerProfileExtractionKind::NativeText,
             "pdfkit",
-            "macos-page-string-v1"
+            "macos-page-string-v2"
         ) | (
             NormalizerProfileExtractionKind::TableCell,
             "rust-csv",

@@ -2197,7 +2197,7 @@ fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() 
         let observation = &input.observations[0];
         assert_eq!(observation.kind, SourceObservationKind::NativeText);
         assert_eq!(observation.engine, "pdfkit");
-        assert_eq!(observation.engine_version, "macos-page-string-v1");
+        assert_eq!(observation.engine_version, "macos-page-string-v2");
 
         let routed = if observation.text.contains("provider=hsbc") {
             hsbc_document_id = Some(job.document_id.clone());
@@ -2782,7 +2782,7 @@ fn synthetic_pdf_normalizer_result() -> NormalizerResult {
     profile.extraction_engines = vec![NormalizerProfileExtractionEngine {
         kind: NormalizerProfileExtractionKind::NativeText,
         engine: "pdfkit".to_owned(),
-        version: "macos-page-string-v1".to_owned(),
+        version: "macos-page-string-v2".to_owned(),
     }];
     result
 }
@@ -2980,7 +2980,7 @@ fn provider_pdf_normalization_profile(
 ) -> NormalizerProfile {
     NormalizerProfile {
         id: format!(
-            "mock:{package_id}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1"
+            "mock:{package_id}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v2"
         ),
         provider_key: provider_key.to_owned(),
         document_type: document_type.to_owned(),
@@ -2997,7 +2997,7 @@ fn provider_pdf_normalization_profile(
         extraction_engines: vec![NormalizerProfileExtractionEngine {
             kind: NormalizerProfileExtractionKind::NativeText,
             engine: "pdfkit".to_owned(),
-            version: "macos-page-string-v1".to_owned(),
+            version: "macos-page-string-v2".to_owned(),
         }],
         ocr_engines: Vec::new(),
         model_provider: "cancan-deterministic-mock".to_owned(),
@@ -3246,6 +3246,7 @@ fn extracts_native_pdf_and_csv_observations_without_creating_files() {
         crate::source_observations::SourceObservationKind::NativeText
     );
     assert_eq!(pdf_observation.page, Some(1));
+    assert_eq!(pdf_observation.row, Some(1));
     assert!(
         pdf_observation
             .text
@@ -3260,7 +3261,7 @@ fn extracts_native_pdf_and_csv_observations_without_creating_files() {
         Some(pdf_observation.text.encode_utf16().count() as u64)
     );
     assert_eq!(pdf_observation.engine, "pdfkit");
-    assert_eq!(pdf_observation.engine_version, "macos-page-string-v1");
+    assert_eq!(pdf_observation.engine_version, "macos-page-string-v2");
 
     assert_eq!(csv_bundle.observations.len(), 4);
     assert_eq!(csv_bundle.observations[0].id, "csv-row-1-column-1");

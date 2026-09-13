@@ -292,13 +292,14 @@ function isExtractionBundle(value: unknown): value is ExtractionBundle {
 type SourceObservationRecord = Record<string, unknown> & { id: string };
 
 function isExtractionMetadata(value: unknown): value is {
-  extractionVersion: "native-observations-v1";
+  extractionVersion: "native-observations-v1" | "native-observations-v2";
   observationCount: number;
 } {
   return (
     isRecord(value) &&
     hasExactKeys(value, ["extractionVersion", "observationCount"]) &&
-    value.extractionVersion === "native-observations-v1" &&
+    (value.extractionVersion === "native-observations-v1" ||
+      value.extractionVersion === "native-observations-v2") &&
     typeof value.observationCount === "number" &&
     Number.isSafeInteger(value.observationCount) &&
     value.observationCount >= 0
@@ -329,7 +330,6 @@ function isSourceObservation(value: unknown, mimeType: unknown): boolean {
       value.page !== undefined &&
       value.textSpan !== undefined &&
       isTextSpanWithinText(value.textSpan, value.text) &&
-      value.row === undefined &&
       value.column === undefined &&
       value.boundingBox === undefined &&
       value.confidence === undefined
@@ -347,11 +347,10 @@ function isSourceObservation(value: unknown, mimeType: unknown): boolean {
   }
   if (value.kind === "ocr_text") {
     return (
-      value.row === undefined &&
       value.column === undefined &&
       value.textSpan === undefined &&
       (mimeType === "image/png" || mimeType === "image/jpeg"
-        ? value.page === undefined && value.boundingBox === undefined
+        ? value.page === undefined && value.boundingBox === undefined && value.row === undefined
         : value.page !== undefined && value.boundingBox !== undefined)
     );
   }
