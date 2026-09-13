@@ -202,7 +202,7 @@ may affect current displayed asset value
 
 ### Uncommitted review state and concurrency
 
-An edit creates the next external-record version and supersedes only the previous uncommitted current-state projection. It preserves the parse run, bounded raw source row, prior validation, review decisions, and audit. A committed record/event is never edited in place.
+An edit creates the next external-record version and supersedes only the previous uncommitted current-state projection. It preserves the parse run, bounded raw source row, prior validation, review decisions, and audit. A committed record/event is never edited in place. A committed external-record version is terminal: reparse never creates a successor version and never supersedes it; reparse output that diverges from the committed canonical fields attaches review work to the committed record; commit rejects any record whose stable_record_key already has a committed version.
 
 Every edit, remove, relationship, or Add request identifies the review item and expected current record version. The host compares both the version and current review status before writing. A stale request returns a safe conflict with no mutation so the renderer can reload current detail.
 

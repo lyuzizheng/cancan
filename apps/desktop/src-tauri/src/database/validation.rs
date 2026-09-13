@@ -206,3 +206,81 @@ pub(super) fn needs_attention(
 ) -> SourceDocumentRoutingOutcome {
     SourceDocumentRoutingOutcome::needs_attention(document_id, reason)
 }
+
+pub(super) fn validate_structured_parse_input(
+    document_id: &str,
+    input: &ValidatedStructuredParseInput,
+) -> StoreResult<()> {
+    if document_id.is_empty()
+        || input.normalization_profile_id.is_empty()
+        || input.normalization_profile_id.len() > 256
+        || input.profile_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
+        || input.records.is_empty()
+        || input.records.len() > 1_000
+        || !matches!(
+            serde_json::from_str::<Value>(&input.profile_json),
+            Ok(Value::Object(_))
+        )
+    {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid structured parse").into());
+    }
+    let mut stable_keys = HashSet::new();
+    for record in &input.records {
+        let valid_validation = matches!(
+            serde_json::from_str::<Value>(&record.validation_json),
+            Ok(Value::Object(values))
+                if values.get("schemaValid") == Some(&Value::Bool(true))
+                    && values.get("rawGrounded") == Some(&Value::Bool(true))
+                    && values.get("deterministicValidationPassed") == Some(&Value::Bool(true))
+        );
+        if record.account_id.is_empty()
+            || record.stable_record_key.is_empty()
+            || record.stable_record_key.len() > 256
+            || !stable_keys.insert(record.stable_record_key.as_str())
+            || !matches!(
+                record.record_type.as_str(),
+                "transaction" | "balance" | "position" | "trade" | "valuation" | "fee" | "interest"
+            )
+            || record
+                .event_type
+                .as_deref()
+                .is_some_and(|value| value.is_empty() || value.len() > 128)
+            || record
+                .posted_on
+                .as_deref()
+                .is_some_and(|value| !valid_iso_date(value))
+            || record
+                .posting_status
+                .as_deref()
+                .is_some_and(|value| !matches!(value, "provisional" | "posted"))
+            || record
+                .amount_value
+                .as_deref()
+                .is_some_and(|value| value.starts_with('-') || !valid_exact_decimal(value))
+            || record
+                .account_balance_delta
+                .as_deref()
+                .is_some_and(|value| !valid_exact_decimal(value))
+            || record
+                .currency
+                .as_deref()
+                .is_some_and(|value| !valid_currency(value))
+            || record.raw_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
+            || record.validation_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
+            || !matches!(
+                serde_json::from_str::<Value>(&record.raw_json),
+                Ok(Value::Object(_))
+            )
+            || !valid_validation
+        {
+            return Err(
+                io::Error::new(io::ErrorKind::InvalidInput, "invalid structured record").into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn valid_currency(value: &str) -> bool {
+    value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_uppercase())
+}
