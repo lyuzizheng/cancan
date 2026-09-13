@@ -1,8 +1,8 @@
 use super::*;
 
-const KEY: [u8; KEY_LEN] = [0x91; KEY_LEN];
+pub(super) const KEY: [u8; KEY_LEN] = [0x91; KEY_LEN];
 
-fn open_store(root: &Path) -> ManualImportStore {
+pub(super) fn open_store(root: &Path) -> ManualImportStore {
     let store = ManualImportStore::open(root, Zeroizing::new(KEY)).expect("open encrypted Vault");
     store
         .connection
@@ -1377,7 +1377,7 @@ fn persists_only_statement_password_reference_state() {
     );
 }
 
-fn seed_review_repayment(store: &mut ManualImportStore, card_first: bool) {
+pub(super) fn seed_review_repayment(store: &mut ManualImportStore, card_first: bool) {
     store
         .seed_money_source("source-hsbc", "hsbc", "HSBC", "bank")
         .expect("seed HSBC source");
@@ -1526,7 +1526,7 @@ fn seed_review_repayment(store: &mut ManualImportStore, card_first: bool) {
     }
 }
 
-fn prepared_repayment() -> CorePreparedReviewEvent {
+pub(super) fn prepared_repayment() -> CorePreparedReviewEvent {
     CorePreparedReviewEvent {
         event_class: "posting".to_owned(),
         event_date: "2026-06-30".to_owned(),

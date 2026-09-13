@@ -1661,6 +1661,84 @@ impl ManualImportStore {
             ],
         )?;
         for record in &input.records {
+            let committed_record = transaction
+                .query_row(
+                    "SELECT id, record_type, event_type, posted_on, amount_value, currency, account_balance_delta, raw_json \
+                     FROM external_records \
+                     WHERE stable_record_key = ?1 AND status = 'committed' \
+                     ORDER BY version DESC LIMIT 1",
+                    [&record.stable_record_key],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                            row.get::<_, Option<String>>(5)?,
+                            row.get::<_, Option<String>>(6)?,
+                            row.get::<_, String>(7)?,
+                        ))
+                    },
+                )
+                .optional()?;
+
+            if let Some((
+                committed_id,
+                committed_record_type,
+                committed_event_type,
+                committed_posted_on,
+                committed_amount_value,
+                committed_currency,
+                committed_account_balance_delta,
+                committed_raw_json,
+            )) = committed_record
+            {
+                let diverges = committed_record_type != record.record_type
+                    || committed_event_type != record.event_type
+                    || committed_posted_on != record.posted_on
+                    || committed_amount_value != record.amount_value
+                    || committed_currency != record.currency
+                    || committed_account_balance_delta != record.account_balance_delta;
+
+                if diverges {
+                    let review_item_id = new_database_id("review");
+                    transaction.execute(
+                        "INSERT INTO review_items(id, external_record_id, reason_code, status) \
+                         SELECT ?1, ?2, 'reparse_divergence', 'open' \
+                         WHERE NOT EXISTS ( \
+                           SELECT 1 FROM review_items \
+                           WHERE external_record_id = ?2 \
+                             AND reason_code = 'reparse_divergence' \
+                             AND status = 'open' \
+                         )",
+                        params![review_item_id, committed_id],
+                    )?;
+                }
+
+                let old_raw_sha256 = format!("{:x}", Sha256::digest(committed_raw_json.as_bytes()));
+                let new_raw_sha256 = format!("{:x}", Sha256::digest(record.raw_json.as_bytes()));
+                let source_ref = format!(
+                    "{}:{old_raw_sha256}:{new_raw_sha256}",
+                    record.stable_record_key
+                );
+
+                transaction.execute(
+                    "INSERT INTO audit_log( \
+                       id, entity_type, entity_id, action, actor, reason, source_ref, policy_version \
+                     ) VALUES (?1, 'external_record', ?2, 'reparse_skipped_committed_record', 'system', \
+                               'reparse', ?3, ?4)",
+                    params![
+                        new_audit_id(),
+                        committed_id,
+                        source_ref,
+                        REVIEW_POLICY_VERSION,
+                    ],
+                )?;
+
+                continue;
+            }
+
             let previous = transaction
                 .query_row(
                     "SELECT id, version FROM external_records \
@@ -2557,6 +2635,24 @@ impl ManualImportStore {
                 status: ReviewBatchGroupStatus::Stale,
             });
         }
+        let committed_sibling_exists: bool = transaction.query_row(
+            "SELECT EXISTS( \
+               SELECT 1 FROM external_records committed \
+               JOIN external_records current \
+                 ON current.stable_record_key = committed.stable_record_key \
+               WHERE current.id IN (?1, ?2) \
+                 AND committed.status = 'committed' \
+             )",
+            params![relationship.first_record_id, relationship.second_record_id],
+            |row| row.get(0),
+        )?;
+        if committed_sibling_exists {
+            return Ok(ReviewBatchGroupOutcome {
+                reason: Some("committed_sibling_exists".to_owned()),
+                record_ids: relationship.record_ids(),
+                status: ReviewBatchGroupStatus::Stale,
+            });
+        }
         let commit_key = review_commit_key(&event.event_type, &current_records);
         let existing = transaction
             .query_row(
@@ -3163,84 +3259,6 @@ fn enqueue_reconcile_document(
     Ok(())
 }
 
-fn validate_structured_parse_input(
-    document_id: &str,
-    input: &ValidatedStructuredParseInput,
-) -> StoreResult<()> {
-    if document_id.is_empty()
-        || input.normalization_profile_id.is_empty()
-        || input.normalization_profile_id.len() > 256
-        || input.profile_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
-        || input.records.is_empty()
-        || input.records.len() > 1_000
-        || !matches!(
-            serde_json::from_str::<Value>(&input.profile_json),
-            Ok(Value::Object(_))
-        )
-    {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid structured parse").into());
-    }
-    let mut stable_keys = HashSet::new();
-    for record in &input.records {
-        let valid_validation = matches!(
-            serde_json::from_str::<Value>(&record.validation_json),
-            Ok(Value::Object(values))
-                if values.get("schemaValid") == Some(&Value::Bool(true))
-                    && values.get("rawGrounded") == Some(&Value::Bool(true))
-                    && values.get("deterministicValidationPassed") == Some(&Value::Bool(true))
-        );
-        if record.account_id.is_empty()
-            || record.stable_record_key.is_empty()
-            || record.stable_record_key.len() > 256
-            || !stable_keys.insert(record.stable_record_key.as_str())
-            || !matches!(
-                record.record_type.as_str(),
-                "transaction" | "balance" | "position" | "trade" | "valuation" | "fee" | "interest"
-            )
-            || record
-                .event_type
-                .as_deref()
-                .is_some_and(|value| value.is_empty() || value.len() > 128)
-            || record
-                .posted_on
-                .as_deref()
-                .is_some_and(|value| !valid_iso_date(value))
-            || record
-                .posting_status
-                .as_deref()
-                .is_some_and(|value| !matches!(value, "provisional" | "posted"))
-            || record
-                .amount_value
-                .as_deref()
-                .is_some_and(|value| value.starts_with('-') || !valid_exact_decimal(value))
-            || record
-                .account_balance_delta
-                .as_deref()
-                .is_some_and(|value| !valid_exact_decimal(value))
-            || record
-                .currency
-                .as_deref()
-                .is_some_and(|value| !valid_currency(value))
-            || record.raw_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
-            || record.validation_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
-            || !matches!(
-                serde_json::from_str::<Value>(&record.raw_json),
-                Ok(Value::Object(_))
-            )
-            || !valid_validation
-        {
-            return Err(
-                io::Error::new(io::ErrorKind::InvalidInput, "invalid structured record").into(),
-            );
-        }
-    }
-    Ok(())
-}
-
-fn valid_currency(value: &str) -> bool {
-    value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_uppercase())
-}
-
 mod accounts;
 #[cfg(test)]
 mod accounts_tests;
@@ -3257,6 +3275,8 @@ mod intake_migration_tests;
 pub(crate) mod intake_test_support;
 mod migrations;
 mod parse_jobs;
+#[cfg(test)]
+mod reparse_tests;
 pub(crate) mod restore_decisions;
 mod rows;
 pub(crate) mod tasks;

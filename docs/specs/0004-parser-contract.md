@@ -357,6 +357,10 @@ new uncommitted records supersede prior uncommitted versions
 committed ledger events are never rewritten automatically by reparse
 changed output that conflicts with committed facts creates review work
 deleting the current source file makes its uncommitted records ineligible for future automatic commit but does not delete record history or alter committed events
+a committed external-record version is terminal: reparse never creates a successor
+version and never supersedes it; reparse output that diverges from the committed
+canonical fields attaches review work to the committed record; commit rejects any
+record whose stable_record_key already has a committed version
 ```
 
 ## Normalization profiles and confidence calibration
