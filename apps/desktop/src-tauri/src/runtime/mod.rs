@@ -238,7 +238,12 @@ struct NormalizerStatementPeriod {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case", tag = "status", deny_unknown_fields)]
+#[serde(
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    tag = "status",
+    deny_unknown_fields
+)]
 enum NormalizerResult {
     Classified {
         profile: Box<NormalizerProfile>,

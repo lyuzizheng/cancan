@@ -341,6 +341,16 @@ impl VaultRuntime {
                 ),
             );
         };
+        if statement_id.is_empty() || statement_id.len() > 256 {
+            return self.finish_normalizer_outcome_with_job(
+                parse_job,
+                vault_session_generation,
+                SourceDocumentRoutingOutcome::needs_attention(
+                    document_id,
+                    "classification_uncertain",
+                ),
+            );
+        };
         if !valid_normalization_profile(&profile, &proposal, extraction_bundle) {
             return self.finish_normalizer_outcome_with_job(
                 parse_job,
@@ -366,7 +376,7 @@ impl VaultRuntime {
             proposal.document.provider_root_id.as_deref(),
             statement_id,
         );
-        if sidecar_key != semantic_document_key {
+        if semantic_document_key.len() > 256 || sidecar_key != semantic_document_key {
             return self.finish_normalizer_outcome_with_job(
                 parse_job,
                 vault_session_generation,
