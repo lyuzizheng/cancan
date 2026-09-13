@@ -310,6 +310,7 @@ required amount/date/currency/balance fields must reproduce or deterministically
 provider-defined transformations and validation outcomes are summarized in external_records.validation_json
 native/OCR disagreement remains a validation conflict
 multimodal-only output that cannot be grounded may enter Review but cannot auto-commit
+native text observations are emitted per text line with a row index; OCR text observations are clustered into visual rows by bounding-box overlap; observations without a row index do not participate in grounding groups when row-scoped observations exist in the same bundle
 optional page/row/region data inside raw JSON is a display hint, not grounding authority or a required query dimension
 every committed event remains traceable to source document, parse run, record version, raw source object, and validation summary
 ```

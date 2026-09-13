@@ -29,13 +29,14 @@ function providerNormalizerCommandFixture() {
   ].join("\n");
   const observations = [
     {
-      id: "pdf-page-1-native-text",
+      id: "pdf-page-1-native-text-1",
       kind: "native_text",
       page: 1,
+      row: 1,
       textSpan: { start: 0, end: text.length },
       text,
       engine: "pdfkit",
-      engineVersion: "macos-page-string-v1",
+      engineVersion: "macos-page-string-v2",
     },
   ];
   return {
@@ -47,7 +48,7 @@ function providerNormalizerCommandFixture() {
       fileSha256: "d".repeat(64),
       mimeType: "application/pdf",
       metadata: {
-        extractionVersion: "native-observations-v1",
+        extractionVersion: "native-observations-v2",
         observationCount: observations.length,
       },
       observations,
@@ -146,7 +147,7 @@ if (
   messages[3]?.result?.status !== "classified" ||
   messages[3]?.result?.profile?.packageId !== "dbs/bank_statement@1" ||
   messages[3]?.result?.profile?.id !==
-    "mock:dbs/bank_statement@1:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1"
+    "mock:dbs/bank_statement@1:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v2"
 ) {
   throw new Error("sidecar smoke returned an invalid protocol transcript");
 }

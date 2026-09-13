@@ -7,7 +7,7 @@
     "fileSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "mimeType": "text/csv",
     "metadata": {
-      "extractionVersion": "native-observations-v1",
+      "extractionVersion": "native-observations-v2",
       "observationCount": 33
     },
     "observations": [

@@ -312,11 +312,12 @@ function providerDecimal(value: bigint): string {
   return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, "0")}`;
 }
 
-function nativeFixtureObservation(id: string, text: string): SourceObservation {
+function nativeFixtureObservation(id: string, text: string, row?: number): SourceObservation {
   return {
     id,
     kind: "native_text",
     page: 1,
+    ...(row !== undefined ? { row } : {}),
     textSpan: { start: 0, end: text.length },
     text,
     engine: "synthetic-provider-fixture",
@@ -416,6 +417,7 @@ export function createSyntheticProviderStatementFixture(
         engineVersion: "1",
       })),
   );
+  let currentRow = rawRows.length + 1;
   observations.push(
     nativeFixtureObservation(
       "fixture-marker",
@@ -425,11 +427,24 @@ export function createSyntheticProviderStatementFixture(
         `document_type=${providerPackage.documentType}`,
         `package_id=${providerPackage.packageId}`,
         `statement_id=${statementId}`,
-      ].join("\n"),
+      ].join(" "),
+      currentRow++,
     ),
-    nativeFixtureObservation("fingerprint", providerPackage.fingerprint.requiredAnchors.join(" ")),
-    nativeFixtureObservation("provider-account-id", `Account number ${providerAccountId}`),
-    nativeFixtureObservation("statement-currency", "Statement currency SGD"),
+    nativeFixtureObservation(
+      "fingerprint",
+      providerPackage.fingerprint.requiredAnchors.join(" "),
+      currentRow++,
+    ),
+    nativeFixtureObservation(
+      "provider-account-id",
+      `Account number ${providerAccountId}`,
+      currentRow++,
+    ),
+    nativeFixtureObservation(
+      "statement-currency",
+      "Statement currency SGD",
+      currentRow++,
+    ),
   );
 
   return {
@@ -440,7 +455,7 @@ export function createSyntheticProviderStatementFixture(
       mimeType: "application/pdf",
       observations,
       metadata: {
-        extractionVersion: "native-observations-v1",
+        extractionVersion: "native-observations-v2",
         observationCount: observations.length,
       },
     },
