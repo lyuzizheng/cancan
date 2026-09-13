@@ -7,6 +7,10 @@ import {
   type SourceObservation,
   type StructuredParseProposal,
 } from "@cancan/parsers";
+import {
+  createSyntheticTransferFixture,
+  syntheticBankRecordContract,
+} from "@cancan/parsers/testing";
 import { z } from "zod";
 
 export const toolNames = [
