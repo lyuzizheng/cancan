@@ -312,6 +312,7 @@ native/OCR disagreement remains a validation conflict
 multimodal-only output that cannot be grounded may enter Review but cannot auto-commit
 native text observations are emitted per text line with a row index; OCR text observations are clustered into visual rows by bounding-box overlap; observations without a row index do not participate in grounding groups when row-scoped observations exist in the same bundle
 optional page/row/region data inside raw JSON is a display hint, not grounding authority or a required query dimension
+raw.locator declares the inclusive row range the record spans; the validator narrows grounding to observations inside that range and rejects ranges with no observations; statement packages require a locator per record and chain-verify running balances row by row; any ISO-4217 code inside a record's grounding region that differs from the package currency rejects the package
 every committed event remains traceable to source document, parse run, record version, raw source object, and validation summary
 ```
 
@@ -445,6 +446,8 @@ duplicate row hash
 account mapping status
 impossible signs or values
 ```
+
+Statement packages chain-verify running balances row by row from the opening snapshot through each posting to the closing snapshot, so swapped or forged intermediate balances fail even when the statement total still closes. Per-row currency is a negative check only: a foreign ISO-4217 code inside a record's grounding region rejects the package, while a region with no currency code inherits the document-level SGD grounding. A foreign-currency row with no currency marking still books as SGD; per-row `raw.currency` plus generalized `capabilities.currency` is a separate follow-up.
 
 Structured model confidence may contribute to eligibility only through the accepted package/document threshold. It never grants eligibility alone: grounded evidence, deterministic validators, identity/deduplication/reconciliation gates, and the review/commit policy remain authoritative.
 

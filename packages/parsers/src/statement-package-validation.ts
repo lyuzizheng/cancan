@@ -5,7 +5,11 @@ import type {
   StructuredProposalValidation,
 } from "./contracts";
 import type { ProviderDocumentPackage } from "./provider-document-package";
-import { validateStructuredProposal } from "./validate-structured-proposal";
+import {
+  groundingRegionObservations,
+  parseRecordLocator,
+  validateStructuredProposal,
+} from "./validate-structured-proposal";
 
 const rawKeys = new Set([
   "kind",
@@ -37,9 +41,8 @@ function validateRaw(raw: Record<string, unknown>): void {
   if (Object.keys(raw).some((key) => !rawKeys.has(key)) || JSON.stringify(raw).length > 16_384) {
     throw new Error("unsupported statement row");
   }
-  const locator = raw.locator;
-  if (locator !== undefined && (!locator || Array.isArray(locator) || typeof locator !== "object")) {
-    throw new Error("invalid statement row locator");
+  if (parseRecordLocator(raw).kind !== "valid") {
+    throw new Error("statement row requires a valid locator");
   }
 }
 
@@ -169,6 +172,40 @@ function rawString(record: CanonicalExternalRecordInput, field: string): string 
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * ISO-4217 alphabetic codes observed by real bank statements. Any code inside
+ * a record's grounding region that differs from the package currency rejects
+ * the package; a region with no currency code inherits document-level SGD.
+ */
+const ISO_4217_CURRENCY_CODES: ReadonlySet<string> = new Set([
+  "AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "AUD", "AWG", "AZN",
+  "BAM", "BBD", "BDT", "BGN", "BHD", "BIF", "BMD", "BND", "BOB", "BRL",
+  "BSD", "BTN", "BWP", "BYN", "BZD", "CAD", "CDF", "CHE", "CHF", "CHW",
+  "CLF", "CLP", "CNY", "COP", "COU", "CRC", "CUC", "CUP", "CVE", "CZK",
+  "DJF", "DKK", "DOP", "DZD", "EGP", "ERN", "ETB", "EUR", "FJD", "FKP",
+  "GBP", "GEL", "GGP", "GHS", "GIP", "GMD", "GNF", "GTQ", "GYD", "HKD",
+  "HNL", "HRK", "HTG", "HUF", "IDR", "ILS", "IMP", "INR", "IQD", "IRR",
+  "ISK", "JEP", "JMD", "JOD", "JPY", "KES", "KGS", "KHR", "KMF", "KPW",
+  "KRW", "KWD", "KYD", "KZT", "LAK", "LBP", "LKR", "LRD", "LSL", "LYD",
+  "MAD", "MDL", "MGA", "MKD", "MMK", "MNT", "MOP", "MRU", "MUR", "MVR",
+  "MWK", "MXN", "MXV", "MYR", "MZN", "NAD", "NGN", "NIO", "NOK", "NPR",
+  "NZD", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR",
+  "RON", "RSD", "RUB", "RWF", "SAR", "SBD", "SCR", "SDG", "SEK", "SGD",
+  "SHP", "SLE", "SOS", "SRD", "SSP", "STN", "SVC", "SYP", "SZL", "THB",
+  "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TVD", "TWD", "TZS", "UAH",
+  "UGX", "USD", "UYU", "UZS", "VES", "VND", "VUV", "WST", "XAF", "XCD",
+  "XOF", "XPF", "YER", "ZAR", "ZMW", "ZWL",
+]);
+
+function groundingRegionCurrencyCodes(text: string): ReadonlySet<string> {
+  const codes = new Set<string>();
+  for (const token of text.toUpperCase().split(/[^A-Z]+/)) {
+    if (token.length === 3 && ISO_4217_CURRENCY_CODES.has(token)) {
+      codes.add(token);
+    }
+  }
+  return codes;
+}
 export async function validateStatementPackage(
   providerPackage: ProviderDocumentPackage,
   input: {
@@ -295,6 +332,11 @@ export async function validateStatementPackage(
     ) {
       add("currency_or_precision_unsupported", record.proposalRecordId);
     }
+    const region = groundingRegionObservations(input.extractionBundle, record.raw);
+    const regionText = region.map(({ text }) => text).join("\n");
+    if ([...groundingRegionCurrencyCodes(regionText)].some((code) => code !== "SGD")) {
+      add("currency_or_precision_unsupported", record.proposalRecordId);
+    }
   }
 
   for (const record of input.proposal.records) {
@@ -343,24 +385,49 @@ export async function validateStatementPackage(
       add("opening_closing_snapshot_required");
       continue;
     }
-    const openingValue = opening[0]?.balanceAfter
-      ? twoDecimalMinorUnits(opening[0].balanceAfter.value)
-      : undefined;
-    const closingValue = closing[0]?.balanceAfter
-      ? twoDecimalMinorUnits(closing[0].balanceAfter.value)
-      : undefined;
-    const deltas = postings.map(({ accountBalanceDelta }) =>
-      accountBalanceDelta ? twoDecimalMinorUnits(accountBalanceDelta.value) : undefined,
-    );
-    if (
-      openingValue === undefined ||
-      closingValue === undefined ||
-      deltas.some((value) => value === undefined) ||
-      openingValue +
-        deltas.reduce<bigint>((sum, value) => sum + (value as bigint), 0n) !==
-        closingValue
-    ) {
-      add("statement_reconciliation_failed");
+    const openingRecord = opening[0] as CanonicalExternalRecordInput;
+    const closingRecord = closing[closing.length - 1] as CanonicalExternalRecordInput;
+    const snapshotIds = new Set([openingRecord.proposalRecordId, closingRecord.proposalRecordId]);
+    const ordered = [openingRecord, ...(postings as CanonicalExternalRecordInput[]), closingRecord]
+      .map((record) => {
+        const locator = parseRecordLocator(record.raw);
+        const isSnapshot = snapshotIds.has(record.proposalRecordId);
+        const delta = isSnapshot
+          ? 0n
+          : record.accountBalanceDelta
+            ? twoDecimalMinorUnits(record.accountBalanceDelta.value)
+            : undefined;
+        return {
+          record,
+          order: locator.kind === "valid" && locator.row !== undefined ? locator.row : 0,
+          balance: record.balanceAfter ? twoDecimalMinorUnits(record.balanceAfter.value) : undefined,
+          delta,
+        };
+      })
+      .sort((left, right) => left.order - right.order);
+    let chainFailed = false;
+    let running = ordered[0]?.balance;
+    if (running === undefined) {
+      chainFailed = true;
+    }
+    for (const link of ordered.slice(1)) {
+      if (running === undefined || link.delta === undefined) {
+        chainFailed = true;
+        add("statement_reconciliation_failed", link.record.proposalRecordId);
+        break;
+      }
+      if (link.balance === undefined || running + link.delta !== link.balance) {
+        chainFailed = true;
+        add("statement_reconciliation_failed", link.record.proposalRecordId);
+        break;
+      }
+      running = link.balance;
+    }
+    if (!chainFailed) {
+      const tail = ordered[ordered.length - 1]?.balance;
+      if (tail === undefined || running !== tail) {
+        add("statement_reconciliation_failed");
+      }
     }
   }
 
