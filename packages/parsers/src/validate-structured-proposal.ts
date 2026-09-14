@@ -99,7 +99,7 @@ export const MAX_LOCATOR_ROW_SPAN = 4;
 export type ParsedRecordLocator =
   | { kind: "absent" }
   | { kind: "malformed" }
-  | { kind: "valid"; page?: number; row?: number; rowEnd?: number };
+  | { kind: "valid"; page?: number; row: number; rowEnd?: number };
 
 function isLocatorCoordinate(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1;
@@ -108,9 +108,8 @@ function isLocatorCoordinate(value: unknown): value is number {
 /**
  * Parses `raw.locator` into a row range the validator narrows grounding to.
  * Shape: `{ page?: number, row: number, rowEnd?: number }` with
- * `0 <= rowEnd - row <= MAX_LOCATOR_ROW_SPAN`. A locator is a display hint,
- * never grounding authority: it only declares the range the validator verifies
- * against observations. Identity derivation ignores it.
+ * `0 <= rowEnd - row <= MAX_LOCATOR_ROW_SPAN`. `row` is required: a rowless
+ * locator is malformed and rejects the record. Identity ignores the locator.
  */
 export function parseRecordLocator(raw: Record<string, unknown>): ParsedRecordLocator {
   const locator = raw.locator;
@@ -124,15 +123,15 @@ export function parseRecordLocator(raw: Record<string, unknown>): ParsedRecordLo
   if (page !== undefined && !isLocatorCoordinate(page)) {
     return { kind: "malformed" };
   }
-  if (row !== undefined && !isLocatorCoordinate(row)) {
+  if (!isLocatorCoordinate(row)) {
     return { kind: "malformed" };
   }
+  const startRow = row as number;
   if (rowEnd !== undefined) {
     if (
-      row === undefined ||
       !isLocatorCoordinate(rowEnd) ||
-      rowEnd < row ||
-      rowEnd - row > MAX_LOCATOR_ROW_SPAN
+      (rowEnd as number) < startRow ||
+      (rowEnd as number) - startRow > MAX_LOCATOR_ROW_SPAN
     ) {
       return { kind: "malformed" };
     }
@@ -140,13 +139,13 @@ export function parseRecordLocator(raw: Record<string, unknown>): ParsedRecordLo
   return {
     kind: "valid",
     ...(page === undefined ? {} : { page }),
-    ...(row === undefined ? {} : { row }),
-    ...(rowEnd === undefined ? {} : { rowEnd }),
+    row: startRow,
+    ...(rowEnd === undefined ? {} : { rowEnd: rowEnd as number }),
   };
 }
 
 function locatorMatchesObservation(
-  locator: { page?: number; row?: number; rowEnd?: number },
+  locator: { page?: number; row: number; rowEnd?: number },
   observation: SourceObservation,
 ): boolean {
   if (observation.row === undefined) {
@@ -159,13 +158,8 @@ function locatorMatchesObservation(
   ) {
     return false;
   }
-  if (locator.row !== undefined) {
-    const rowEnd = locator.rowEnd ?? locator.row;
-    if (observation.row < locator.row || observation.row > rowEnd) {
-      return false;
-    }
-  }
-  return true;
+  const rowEnd = locator.rowEnd ?? locator.row;
+  return observation.row >= locator.row && observation.row <= rowEnd;
 }
 
 /**
@@ -235,7 +229,7 @@ function rawRecordIsGrounded(
     if (used === undefined) {
       return false;
     }
-    if (locator.row !== undefined && region.some(({ kind }) => kind === "table_cell")) {
+    if (region.some(({ kind }) => kind === "table_cell")) {
       const anchored = used.some(
         (observation) => observation.kind === "table_cell" && observation.row === locator.row,
       );

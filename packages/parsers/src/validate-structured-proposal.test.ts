@@ -115,6 +115,57 @@ describe("validateStructuredProposal", () => {
     });
   });
 
+  it.each([{ locator: {} }, { locator: { page: 1 } }, { locator: { rowEnd: 3 } }])(
+    "rejects a rowless locator %o instead of widening grounding",
+    async ({ locator }) => {
+      const fixture = createSyntheticTransferFixture();
+      const record = fixture.proposal.records[0];
+      if (!record) {
+        throw new Error("synthetic fixture is missing its first record");
+      }
+      record.raw.locator = locator;
+
+      const result = await validateStructuredProposal({
+        ...fixture,
+        recordContract: syntheticBankRecordContract,
+      });
+
+      expect(result).toEqual({
+        status: "invalid",
+        errors: [
+          {
+            proposalRecordId: "record-checking-out",
+            code: "raw_record_not_grounded",
+          },
+        ],
+      });
+    },
+  );
+
+  it("grounds a row wrapped into the next line through a bounded multi-row locator", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    if (!record) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    const description = fixture.extractionBundle.observations.find(
+      ({ row, column }) => row === 2 && column === 2,
+    );
+    if (!description) {
+      throw new Error("synthetic fixture is missing its description observation");
+    }
+    description.row = 3;
+    description.id = "cell-3-2-wrapped";
+    record.raw.locator = { row: 2, rowEnd: 3 };
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result.status).toBe("valid");
+  });
+
   it("rejects a record whose values are spliced across locator rows", async () => {
     const fixture = createSyntheticTransferFixture();
     const record = fixture.proposal.records[0];

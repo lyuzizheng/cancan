@@ -173,38 +173,23 @@ function rawString(record: CanonicalExternalRecordInput, field: string): string 
 }
 
 /**
- * ISO-4217 alphabetic codes observed by real bank statements. Any code inside
- * a record's grounding region that differs from the package currency rejects
- * the package; a region with no currency code inherits document-level SGD.
+ * Foreign-currency tripwire for statement rows. Only SG-plausible settlement
+ * codes count, and only when the code sits next to an amount-like number, so
+ * ordinary description words (TOP-UP, ANG MO KIO, SDN BHD) never trip it.
+ * A region with no such code inherits document-level SGD grounding.
  */
-const ISO_4217_CURRENCY_CODES: ReadonlySet<string> = new Set([
-  "AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "AUD", "AWG", "AZN",
-  "BAM", "BBD", "BDT", "BGN", "BHD", "BIF", "BMD", "BND", "BOB", "BRL",
-  "BSD", "BTN", "BWP", "BYN", "BZD", "CAD", "CDF", "CHE", "CHF", "CHW",
-  "CLF", "CLP", "CNY", "COP", "COU", "CRC", "CUC", "CUP", "CVE", "CZK",
-  "DJF", "DKK", "DOP", "DZD", "EGP", "ERN", "ETB", "EUR", "FJD", "FKP",
-  "GBP", "GEL", "GGP", "GHS", "GIP", "GMD", "GNF", "GTQ", "GYD", "HKD",
-  "HNL", "HRK", "HTG", "HUF", "IDR", "ILS", "IMP", "INR", "IQD", "IRR",
-  "ISK", "JEP", "JMD", "JOD", "JPY", "KES", "KGS", "KHR", "KMF", "KPW",
-  "KRW", "KWD", "KYD", "KZT", "LAK", "LBP", "LKR", "LRD", "LSL", "LYD",
-  "MAD", "MDL", "MGA", "MKD", "MMK", "MNT", "MOP", "MRU", "MUR", "MVR",
-  "MWK", "MXN", "MXV", "MYR", "MZN", "NAD", "NGN", "NIO", "NOK", "NPR",
-  "NZD", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR",
-  "RON", "RSD", "RUB", "RWF", "SAR", "SBD", "SCR", "SDG", "SEK", "SGD",
-  "SHP", "SLE", "SOS", "SRD", "SSP", "STN", "SVC", "SYP", "SZL", "THB",
-  "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TVD", "TWD", "TZS", "UAH",
-  "UGX", "USD", "UYU", "UZS", "VES", "VND", "VUV", "WST", "XAF", "XCD",
-  "XOF", "XPF", "YER", "ZAR", "ZMW", "ZWL",
+const FOREIGN_SETTLEMENT_CURRENCIES: ReadonlySet<string> = new Set([
+  "USD", "EUR", "GBP", "JPY", "AUD", "HKD", "CNY", "MYR", "THB", "IDR",
+  "INR", "PHP", "VND", "KRW", "TWD", "NZD", "CAD", "CHF",
 ]);
 
-function groundingRegionCurrencyCodes(text: string): ReadonlySet<string> {
-  const codes = new Set<string>();
-  for (const token of text.toUpperCase().split(/[^A-Z]+/)) {
-    if (token.length === 3 && ISO_4217_CURRENCY_CODES.has(token)) {
-      codes.add(token);
-    }
-  }
-  return codes;
+const AMOUNT_ADJACENT_CURRENCY = new RegExp(
+  String.raw`\b(${[...FOREIGN_SETTLEMENT_CURRENCIES].join("|")})\b\s*[-+]?[\d,]*\d(?:\.\d+)?` +
+    String.raw`|\b[-+]?[\d,]*\d(?:\.\d+)?\s*\b(${[...FOREIGN_SETTLEMENT_CURRENCIES].join("|")})\b`,
+);
+
+function groundingRegionHasForeignCurrency(text: string): boolean {
+  return AMOUNT_ADJACENT_CURRENCY.test(text.toUpperCase());
 }
 export async function validateStatementPackage(
   providerPackage: ProviderDocumentPackage,
@@ -334,7 +319,7 @@ export async function validateStatementPackage(
     }
     const region = groundingRegionObservations(input.extractionBundle, record.raw);
     const regionText = region.map(({ text }) => text).join("\n");
-    if ([...groundingRegionCurrencyCodes(regionText)].some((code) => code !== "SGD")) {
+    if (groundingRegionHasForeignCurrency(regionText)) {
       add("currency_or_precision_unsupported", record.proposalRecordId);
     }
   }
@@ -388,8 +373,8 @@ export async function validateStatementPackage(
     const openingRecord = opening[0] as CanonicalExternalRecordInput;
     const closingRecord = closing[closing.length - 1] as CanonicalExternalRecordInput;
     const snapshotIds = new Set([openingRecord.proposalRecordId, closingRecord.proposalRecordId]);
-    const ordered = [openingRecord, ...(postings as CanonicalExternalRecordInput[]), closingRecord]
-      .map((record) => {
+    const chainRows = [openingRecord, ...(postings as CanonicalExternalRecordInput[]), closingRecord].map(
+      (record) => {
         const locator = parseRecordLocator(record.raw);
         const isSnapshot = snapshotIds.has(record.proposalRecordId);
         const delta = isSnapshot
@@ -399,35 +384,33 @@ export async function validateStatementPackage(
             : undefined;
         return {
           record,
-          order: locator.kind === "valid" && locator.row !== undefined ? locator.row : 0,
+          order: locator.kind === "valid" ? locator.row : undefined,
           balance: record.balanceAfter ? twoDecimalMinorUnits(record.balanceAfter.value) : undefined,
           delta,
         };
-      })
-      .sort((left, right) => left.order - right.order);
-    let chainFailed = false;
-    let running = ordered[0]?.balance;
-    if (running === undefined) {
-      chainFailed = true;
+      },
+    );
+    if (chainRows.some(({ order }) => order === undefined)) {
+      add("statement_reconciliation_failed");
+      continue;
     }
+    const ordered = chainRows.sort((left, right) => (left.order as number) - (right.order as number));
+    const head = ordered[0];
+    if (head?.balance === undefined) {
+      add("statement_reconciliation_failed", head?.record.proposalRecordId);
+      continue;
+    }
+    let running = head.balance;
     for (const link of ordered.slice(1)) {
-      if (running === undefined || link.delta === undefined) {
-        chainFailed = true;
+      if (link.delta === undefined) {
         add("statement_reconciliation_failed", link.record.proposalRecordId);
         break;
       }
       if (link.balance === undefined || running + link.delta !== link.balance) {
-        chainFailed = true;
         add("statement_reconciliation_failed", link.record.proposalRecordId);
         break;
       }
       running = link.balance;
-    }
-    if (!chainFailed) {
-      const tail = ordered[ordered.length - 1]?.balance;
-      if (tail === undefined || running !== tail) {
-        add("statement_reconciliation_failed");
-      }
     }
   }
 
