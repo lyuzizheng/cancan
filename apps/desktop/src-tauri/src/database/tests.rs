@@ -1731,6 +1731,100 @@ fn keeps_an_accepted_relationship_in_review_until_both_sides_are_selected() {
 }
 
 #[test]
+fn prepares_both_groups_when_two_relationships_share_a_record() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    seed_review_repayment(&mut store, false);
+    // One source record may carry more than one open review item, so a second
+    // accepted relationship can share `record-hsbc-cash` with the first.
+    store
+        .connection
+        .execute(
+            "INSERT INTO external_records( \
+               id, parse_run_id, source_document_id, account_id, stable_record_key, version, \
+               status, record_type, event_type, posted_on, amount_value, currency, \
+               account_balance_delta, raw_json, validation_json \
+             ) VALUES ('record-dbs-savings', 'parse-document-dbs-july', 'document-dbs-july', \
+                       'account-dbs-card', 'dbs-savings-payment', 1, 'review', 'transaction', \
+                       'credit_card_repayment', '2026-07-02', '250.00', 'SGD', '-250.00', \
+                       '{}', '{}')",
+            [],
+        )
+        .expect("seed second candidate record");
+    store
+        .connection
+        .execute(
+            "INSERT INTO review_items(id, external_record_id, reason_code, status) VALUES \
+               ('review-record-hsbc-cash-secondary', 'record-hsbc-cash', \
+                'possible_card_repayment', 'open'), \
+               ('review-record-dbs-savings', 'record-dbs-savings', \
+                'possible_card_repayment', 'open')",
+            [],
+        )
+        .expect("seed second pair of review items");
+    store
+        .accept_review_relationship(
+            "review-record-hsbc-cash",
+            1,
+            "record-dbs-card",
+            1,
+            &prepared_repayment(),
+        )
+        .expect("accept first repayment relationship");
+    let mut second_event = prepared_repayment();
+    second_event.source_record_ids = vec![
+        "record-dbs-savings".to_owned(),
+        "record-hsbc-cash".to_owned(),
+    ];
+    store
+        .accept_review_relationship(
+            "review-record-hsbc-cash-secondary",
+            1,
+            "record-dbs-savings",
+            1,
+            &second_event,
+        )
+        .expect("accept second repayment relationship sharing a record");
+    let job = store
+        .enqueue_commit_review_batch(&[
+            "review-record-hsbc-cash".to_owned(),
+            "review-record-dbs-card".to_owned(),
+            "review-record-hsbc-cash-secondary".to_owned(),
+            "review-record-dbs-savings".to_owned(),
+        ])
+        .expect("enqueue both accepted pairs");
+    let claimed = store
+        .claim_review_batch(&job.job_id, "test-worker")
+        .expect("claim batch")
+        .expect("queued job");
+
+    let (groups, outcomes) = store
+        .prepare_commit_review_groups(&claimed)
+        .expect("prepare both accepted pairs");
+
+    assert!(outcomes.is_empty());
+    let mut pairs = groups
+        .iter()
+        .map(|group| {
+            let mut record_ids = [group.records[0].id.clone(), group.records[1].id.clone()];
+            record_ids.sort();
+            record_ids.to_vec()
+        })
+        .collect::<Vec<_>>();
+    pairs.sort();
+    assert_eq!(
+        pairs,
+        vec![
+            vec!["record-dbs-card".to_owned(), "record-hsbc-cash".to_owned()],
+            vec![
+                "record-dbs-savings".to_owned(),
+                "record-hsbc-cash".to_owned()
+            ],
+        ]
+    );
+}
+
+#[test]
 fn blocks_review_commit_until_relationship_accounts_are_confirmed() {
     let root = tempfile::tempdir().expect("temporary Vault");
     let mut store = open_store(root.path());

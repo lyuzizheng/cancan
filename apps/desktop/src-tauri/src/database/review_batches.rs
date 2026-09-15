@@ -95,14 +95,17 @@ impl ManualImportStore {
                 record_ids_to_load.push(relationship.second_record_id.clone());
             }
         }
-        let mut records = self.core_records_by_id(&record_ids_to_load)?;
+        let records = self.core_records_by_id(&record_ids_to_load)?;
         let mut groups = Vec::new();
         let mut outcomes = Vec::new();
         for entry in entries {
             match entry {
                 PreparedReviewEntry::Relationship(relationship) => {
-                    let first = records.remove(&relationship.first_record_id);
-                    let second = records.remove(&relationship.second_record_id);
+                    // Two prepared relationships may share one core record (a
+                    // record can own more than one review item), so every group
+                    // reads its records without consuming them.
+                    let first = records.get(&relationship.first_record_id).cloned();
+                    let second = records.get(&relationship.second_record_id).cloned();
                     let (Some(first), Some(second)) = (first, second) else {
                         outcomes.push(ReviewBatchGroupOutcome {
                             reason: Some("stale_relationship".to_owned()),
