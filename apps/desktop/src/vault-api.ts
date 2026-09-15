@@ -74,6 +74,10 @@ export interface VaultApi {
     candidateRecordId: string,
     expectedCandidateVersion: number,
   ): Promise<ReviewMutationOutcome>;
+  acknowledgeReviewItem(
+    reviewItemId: string,
+    expectedRecordVersion: number,
+  ): Promise<ReviewMutationOutcome>;
   auditDuplicateCommittedVersions(): Promise<
     DuplicateCommittedVersionAuditRow[]
   >;
@@ -204,6 +208,13 @@ export function createVaultApi(
       const args: ReviewVersionArgs = { reviewItemId, expectedRecordVersion };
       return call<ReviewMutationOutcome, ReviewVersionArgs>(
         "remove_review_record",
+        args,
+      );
+    },
+    acknowledgeReviewItem: (reviewItemId, expectedRecordVersion) => {
+      const args: ReviewVersionArgs = { reviewItemId, expectedRecordVersion };
+      return call<ReviewMutationOutcome, ReviewVersionArgs>(
+        "acknowledge_review_item",
         args,
       );
     },

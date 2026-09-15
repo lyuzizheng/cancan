@@ -123,6 +123,7 @@ pub(crate) struct ReviewItemSummary {
     pub(crate) event_type: Option<String>,
     pub(crate) posted_on: Option<String>,
     pub(crate) reason_code: String,
+    pub(crate) record_committed: bool,
     pub(crate) record_id: String,
     pub(crate) record_version: i64,
     pub(crate) review_item_id: String,
@@ -138,6 +139,7 @@ pub(crate) struct ReviewItemDetail {
     pub(crate) event_type: Option<String>,
     pub(crate) posted_on: Option<String>,
     pub(crate) reason_code: String,
+    pub(crate) record_committed: bool,
     pub(crate) record_id: String,
     pub(crate) record_version: i64,
     pub(crate) review_item_id: String,
@@ -187,6 +189,7 @@ pub(crate) struct RelationshipCandidateSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ReviewMutationStatus {
+    Acknowledged,
     Conflict,
     RelationshipAccepted,
     Removed,
@@ -1036,12 +1039,13 @@ impl ManualImportStore {
             "SELECT review_items.id, external_records.id, external_records.version, \
                     review_items.reason_code, external_records.amount_value, \
                     external_records.currency, external_records.event_type, \
-                    external_records.posted_on, COALESCE(accounts.display_name, 'Unassigned') \
+                    external_records.posted_on, COALESCE(accounts.display_name, 'Unassigned'), \
+                    external_records.status = 'committed' \
              FROM review_items \
              JOIN external_records ON external_records.id = review_items.external_record_id \
              LEFT JOIN accounts ON accounts.id = external_records.account_id \
              WHERE review_items.status = 'open' \
-               AND external_records.status IN ('staged', 'review') \
+               AND external_records.status IN ('staged', 'review', 'committed') \
                AND (accounts.status IS NULL OR accounts.status <> 'dismissed') \
              ORDER BY external_records.posted_on, review_items.id",
         )?;
@@ -1061,7 +1065,8 @@ impl ManualImportStore {
                         external_records.currency, external_records.event_type, \
                         external_records.posted_on, COALESCE(accounts.display_name, 'Unassigned'), \
                         source_documents.original_filename, \
-                        COALESCE(money_sources.display_name, 'Unassigned') \
+                        COALESCE(money_sources.display_name, 'Unassigned'), \
+                        external_records.status = 'committed' \
                  FROM review_items \
                  JOIN external_records ON external_records.id = review_items.external_record_id \
                  JOIN source_documents ON source_documents.id = external_records.source_document_id \
@@ -1069,7 +1074,7 @@ impl ManualImportStore {
                  LEFT JOIN money_sources ON money_sources.id = source_documents.money_source_id \
                  WHERE review_items.id = ?1 \
                    AND review_items.status = 'open' \
-                   AND external_records.status IN ('staged', 'review')",
+                   AND external_records.status IN ('staged', 'review', 'committed')",
                 [review_item_id],
                 review_item_detail_from_row,
             )
@@ -3281,6 +3286,9 @@ mod parse_jobs;
 #[cfg(test)]
 mod reparse_tests;
 pub(crate) mod restore_decisions;
+mod review_records;
+#[cfg(test)]
+mod review_records_tests;
 mod rows;
 pub(crate) mod tasks;
 pub(crate) mod tasks_reconcile;

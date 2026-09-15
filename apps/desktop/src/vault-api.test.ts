@@ -62,6 +62,7 @@ describe("Vault API", () => {
       amountValue: "750.00",
     });
     await api.removeReviewRecord("review-1", 3);
+    await api.acknowledgeReviewItem("review-1", 3);
     await api.acceptReviewRelationship("review-1", 3, "record-2", 1);
     await api.enqueueCommitReviewBatch(["review-1", "review-2"]);
     await api.getReviewJob("job-1");
@@ -134,6 +135,10 @@ describe("Vault API", () => {
       ],
       [
         "remove_review_record",
+        { reviewItemId: "review-1", expectedRecordVersion: 3 },
+      ],
+      [
+        "acknowledge_review_item",
         { reviewItemId: "review-1", expectedRecordVersion: 3 },
       ],
       [

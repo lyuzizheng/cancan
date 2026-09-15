@@ -538,6 +538,7 @@ mod lifecycle;
 #[cfg(test)]
 mod remembered_key_tests;
 mod review;
+mod review_records;
 mod sidecar;
 mod source_confirmation;
 mod tasks;
@@ -560,6 +561,7 @@ pub(crate) use inbox::*;
 use keyring::*;
 pub(crate) use lifecycle::*;
 pub(crate) use review::*;
+pub(crate) use review_records::*;
 use sidecar::*;
 pub(crate) use source_confirmation::*;
 pub(crate) use tasks::*;

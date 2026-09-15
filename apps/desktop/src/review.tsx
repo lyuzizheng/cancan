@@ -57,6 +57,7 @@ export interface ReviewViewProps {
   mutatingItemId: string | null;
   notice: Notice | null;
   onAcceptCandidate: (candidate: RelationshipCandidateSummary) => void;
+  onAcknowledge: () => void;
   onCancelEdit: () => void;
   onCancelRemove: () => void;
   onClearSelection: () => void;
@@ -79,6 +80,7 @@ export function ReviewView(props: ReviewViewProps) {
   const items = props.items;
   const committing = props.job?.status === "running";
   const reviewCount = items?.length ?? 0;
+  const addableCount = items?.filter((item) => !item.recordCommitted).length ?? 0;
   return (
     <>
       <LedgerHeader
@@ -131,43 +133,45 @@ export function ReviewView(props: ReviewViewProps) {
 
           {items !== null && items.length > 0 ? (
             <>
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-ledger-rule py-3">
-                <p className="m-0 text-sm text-ledger-text-muted">
-                  {props.selectedIds.size === 0
-                    ? "None selected"
-                    : `${props.selectedIds.size} selected`}
-                </p>
-                <ActionBar>
-                  <Button
-                    variant="quiet"
-                    size="sm"
-                    disabled={committing || props.selectedIds.size === items.length}
-                    onClick={props.onSelectAll}
-                  >
-                    Select all
-                  </Button>
-                  <Button
-                    variant="quiet"
-                    size="sm"
-                    disabled={committing || props.selectedIds.size === 0}
-                    onClick={props.onClearSelection}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={committing || props.selectedIds.size === 0}
-                    onClick={props.onEnqueue}
-                  >
-                    {committing
-                      ? "Adding…"
-                      : props.selectedIds.size === 0
-                      ? "Add selected"
-                      : `Add selected (${props.selectedIds.size})`}
-                  </Button>
-                </ActionBar>
-              </div>
+              {addableCount > 0 ? (
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-ledger-rule py-3">
+                  <p className="m-0 text-sm text-ledger-text-muted">
+                    {props.selectedIds.size === 0
+                      ? "None selected"
+                      : `${props.selectedIds.size} selected`}
+                  </p>
+                  <ActionBar>
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      disabled={committing || props.selectedIds.size === addableCount}
+                      onClick={props.onSelectAll}
+                    >
+                      Select all
+                    </Button>
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      disabled={committing || props.selectedIds.size === 0}
+                      onClick={props.onClearSelection}
+                    >
+                      Clear
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={committing || props.selectedIds.size === 0}
+                      onClick={props.onEnqueue}
+                    >
+                      {committing
+                        ? "Adding…"
+                        : props.selectedIds.size === 0
+                        ? "Add selected"
+                        : `Add selected (${props.selectedIds.size})`}
+                    </Button>
+                  </ActionBar>
+                </div>
+              ) : null}
 
               <ul className="m-0 list-none p-0">
                 {items.map((item) => (
@@ -177,6 +181,7 @@ export function ReviewView(props: ReviewViewProps) {
                     key={item.reviewItemId}
                     mutating={props.mutatingItemId === item.reviewItemId}
                     onAcceptCandidate={props.onAcceptCandidate}
+                    onAcknowledge={props.onAcknowledge}
                     onCancelEdit={props.onCancelEdit}
                     onCancelRemove={props.onCancelRemove}
                     onCloseDetail={props.onCloseDetail}
@@ -205,6 +210,7 @@ function ReviewRow({
   item,
   mutating,
   onAcceptCandidate,
+  onAcknowledge,
   onCancelEdit,
   onCancelRemove,
   onCloseDetail,
@@ -222,6 +228,7 @@ function ReviewRow({
   item: ReviewItemSummary;
   mutating: boolean;
   onAcceptCandidate: ReviewViewProps["onAcceptCandidate"];
+  onAcknowledge: ReviewViewProps["onAcknowledge"];
   onCancelEdit: () => void;
   onCancelRemove: () => void;
   onCloseDetail: () => void;
@@ -242,17 +249,23 @@ function ReviewRow({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
         {/* The negative-margin label widens the 14px checkbox to a 26px
             pointer target (WCAG 2.5.8) without shifting the row layout;
-            self-start keeps the box on the first text line. */}
-        <label className="-m-1.5 flex shrink-0 cursor-pointer self-start p-1.5 has-[:disabled]:cursor-default">
-          <input
-            aria-label={`Select ${formatCurrencyAmount(item.currency, item.amountValue)} for ${item.accountLabel}`}
-            checked={selected}
-            className="mt-0.5 size-3.5 accent-accent-go-deep"
-            disabled={selectionDisabled}
-            onChange={() => onToggleSelect(item.reviewItemId)}
-            type="checkbox"
-          />
-        </label>
+            self-start keeps the box on the first text line. A record that is
+            already added is never part of the Add selection, so its row keeps
+            the same text position with an empty placeholder. */}
+        {item.recordCommitted ? (
+          <span aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+        ) : (
+          <label className="-m-1.5 flex shrink-0 cursor-pointer self-start p-1.5 has-[:disabled]:cursor-default">
+            <input
+              aria-label={`Select ${formatCurrencyAmount(item.currency, item.amountValue)} for ${item.accountLabel}`}
+              checked={selected}
+              className="mt-0.5 size-3.5 accent-accent-go-deep"
+              disabled={selectionDisabled}
+              onChange={() => onToggleSelect(item.reviewItemId)}
+              type="checkbox"
+            />
+          </label>
+        )}
         <div className="min-w-0 flex-1">
           <p className="m-0 text-md font-medium tabular-nums text-ledger-ink">
             {formatCurrencyAmount(item.currency, item.amountValue)}
@@ -280,6 +293,7 @@ function ReviewRow({
           item={item}
           mutating={mutating}
           onAcceptCandidate={onAcceptCandidate}
+          onAcknowledge={onAcknowledge}
           onCancelEdit={onCancelEdit}
           onCancelRemove={onCancelRemove}
           onConfirmRemove={onConfirmRemove}
@@ -298,6 +312,7 @@ function ReviewDetail({
   item,
   mutating,
   onAcceptCandidate,
+  onAcknowledge,
   onCancelEdit,
   onCancelRemove,
   onConfirmRemove,
@@ -310,6 +325,7 @@ function ReviewDetail({
   item: ReviewItemSummary;
   mutating: boolean;
   onAcceptCandidate: ReviewViewProps["onAcceptCandidate"];
+  onAcknowledge: ReviewViewProps["onAcknowledge"];
   onCancelEdit: () => void;
   onCancelRemove: () => void;
   onConfirmRemove: () => void;
@@ -351,7 +367,19 @@ function ReviewDetail({
         </dl>
       )}
 
-      {state.editing ? (
+      {item.recordCommitted ? (
+        <div className="grid gap-3">
+          <p className="m-0 text-sm text-ledger-text-muted">
+            This record is already added. Acknowledging clears the check and leaves the added
+            record exactly as it is.
+          </p>
+          <ActionBar align="start">
+            <Button variant="primary" size="sm" disabled={mutating} onClick={onAcknowledge}>
+              {mutating ? "Acknowledging…" : "Acknowledge"}
+            </Button>
+          </ActionBar>
+        </div>
+      ) : state.editing ? (
         <form
           className="grid gap-3"
           onSubmit={(event) => {
@@ -436,59 +464,61 @@ function ReviewDetail({
         </ActionBar>
       )}
 
-      <section aria-label="Looks related" className="grid gap-3">
-        <h3 className="m-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
-          Looks related
-        </h3>
-        {state.candidates === null ? (
-          <div role="status" className="grid gap-2">
-            <span className="sr-only">Looking for related records…</span>
-            <Skeleton className="h-16 w-full" />
-          </div>
-        ) : null}
-        {state.candidates !== null && state.candidates.length === 0 ? (
-          <p className="m-0 text-sm text-ledger-text-muted">No related records found.</p>
-        ) : null}
-        {state.candidates?.map((candidate) => (
-          <Panel className="grid gap-3 p-4" key={candidate.recordId}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="m-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
-                  This record
-                </p>
-                <p className="m-0 mt-1 text-md font-medium tabular-nums text-ledger-ink">
-                  {formatCurrencyAmount(item.currency, item.amountValue)}
-                </p>
-                <p className="m-0 mt-0.5 text-xs text-ledger-text-muted">
-                  {item.accountLabel}
-                  {item.postedOn ? ` · ${formatLedgerDate(item.postedOn)}` : " · No date"}
-                </p>
-              </div>
-              <div>
-                <p className="m-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
-                  {eventTypeLabel(candidate.eventType)}
-                </p>
-                <p className="m-0 mt-1 text-md font-medium tabular-nums text-ledger-ink">
-                  {formatCurrencyAmount(candidate.currency, candidate.amountValue)}
-                </p>
-                <p className="m-0 mt-0.5 text-xs text-ledger-text-muted">
-                  {candidate.accountLabel} · {formatLedgerDate(candidate.postedOn)}
-                </p>
-              </div>
+      {item.recordCommitted ? null : (
+        <section aria-label="Looks related" className="grid gap-3">
+          <h3 className="m-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+            Looks related
+          </h3>
+          {state.candidates === null ? (
+            <div role="status" className="grid gap-2">
+              <span className="sr-only">Looking for related records…</span>
+              <Skeleton className="h-16 w-full" />
             </div>
-            <ActionBar align="start">
-              <Button
-                variant="quiet"
-                size="sm"
-                disabled={mutating}
-                onClick={() => onAcceptCandidate(candidate)}
-              >
-                {mutating ? "Linking…" : "Accept link"}
-              </Button>
-            </ActionBar>
-          </Panel>
-        ))}
-      </section>
+          ) : null}
+          {state.candidates !== null && state.candidates.length === 0 ? (
+            <p className="m-0 text-sm text-ledger-text-muted">No related records found.</p>
+          ) : null}
+          {state.candidates?.map((candidate) => (
+            <Panel className="grid gap-3 p-4" key={candidate.recordId}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="m-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+                    This record
+                  </p>
+                  <p className="m-0 mt-1 text-md font-medium tabular-nums text-ledger-ink">
+                    {formatCurrencyAmount(item.currency, item.amountValue)}
+                  </p>
+                  <p className="m-0 mt-0.5 text-xs text-ledger-text-muted">
+                    {item.accountLabel}
+                    {item.postedOn ? ` · ${formatLedgerDate(item.postedOn)}` : " · No date"}
+                  </p>
+                </div>
+                <div>
+                  <p className="m-0 font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
+                    {eventTypeLabel(candidate.eventType)}
+                  </p>
+                  <p className="m-0 mt-1 text-md font-medium tabular-nums text-ledger-ink">
+                    {formatCurrencyAmount(candidate.currency, candidate.amountValue)}
+                  </p>
+                  <p className="m-0 mt-0.5 text-xs text-ledger-text-muted">
+                    {candidate.accountLabel} · {formatLedgerDate(candidate.postedOn)}
+                  </p>
+                </div>
+              </div>
+              <ActionBar align="start">
+                <Button
+                  variant="quiet"
+                  size="sm"
+                  disabled={mutating}
+                  onClick={() => onAcceptCandidate(candidate)}
+                >
+                  {mutating ? "Linking…" : "Accept link"}
+                </Button>
+              </ActionBar>
+            </Panel>
+          ))}
+        </section>
+      )}
     </div>
   );
 }

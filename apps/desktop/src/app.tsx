@@ -727,7 +727,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     });
     void Promise.all([
       api.getReviewDetail(item.reviewItemId),
-      api.listRelationshipCandidates(item.reviewItemId, item.recordVersion),
+      item.recordCommitted
+        ? Promise.resolve<RelationshipCandidateSummary[]>([])
+        : api.listRelationshipCandidates(item.reviewItemId, item.recordVersion),
     ]).then(([detail, candidates]) => {
       if (
         vaultSessionId.current !== sessionId
@@ -981,6 +983,47 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   };
 
+  const acknowledgeReviewItem = async () => {
+    const state = reviewDetail;
+    if (!state || mutatingReviewItemId !== null) {
+      return;
+    }
+    const sessionId = vaultSessionId.current;
+    setMutatingReviewItemId(state.reviewItemId);
+    try {
+      const outcome = await api.acknowledgeReviewItem(
+        state.reviewItemId,
+        state.summary.recordVersion,
+      );
+      if (vaultSessionId.current !== sessionId) {
+        return;
+      }
+      setMutatingReviewItemId(null);
+      if (outcome.status === "conflict") {
+        await handleReviewConflict(outcome.reason);
+        return;
+      }
+      reviewDetailRequestId.current += 1;
+      setReviewDetail(null);
+      setSelectedReviewIds((current) => {
+        const next = new Set(current);
+        next.delete(state.reviewItemId);
+        return next;
+      });
+      setNotice({
+        body: "The added record stays as it is. This check is out of the queue.",
+        tone: "success",
+        title: "Check cleared",
+      });
+      await loadFinanceData();
+    } catch (nextError) {
+      if (vaultSessionId.current === sessionId) {
+        setMutatingReviewItemId(null);
+        setError(commandErrorMessage(nextError));
+      }
+    }
+  };
+
   const acceptReviewCandidate = async (candidate: RelationshipCandidateSummary) => {
     const state = reviewDetail;
     if (!state || mutatingReviewItemId !== null) {
@@ -1083,7 +1126,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       return;
     }
     const ids = reviewItems
-      .filter((item) => selectedReviewIds.has(item.reviewItemId))
+      .filter((item) => selectedReviewIds.has(item.reviewItemId) && !item.recordCommitted)
       .map((item) => item.reviewItemId);
     if (ids.length === 0) {
       return;
@@ -1410,6 +1453,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             mutatingItemId={mutatingReviewItemId}
             notice={notice}
             onAcceptCandidate={(candidate) => void acceptReviewCandidate(candidate)}
+            onAcknowledge={() => void acknowledgeReviewItem()}
             onCancelEdit={cancelReviewEdit}
             onCancelRemove={cancelReviewRemove}
             onClearSelection={() => setSelectedReviewIds(new Set())}
@@ -1423,7 +1467,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onRemove={requestReviewRemove}
             onSaveEdit={() => void saveReviewEdit()}
             onSelectAll={() => setSelectedReviewIds(new Set(
-              reviewItems?.map((item) => item.reviewItemId) ?? [],
+              reviewItems
+                ?.filter((item) => !item.recordCommitted)
+                .map((item) => item.reviewItemId) ?? [],
             ))}
             onStartEdit={startReviewEdit}
             onToggleSelect={toggleReviewSelection}
