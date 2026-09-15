@@ -441,6 +441,77 @@ pub(super) fn validate_classification(
     Ok(())
 }
 
+#[cfg(test)]
+pub(super) fn test_support_register_import(
+    store: &mut ManualImportStore,
+    input: &SourceDocumentImport<'_>,
+    restore_deleted_document_id: Option<&str>,
+) -> StoreResult<SourceDocumentImportOutcome> {
+    validate_import(input)?;
+    let source = FileVault::prepare(input.source_path)?;
+    test_support_register_prepared_import(store, input, source, restore_deleted_document_id)
+}
+
+#[cfg(test)]
+pub(super) fn test_support_register_captured_import(
+    store: &mut ManualImportStore,
+    input: &SourceDocumentImport<'_>,
+    captured_bytes: Zeroizing<Vec<u8>>,
+    restore_deleted_document_id: Option<&str>,
+) -> StoreResult<SourceDocumentImportOutcome> {
+    validate_import(input)?;
+    validate_captured_container(input.mime_type, &captured_bytes)?;
+    let source = FileVault::prepare_bytes(captured_bytes)?;
+    test_support_register_prepared_import(store, input, source, restore_deleted_document_id)
+}
+
+#[cfg(test)]
+pub(super) fn test_support_persist_captured_import(
+    connection: &mut Connection,
+    input: &SourceDocumentImport<'_>,
+    stored: &StoredFile,
+    restore_deleted_document_id: Option<&str>,
+) -> StoreResult<SourceDocumentImportOutcome> {
+    Ok(persist_import(
+        connection,
+        input,
+        stored,
+        restore_deleted_document_id,
+        None,
+    )?)
+}
+
+#[cfg(test)]
+fn test_support_register_prepared_import(
+    store: &mut ManualImportStore,
+    input: &SourceDocumentImport<'_>,
+    source: PreparedSource,
+    restore_deleted_document_id: Option<&str>,
+) -> StoreResult<SourceDocumentImportOutcome> {
+    if matches!(input.mime_type, "image/png" | "image/jpeg") {
+        validate_image_container(source.plaintext(), input.mime_type)?;
+    }
+    let capture = match store.source_capture_plan(input, &source, restore_deleted_document_id)? {
+        SourceCapturePlan::Capture(capture) => capture,
+        SourceCapturePlan::RestoreConfirmationRequired(outcome) => return Ok(outcome),
+    };
+    let stored = capture.store_prepared(&source)?;
+    match test_support_persist_captured_import(
+        &mut store.connection,
+        input,
+        &stored,
+        restore_deleted_document_id,
+    ) {
+        Ok(outcome)
+            if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired =>
+        {
+            Ok(outcome)
+        }
+        Ok(outcome) => Ok(outcome),
+        Err(error) => Err(error),
+    }
+}
+
 pub(super) fn hex_encode(bytes: &[u8]) -> String {
     let mut hex = String::with_capacity(bytes.len() * 2);
     for byte in bytes {

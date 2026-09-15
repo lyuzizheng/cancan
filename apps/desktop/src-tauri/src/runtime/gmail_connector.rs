@@ -5,6 +5,11 @@
         reason = "the dedicated connector route has no renderer command until the later onboarding checkpoint"
     )
 )]
+// Dedicated Gmail OAuth connector route (spec 0003).
+//
+// Test-only until the later onboarding checkpoint wires a renderer command:
+// no `#[tauri::command]` calls `authorize_gmail_mailbox` yet, and the
+// `cancan-gmail-connector` external binary ships only through `pnpm build:sidecar`.
 
 use super::*;
 use std::{

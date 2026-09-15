@@ -24,6 +24,24 @@ pub(super) fn runtime_fixture() -> (tempfile::TempDir, VaultRuntime) {
     (parent, runtime)
 }
 
+#[cfg(test)]
+impl VaultRuntime {
+    pub(super) fn seed_money_source(
+        &self,
+        id: &str,
+        provider_key: &str,
+        display_name: &str,
+        source_type: &str,
+    ) -> Result<(), RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .seed_money_source(id, provider_key, display_name, source_type)
+            .map_err(|_| RuntimeError::new("seed_failed"))
+    }
+}
+
 pub(super) fn write_source(
     parent: &std::path::Path,
     name: &str,

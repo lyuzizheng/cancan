@@ -429,18 +429,6 @@ pub(crate) struct ValidatedStructuredParseInput {
     pub(crate) records: Vec<ValidatedExternalRecordInput>,
 }
 
-#[cfg(test)]
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) struct StructuredParseTestState {
-    pub(crate) balance_snapshots_without_amount: i64,
-    pub(crate) ledger_events: i64,
-    pub(crate) open_review_items: i64,
-    pub(crate) parse_runs: i64,
-    pub(crate) reconcile_status: Option<String>,
-    pub(crate) records: i64,
-    pub(crate) staged_records: i64,
-}
-
 #[derive(Debug)]
 struct ExistingDocument {
     document_id: String,
@@ -493,30 +481,6 @@ impl ManualImportStore {
 
     pub(crate) fn master_key(&self) -> &[u8; KEY_LEN] {
         &self.master_key
-    }
-
-    #[cfg(test)]
-    pub fn register_import(
-        &mut self,
-        input: &SourceDocumentImport<'_>,
-        restore_deleted_document_id: Option<&str>,
-    ) -> StoreResult<SourceDocumentImportOutcome> {
-        validate_import(input)?;
-        let source = FileVault::prepare(input.source_path)?;
-        self.register_prepared_import(input, source, restore_deleted_document_id)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn register_captured_import(
-        &mut self,
-        input: &SourceDocumentImport<'_>,
-        captured_bytes: Zeroizing<Vec<u8>>,
-        restore_deleted_document_id: Option<&str>,
-    ) -> StoreResult<SourceDocumentImportOutcome> {
-        validate_import(input)?;
-        validate_captured_container(input.mime_type, &captured_bytes)?;
-        let source = FileVault::prepare_bytes(captured_bytes)?;
-        self.register_prepared_import(input, source, restore_deleted_document_id)
     }
 
     pub(crate) fn prepare_source_path(
@@ -579,32 +543,6 @@ impl ManualImportStore {
                 .as_ref()
                 .is_some_and(|document| document.file_state != "available"),
         }))
-    }
-
-    #[cfg(test)]
-    fn register_prepared_import(
-        &mut self,
-        input: &SourceDocumentImport<'_>,
-        source: PreparedSource,
-        restore_deleted_document_id: Option<&str>,
-    ) -> StoreResult<SourceDocumentImportOutcome> {
-        if matches!(input.mime_type, "image/png" | "image/jpeg") {
-            validate_image_container(source.plaintext(), input.mime_type)?;
-        }
-        let capture = match self.source_capture_plan(input, &source, restore_deleted_document_id)? {
-            SourceCapturePlan::Capture(capture) => capture,
-            SourceCapturePlan::RestoreConfirmationRequired(outcome) => return Ok(outcome),
-        };
-        let stored = capture.store_prepared(&source)?;
-        match self.persist_captured_import(input, &stored, restore_deleted_document_id) {
-            Ok(outcome)
-                if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired =>
-            {
-                Ok(outcome)
-            }
-            Ok(outcome) => Ok(outcome),
-            Err(error) => Err(error),
-        }
     }
 
     pub(crate) fn deleted_source_hashes(&self) -> StoreResult<BTreeSet<String>> {
@@ -1373,14 +1311,6 @@ impl ManualImportStore {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn apply_trusted_classification(
-        &mut self,
-        input: &TrustedDocumentClassification<'_>,
-    ) -> StoreResult<SourceDocumentRoutingOutcome> {
-        self.apply_trusted_classification_with_parse_job(input, None)
-    }
-
     pub(crate) fn apply_trusted_classification_for_parse_job(
         &mut self,
         input: &TrustedDocumentClassification<'_>,
@@ -1800,97 +1730,6 @@ impl ManualImportStore {
             )?;
         }
         transaction.commit()?;
-        Ok(())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn structured_parse_test_state(
-        &self,
-        document_id: &str,
-    ) -> StoreResult<StructuredParseTestState> {
-        Ok(StructuredParseTestState {
-            parse_runs: self.connection.query_row(
-                "SELECT count(*) FROM parse_runs WHERE source_document_id = ?1",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            records: self.connection.query_row(
-                "SELECT count(*) FROM external_records WHERE source_document_id = ?1",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            staged_records: self.connection.query_row(
-                "SELECT count(*) FROM external_records \
-                 WHERE source_document_id = ?1 AND status = 'staged'",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            balance_snapshots_without_amount: self.connection.query_row(
-                "SELECT count(*) FROM external_records \
-                 WHERE source_document_id = ?1 AND record_type = 'balance' \
-                   AND amount_value IS NULL",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            open_review_items: self.connection.query_row(
-                "SELECT count(*) FROM review_items \
-                 JOIN external_records ON external_records.id = review_items.external_record_id \
-                 WHERE external_records.source_document_id = ?1 \
-                   AND review_items.reason_code = 'normalization_profile_unqualified' \
-                   AND review_items.status = 'open'",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            reconcile_status: self
-                .connection
-                .query_row(
-                    "SELECT status FROM jobs WHERE related_source_document_id = ?1 \
-                     AND job_type = 'reconcile_document'",
-                    [document_id],
-                    |row| row.get(0),
-                )
-                .optional()?,
-            ledger_events: self.connection.query_row(
-                "SELECT count(*) FROM ledger_events",
-                [],
-                |row| row.get(0),
-            )?,
-        })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn structured_parse_posting_status(
-        &self,
-        document_id: &str,
-        stable_record_key: &str,
-    ) -> StoreResult<Option<String>> {
-        self.connection
-            .query_row(
-                "SELECT posting_status FROM external_records \
-                 WHERE source_document_id = ?1 AND stable_record_key = ?2",
-                params![document_id, stable_record_key],
-                |row| row.get(0),
-            )
-            .map_err(Into::into)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn expire_reconcile_lease_for_test(&self, document_id: &str) -> StoreResult<()> {
-        self.connection.execute(
-            "UPDATE jobs SET lease_until = datetime('now', '-1 second') \
-             WHERE related_source_document_id = ?1 AND job_type = 'reconcile_document'",
-            [document_id],
-        )?;
-        Ok(())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn expire_parse_document_lease_for_test(&self, job_id: &str) -> StoreResult<()> {
-        self.connection.execute(
-            "UPDATE jobs SET lease_until = datetime('now', '-1 second') \
-             WHERE id = ?1 AND job_type = 'parse_document'",
-            [job_id],
-        )?;
         Ok(())
     }
 
@@ -3109,22 +2948,6 @@ impl ManualImportStore {
         Ok(row)
     }
 
-    #[cfg(test)]
-    pub(crate) fn seed_money_source(
-        &self,
-        id: &str,
-        provider_key: &str,
-        display_name: &str,
-        source_type: &str,
-    ) -> StoreResult<()> {
-        self.connection.execute(
-            "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
-             VALUES (?1, ?2, ?3, ?4)",
-            params![id, provider_key, display_name, source_type],
-        )?;
-        Ok(())
-    }
-
     fn reconcile_files(&mut self) -> StoreResult<()> {
         let documents = {
             let mut statement = self.connection.prepare(
@@ -3270,6 +3093,8 @@ mod accounts_tests;
 mod audit;
 #[cfg(test)]
 mod audit_tests;
+#[cfg(test)]
+mod database_test_support;
 mod gmail;
 #[cfg(test)]
 mod gmail_tests;
@@ -3299,6 +3124,8 @@ mod tests;
 mod validation;
 
 pub(crate) use audit::*;
+#[cfg(test)]
+pub(crate) use database_test_support::StructuredParseTestState;
 pub(crate) use gmail::*;
 use imports::*;
 use migrations::*;
