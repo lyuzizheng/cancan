@@ -145,7 +145,7 @@ fn local_inbox_bookmark_is_paused_while_locked_and_disable_removes_it() {
     bookmarks
         .save(b"security-scoped-bookmark")
         .expect("save bookmark");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
 
     let paused = runtime.local_inbox_status().expect("paused status");
     assert_eq!(paused.access_state, LocalInboxAccessState::Paused);
@@ -235,7 +235,7 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
     runtime
         .render_source_document_page(&outcome.document_id, 1)
         .expect("render session-unlocked statement");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("reopen locked Vault");
@@ -263,7 +263,9 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
             .as_slice(),
         b"statement-password"
     );
-    runtime.lock().expect("lock saved-password session");
+    runtime
+        .test_support_lock()
+        .expect("lock saved-password session");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("reopen saved-password Vault");
@@ -582,7 +584,7 @@ fn saves_an_atomic_plaintext_copy_only_outside_the_vault() {
             .code(),
         "source_copy_location_invalid"
     );
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .save_source_document_copy(&imported.document_id, &destination, session_generation,)
@@ -688,7 +690,10 @@ fn creates_locks_and_unlocks_a_vault_without_exposing_the_master_key() {
             .windows("synthetic-vault-password".len())
             .any(|bytes| bytes == b"synthetic-vault-password")
     );
-    assert_eq!(runtime.lock().expect("lock Vault"), VaultStatus::Locked);
+    assert_eq!(
+        runtime.test_support_lock().expect("lock Vault"),
+        VaultStatus::Locked
+    );
     assert_eq!(
         runtime
             .unlock(b"wrong-password")
@@ -771,7 +776,7 @@ fn saves_recovery_outside_the_vault_and_persists_only_its_fingerprint() {
         "recovery_already_configured"
     );
 
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     drop(runtime);
     let restarted = VaultRuntime::new(root);
     assert!(
@@ -851,7 +856,7 @@ fn lock_waits_for_store_cleanup_and_rejects_a_stale_vault_session_generation() {
     let (finished, completion) = std::sync::mpsc::channel();
     thread::spawn(move || {
         finished
-            .send(locking_runtime.lock())
+            .send(locking_runtime.test_support_lock())
             .expect("send lock result");
     });
 
@@ -911,7 +916,7 @@ fn remembers_unlock_in_the_secret_store_and_removes_it_explicitly() {
             status: VaultStatus::Unlocked,
         }
     );
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     drop(runtime);
 
     let restarted = VaultRuntime::with_remembered_keys(root.clone(), remembered_keys.clone());
@@ -930,7 +935,7 @@ fn remembers_unlock_in_the_secret_store_and_removes_it_explicitly() {
         VaultStatus::Unlocked
     );
     restarted.forget_this_mac().expect("forget this Mac");
-    restarted.lock().expect("lock forgotten Vault");
+    restarted.test_support_lock().expect("lock forgotten Vault");
     drop(restarted);
 
     let forgotten = VaultRuntime::with_remembered_keys(root, remembered_keys);
@@ -1002,7 +1007,7 @@ fn saves_updates_and_removes_one_statement_password_per_money_source() {
         .save_statement_password("source-dbs", b"locked-statement-password")
         .expect("save before lock");
     let locked_state = statement_password_state(&runtime).expect("state before lock");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .save_statement_password("source-dbs", b"password")
@@ -1095,7 +1100,7 @@ fn reconciles_statement_password_crash_boundaries_after_unlock() {
     statement_passwords
         .save(&storage_key, b"unverified-different-password")
         .expect("simulate unverified Keychain write before crash");
-    runtime.lock().expect("simulate process lock");
+    runtime.test_support_lock().expect("simulate process lock");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("unlock and discard unverified pending save");
@@ -1120,7 +1125,9 @@ fn reconciles_statement_password_crash_boundaries_after_unlock() {
     statement_passwords
         .delete(&storage_key)
         .expect("simulate Keychain delete before crash");
-    runtime.lock().expect("simulate second process lock");
+    runtime
+        .test_support_lock()
+        .expect("simulate second process lock");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("unlock and reconcile pending delete");
@@ -1147,7 +1154,7 @@ fn unlock_paths_propagate_statement_password_reconciliation_failures() {
     statement_passwords
         .fail_delete
         .store(true, Ordering::SeqCst);
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
 
     assert_eq!(
         runtime
@@ -1180,7 +1187,7 @@ fn unlock_paths_propagate_statement_password_reconciliation_failures() {
     statement_passwords
         .fail_delete
         .store(true, Ordering::SeqCst);
-    runtime.lock().expect("lock Vault again");
+    runtime.test_support_lock().expect("lock Vault again");
 
     assert_eq!(
         runtime
@@ -1269,7 +1276,7 @@ fn rejects_empty_passwords_and_existing_or_corrupt_vaults() {
     runtime
         .create(b"synthetic-vault-password")
         .expect("create Vault");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .create(b"another-password")
@@ -1344,7 +1351,10 @@ fn classifies_a_missing_wrapper_consistently_as_an_invalid_vault() {
         "invalid_vault"
     );
     assert_eq!(
-        runtime.lock().expect_err("invalid lock").code(),
+        runtime
+            .test_support_lock()
+            .expect_err("invalid lock")
+            .code(),
         "invalid_vault"
     );
 }
@@ -1410,7 +1420,7 @@ fn rejects_unlock_when_the_existing_vault_database_is_missing() {
     runtime
         .create(b"synthetic-vault-password")
         .expect("create Vault");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     let database_path = root.join(DATABASE_FILE_NAME);
     fs::remove_file(&database_path).expect("remove Vault database");
 
@@ -1525,7 +1535,7 @@ fn imports_and_lists_an_unassigned_document_only_while_unlocked() {
         assert_eq!(persisted[0].semantic_document_key, None);
     }
 
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .list_unassigned_source_documents()
@@ -1584,7 +1594,7 @@ fn renders_an_imported_pdf_in_memory_only_while_the_vault_is_unlocked() {
     assert_eq!(rendered.page_number, 1);
     assert!(!rendered.png_base64.is_empty());
     assert_eq!(vault_entries(&vault_root), before);
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .render_source_document_page(&imported.document_id, 1)
@@ -1819,7 +1829,7 @@ fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
         "document_unavailable"
     );
 
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .preview_source_document(&imported.document_id)
@@ -2158,7 +2168,9 @@ fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() 
             .access_state,
         LocalInboxAccessState::Enabled
     );
-    runtime.lock().expect("lock Vault before restart");
+    runtime
+        .test_support_lock()
+        .expect("lock Vault before restart");
     drop(runtime);
 
     let runtime = VaultRuntime::with_secret_stores(

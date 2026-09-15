@@ -45,7 +45,7 @@ fn lock_and_unlock_reject_a_parse_result_extracted_by_the_old_vault_session() {
         .normalization_input(&imported.document_id)
         .expect("extract input in current session");
 
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("unlock Vault");
@@ -94,7 +94,7 @@ fn reopen_recovers_expired_parse_work_when_local_inbox_is_disabled() {
         .expect("unlocked store")
         .expire_parse_document_lease_for_test(&attempt.claim.job_id)
         .expect("expire parse lease");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     drop(runtime);
 
     let reopened = test_runtime(&vault_root, bookmarks);
@@ -142,7 +142,7 @@ fn reopen_requeues_an_unexpired_parse_claim_and_rejects_the_old_token() {
         .start_local_inbox_parse(&job)
         .expect("claim parse job")
         .expect("parse job claimed");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     drop(runtime);
 
     let reopened = test_runtime(&vault_root, bookmarks);
