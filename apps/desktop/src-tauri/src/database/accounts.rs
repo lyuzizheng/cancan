@@ -134,29 +134,6 @@ impl ManualImportStore {
         Ok(prompts)
     }
 
-    #[cfg(test)]
-    pub(crate) fn confirm_candidate_accounts(
-        &mut self,
-        money_source_id: &str,
-        expected_candidate_account_ids: &[String],
-        audit_id: &str,
-    ) -> StoreResult<AccountConfirmationOutcome> {
-        let proposal_version = candidate_proposal_version(&self.connection, money_source_id)?;
-        self.decide_candidate_accounts(
-            money_source_id,
-            &proposal_version,
-            &expected_candidate_account_ids
-                .iter()
-                .cloned()
-                .map(|account_id| CandidateAccountDecisionInput {
-                    account_id,
-                    action: CandidateAccountDecision::Accept,
-                })
-                .collect::<Vec<_>>(),
-            audit_id,
-        )
-    }
-
     pub(crate) fn decide_candidate_accounts(
         &mut self,
         money_source_id: &str,
@@ -369,4 +346,12 @@ fn candidate_proposal_version(
         .collect::<Result<Vec<_>, _>>()?;
     let canonical = serde_json::to_vec(&candidates)?;
     Ok(format!("{:x}", Sha256::digest(canonical)))
+}
+
+#[cfg(test)]
+pub(super) fn candidate_proposal_version_for_test(
+    connection: &Connection,
+    money_source_id: &str,
+) -> StoreResult<String> {
+    candidate_proposal_version(connection, money_source_id)
 }

@@ -1,3 +1,7 @@
+//! Dedicated Gmail mailbox persistence route (spec 0003).
+//!
+//! Test-only until the later onboarding checkpoint wires a renderer command:
+//! no `#[tauri::command]` calls these methods yet.
 use super::gmail_connector::run_gmail_connector_sidecar;
 use super::*;
 use crate::database::GmailAccountStatus;
