@@ -86,6 +86,7 @@ const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const NORMALIZER_MAX_MESSAGE_BYTES: usize = 256 * 1024;
+const NORMALIZER_INPUT_STRATEGY: &str = "native-observations-v2";
 // A CSV preview returns at most the first lines of the decrypted text. A small
 // CSV may appear in full, but the renderer never receives raw original-file
 // bytes or unbounded content. The caps keep IPC bounded while giving enough

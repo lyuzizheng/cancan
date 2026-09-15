@@ -38,6 +38,9 @@ const RECONCILE_DOCUMENT_LEASE_SECONDS: i64 = 300;
 const COMMIT_REVIEW_BATCH_LEASE_SECONDS: i64 = 300;
 const MAX_SUPPORTED_RELATIONSHIP_WINDOW_DAYS: i64 = 7;
 const MAX_PERSISTED_PARSE_JSON_BYTES: usize = 16 * 1024;
+pub(crate) const MAX_STRUCTURED_PARSE_RECORDS: usize = 1_000;
+const RECENT_ACTIVITY_LIMIT: i64 = 50;
+const RELATIONSHIP_CANDIDATE_LIMIT: i64 = 100;
 
 type StoreResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -1043,9 +1046,9 @@ impl ManualImportStore {
              FROM ledger_events \
              WHERE status = 'committed' \
              ORDER BY event_date DESC, created_at DESC, id DESC \
-             LIMIT 50",
+             LIMIT ?1",
         )?;
-        let rows = statement.query_map([], |row| {
+        let rows = statement.query_map([RECENT_ACTIVITY_LIMIT], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -1539,7 +1542,7 @@ impl ManualImportStore {
                    )) \
                ) \
              ORDER BY ABS(julianday(posted_on) - julianday(?4)), posted_on, id \
-             LIMIT 100",
+             LIMIT ?9",
         )?;
         let candidates = statement
             .query_map(
@@ -1552,6 +1555,7 @@ impl ManualImportStore {
                     record.account_id,
                     record.account_type,
                     record.account_balance_delta,
+                    RELATIONSHIP_CANDIDATE_LIMIT,
                 ],
                 core_review_record_from_row,
             )?

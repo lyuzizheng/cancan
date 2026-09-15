@@ -291,7 +291,7 @@ export function createSyntheticTransferFixture(): {
       mimeType: "text/csv",
       observations,
       metadata: {
-        extractionVersion: "native-observations-v1",
+        extractionVersion: "native-observations-v2",
         observationCount: observations.length,
       },
     },

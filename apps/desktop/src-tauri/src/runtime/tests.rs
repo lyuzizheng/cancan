@@ -2918,7 +2918,7 @@ fn synthetic_normalization_profile() -> NormalizerProfile {
         validator_version: "synthetic-bank-v1".to_owned(),
         normalizer_runtime: "single-pass-mock".to_owned(),
         tool_contract_version: "synthetic-bank-v1".to_owned(),
-        input_strategy: "native-observations-v1".to_owned(),
+        input_strategy: NORMALIZER_INPUT_STRATEGY.to_owned(),
         extraction_engines: vec![NormalizerProfileExtractionEngine {
             kind: NormalizerProfileExtractionKind::TableCell,
             engine: "rust-csv".to_owned(),
@@ -3141,7 +3141,7 @@ fn provider_pdf_normalization_profile(
 ) -> NormalizerProfile {
     NormalizerProfile {
         id: format!(
-            "mock:{package_id}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v2"
+            "mock:{package_id}:{NORMALIZER_INPUT_STRATEGY}:extract-native_text-pdfkit-macos-page-string-v2"
         ),
         provider_key: provider_key.to_owned(),
         document_type: document_type.to_owned(),
@@ -3154,7 +3154,7 @@ fn provider_pdf_normalization_profile(
         validator_version: "1.0.0".to_owned(),
         normalizer_runtime: "single-pass-mock".to_owned(),
         tool_contract_version: "1.0.0".to_owned(),
-        input_strategy: "native-observations-v1".to_owned(),
+        input_strategy: NORMALIZER_INPUT_STRATEGY.to_owned(),
         extraction_engines: vec![NormalizerProfileExtractionEngine {
             kind: NormalizerProfileExtractionKind::NativeText,
             engine: "pdfkit".to_owned(),

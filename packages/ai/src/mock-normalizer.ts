@@ -17,7 +17,7 @@ import type { NormalizeDocumentInput } from "./worker-protocol";
 const LEGACY_FIXTURE_MARKER = "CANCAN_SYNTHETIC_STATEMENT_V1";
 const PROVIDER_FIXTURE_MARKER = "CANCAN_SYNTHETIC_PROVIDER_STATEMENT_V1";
 const NORMALIZER_RUNTIME = "single-pass-mock";
-const INPUT_STRATEGY = "native-observations-v1";
+const INPUT_STRATEGY = "native-observations-v2";
 const MOCK_MODEL_PROVIDER = "cancan-deterministic-mock";
 const MOCK_MODEL = "fixture-v1";
 
