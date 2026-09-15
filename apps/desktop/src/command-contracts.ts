@@ -1,37 +1,78 @@
-export type VaultStatus = "not_created" | "locked" | "unlocked";
+/**
+ * The renderer's Tauri command contract.
+ *
+ * Every Rust type that crosses the command bridge is generated from its Rust
+ * definition into `./generated/presentation-types.ts` — the harness is
+ * `src-tauri/src/presentation_types.rs` and the `check:presentation-types` gate
+ * fails when that file goes stale — and re-exported below. Nothing here mirrors
+ * a Rust type by hand, so a Rust field, variant, or rename cannot drift away
+ * from the renderer unnoticed.
+ *
+ * What stays hand-written are the `*Args` payloads. Tauri deserializes a
+ * command's flat parameters directly out of the invoke object, so
+ * `{ documentId }` has no Rust type to generate from; only the three commands
+ * that already take a single request struct embed a generated type.
+ */
 
-export type SavedStatementPasswordResult =
-  | "invalid"
-  | "unavailable"
-  | "unlocked";
+import type {
+  ConfirmSourceCandidateRequest,
+  DecideCandidateAccountsRequest,
+  ParkSourceCandidateRequest,
+  TaskFilter,
+} from "./generated/presentation-types";
 
-export interface VaultAccessStatus {
-  recoveryConfigured: boolean;
-  rememberedOnThisMac: boolean | null;
-  status: VaultStatus;
-}
-
-export type LocalInboxAccessState =
-  | "disabled"
-  | "enabled"
-  | "needs_attention"
-  | "needs_reauthorization"
-  | "paused";
-
-export interface LocalInboxScanSummary {
-  alreadyPresent: number;
-  deferred: number;
-  imported: number;
-  suppressed: number;
-}
-
-export interface LocalInboxStatus {
-  accessState: LocalInboxAccessState;
-  backupsPrepared: boolean;
-  enabled: boolean;
-  inboxLabel: string;
-  lastScan: LocalInboxScanSummary | null;
-}
+export type {
+  AccountConfirmationCandidate,
+  AccountConfirmationOutcome,
+  AccountConfirmationPrompt,
+  AccountConfirmationStatus,
+  CandidateAccountDecision,
+  CandidateAccountDecisionInput,
+  ConfirmedMoneySourceCandidate,
+  ConfirmSourceCandidateRequest,
+  DecideCandidateAccountsRequest,
+  DuplicateCommittedVersionAuditRow,
+  LocalInboxAccessState,
+  LocalInboxScanSummary,
+  LocalInboxStatus,
+  MoneyOverview,
+  MoneyOverviewAmount,
+  MoneySourceCandidateState,
+  MoneySourceCandidateStatus,
+  MoneySourceSummary,
+  ParkSourceCandidateRequest,
+  RecentActivitySummary,
+  RelationshipCandidateSummary,
+  RenderedDocumentPage,
+  ReviewBatchGroupOutcome,
+  ReviewBatchGroupStatus,
+  ReviewItemDetail,
+  ReviewItemSummary,
+  ReviewJobStatus,
+  ReviewJobSummary,
+  ReviewMutationOutcome,
+  ReviewMutationStatus,
+  SavedStatementPasswordResult,
+  SourceConfirmationPrompt,
+  SourceConfirmationPromptStatus,
+  SourceConfirmationScopeKind,
+  SourceDocumentImportOutcome,
+  SourceDocumentImportStatus,
+  SourceDocumentPreview,
+  SourceDocumentStatus,
+  SourceDocumentSummary,
+  StatementPasswordSourceSummary,
+  TaskConsequence,
+  TaskDestination,
+  TaskFilter,
+  TaskGroup,
+  TaskRow,
+  Tasks,
+  UndoOutcome,
+  UndoStatus,
+  VaultAccessStatus,
+  VaultStatus,
+} from "./generated/presentation-types";
 
 export type VaultPasswordArgs = { password: string };
 
@@ -62,183 +103,23 @@ export type RenderSourceDocumentPageArgs = {
 
 export type PreviewSourceDocumentArgs = { documentId: string };
 
-export interface SourceDocumentImportOutcome {
-  documentId: string;
-  status: "imported" | "already_present" | "restored";
-}
-
-export interface MoneySourceSummary {
-  displayName: string;
-  moneySourceId: string;
-  sourceType: string;
-}
-
 export type DecideCandidateAccountsArgs = {
-  request: {
-    decisions: CandidateAccountDecisionInput[];
-    moneySourceId: string;
-    proposalVersion: string;
-  };
+  request: DecideCandidateAccountsRequest;
 };
 
 export type RestoreDismissedCandidateAccountArgs = { accountId: string };
 
 export type ConfirmSourceCandidateArgs = {
-  request: {
-    candidateId: string;
-    displayName: string;
-    expectedVersion: number;
-    sourceType: string;
-  };
+  request: ConfirmSourceCandidateRequest;
 };
 
 export type ParkSourceCandidateArgs = {
-  request: { candidateId: string; expectedVersion: number };
+  request: ParkSourceCandidateRequest;
 };
 
 export type ListSourceDocumentsArgs = { moneySourceId: string };
 
 export type ListTasksArgs = { filter: TaskFilter };
-
-export interface StatementPasswordSourceSummary {
-  displayName: string;
-  hasSavedPassword: boolean;
-  moneySourceId: string;
-}
-
-export interface RenderedDocumentPage {
-  pageCount: number;
-  pageNumber: number;
-  pngBase64: string;
-}
-
-export interface SourceDocumentPreview {
-  lineCount: number;
-  previewLines: number;
-  previewText: string;
-  truncated: boolean;
-}
-
-export interface ReviewItemSummary {
-  accountLabel: string;
-  amountValue: string | null;
-  currency: string | null;
-  eventType: string | null;
-  postedOn: string | null;
-  reasonCode: string;
-  recordCommitted: boolean;
-  recordId: string;
-  recordVersion: number;
-  reviewItemId: string;
-}
-
-export interface ReviewItemDetail extends ReviewItemSummary {
-  documentLabel: string;
-  sourceLabel: string;
-}
-
-export interface RecentActivitySummary {
-  canUndo: boolean;
-  eventDate: string;
-  eventId: string;
-  eventType: string;
-  sourceLabels: string[];
-  spending: boolean;
-}
-
-export interface DuplicateCommittedVersionAuditRow {
-  allocationValue: string | null;
-  amountValue: string | null;
-  currency: string | null;
-  externalRecordId: string;
-  ledgerEventDate: string | null;
-  ledgerEventHasReversal: boolean;
-  ledgerEventId: string | null;
-  ledgerEventIsReversal: boolean;
-  ledgerEventStatus: string | null;
-  ledgerEventType: string | null;
-  matchReviewStatus: string | null;
-  matchUnit: string | null;
-  postedOn: string | null;
-  recordEventType: string | null;
-  reversalSafe: boolean;
-  sourceDocumentId: string;
-  stableRecordKey: string;
-  version: number;
-  versionRank: number;
-}
-
-export interface MoneyOverviewAmount {
-  accountId: string;
-  accountLabel: string;
-  asOf: string;
-  currency: string;
-  value: string;
-}
-
-export interface MoneyOverview {
-  assets: MoneyOverviewAmount[];
-  liabilities: MoneyOverviewAmount[];
-}
-
-export interface RelationshipCandidateSummary {
-  accountLabel: string;
-  amountValue: string;
-  currency: string;
-  eventType: string;
-  postedOn: string;
-  recordId: string;
-  recordVersion: number;
-}
-
-export type ReviewMutationStatus =
-  | "acknowledged"
-  | "conflict"
-  | "relationship_accepted"
-  | "removed"
-  | "updated";
-
-export interface ReviewMutationOutcome {
-  reason: string | null;
-  recordVersion: number | null;
-  reviewItemId: string | null;
-  status: ReviewMutationStatus;
-}
-
-export type ReviewJobStatus =
-  | "blocked"
-  | "cancelled"
-  | "failed"
-  | "queued"
-  | "running"
-  | "succeeded";
-
-export type ReviewBatchGroupStatus =
-  | "already_committed"
-  | "committed"
-  | "stale"
-  | "still_needs_review";
-
-export interface ReviewBatchGroupOutcome {
-  reason: string | null;
-  recordIds: string[];
-  status: ReviewBatchGroupStatus;
-}
-
-export interface ReviewJobSummary {
-  createdAt: string;
-  finishedAt: string | null;
-  jobId: string;
-  outcomes: ReviewBatchGroupOutcome[];
-  status: ReviewJobStatus;
-}
-
-export type UndoStatus = "already_undone" | "undone";
-
-export interface UndoOutcome {
-  eventId: string;
-  status: UndoStatus;
-}
 
 export type ReviewItemIdArgs = { reviewItemId: string };
 
@@ -262,28 +143,3 @@ export type EnqueueCommitReviewBatchArgs = { reviewItemIds: string[] };
 export type GetReviewJobArgs = { jobId: string };
 
 export type UndoCommittedEventArgs = { eventId: string };
-
-import type { CandidateAccountDecisionInput, TaskFilter } from "./generated/presentation-types";
-
-export type {
-  AccountConfirmationCandidate,
-  AccountConfirmationOutcome,
-  AccountConfirmationPrompt,
-  AccountConfirmationStatus,
-  CandidateAccountDecision,
-  CandidateAccountDecisionInput,
-  ConfirmedMoneySourceCandidate,
-  MoneySourceCandidateState,
-  MoneySourceCandidateStatus,
-  SourceConfirmationPrompt,
-  SourceConfirmationPromptStatus,
-  SourceConfirmationScopeKind,
-  SourceDocumentStatus,
-  SourceDocumentSummary,
-  TaskConsequence,
-  TaskDestination,
-  TaskFilter,
-  TaskGroup,
-  TaskRow,
-  Tasks,
-} from "./generated/presentation-types";
