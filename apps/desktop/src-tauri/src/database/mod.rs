@@ -1312,15 +1312,6 @@ impl ManualImportStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    pub(crate) fn money_source_exists(&self, money_source_id: &str) -> StoreResult<bool> {
-        let exists: bool = self.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM money_sources WHERE id = ?1)",
-            [money_source_id],
-            |row| row.get(0),
-        )?;
-        Ok(exists)
-    }
-
     pub(crate) fn pending_statement_password_states(
         &self,
     ) -> StoreResult<Vec<StatementPasswordState>> {
