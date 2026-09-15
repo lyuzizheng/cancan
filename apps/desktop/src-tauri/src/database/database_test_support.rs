@@ -57,12 +57,17 @@ impl ManualImportStore {
         )
     }
 
+    /// Classifies a document through the routing path without a parse job.
+    ///
+    /// The implementation stays in
+    /// [`super::document_routing::test_support_apply_trusted_classification`],
+    /// which is the only entry point that reaches the private routing helper.
     #[cfg(test)]
     pub fn apply_trusted_classification(
         &mut self,
         input: &TrustedDocumentClassification<'_>,
     ) -> StoreResult<SourceDocumentRoutingOutcome> {
-        self.apply_trusted_classification_with_parse_job(input, None)
+        super::document_routing::test_support_apply_trusted_classification(self, input)
     }
 
     #[cfg(test)]
