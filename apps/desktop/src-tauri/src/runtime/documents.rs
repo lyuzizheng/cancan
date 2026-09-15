@@ -654,10 +654,8 @@ pub(super) fn ensure_statement_password_source(
     money_source_id: &str,
 ) -> Result<(), RuntimeError> {
     if store
-        .statement_password_sources()
+        .money_source_exists(money_source_id)
         .map_err(|_| RuntimeError::new("invalid_source_request"))?
-        .iter()
-        .any(|source| source.money_source_id == money_source_id)
     {
         Ok(())
     } else {

@@ -1307,6 +1307,15 @@ impl ManualImportStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    pub(crate) fn money_source_exists(&self, money_source_id: &str) -> StoreResult<bool> {
+        let exists: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM money_sources WHERE id = ?1)",
+            [money_source_id],
+            |row| row.get(0),
+        )?;
+        Ok(exists)
+    }
+
     pub(crate) fn pending_statement_password_states(
         &self,
     ) -> StoreResult<Vec<StatementPasswordState>> {
@@ -1454,13 +1463,18 @@ impl ManualImportStore {
                         scope,
                     },
                 )?;
-                return Ok(needs_attention(
+                return Ok(SourceDocumentRoutingOutcome::needs_attention(
                     input.document_id,
                     "source_confirmation_required",
                 ));
             }
             [money_source_id] => money_source_id,
-            _ => return Ok(needs_attention(input.document_id, "money_source_ambiguous")),
+            _ => {
+                return Ok(SourceDocumentRoutingOutcome::needs_attention(
+                    input.document_id,
+                    "money_source_ambiguous",
+                ));
+            }
         };
         if assigned_source_id
             .as_deref()
@@ -1469,7 +1483,7 @@ impl ManualImportStore {
                 .as_deref()
                 .is_some_and(|key| key != input.semantic_document_key)
         {
-            return Ok(needs_attention(
+            return Ok(SourceDocumentRoutingOutcome::needs_attention(
                 input.document_id,
                 "classification_conflict",
             ));
@@ -1480,7 +1494,10 @@ impl ManualImportStore {
         let mut account_ids = Vec::with_capacity(input.accounts.len());
         for account in input.accounts {
             let Some(provider_account_id) = account.provider_account_id else {
-                return Ok(needs_attention(input.document_id, "account_mapping_needed"));
+                return Ok(SourceDocumentRoutingOutcome::needs_attention(
+                    input.document_id,
+                    "account_mapping_needed",
+                ));
             };
             let existing = transaction
                 .query_row(
@@ -1493,7 +1510,7 @@ impl ManualImportStore {
                 .optional()?;
             match existing {
                 Some((_, status)) if status == "archived" => {
-                    return Ok(needs_attention(
+                    return Ok(SourceDocumentRoutingOutcome::needs_attention(
                         input.document_id,
                         "account_restore_required",
                     ));
@@ -3014,7 +3031,7 @@ impl ManualImportStore {
         let row = self
             .connection
             .query_row(
-                "SELECT external_records.id, external_records.event_type, external_records.id, \
+                "SELECT external_records.id, external_records.event_type, \
                         external_records.account_id, accounts.account_type, external_records.currency, \
                         external_records.posted_on, external_records.account_balance_delta, instruments.id \
                  FROM review_items \
@@ -3031,13 +3048,13 @@ impl ManualImportStore {
                         row.get::<_, String>(0)?,
                         row.get::<_, Option<String>>(1)?,
                         CoreReviewRecord {
-                            id: row.get(2)?,
-                            account_id: row.get(3)?,
-                            account_type: row.get(4)?,
-                            currency: row.get(5)?,
-                            posted_on: row.get(6)?,
-                            account_balance_delta: row.get(7)?,
-                            instrument_id: row.get(8)?,
+                            id: row.get(0)?,
+                            account_id: row.get(2)?,
+                            account_type: row.get(3)?,
+                            currency: row.get(4)?,
+                            posted_on: row.get(5)?,
+                            account_balance_delta: row.get(6)?,
+                            instrument_id: row.get(7)?,
                         },
                     ))
                 },

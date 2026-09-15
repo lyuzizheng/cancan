@@ -45,7 +45,7 @@ export interface ReviewDetailState {
 }
 
 export interface ReviewJobPanelState {
-  jobId: string;
+  jobId: string | null;
   outcomes: ReviewBatchGroupOutcome[];
   status: "done" | "failed" | "running";
 }
@@ -535,18 +535,18 @@ function ReviewJobPanel({ job }: { job: ReviewJobPanelState }) {
   );
 }
 
-export interface BatchOutcomeSummary {
+interface BatchOutcomeSummary {
   added: number;
   alreadyAdded: number;
   changed: number;
   pending: number;
 }
 
-export function batchGroupRecordCount(outcome: ReviewBatchGroupOutcome): number {
+function batchGroupRecordCount(outcome: ReviewBatchGroupOutcome): number {
   return Math.max(outcome.recordIds.length, 1);
 }
 
-export function summarizeBatchOutcomes(
+function summarizeBatchOutcomes(
   outcomes: ReviewBatchGroupOutcome[],
 ): BatchOutcomeSummary {
   const summary: BatchOutcomeSummary = { added: 0, alreadyAdded: 0, changed: 0, pending: 0 };

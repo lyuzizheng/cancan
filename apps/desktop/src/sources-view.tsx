@@ -455,13 +455,13 @@ function formatByteSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export interface EvidenceMonthGroup {
+interface EvidenceMonthGroup {
   documents: SourceDocumentSummary[];
   key: string;
   label: string;
 }
 
-export function groupEvidenceByMonth(
+function groupEvidenceByMonth(
   documents: SourceDocumentSummary[],
 ): EvidenceMonthGroup[] {
   const groups = new Map<string, EvidenceMonthGroup>();

@@ -7,6 +7,7 @@ import type {
 import type { ProviderDocumentPackage } from "./provider-document-package";
 import {
   groundingRegionObservations,
+  MAX_RAW_RECORD_JSON_BYTES,
   parseRecordLocator,
   validateStructuredProposal,
 } from "./validate-structured-proposal";
@@ -38,7 +39,7 @@ function normalizedDescription(value: string): string {
 }
 
 function validateRaw(raw: Record<string, unknown>): void {
-  if (Object.keys(raw).some((key) => !rawKeys.has(key)) || JSON.stringify(raw).length > 16_384) {
+  if (Object.keys(raw).some((key) => !rawKeys.has(key)) || JSON.stringify(raw).length > MAX_RAW_RECORD_JSON_BYTES) {
     throw new Error("unsupported statement row");
   }
   if (parseRecordLocator(raw).kind !== "valid") {

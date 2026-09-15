@@ -19,20 +19,14 @@ impl ManualImportStore {
         validate_identifier(intake_item_id, "intake item id")?;
         validate_import(input)?;
         let transaction = self.connection.transaction()?;
-        let receipt_document_id: Option<String> = transaction
+        let receipt: Option<(Option<String>, Option<String>)> = transaction
             .query_row(
-                "SELECT source_document_id FROM intake_batch_items WHERE id = ?1",
+                "SELECT source_document_id, capture_outcome                  FROM intake_batch_items WHERE id = ?1",
                 [intake_item_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
-        let receipt_outcome: Option<String> = transaction
-            .query_row(
-                "SELECT capture_outcome FROM intake_batch_items WHERE id = ?1",
-                [intake_item_id],
-                |row| row.get(0),
-            )
-            .optional()?;
+        let (receipt_document_id, receipt_outcome) = receipt.unwrap_or((None, None));
         if receipt_document_id.as_deref() != Some(document_id)
             || receipt_outcome.as_deref() != Some("restore_confirmation_required")
         {
@@ -162,20 +156,14 @@ impl ManualImportStore {
         validate_identifier(document_id, "source document id")?;
         validate_identifier(intake_item_id, "intake item id")?;
         let transaction = self.connection.transaction()?;
-        let receipt_document_id: Option<String> = transaction
+        let receipt: Option<(Option<String>, Option<String>)> = transaction
             .query_row(
-                "SELECT source_document_id FROM intake_batch_items WHERE id = ?1",
+                "SELECT source_document_id, capture_outcome                  FROM intake_batch_items WHERE id = ?1",
                 [intake_item_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
-        let receipt_outcome: Option<String> = transaction
-            .query_row(
-                "SELECT capture_outcome FROM intake_batch_items WHERE id = ?1",
-                [intake_item_id],
-                |row| row.get(0),
-            )
-            .optional()?;
+        let (receipt_document_id, receipt_outcome) = receipt.unwrap_or((None, None));
         if receipt_document_id.as_deref() != Some(document_id)
             || receipt_outcome.as_deref() != Some("restore_confirmation_required")
         {

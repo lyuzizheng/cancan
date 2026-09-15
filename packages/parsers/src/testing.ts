@@ -6,7 +6,7 @@ import type {
   StructuredParseProposal,
 } from "./contracts";
 import type { ProviderDocumentPackage } from "./provider-document-package";
-import { semanticDocumentKey } from "./validate-structured-proposal";
+import { MAX_RAW_RECORD_JSON_BYTES, semanticDocumentKey } from "./validate-structured-proposal";
 
 const syntheticRawKeys = new Set([
   "type",
@@ -37,7 +37,7 @@ function validateSyntheticRaw(raw: Record<string, unknown>): void {
   if (Object.keys(raw).some((key) => !syntheticRawKeys.has(key))) {
     throw new Error("synthetic row contains unsupported fields");
   }
-  if (JSON.stringify(raw).length > 16_384) {
+  if (JSON.stringify(raw).length > MAX_RAW_RECORD_JSON_BYTES) {
     throw new Error("synthetic row exceeds the bounded raw-record limit");
   }
   const locator = raw.locator;

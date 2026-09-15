@@ -31,8 +31,13 @@ export interface GmailOAuthPrivilegedDependencies {
   persistAuthorizedMailbox(mailbox: GmailAuthorizedMailbox): Promise<void>;
 }
 
+export type GmailOAuthFailureKind = "authorization_failed" | "request_failed";
+
 export class GmailOAuthExecutionError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly failureKind: GmailOAuthFailureKind,
+  ) {
     super(message);
     this.name = "GmailOAuthExecutionError";
   }
@@ -181,9 +186,10 @@ async function runInjected<T>(
 function authorizationFailed(): GmailOAuthExecutionError {
   return new GmailOAuthExecutionError(
     "Gmail authorization could not be completed.",
+    "authorization_failed",
   );
 }
 
 function requestFailed(): GmailOAuthExecutionError {
-  return new GmailOAuthExecutionError("Gmail request failed.");
+  return new GmailOAuthExecutionError("Gmail request failed.", "request_failed");
 }
