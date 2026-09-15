@@ -180,7 +180,9 @@ describe("provider document packages", () => {
 
       expect(result).toMatchObject({
         status: "invalid",
-        errors: expect.arrayContaining([{ code: "statement_reconciliation_failed" }]),
+        errors: expect.arrayContaining([
+          { proposalRecordId: "closing", code: "statement_reconciliation_failed" },
+        ]),
       });
     },
   );
@@ -269,6 +271,173 @@ describe("provider document packages", () => {
         status: "invalid",
         errors: expect.arrayContaining([
           { proposalRecordId: "posting-1", code: "raw_record_not_grounded" },
+        ]),
+      });
+    },
+  );
+
+  it.each(packages)(
+    "$packageId rejects a row spliced across two grounded rows",
+    async (providerPackage) => {
+      const input = fixture(providerPackage, [
+        { description: "GROCERIES", side: "debit", amount: "20.00" },
+        { description: "COFFEE", side: "debit", amount: "5.00" },
+      ]);
+      const first = input.proposal.records[0];
+      const second = input.proposal.records[1];
+      if (!first?.balanceAfter || !second) {
+        throw new Error("missing fixture postings");
+      }
+      first.raw.description = second.raw.description;
+      first.descriptionRaw = second.raw.description as string;
+
+      const result = await providerPackage.validate(input);
+
+      expect(result).toMatchObject({
+        status: "invalid",
+        errors: expect.arrayContaining([
+          { proposalRecordId: "posting-1", code: "raw_record_not_grounded" },
+        ]),
+      });
+    },
+  );
+
+  it.each(packages)(
+    "$packageId rejects a forged running balance even when grounding holds",
+    async (providerPackage) => {
+      const input = fixture(providerPackage, [
+        { description: "GROCERIES", side: "debit", amount: "20.00" },
+        { description: "COFFEE", side: "debit", amount: "5.00" },
+      ]);
+      const first = input.proposal.records[0];
+      const second = input.proposal.records[1];
+      if (
+        !first?.amount ||
+        !first.accountBalanceDelta ||
+        !first.balanceAfter ||
+        !second?.balanceAfter
+      ) {
+        throw new Error("missing fixture postings");
+      }
+      const swapText = (row: number, from: string, to: string) => {
+        const observation = input.extractionBundle.observations.find(
+          (candidate) => candidate.row === row && candidate.text === from,
+        );
+        if (!observation) {
+          throw new Error(`missing row ${row} observation ${from}`);
+        }
+        observation.text = to;
+      };
+      const openingBalance = minorUnits("100.00");
+      const firstDelta =
+        providerPackage.debitBalanceSign === -1 ? -minorUnits("5.00") : minorUnits("5.00");
+      const forgedBalance = openingBalance + firstDelta;
+      const observedBalance = first.balanceAfter.value;
+      swapText(2, "20.00", "5.00");
+      swapText(2, observedBalance, decimal(forgedBalance));
+      const amountKey = "debit" in first.raw ? "debit" : "credit";
+      first.raw[amountKey] = "5.00";
+      first.amount.value = "5.00";
+      first.accountBalanceDelta.value = decimal(firstDelta);
+      first.raw.balance = decimal(forgedBalance);
+      first.balanceAfter.value = decimal(forgedBalance);
+      const closing = input.proposal.closingSnapshots[0];
+      if (!closing?.balanceAfter) {
+        throw new Error("missing closing snapshot");
+      }
+      closing.balanceAfter.value = decimal(forgedBalance);
+      closing.raw.balance = decimal(forgedBalance);
+      const closingRow = input.proposal.records.length + 2;
+      const observedClosing = second.balanceAfter.value;
+      const closingObservation = input.extractionBundle.observations.find(
+        (candidate) => candidate.row === closingRow && candidate.text === observedClosing,
+      );
+      if (!closingObservation) {
+        throw new Error("missing closing balance observation");
+      }
+      closingObservation.text = decimal(forgedBalance);
+
+      const result = await providerPackage.validate(input);
+
+      expect(result).toMatchObject({
+        status: "invalid",
+        errors: expect.arrayContaining([
+          { proposalRecordId: "posting-2", code: "statement_reconciliation_failed" },
+        ]),
+      });
+    },
+  );
+
+  it.each(packages)(
+    "$packageId rejects a foreign currency code inside the grounded row",
+    async (providerPackage) => {
+      const input = fixture(providerPackage, [
+        { description: "GROCERIES", side: "debit", amount: "20.00" },
+      ]);
+      input.extractionBundle.observations.push({
+        id: "foreign-currency",
+        kind: "table_cell",
+        row: 2,
+        column: 6,
+        text: "USD 20.00",
+        engine: "synthetic-provider-fixture",
+        engineVersion: "1",
+      });
+
+      const result = await providerPackage.validate(input);
+
+      expect(result).toMatchObject({
+        status: "invalid",
+        errors: expect.arrayContaining([
+          { proposalRecordId: "posting-1", code: "currency_or_precision_unsupported" },
+        ]),
+      });
+    },
+  );
+
+  it.each(packages)(
+    "$packageId keeps ordinary description words out of the currency tripwire",
+    async (providerPackage) => {
+      for (const description of ["TOP-UP EZLINK", "ANG MO KIO HUB", "ACME SDN BHD"]) {
+        const input = fixture(providerPackage, [
+          { description: "GROCERIES", side: "debit", amount: "20.00" },
+        ]);
+        const record = input.proposal.records[0];
+        const descriptionObservation = input.extractionBundle.observations.find(
+          (observation) => observation.row === 2 && observation.text === "GROCERIES",
+        );
+        if (!record || !descriptionObservation) {
+          throw new Error("missing fixture posting");
+        }
+        descriptionObservation.text = description;
+        record.raw.description = description;
+        record.descriptionRaw = description;
+
+        const result = await providerPackage.validate(input);
+
+        expect(result.status).toBe("valid");
+      }
+    },
+  );
+
+  it.each(packages)(
+    "$packageId rejects a statement record without a locator",
+    async (providerPackage) => {
+      const input = fixture(providerPackage, [
+        { description: "GROCERIES", side: "debit", amount: "20.00" },
+      ]);
+      const record = input.proposal.records[0];
+      if (!record) {
+        throw new Error("missing fixture posting");
+      }
+      delete record.raw.locator;
+
+      const result = await providerPackage.validate(input);
+
+      expect(result).toMatchObject({
+        status: "invalid",
+        errors: expect.arrayContaining([
+          { proposalRecordId: "posting-1", code: "raw_record_shape_invalid" },
         ]),
       });
     },
