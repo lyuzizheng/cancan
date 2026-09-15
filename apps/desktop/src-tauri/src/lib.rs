@@ -8,11 +8,12 @@ mod vault;
 mod viewer;
 
 use runtime::{
-    VaultRuntime, accept_review_relationship, choose_local_inbox_root, confirm_source_candidate,
-    create_vault, decide_candidate_accounts, delete_source_document, disable_local_inbox,
-    edit_review_record, enqueue_commit_review_batch, forget_vault_on_this_mac, get_money_overview,
-    get_review_detail, get_review_job, import_source_document, list_account_confirmation_prompts,
-    list_money_sources, list_recent_activity, list_relationship_candidates, list_review_items,
+    VaultRuntime, accept_review_relationship, audit_duplicate_committed_versions,
+    choose_local_inbox_root, confirm_source_candidate, create_vault, decide_candidate_accounts,
+    delete_source_document, disable_local_inbox, edit_review_record, enqueue_commit_review_batch,
+    forget_vault_on_this_mac, get_money_overview, get_review_detail, get_review_job,
+    import_source_document, list_account_confirmation_prompts, list_money_sources,
+    list_recent_activity, list_relationship_candidates, list_review_items,
     list_source_confirmation_prompts, list_source_documents, list_statement_password_sources,
     list_tasks, list_unassigned_source_documents, local_inbox_status, lock_vault, on_run_event,
     on_window_event, park_source_candidate, preview_source_document, remember_vault_on_this_mac,
@@ -71,6 +72,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             vault_status,
             vault_access_status,
+            audit_duplicate_committed_versions,
             choose_local_inbox_root,
             local_inbox_status,
             disable_local_inbox,

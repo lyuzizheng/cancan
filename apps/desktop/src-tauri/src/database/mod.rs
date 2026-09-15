@@ -3262,6 +3262,9 @@ fn enqueue_reconcile_document(
 mod accounts;
 #[cfg(test)]
 mod accounts_tests;
+mod audit;
+#[cfg(test)]
+mod audit_tests;
 mod gmail;
 #[cfg(test)]
 mod gmail_tests;
@@ -3287,6 +3290,7 @@ mod tasks_test_support;
 mod tests;
 mod validation;
 
+pub(crate) use audit::*;
 pub(crate) use gmail::*;
 use imports::*;
 use migrations::*;

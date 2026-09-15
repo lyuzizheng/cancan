@@ -32,6 +32,7 @@ describe("Vault API", () => {
       "list_account_confirmation_prompts",
       "list_source_confirmation_prompts",
       "list_recent_activity",
+      "audit_duplicate_committed_versions",
       "list_relationship_candidates",
       "list_review_items",
       "list_source_documents",
@@ -54,6 +55,7 @@ describe("Vault API", () => {
     await api.listReviewItems();
     await api.getReviewDetail("review-1");
     await api.listRecentActivity();
+    await api.auditDuplicateCommittedVersions();
     await api.getMoneyOverview();
     await api.listRelationshipCandidates("review-1", 3);
     await api.editReviewRecord("review-1", 3, {
@@ -116,6 +118,7 @@ describe("Vault API", () => {
       ["list_review_items", undefined],
       ["get_review_detail", { reviewItemId: "review-1" }],
       ["list_recent_activity", undefined],
+      ["audit_duplicate_committed_versions", undefined],
       ["get_money_overview", undefined],
       [
         "list_relationship_candidates",

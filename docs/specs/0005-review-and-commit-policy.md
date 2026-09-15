@@ -216,6 +216,38 @@ other independent group -> may still commit
 
 The result reports each selected group as committed, already committed, stale, or still needing review. Retrying the job reuses the accepted proposal-version idempotency keys and cannot duplicate ledger events, review decisions, or audit entries.
 
+### Duplicate committed version audit and reversal remediation
+
+Finality is enforced forward only. A Vault written before the commit gate and migration `0013` existed can still hold two `committed` versions of one `stable_record_key`, each with its own committed `ledger_event` and `match_edges`; the ledger then carries the same money movement twice. Migration `0013` deliberately leaves that state alone, because reversing an event that already posted needs explicit human confirmation.
+
+Detection is a read-only host audit command. It changes no state and returns, for every `stable_record_key` with more than one committed version, one row per committed version and per attached match edge, carrying:
+
+```text
+stable_record_key, external_record_id, source_document_id, version
+version_rank      1 = the version a repair keeps, ordered by (version, created_at, id)
+record_event_type, posted_on, amount_value, currency
+ledger_event_id, ledger_event_type, ledger_event_date
+ledger_event_is_reversal, ledger_event_has_reversal
+allocation_value, match_unit, match_review_status
+reversal_safe
+```
+
+A key is outstanding until every row with `version_rank > 1` has either no committed event or a `ledger_event_has_reversal` event, so a remediated Vault still lists its keys and stays readable as remediated rather than clean.
+
+`reversal_safe` is true only when every match edge of that row's ledger event points at a non-canonical committed version. A commit writes its edges while both records are still uncommitted, so an event can also carry an edge to another key's only committed version; reversing such an event would erase that record's canonical effect. Those keys need a human decision, never an automatic inversion.
+
+Remediation design, pending owner sign-off and not implemented:
+
+1. Keep the rank-1 version committed, with its event and edges untouched.
+2. Append one reversal event per `reversal_safe` non-canonical ledger event: inverted legs, `reverses_event_id` pointing at the duplicate event, `commit_idempotency_key` unique per source event, then `pending -> committed`. This reuses the existing `Undo` reversal shape; it writes no `match_edges`, because the reversal anchors to the event it reverses.
+3. Skip any event that already has a reversal, so retrying a repair is idempotent.
+4. Record the decision in `audit_log` in the same transaction as the reversal.
+5. Escalate `reversal_safe = false` keys to the user with the specific canonical record that blocks a clean inversion.
+
+This repair cannot be a SQL-only migration. Exact decimal inversion is BigInt logic in `packages/core`, and negating a `TEXT` amount through SQLite numeric conversion would lose precision on money; the inversion stays in the deterministic core and the host persists it. An already-committed ledger event is never updated, and its legs, edges, and committed records are never deleted or rewritten.
+
+Marking the duplicate record is an audit marker, not a new status. `committed_external_record_cannot_be_updated` rejects any update of a committed record, and a repair does not need one: `ledger_event_has_reversal` already identifies the reversed version, `match_edges` and the source evidence stay intact, and adding a `reversed` status would require rebuilding `external_records` or dropping and recreating the immutability trigger for no gain in traceability.
+
 ### Historical relationship discovery
 
 Relationship discovery is an internal indexed SQLite query, not an external API or AI decision. Starting from one current record, search the provider/event-type-owned bounded date window across all imported historical periods in both directions. A statement-month boundary never limits the query.
@@ -246,6 +278,7 @@ read:
   list review items
   get review detail
   list recent activity
+  audit duplicate committed versions
   get money overview
   list relationship candidates
 

@@ -8,14 +8,15 @@ use crate::{
     database::{
         AccountConfirmationOutcome, AccountConfirmationPrompt, CandidateAccountDecisionInput,
         ClaimedReviewBatch, CommitReviewGroup, CorePreparedReversalEvent, CorePreparedReviewEvent,
-        CoreReviewRecord, DATABASE_FILE_NAME, ManualImportStore, MoneyOverview, ParseDocumentClaim,
-        ParseDocumentJob, RecentActivitySummary, RelationshipCandidateSummary,
-        ReviewBatchGroupOutcome, ReviewBatchGroupStatus, ReviewItemDetail, ReviewItemSummary,
-        ReviewJobSummary, ReviewMutationOutcome, ReviewMutationStatus,
-        ReviewRelationshipCandidateInput, SourceDocumentImport, SourceDocumentImportOutcome,
-        SourceDocumentImportStatus, SourceDocumentRoutingOutcome, SourceDocumentView,
-        StatementPasswordStatus, TrustedAccountCandidate, TrustedDocumentClassification,
-        UndoOutcome, ValidatedExternalRecordInput, ValidatedStructuredParseInput,
+        CoreReviewRecord, DATABASE_FILE_NAME, DuplicateCommittedVersionAuditRow, ManualImportStore,
+        MoneyOverview, ParseDocumentClaim, ParseDocumentJob, RecentActivitySummary,
+        RelationshipCandidateSummary, ReviewBatchGroupOutcome, ReviewBatchGroupStatus,
+        ReviewItemDetail, ReviewItemSummary, ReviewJobSummary, ReviewMutationOutcome,
+        ReviewMutationStatus, ReviewRelationshipCandidateInput, SourceDocumentImport,
+        SourceDocumentImportOutcome, SourceDocumentImportStatus, SourceDocumentRoutingOutcome,
+        SourceDocumentView, StatementPasswordStatus, TrustedAccountCandidate,
+        TrustedDocumentClassification, UndoOutcome, ValidatedExternalRecordInput,
+        ValidatedStructuredParseInput,
     },
     local_inbox::{
         AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureDeferReason,
@@ -515,6 +516,7 @@ enum IntakeTestFault {
 }
 
 mod accounts;
+mod audit;
 mod documents;
 mod documents_intake;
 mod error;
@@ -551,6 +553,7 @@ mod undo;
 mod vault_lifecycle;
 
 pub(crate) use accounts::*;
+pub(crate) use audit::*;
 pub(crate) use documents::*;
 pub(crate) use error::*;
 pub(crate) use inbox::*;
