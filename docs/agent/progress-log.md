@@ -4,6 +4,19 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-09-16
+
+### Completed
+
+- Closed the BRAWUKA-305 contract-alignment findings. Every Rust type crossing the Tauri command bridge now derives `ts_rs::TS` under `cfg(test)` and is listed in `apps/desktop/src-tauri/src/presentation_types.rs`, so `apps/desktop/src/generated/presentation-types.ts` covers all 50 wire types (was 20) and `command-contracts.ts` no longer mirrors any of them — it re-exports the generated types and keeps only the invoke payloads for commands with flat parameters, which have no Rust type to generate from. `SourceDocumentImportStatus` reaches the renderer with all four variants including `restore_confirmation_required`, and the import notice table is total over the wire statuses, so the renderer's status union is complete; the command layer still resolves the restore prompt before that status can cross.
+- Made the `vault-locked` event cover every lock path. `lock_and_notify` is now the only production entry to the Vault lock and `VaultRuntime::lock` became private (`test_support_lock` drives the tests), so a future lock path cannot reach the locked state while the renderer still shows unlocked data; `RunEvent::ExitRequested` notifies too. `commandErrorMessage` covers every code production Rust can put on the wire.
+- Repaired `cargo test` on `main`. The merge of the test-support move (`c2c133d`) with the routing refactor (`978b6de`) had left two `apply_trusted_classification` definitions on `ManualImportStore` and reached a now-private helper, so the test target had not compiled. The store API lives only in `database/database_test_support.rs` and delegates to a `#[cfg(test)] test_support_apply_trusted_classification` bridge in `database/document_routing.rs`, which keeps the routing helper private.
+
+### Next
+
+- The renderer's remaining hand-written command surface is the invoke payload of commands with flat parameters (for example `{ documentId }`); generating those requires one request struct per command, which changes the invoke payload shape and is therefore a separate change.
+- `gmail_*` error codes stay unmapped in `commandErrorMessage` until a Gmail command is registered in `generate_handler!`, because no Gmail code can reach the renderer today.
+
 ## 2026-09-15
 
 ### Completed
