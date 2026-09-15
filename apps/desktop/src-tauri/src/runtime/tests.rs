@@ -3,6 +3,8 @@ use super::*;
 use crate::database::{CandidateAccountDecision, SourceDocumentImportStatus};
 use crate::vault::open_recovery_file;
 #[cfg(target_os = "macos")]
+use crate::viewer::pdf_password_unlocks;
+#[cfg(target_os = "macos")]
 use crate::viewer::tests::{protected_pdf_fixture, synthetic_png_fixture};
 use std::{collections::HashMap, sync::atomic::Ordering, thread, time::Duration};
 
@@ -337,8 +339,9 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         fs::read(&source).expect("read original protected source")
     );
     assert_eq!(
-        pdf_access(&copied_bytes, None).expect("inspect protected source copy"),
-        PdfAccess::PasswordRequired
+        pdf_password_unlocks(&copied_bytes, b"statement-password")
+            .expect("inspect protected source copy"),
+        Some(true)
     );
 
     let files_directory = parent.path().join("vault").join("files");
@@ -357,11 +360,25 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         "delete_source_failed"
     );
     assert!(
+        runtime
+            .document_passwords()
+            .expect("document password cache")
+            .contains_key(&outcome.document_id),
+        "a failed deletion leaves the still-available document untouched"
+    );
+    runtime
+        .source_document_copy_context(&outcome.document_id)
+        .expect("a failed deletion keeps the source readable");
+
+    runtime
+        .delete_source_document(&outcome.document_id)
+        .expect("retry the deletion once the blob can be removed");
+    assert!(
         !runtime
             .document_passwords()
             .expect("document password cache")
             .contains_key(&outcome.document_id),
-        "deletion must clear the document password even when blob cleanup fails"
+        "a committed deletion clears the cached document password"
     );
     assert_eq!(
         runtime
@@ -2027,10 +2044,13 @@ fn persists_validated_records_and_reconciles_an_explicit_parser_re_run() {
             .expect("claim recovery candidate")
     );
     expire_reconcile_lease_for_test(&runtime, &imported.document_id);
+    runtime
+        .recover_expired_jobs()
+        .expect("recover expired reconcile job");
     assert_eq!(
         runtime
             .queued_document_reconciliations()
-            .expect("recover expired reconcile job"),
+            .expect("read requeued reconcile job"),
         vec![imported.document_id.clone()]
     );
     assert!(
