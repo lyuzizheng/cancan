@@ -145,6 +145,28 @@ export interface RecentActivitySummary {
   spending: boolean;
 }
 
+export interface DuplicateCommittedVersionAuditRow {
+  allocationValue: string | null;
+  amountValue: string | null;
+  currency: string | null;
+  externalRecordId: string;
+  ledgerEventDate: string | null;
+  ledgerEventHasReversal: boolean;
+  ledgerEventId: string | null;
+  ledgerEventIsReversal: boolean;
+  ledgerEventStatus: string | null;
+  ledgerEventType: string | null;
+  matchReviewStatus: string | null;
+  matchUnit: string | null;
+  postedOn: string | null;
+  recordEventType: string | null;
+  reversalSafe: boolean;
+  sourceDocumentId: string;
+  stableRecordKey: string;
+  version: number;
+  versionRank: number;
+}
+
 export interface MoneyOverviewAmount {
   accountId: string;
   accountLabel: string;

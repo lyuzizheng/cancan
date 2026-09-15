@@ -13,6 +13,7 @@ import type {
   EnqueueCommitReviewBatchArgs,
   GetReviewJobArgs,
   DeleteSourceDocumentArgs,
+  DuplicateCommittedVersionAuditRow,
   ListSourceDocumentsArgs,
   ListTasksArgs,
   TaskFilter,
@@ -73,6 +74,9 @@ export interface VaultApi {
     candidateRecordId: string,
     expectedCandidateVersion: number,
   ): Promise<ReviewMutationOutcome>;
+  auditDuplicateCommittedVersions(): Promise<
+    DuplicateCommittedVersionAuditRow[]
+  >;
   decideCandidateAccounts(
     moneySourceId: string,
     proposalVersion: string,
@@ -173,6 +177,10 @@ export function createVaultApi(
     },
     listRecentActivity: () =>
       call<RecentActivitySummary[]>("list_recent_activity"),
+    auditDuplicateCommittedVersions: () =>
+      call<DuplicateCommittedVersionAuditRow[]>(
+        "audit_duplicate_committed_versions",
+      ),
     getMoneyOverview: () => call<MoneyOverview>("get_money_overview"),
     listRelationshipCandidates: (reviewItemId, expectedRecordVersion) => {
       const args: ReviewVersionArgs = { reviewItemId, expectedRecordVersion };
