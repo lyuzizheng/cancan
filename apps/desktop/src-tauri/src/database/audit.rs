@@ -87,6 +87,7 @@ ORDER BY committed_versions.stable_record_key, external_records.version, ledger_
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct DuplicateCommittedVersionAuditRow {
     pub(crate) stable_record_key: String,
     pub(crate) external_record_id: String,

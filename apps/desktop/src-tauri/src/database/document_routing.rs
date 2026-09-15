@@ -1,14 +1,6 @@
 use super::*;
 
 impl ManualImportStore {
-    #[cfg(test)]
-    pub fn apply_trusted_classification(
-        &mut self,
-        input: &TrustedDocumentClassification<'_>,
-    ) -> StoreResult<SourceDocumentRoutingOutcome> {
-        self.apply_trusted_classification_with_parse_job(input, None, |_| None)
-    }
-
     /// Applies the trusted classification and, when the document routes, the
     /// structured parse derived from it in one transaction. `build_parse`
     /// receives the routed outcome (which carries the resolved account ids) and
@@ -271,6 +263,17 @@ impl ManualImportStore {
         transaction.commit()?;
         Ok(())
     }
+}
+
+/// Test-only entry point for a classification with no parse job. The store API
+/// itself lives in [`super::database_test_support`]; this bridge keeps
+/// [`ManualImportStore::apply_trusted_classification_with_parse_job`] private.
+#[cfg(test)]
+pub(super) fn test_support_apply_trusted_classification(
+    store: &mut ManualImportStore,
+    input: &TrustedDocumentClassification<'_>,
+) -> StoreResult<SourceDocumentRoutingOutcome> {
+    store.apply_trusted_classification_with_parse_job(input, None, |_| None)
 }
 
 /// Persists one validated structured parse inside a caller-owned transaction

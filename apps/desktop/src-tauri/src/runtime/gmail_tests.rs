@@ -196,7 +196,7 @@ fn unlock_reconciles_tokens_written_before_a_crash() {
     tokens
         .save(&secret_ref, b"unverified-token")
         .expect("simulate Keychain write");
-    runtime.lock().expect("simulate process lock");
+    runtime.test_support_lock().expect("simulate process lock");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("unlock and reconcile");
@@ -234,7 +234,7 @@ fn unlock_keeps_a_failed_gmail_reconciliation_mailbox_scoped() {
         .lock()
         .expect("configure delete failure")
         .insert(account.secret_storage_key.clone());
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
 
     runtime
         .unlock(b"synthetic-vault-password")
@@ -263,7 +263,7 @@ fn rejects_gmail_connection_changes_while_locked() {
     let parent = tempfile::tempdir().expect("temporary app data");
     let tokens = Arc::new(MemoryGmailRefreshTokenStore::default());
     let runtime = gmail_runtime(&parent.path().join("vault"), tokens);
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
 
     assert_eq!(
         runtime

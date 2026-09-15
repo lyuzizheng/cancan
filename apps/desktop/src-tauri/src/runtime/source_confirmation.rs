@@ -62,6 +62,7 @@ impl VaultRuntime {
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ConfirmSourceCandidateRequest {
     candidate_id: String,
     display_name: String,
@@ -71,6 +72,7 @@ pub(crate) struct ConfirmSourceCandidateRequest {
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ParkSourceCandidateRequest {
     candidate_id: String,
     expected_version: i64,
