@@ -462,6 +462,8 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t save a complete copy to that location.";
     case "unsupported_document":
       return "Choose a PDF, CSV, PNG, or JPEG file.";
+    case "source_file_too_large":
+      return "Choose a file under 128 MB.";
     case "normalizer_failed":
       return "CanCan could not finish the secure document check. Try again.";
     case "parse_already_running":

@@ -23,6 +23,7 @@ impl VaultRuntime {
             .local_inbox_bookmarks
             .save(&bookmark)
             .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?;
+        self.invalidate_local_inbox_bookmark();
         *self
             .inner
             .local_inbox_access
@@ -38,15 +39,14 @@ impl VaultRuntime {
     }
 
     pub(crate) fn local_inbox_status(&self) -> Result<LocalInboxStatus, RuntimeError> {
-        let configured = self
-            .inner
-            .local_inbox_bookmarks
-            .load()
-            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?
-            .is_some();
+        let configured = self.local_inbox_bookmark()?.is_some();
         let vault_status = self.status()?;
         if configured
             && vault_status == VaultStatus::Unlocked
+            && !self
+                .inner
+                .local_inbox_needs_reauthorization
+                .load(Ordering::SeqCst)
             && !self
                 .inner
                 .local_inbox_access
@@ -101,6 +101,7 @@ impl VaultRuntime {
             .local_inbox_bookmarks
             .delete()
             .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?;
+        self.invalidate_local_inbox_bookmark();
         self.clear_local_inbox_access();
         self.inner
             .local_inbox_needs_reauthorization
@@ -253,12 +254,7 @@ impl VaultRuntime {
         {
             return Ok(true);
         }
-        let Some(bookmark) = self
-            .inner
-            .local_inbox_bookmarks
-            .load()
-            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?
-        else {
+        let Some(bookmark) = self.local_inbox_bookmark()? else {
             return Ok(false);
         };
         match resolve_root_bookmark(&bookmark) {
@@ -300,6 +296,45 @@ impl VaultRuntime {
         }
         if let Ok(mut access) = self.inner.local_inbox_access.lock() {
             *access = None;
+        }
+    }
+
+    /// The device-local Inbox bookmark, read from the Keychain at most once per
+    /// run. Status refresh and activation both need it, and a live Keychain read
+    /// on every refresh is what the cache removes.
+    fn local_inbox_bookmark(&self) -> Result<Option<Zeroizing<Vec<u8>>>, RuntimeError> {
+        let cached = {
+            let cache = self
+                .inner
+                .local_inbox_bookmark_cache
+                .lock()
+                .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+            match &*cache {
+                LocalInboxBookmarkCache::Loaded(bookmark) => Some(bookmark.clone()),
+                LocalInboxBookmarkCache::Unloaded => None,
+            }
+        };
+        if let Some(bookmark) = cached {
+            return Ok(bookmark);
+        }
+        // A live Keychain read: keep it outside the cache lock.
+        let bookmark = self
+            .inner
+            .local_inbox_bookmarks
+            .load()
+            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?;
+        let mut cache = self
+            .inner
+            .local_inbox_bookmark_cache
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+        *cache = LocalInboxBookmarkCache::Loaded(bookmark.clone());
+        Ok(bookmark)
+    }
+
+    fn invalidate_local_inbox_bookmark(&self) {
+        if let Ok(mut cache) = self.inner.local_inbox_bookmark_cache.lock() {
+            *cache = LocalInboxBookmarkCache::Unloaded;
         }
     }
 }

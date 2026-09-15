@@ -124,6 +124,7 @@ scan on enable, process startup/unlock, wake recovery, manual refresh, and files
 on startup/unlock enumerate every direct child and treat an unseen entry or changed creation/change/modification time, file identity, or size as a scan candidate
 persist one minimum safe observation per direct child/file identity: creation/change/modification time, size, file identity, and last observed entry identity; never use one directory-wide high-water timestamp as proof that nothing changed
 accept only supported regular PDF/CSV/image files that can be opened read-only
+refuse a source file larger than 128 MB before reading it, on both acquisition channels, and report `source_file_too_large` (`Choose a file under 128 MB.`) instead of a generic import failure
 ignore directories, symlinks, hidden/temp/partial-suffix files, and unsupported types
 observe the same file identity, size, and modification time across two scans separated by a fixed two-second settle interval
 after reading/hash, re-stat the file; if identity, size, or modification time changed, discard the bytes and retry later
@@ -314,6 +315,7 @@ for CSV evidence, send at most the first 200 lines and 32 KiB of UTF-8 preview p
 a CSV file that fits within both caps may appear in full, but the renderer never receives an unbounded or raw original-file byte payload
 do not create a plaintext temporary file for normal viewing
 release plaintext/page buffers on viewer close and Vault lock as far as the platform permits
+keep at most one decrypted document per Vault session so page paging and CSV preview do not re-read and re-decrypt the stored file; that buffer is dropped on Vault lock, when the document is deleted, and when another document is viewed
 never upload the file to a server merely for preview
 show File deleted or Missing distinctly when the current file is unavailable
 ```

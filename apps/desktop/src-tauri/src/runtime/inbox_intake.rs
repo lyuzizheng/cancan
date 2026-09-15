@@ -428,6 +428,7 @@ fn local_inbox_defer_code(reason: CaptureDeferReason) -> &'static str {
             "capture_deferred"
         }
         CaptureDeferReason::NativePreflight => "native_preflight_deferred",
+        CaptureDeferReason::TooLarge => "source_file_too_large",
         CaptureDeferReason::Unreadable => "capture_failed",
         CaptureDeferReason::Unsupported => "unsupported_input",
     }

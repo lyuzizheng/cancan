@@ -57,6 +57,7 @@ impl VaultRuntime {
                 document_passwords: Mutex::new(HashMap::new()),
                 gmail_refresh_tokens,
                 local_inbox_access: Mutex::new(None),
+                local_inbox_bookmark_cache: Mutex::new(LocalInboxBookmarkCache::Unloaded),
                 local_inbox_bookmarks,
                 local_inbox_last_scan: Mutex::new(None),
                 local_inbox_scan_guard: Mutex::new(()),
@@ -65,6 +66,7 @@ impl VaultRuntime {
                 local_inbox_needs_reauthorization: AtomicBool::new(false),
                 remembered_keys,
                 root,
+                source_document_cache: Mutex::new(None),
                 statement_passwords,
                 store: Mutex::new(None),
                 vault_session_generation: AtomicU64::new(0),
@@ -374,6 +376,7 @@ impl VaultRuntime {
         let mut store = self.store()?;
         *store = None;
         self.document_passwords()?.clear();
+        self.clear_cached_source_document()?;
         self.locked_status()
     }
 

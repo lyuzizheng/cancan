@@ -12,11 +12,11 @@ use crate::{
         MoneyOverview, ParseDocumentClaim, ParseDocumentJob, RecentActivitySummary,
         RelationshipCandidateSummary, ReviewBatchGroupOutcome, ReviewBatchGroupStatus,
         ReviewItemDetail, ReviewItemSummary, ReviewJobSummary, ReviewMutationOutcome,
-        ReviewMutationStatus, ReviewRelationshipCandidateInput, SourceDocumentImport,
-        SourceDocumentImportOutcome, SourceDocumentImportStatus, SourceDocumentRoutingOutcome,
-        SourceDocumentView, StatementPasswordStatus, TrustedAccountCandidate,
-        TrustedDocumentClassification, UndoOutcome, ValidatedExternalRecordInput,
-        ValidatedStructuredParseInput,
+        ReviewMutationStatus, ReviewRelationshipCandidateInput, SourceDocumentFileInput,
+        SourceDocumentImport, SourceDocumentImportOutcome, SourceDocumentImportStatus,
+        SourceDocumentRoutingOutcome, SourceDocumentView, StatementPasswordStatus,
+        TrustedAccountCandidate, TrustedDocumentClassification, UndoOutcome,
+        ValidatedExternalRecordInput, ValidatedStructuredParseInput,
     },
     local_inbox::{
         AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureDeferReason,
@@ -492,6 +492,7 @@ struct RuntimeInner {
     document_passwords: Mutex<DocumentPasswordSessions>,
     gmail_refresh_tokens: Arc<dyn GmailRefreshTokenStore>,
     local_inbox_access: Mutex<Option<AuthorizedRoot>>,
+    local_inbox_bookmark_cache: Mutex<LocalInboxBookmarkCache>,
     local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
     local_inbox_last_scan: Mutex<Option<LocalInboxScanSummary>>,
     local_inbox_scan_guard: Mutex<()>,
@@ -500,11 +501,21 @@ struct RuntimeInner {
     local_inbox_needs_reauthorization: AtomicBool,
     remembered_keys: Arc<dyn RememberedKeyStore>,
     root: PathBuf,
+    source_document_cache: Mutex<Option<CachedSourceDocument>>,
     statement_passwords: Arc<dyn StatementPasswordStore>,
     store: Mutex<Option<ManualImportStore>>,
     vault_session_generation: AtomicU64,
     #[cfg(test)]
     intake_test_hooks: Mutex<IntakeTestHooks>,
+}
+
+/// Whether the device-local Local Inbox bookmark has been read from the
+/// Keychain in this run, and what it said. `Load` is a live Keychain read on
+/// the status path, so the answer is remembered until Inbox configuration
+/// changes.
+enum LocalInboxBookmarkCache {
+    Unloaded,
+    Loaded(Option<Zeroizing<Vec<u8>>>),
 }
 
 #[cfg(test)]
@@ -527,6 +538,7 @@ enum IntakeTestFault {
 
 mod accounts;
 mod audit;
+mod document_cache;
 mod documents;
 mod documents_intake;
 mod error;
@@ -565,6 +577,7 @@ mod vault_lifecycle;
 
 pub(crate) use accounts::*;
 pub(crate) use audit::*;
+use document_cache::CachedSourceDocument;
 pub(crate) use documents::*;
 pub(crate) use error::*;
 pub(crate) use inbox::*;

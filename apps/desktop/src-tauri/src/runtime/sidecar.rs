@@ -7,6 +7,9 @@ pub(super) fn source_document_metadata(
     if !metadata.is_file() {
         return Err(RuntimeError::new("unsupported_document"));
     }
+    if metadata.len() > crate::source_file::MAX_SOURCE_FILE_BYTES {
+        return Err(RuntimeError::new("source_file_too_large"));
+    }
     source_document_filename_metadata(source_path)
 }
 
