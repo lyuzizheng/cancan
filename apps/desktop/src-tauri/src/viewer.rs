@@ -32,6 +32,7 @@ const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct RenderedDocumentPage {
     pub(crate) page_count: u32,
     pub(crate) page_number: u32,

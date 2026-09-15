@@ -77,6 +77,7 @@ struct ParseDocumentJobInput {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SourceDocumentImportStatus {
     Imported,
     AlreadyPresent,
@@ -86,6 +87,7 @@ pub enum SourceDocumentImportStatus {
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct SourceDocumentImportOutcome {
     pub document_id: String,
     pub status: SourceDocumentImportStatus,
@@ -129,6 +131,7 @@ pub struct SourceDocumentFileInput {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewItemSummary {
     pub(crate) account_label: String,
     pub(crate) amount_value: Option<String>,
@@ -144,6 +147,7 @@ pub(crate) struct ReviewItemSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewItemDetail {
     pub(crate) account_label: String,
     pub(crate) amount_value: Option<String>,
@@ -161,6 +165,7 @@ pub(crate) struct ReviewItemDetail {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct RecentActivitySummary {
     pub(crate) can_undo: bool,
     pub(crate) event_date: String,
@@ -172,6 +177,7 @@ pub(crate) struct RecentActivitySummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct MoneyOverviewAmount {
     pub(crate) account_id: String,
     pub(crate) account_label: String,
@@ -182,6 +188,7 @@ pub(crate) struct MoneyOverviewAmount {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct MoneyOverview {
     pub(crate) assets: Vec<MoneyOverviewAmount>,
     pub(crate) liabilities: Vec<MoneyOverviewAmount>,
@@ -189,6 +196,7 @@ pub(crate) struct MoneyOverview {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct RelationshipCandidateSummary {
     pub(crate) account_label: String,
     pub(crate) amount_value: String,
@@ -201,6 +209,7 @@ pub(crate) struct RelationshipCandidateSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum ReviewMutationStatus {
     Acknowledged,
     Conflict,
@@ -211,6 +220,7 @@ pub(crate) enum ReviewMutationStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewMutationOutcome {
     pub(crate) reason: Option<&'static str>,
     pub(crate) record_version: Option<i64>,
@@ -220,6 +230,7 @@ pub(crate) struct ReviewMutationOutcome {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum ReviewJobStatus {
     Blocked,
     Cancelled,
@@ -231,6 +242,7 @@ pub(crate) enum ReviewJobStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum ReviewBatchGroupStatus {
     AlreadyCommitted,
     Committed,
@@ -240,6 +252,7 @@ pub(crate) enum ReviewBatchGroupStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewBatchGroupOutcome {
     pub(crate) reason: Option<String>,
     pub(crate) record_ids: Vec<String>,
@@ -248,6 +261,7 @@ pub(crate) struct ReviewBatchGroupOutcome {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewJobSummary {
     pub(crate) created_at: String,
     pub(crate) finished_at: Option<String>,
@@ -307,6 +321,7 @@ pub(crate) struct CorePreparedReversalEvent {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum UndoStatus {
     AlreadyUndone,
     Undone,
@@ -314,6 +329,7 @@ pub(crate) enum UndoStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct UndoOutcome {
     pub(crate) event_id: String,
     pub(crate) status: UndoStatus,
@@ -2455,52 +2471,6 @@ impl ManualImportStore {
             )
             .optional()?;
         Ok(row)
-    }
-
-    fn reconcile_files(&mut self) -> StoreResult<()> {
-        let documents = {
-            let mut statement = self.connection.prepare(
-                "SELECT id, file_sha256, encrypted_locator, file_state \
-                 FROM source_documents \
-                 WHERE encrypted_locator IS NOT NULL",
-            )?;
-            let rows = statement.query_map([], |row| {
-                Ok(ExistingDocument {
-                    document_id: row.get(0)?,
-                    encrypted_locator: row.get(2)?,
-                    file_sha256: row.get(1)?,
-                    file_state: row.get(3)?,
-                })
-            })?;
-            rows.collect::<Result<Vec<_>, _>>()?
-        };
-        let mut referenced = HashSet::new();
-        let mut missing = Vec::new();
-        for document in documents {
-            let Some(locator) = document.encrypted_locator.as_deref() else {
-                continue;
-            };
-            // Every listed locator counts as referenced before verification: a
-            // missing or tampered blob stays addressable for restore/re-import.
-            referenced.insert(locator.to_owned());
-            if document.file_state == "available"
-                && !self
-                    .files
-                    .verifies(&self.master_key, locator, &document.file_sha256)?
-            {
-                missing.push(document);
-            }
-        }
-        if !missing.is_empty() {
-            // One transaction for the whole open instead of one per document.
-            let transaction = self.connection.transaction()?;
-            for document in &missing {
-                mark_missing(&transaction, document, &document.file_sha256)?;
-            }
-            transaction.commit()?;
-        }
-        self.files.remove_unreferenced(&referenced)?;
-        Ok(())
     }
 }
 

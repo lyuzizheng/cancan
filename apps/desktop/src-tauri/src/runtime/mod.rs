@@ -111,6 +111,7 @@ impl Deref for ExtractedDocument {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum VaultStatus {
     NotCreated,
     Locked,
@@ -119,6 +120,7 @@ pub(crate) enum VaultStatus {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum SavedStatementPasswordResult {
     Invalid,
     Unavailable,
@@ -127,6 +129,7 @@ pub(crate) enum SavedStatementPasswordResult {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct VaultAccessStatus {
     recovery_configured: bool,
     remembered_on_this_mac: Option<bool>,
@@ -135,6 +138,7 @@ pub(crate) struct VaultAccessStatus {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum LocalInboxAccessState {
     Disabled,
     Enabled,
@@ -145,6 +149,7 @@ pub(crate) enum LocalInboxAccessState {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct LocalInboxScanSummary {
     already_present: u64,
     deferred: u64,
@@ -154,6 +159,7 @@ pub(crate) struct LocalInboxScanSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct LocalInboxStatus {
     access_state: LocalInboxAccessState,
     backups_prepared: bool,
@@ -189,6 +195,7 @@ pub(crate) struct SourceDocumentSummary {
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct MoneySourceSummary {
     display_name: String,
     money_source_id: String,
@@ -197,6 +204,7 @@ pub(crate) struct MoneySourceSummary {
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct StatementPasswordSourceSummary {
     display_name: String,
     has_saved_password: bool,
@@ -205,6 +213,7 @@ pub(crate) struct StatementPasswordSourceSummary {
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct SourceDocumentPreview {
     line_count: u64,
     preview_lines: u64,

@@ -407,6 +407,17 @@ export function createVaultApi(
   };
 }
 
+/**
+ * The renderer's only error boundary: every failed command reaches the user as
+ * one of these lines, so a code without a case silently degrades to the generic
+ * fallback.
+ *
+ * The cases below cover every code production Rust code can put on the wire,
+ * except two groups that cannot reach the renderer at all:
+ * `gmail_*` (the Gmail commands are not registered in `generate_handler!`) and
+ * `seed_failed` (only constructed from `#[cfg(test)]` store support). Add a
+ * case here in the same change that starts emitting a new code.
+ */
 export function commandErrorMessage(error: unknown): string {
   switch (commandErrorCode(error)) {
     case "invalid_credentials":
@@ -492,6 +503,12 @@ export function commandErrorMessage(error: unknown): string {
       return "That money source confirmation isn’t valid.";
     case "list_tasks_failed":
       return "Couldn’t load your tasks. Try again.";
+    case "list_documents_failed":
+      return "Couldn’t load your documents. Try again.";
+    case "list_sources_failed":
+      return "Couldn’t load your Money Sources. Try again.";
+    case "audit_unavailable":
+      return "CanCan couldn’t run the duplicate-record check. Try again.";
     case "clock_error":
       return "Couldn’t read the system clock. Try again.";
     case "import_failed":
@@ -518,6 +535,10 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t create the Vault. Try again.";
     case "review_core_failed":
       return "CanCan couldn’t finish the review check. Try again.";
+    case "classification_failed":
+      return "CanCan couldn’t finish reading that statement. Try again.";
+    case "reconcile_failed":
+      return "CanCan couldn’t match that statement to your records. Try again.";
     case "normalizer_unavailable":
       return "The secure document checker isn’t available. Try again.";
     case "local_inbox_authorization_failed":
@@ -532,6 +553,10 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t import a file from the Inbox folder.";
     case "intake_recovery_failed":
       return "CanCan couldn’t finish recovering an earlier import.";
+    case "job_recovery_failed":
+      return "CanCan couldn’t resume an earlier import. Try again.";
+    case "seal_batches_failed":
+      return "CanCan couldn’t finish completing an earlier import. Try again.";
     case "intake_finalization_failed":
       return "CanCan couldn’t finish processing an imported file.";
     case "recovery_status_read_failed":

@@ -1,4 +1,4 @@
-use crate::runtime::VaultRuntime;
+use crate::runtime::{VaultRuntime, lock_and_notify};
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, Window, WindowEvent};
 
 const BACKGROUND_WINDOW_LABEL: &str = "background";
@@ -36,7 +36,10 @@ pub(crate) fn on_window_event(window: &Window, event: &WindowEvent) {
 pub(crate) fn on_run_event(app: &AppHandle, event: RunEvent) {
     match event {
         RunEvent::ExitRequested { .. } => {
-            let _ = app.state::<VaultRuntime>().lock();
+            let runtime = app.state::<VaultRuntime>();
+            if let Err(error) = lock_and_notify(app, runtime.inner()) {
+                eprintln!("vault lock on exit failed: {}", error.code);
+            }
         }
         #[cfg(target_os = "macos")]
         RunEvent::Reopen {

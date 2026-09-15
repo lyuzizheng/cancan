@@ -159,6 +159,52 @@ impl ManualImportStore {
 
         Ok(())
     }
+
+    pub(crate) fn reconcile_files(&mut self) -> StoreResult<()> {
+        let documents = {
+            let mut statement = self.connection.prepare(
+                "SELECT id, file_sha256, encrypted_locator, file_state \
+                 FROM source_documents \
+                 WHERE encrypted_locator IS NOT NULL",
+            )?;
+            let rows = statement.query_map([], |row| {
+                Ok(ExistingDocument {
+                    document_id: row.get(0)?,
+                    encrypted_locator: row.get(2)?,
+                    file_sha256: row.get(1)?,
+                    file_state: row.get(3)?,
+                })
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        let mut referenced = HashSet::new();
+        let mut missing = Vec::new();
+        for document in documents {
+            let Some(locator) = document.encrypted_locator.as_deref() else {
+                continue;
+            };
+            // Every listed locator counts as referenced before verification: a
+            // missing or tampered blob stays addressable for restore/re-import.
+            referenced.insert(locator.to_owned());
+            if document.file_state == "available"
+                && !self
+                    .files
+                    .verifies(&self.master_key, locator, &document.file_sha256)?
+            {
+                missing.push(document);
+            }
+        }
+        if !missing.is_empty() {
+            // One transaction for the whole open instead of one per document.
+            let transaction = self.connection.transaction()?;
+            for document in &missing {
+                mark_missing(&transaction, document, &document.file_sha256)?;
+            }
+            transaction.commit()?;
+        }
+        self.files.remove_unreferenced(&referenced)?;
+        Ok(())
+    }
 }
 
 /// One batch item plus the document state its terminal decision needs, read in
