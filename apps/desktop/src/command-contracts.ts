@@ -154,6 +154,7 @@ export interface DuplicateCommittedVersionAuditRow {
   ledgerEventHasReversal: boolean;
   ledgerEventId: string | null;
   ledgerEventIsReversal: boolean;
+  ledgerEventStatus: string | null;
   ledgerEventType: string | null;
   matchReviewStatus: string | null;
   matchUnit: string | null;

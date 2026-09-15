@@ -226,27 +226,34 @@ Detection is a read-only host audit command. It changes no state and returns, fo
 stable_record_key, external_record_id, source_document_id, version
 version_rank      1 = the version a repair keeps, ordered by (version, created_at, id)
 record_event_type, posted_on, amount_value, currency
-ledger_event_id, ledger_event_type, ledger_event_date
+ledger_event_id, ledger_event_type, ledger_event_date, ledger_event_status
 ledger_event_is_reversal, ledger_event_has_reversal
 allocation_value, match_unit, match_review_status
 reversal_safe
 ```
 
-A key is outstanding until every row with `version_rank > 1` has either no committed event or a `ledger_event_has_reversal` event, so a remediated Vault still lists its keys and stays readable as remediated rather than clean.
+`ledger_event_status` is separate from `ledger_event_id` because a repair decision and an outstanding-key decision both need to tell "this version has no committed event" apart from "this version's event is still `pending`".
 
-`reversal_safe` is true only when every match edge of that row's ledger event points at a non-canonical committed version. A commit writes its edges while both records are still uncommitted, so an event can also carry an edge to another key's only committed version; reversing such an event would erase that record's canonical effect. Those keys need a human decision, never an automatic inversion.
+A key is outstanding until every row with `version_rank > 1` has no event, a non-`committed` event, or an event with `ledger_event_has_reversal`; a remediated Vault still lists its keys and stays readable as remediated rather than clean.
+
+`reversal_safe` carries the complete precondition, so no consumer re-filters a flag named for safety. It is true only when that row's ledger event exists, is itself `committed`, is not itself a reversal, has no reversal of its own, and every one of its match edges points at a non-canonical committed version. Two of those clauses are not about duplicates at all: inverting a `pending` event and re-inverting a reversal both write a wrong ledger, and a duplicate record can carry either. The last clause is why an event can be unsafe even when it heads a duplicate — a commit writes its edges while both records are still uncommitted, so the event may also carry an edge to another key's only committed version, and inverting it would erase that record's canonical effect. Those keys need a human decision, never an automatic inversion.
 
 Remediation design, pending owner sign-off and not implemented:
 
 1. Keep the rank-1 version committed, with its event and edges untouched.
 2. Append one reversal event per `reversal_safe` non-canonical ledger event: inverted legs, `reverses_event_id` pointing at the duplicate event, `commit_idempotency_key` unique per source event, then `pending -> committed`. This reuses the existing `Undo` reversal shape; it writes no `match_edges`, because the reversal anchors to the event it reverses.
-3. Skip any event that already has a reversal, so retrying a repair is idempotent.
-4. Record the decision in `audit_log` in the same transaction as the reversal.
-5. Escalate `reversal_safe = false` keys to the user with the specific canonical record that blocks a clean inversion.
+3. Iterate distinct `ledger_event_id`, never audit rows. One event can head duplicates of several record keys (a reparse commits both sides of one transfer), so per-row iteration would append the same inversion twice.
+4. Skip any event that already has a reversal, so retrying a repair is idempotent.
+5. Record the decision in `audit_log` in the same transaction as the reversal.
+6. Escalate `reversal_safe = false` keys to the user with the specific canonical record that blocks a clean inversion.
+
+A repaired Vault leaves two `committed` versions of the key, so "canonical" must mean the rank-1 order everywhere, not the highest version. Reparse currently resolves the committed baseline of a key with `ORDER BY version DESC LIMIT 1`; after a repair that selects the reversed version and would attach `reparse_divergence` work to a record whose ledger effect was undone. The remediation change moves that lookup to the rank-1 order. Until it does, a repaired Vault's reparse baseline is knowingly wrong and the audit continues to report the key.
 
 This repair cannot be a SQL-only migration. Exact decimal inversion is BigInt logic in `packages/core`, and negating a `TEXT` amount through SQLite numeric conversion would lose precision on money; the inversion stays in the deterministic core and the host persists it. An already-committed ledger event is never updated, and its legs, edges, and committed records are never deleted or rewritten.
 
 Marking the duplicate record is an audit marker, not a new status. `committed_external_record_cannot_be_updated` rejects any update of a committed record, and a repair does not need one: `ledger_event_has_reversal` already identifies the reversed version, `match_edges` and the source evidence stay intact, and adding a `reversed` status would require rebuilding `external_records` or dropping and recreating the immutability trigger for no gain in traceability.
+
+The audit returns internal record identity, so it is a diagnostics-only read. It answers after the Vault is unlocked, it never leaves the local desktop app, and it is excluded from telemetry, logs, crash reports, and every web surface.
 
 ### Historical relationship discovery
 

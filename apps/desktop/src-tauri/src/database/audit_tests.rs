@@ -324,3 +324,103 @@ fn reports_a_duplicate_event_that_also_carries_a_canonical_edge_as_unsafe_to_rev
         ]
     );
 }
+
+const COMMITTED_LEDGER_EVENT_IMMUTABILITY_TRIGGER: &str = "\
+CREATE TRIGGER committed_ledger_event_is_immutable \
+BEFORE UPDATE ON ledger_events \
+WHEN OLD.status = 'committed' \
+BEGIN \
+  SELECT RAISE(ABORT, 'committed ledger event is immutable'); \
+END;";
+
+fn duplicate_rows(rows: &[DuplicateCommittedVersionAuditRow]) -> Vec<(&str, Option<&str>, bool)> {
+    rows.iter()
+        .filter(|row| row.version_rank > 1)
+        .map(|row| {
+            (
+                row.external_record_id.as_str(),
+                row.ledger_event_status.as_deref(),
+                row.reversal_safe,
+            )
+        })
+        .collect()
+}
+
+/// `reversal_safe` promises the whole precondition, so it must also refuse an
+/// event that never committed and an event that is itself a reversal. Both
+/// anomalies are built directly here; the flag may not depend on a consumer
+/// re-reading event status before inverting.
+#[test]
+fn refuses_to_report_an_uncommitted_or_already_reversed_duplicate_event_as_reversible() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    seed_review_repayment(&mut store, false);
+    commit_first_repayment(&mut store);
+    let first_event_id = ledger_event_id_for(&store, "record-hsbc-cash");
+
+    hold_back_committed_version_finality(&store);
+    stage_reparsed_record(&store, "record-hsbc-cash-v2", "hsbc-card-payment", 2);
+    stage_reparsed_record(&store, "record-dbs-card-v2", "dbs-card-payment", 2);
+    commit_second_event(
+        &store,
+        "event-duplicate",
+        &["record-hsbc-cash-v2", "record-dbs-card-v2"],
+    );
+    store
+        .connection
+        .execute(COMMITTED_VERSION_FINALITY_TRIGGER, [])
+        .expect("re-create finality trigger");
+
+    store
+        .connection
+        .execute("DROP TRIGGER committed_ledger_event_is_immutable", [])
+        .expect("drop event immutability trigger to build the anomaly");
+    store
+        .connection
+        .execute(
+            "UPDATE ledger_events SET status = 'pending' WHERE id = 'event-duplicate'",
+            [],
+        )
+        .expect("leave the duplicate event uncommitted");
+
+    let pending_event_rows = store
+        .audit_duplicate_committed_versions()
+        .expect("audit a duplicate behind a pending event");
+    assert_eq!(
+        duplicate_rows(&pending_event_rows),
+        vec![
+            ("record-dbs-card-v2", Some("pending"), false),
+            ("record-hsbc-cash-v2", Some("pending"), false),
+        ]
+    );
+
+    store
+        .connection
+        .execute(
+            "UPDATE ledger_events SET status = 'committed', reverses_event_id = ?1 \
+             WHERE id = 'event-duplicate'",
+            [&first_event_id],
+        )
+        .expect("turn the duplicate event into a reversal");
+    store
+        .connection
+        .execute(COMMITTED_LEDGER_EVENT_IMMUTABILITY_TRIGGER, [])
+        .expect("re-create event immutability trigger");
+
+    let reversal_event_rows = store
+        .audit_duplicate_committed_versions()
+        .expect("audit a duplicate that is itself a reversal");
+    assert_eq!(
+        duplicate_rows(&reversal_event_rows),
+        vec![
+            ("record-dbs-card-v2", Some("committed"), false),
+            ("record-hsbc-cash-v2", Some("committed"), false),
+        ]
+    );
+    assert!(
+        reversal_event_rows
+            .iter()
+            .filter(|row| row.version_rank == 1)
+            .all(|row| row.ledger_event_has_reversal && !row.reversal_safe)
+    );
+}

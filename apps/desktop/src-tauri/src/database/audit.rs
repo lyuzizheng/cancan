@@ -9,10 +9,19 @@ use super::*;
 //
 // The query reads four tables and writes nothing. `version_rank` orders the
 // committed versions of a key by `(version, created_at, id)`, so rank 1 is the
-// version a repair keeps. `reversal_safe` is true only when every match edge of
-// the row's ledger event points at a non-canonical committed version, which is
-// the precondition for appending a full inversion of that event without also
-// erasing a canonical record's effect.
+// version a repair keeps. `reversal_safe` carries the whole precondition for
+// appending a full inversion of that row's ledger event, so a consumer never
+// has to re-filter a flag named for safety:
+//
+//   - the event exists, is itself committed, and is not itself a reversal;
+//   - the event does not already have a reversal;
+//   - every match edge of the event points at a non-canonical committed
+//     version, so inverting it cannot erase a canonical record's effect.
+//
+// The last condition is why an event can be unsafe even when it heads a
+// duplicate: a commit writes its edges while both records are still
+// uncommitted, so the event may also carry an edge to another key's only
+// committed version.
 pub(crate) const DUPLICATE_COMMITTED_VERSIONS_SQL: &str = "\
 WITH committed_versions AS ( \
   SELECT external_records.id AS external_record_id, \
@@ -36,20 +45,24 @@ SELECT committed_versions.stable_record_key, \
        ledger_events.id, \
        ledger_events.event_type, \
        ledger_events.event_date, \
+       ledger_events.status, \
        ledger_events.reverses_event_id IS NOT NULL, \
        EXISTS(SELECT 1 FROM ledger_events reversal \
               WHERE reversal.reverses_event_id = ledger_events.id), \
        match_edges.allocation_value, \
        match_edges.unit, \
        match_edges.review_status, \
-       ledger_events.id IS NOT NULL AND NOT EXISTS( \
-         SELECT 1 FROM match_edges peer_edge \
-         LEFT JOIN committed_versions peer \
-           ON peer.external_record_id = peer_edge.external_record_id \
-          AND peer.version_rank > 1 \
-         WHERE peer_edge.ledger_event_id = ledger_events.id \
-           AND peer.external_record_id IS NULL \
-       ) \
+       ledger_events.id IS NOT NULL \
+         AND ledger_events.status = 'committed' \
+         AND ledger_events.reverses_event_id IS NULL \
+         AND NOT EXISTS( \
+           SELECT 1 FROM match_edges peer_edge \
+           LEFT JOIN committed_versions peer \
+             ON peer.external_record_id = peer_edge.external_record_id \
+            AND peer.version_rank > 1 \
+           WHERE peer_edge.ledger_event_id = ledger_events.id \
+             AND peer.external_record_id IS NULL \
+         ) \
 FROM committed_versions \
 JOIN external_records ON external_records.id = committed_versions.external_record_id \
 LEFT JOIN match_edges ON match_edges.external_record_id = committed_versions.external_record_id \
@@ -75,6 +88,7 @@ pub(crate) struct DuplicateCommittedVersionAuditRow {
     pub(crate) ledger_event_id: Option<String>,
     pub(crate) ledger_event_type: Option<String>,
     pub(crate) ledger_event_date: Option<String>,
+    pub(crate) ledger_event_status: Option<String>,
     pub(crate) ledger_event_is_reversal: bool,
     pub(crate) ledger_event_has_reversal: bool,
     pub(crate) allocation_value: Option<String>,
@@ -102,12 +116,13 @@ impl ManualImportStore {
                 ledger_event_id: row.get(9)?,
                 ledger_event_type: row.get(10)?,
                 ledger_event_date: row.get(11)?,
-                ledger_event_is_reversal: row.get(12)?,
-                ledger_event_has_reversal: row.get(13)?,
-                allocation_value: row.get(14)?,
-                match_unit: row.get(15)?,
-                match_review_status: row.get(16)?,
-                reversal_safe: row.get(17)?,
+                ledger_event_status: row.get(12)?,
+                ledger_event_is_reversal: row.get(13)?,
+                ledger_event_has_reversal: row.get(14)?,
+                allocation_value: row.get(15)?,
+                match_unit: row.get(16)?,
+                match_review_status: row.get(17)?,
+                reversal_safe: row.get(18)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
