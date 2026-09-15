@@ -141,9 +141,21 @@ impl ManualImportStore {
         &mut self,
         input: &MoneySourceCandidateInput<'_>,
     ) -> StoreResult<MoneySourceCandidateState> {
+        let transaction = self.connection.transaction()?;
+        let state = Self::attach_money_source_candidate_in_transaction(&transaction, input)?;
+        transaction.commit()?;
+        Ok(state)
+    }
+
+    /// Attaches (or resolves) the source candidate inside a caller-owned
+    /// transaction, so a document classification and its candidate parking
+    /// commit as one unit under one claim check.
+    pub(crate) fn attach_money_source_candidate_in_transaction(
+        transaction: &Transaction<'_>,
+        input: &MoneySourceCandidateInput<'_>,
+    ) -> StoreResult<MoneySourceCandidateState> {
         validate_candidate_input(input)?;
         let (scope_kind, scope_value) = input.scope.parts();
-        let transaction = self.connection.transaction()?;
         let document_owner = transaction
             .query_row(
                 "SELECT money_source_id, money_source_candidate_id \
@@ -185,7 +197,7 @@ impl ManualImportStore {
             ],
         )?;
         let state =
-            read_candidate_by_identity(&transaction, input.provider_key, scope_kind, scope_value)?;
+            read_candidate_by_identity(transaction, input.provider_key, scope_kind, scope_value)?;
         if current_candidate_id
             .as_deref()
             .is_some_and(|candidate_id| candidate_id != state.candidate_id)
@@ -236,7 +248,6 @@ impl ManualImportStore {
                 )?;
             }
         }
-        transaction.commit()?;
         Ok(state)
     }
 

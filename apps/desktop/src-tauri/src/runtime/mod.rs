@@ -30,7 +30,7 @@ use crate::{
         password_wrapper_profile, recovery_file_fingerprint,
     },
     viewer::{
-        PdfAccess, RenderedDocumentPage, pdf_access, render_image_document,
+        RenderedDocumentPage, pdf_password_unlocks, render_image_document,
         render_pdf_page_with_password,
     },
 };

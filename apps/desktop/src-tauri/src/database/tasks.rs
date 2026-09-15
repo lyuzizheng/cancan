@@ -3,6 +3,9 @@ use std::collections::{HashMap, HashSet};
 use super::restore_decisions::restore_decision_audit_id;
 use super::*;
 
+/// How long a completed intake/reconcile outcome stays on the task list.
+const RECENTLY_COMPLETED_RETENTION: &str = "-168 hours";
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RawTask {
     pub(crate) title: String,
@@ -390,11 +393,11 @@ impl ManualImportStore {
              FROM intake_batch_items \
              WHERE capture_outcome = 'rejected' \
                AND rejection_kind = 'visible_receipt' \
-               AND datetime(finalized_at) >= datetime('now', '-168 hours')",
+               AND datetime(finalized_at) >= datetime('now', ?1)",
         )?;
         rows.extend(
             statement
-                .query_map([], |row| {
+                .query_map([RECENTLY_COMPLETED_RETENTION], |row| {
                     Ok(RawTask {
                         title: row.get(1)?,
                         timestamp: row.get(2)?,
@@ -410,11 +413,11 @@ impl ManualImportStore {
             "SELECT id, safe_input_label, finalized_at \
              FROM intake_batch_items \
              WHERE capture_outcome = 'already_present' \
-               AND datetime(finalized_at) >= datetime('now', '-168 hours')",
+               AND datetime(finalized_at) >= datetime('now', ?1)",
         )?;
         rows.extend(
             statement
-                .query_map([], |row| {
+                .query_map([RECENTLY_COMPLETED_RETENTION], |row| {
                     Ok(RawTask {
                         title: row.get(1)?,
                         timestamp: row.get(2)?,
@@ -439,9 +442,11 @@ impl ManualImportStore {
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<Vec<_>, _>>()?;
         if !candidates.is_empty() {
-            let cutoff: String =
-                self.connection
-                    .query_row("SELECT datetime('now', '-168 hours')", [], |row| row.get(0))?;
+            let cutoff: String = self.connection.query_row(
+                "SELECT datetime('now', ?1)",
+                [RECENTLY_COMPLETED_RETENTION],
+                |row| row.get(0),
+            )?;
             let mut audit_ids: Vec<String> = Vec::with_capacity(candidates.len() * 2);
             let mut by_audit_id: HashMap<String, (String, String)> = HashMap::new();
             for (item_id, label) in candidates.drain(..) {
@@ -502,7 +507,7 @@ impl ManualImportStore {
                GROUP BY related_source_document_id \
              ) ready ON ready.document_id = sd.id \
              WHERE i.capture_outcome = 'captured' \
-               AND datetime(ready.finished_at) >= datetime('now', '-168 hours') \
+               AND datetime(ready.finished_at) >= datetime('now', ?1) \
                AND sd.file_state = 'available' \
                AND sd.money_source_id IS NOT NULL \
                AND sd.money_source_candidate_id IS NULL \
@@ -523,7 +528,7 @@ impl ManualImportStore {
         )?;
         rows.extend(
             statement
-                .query_map([], |row| {
+                .query_map([RECENTLY_COMPLETED_RETENTION], |row| {
                     Ok(RawTask {
                         title: row.get(1)?,
                         timestamp: row.get(2)?,

@@ -168,6 +168,9 @@ pub(super) async fn run_review_core_sidecar<T: Serialize>(
         };
         match event {
             CommandEvent::Stdout(bytes) => {
+                if bytes.len() > NORMALIZER_MAX_MESSAGE_BYTES {
+                    return fail_review_core(child);
+                }
                 let message = match serde_json::from_slice::<ReviewCoreMessage>(&bytes) {
                     Ok(message) => message,
                     Err(_) => return fail_review_core(child),

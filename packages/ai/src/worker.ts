@@ -27,12 +27,16 @@ async function run(): Promise<void> {
     if (command.type === "shutdown") {
       return;
     }
-    send({
-      type: "result",
-      requestId: command.requestId,
-      result:
-        command.type === "core" ? runCoreCommand(command) : await normalizeWithMock(command),
-    });
+    try {
+      send({
+        type: "result",
+        requestId: command.requestId,
+        result:
+          command.type === "core" ? runCoreCommand(command) : await normalizeWithMock(command),
+      });
+    } catch {
+      send({ type: "error", code: "command_failed" });
+    }
   }
 }
 

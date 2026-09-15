@@ -50,8 +50,7 @@ import { VaultGate } from "./vault-gate";
 import { VaultSpine, type AppView, type VaultScreenStatus } from "./vault-spine";
 import { createViewerActions } from "./viewer-actions";
 
-export type { Notice } from "./feedback";
-export type { VaultScreenStatus } from "./vault-spine";
+
 
 const defaultVaultApi = createVaultApi();
 const REVIEW_JOB_POLL_INTERVAL_MS = 600;
@@ -233,16 +232,28 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     documentLoadRequestId.current = requestId;
     setLoadingDocuments(true);
     try {
-      const [sources, unassigned] = await Promise.all([
+      // The selected-source fetch is speculative: it runs in parallel with
+      // the source list, so a stale id's failure is discarded, while a real
+      // failure for a still-valid source is re-thrown below.
+      let selectedDocumentsError: unknown = null;
+      const selectedDocumentsPromise = selectedSourceId === null
+        ? Promise.resolve(null)
+        : api.listSourceDocuments(selectedSourceId).catch((nextError: unknown) => {
+            selectedDocumentsError = nextError;
+            return null;
+          });
+      const [sources, unassigned, selectedDocumentsForId] = await Promise.all([
         api.listMoneySources(),
         api.listUnassignedSourceDocuments(),
+        selectedDocumentsPromise,
       ]);
       const selectedSource = selectedSourceId === null
         ? undefined
         : sources.find((source) => source.moneySourceId === selectedSourceId);
-      const selectedDocuments = selectedSource
-        ? await api.listSourceDocuments(selectedSource.moneySourceId)
-        : null;
+      if (selectedSource && selectedDocumentsError !== null) {
+        throw selectedDocumentsError;
+      }
+      const selectedDocuments = selectedSource ? selectedDocumentsForId : null;
       if (
         vaultSessionId.current === sessionId
         && documentLoadRequestId.current === requestId
@@ -275,9 +286,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
   }, [api]);
 
-  const loadFinanceData = useCallback(async () => {
+  const loadFinanceData = useCallback(async (): Promise<ReviewItemSummary[] | null> => {
     if (!documentLoadsAllowed.current) {
-      return;
+      return null;
     }
     const sessionId = vaultSessionId.current;
     const requestId = financeLoadRequestId.current + 1;
@@ -298,13 +309,12 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           }
         },
       );
-      const [items, overview, activity, accounts, sourceConfirmations, commandTasks, fullTasks] = await Promise.all([
+      const [items, overview, activity, accounts, sourceConfirmations, fullTasks] = await Promise.all([
         api.listReviewItems(),
         api.getMoneyOverview(),
         api.listRecentActivity(),
         api.listAccountConfirmationPrompts(),
         api.listSourceConfirmationPrompts(),
-        api.listTasks("command_center"),
         api.listTasks("full"),
       ]);
       if (
@@ -316,14 +326,24 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setRecentActivity(activity);
         setAccountPrompts(accounts);
         setSourcePrompts(sourceConfirmations);
-        setTasks(commandTasks);
+        // The command-center list is the full list minus parked rows, capped
+        // at five — the same projection the host applies for
+        // TaskFilter::CommandCenter (runtime/tasks.rs).
+        setTasks({
+          needsActionCount: fullTasks.needsActionCount,
+          rows: fullTasks.rows
+            .filter((row) => row.group !== "parked")
+            .slice(0, 5),
+        });
         setTasksFull(fullTasks);
         setSelectedReviewIds((current) => new Set(
           [...current].filter((id) =>
             items.some((item) => item.reviewItemId === id)
           ),
         ));
+        return items;
       }
+      return null;
     } catch (nextError) {
       if (
         vaultSessionId.current === sessionId
@@ -332,6 +352,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setError(commandErrorMessage(nextError));
       }
     }
+    return null;
   }, [api]);
 
   const selectMoneySource = (moneySourceId: string) => {
@@ -399,8 +420,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         setVaultStatus(nextStatus);
         if (nextStatus === "unlocked") {
           setError(commandErrorMessage(nextError));
-          await loadDocuments();
-          await loadFinanceData();
+          await Promise.all([loadDocuments(), loadFinanceData()]);
           return vaultSessionId.current === sessionId;
         }
       } catch {
@@ -438,8 +458,6 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const refreshVaultStatus = useCallback(async () => {
     const sessionId = vaultSessionId.current;
     setBusy(true);
-    setVaultStatus("loading");
-    setError(null);
     try {
       const access = await api.vaultAccessStatus();
       if (vaultSessionId.current !== sessionId) {
@@ -451,8 +469,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       setRecoveryConfigured(access.recoveryConfigured);
       setVaultStatus(nextStatus);
       if (nextStatus === "unlocked") {
-        await loadDocuments();
-        await loadFinanceData();
+        await Promise.all([loadDocuments(), loadFinanceData()]);
       } else {
         showVaultGate(nextStatus);
       }
@@ -506,8 +523,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     setVaultStatus(nextStatus);
     setPassword("");
     if (nextStatus === "unlocked") {
-      await loadDocuments();
-      await loadFinanceData();
+      await Promise.all([loadDocuments(), loadFinanceData()]);
     }
   };
 
@@ -899,16 +915,12 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         title: "Edit saved",
       });
       setMutatingReviewItemId(null);
-      await loadFinanceData();
+      const refreshed = await loadFinanceData();
       if (vaultSessionId.current !== sessionId) {
         return;
       }
       if (outcome.reviewItemId !== null) {
-        const refreshed = await api.listReviewItems();
-        if (vaultSessionId.current !== sessionId) {
-          return;
-        }
-        const nextItem = refreshed.find(
+        const nextItem = refreshed?.find(
           (item) => item.reviewItemId === outcome.reviewItemId,
         );
         if (nextItem) {
@@ -1133,7 +1145,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     }
     const sessionId = vaultSessionId.current;
     setNotice(null);
-    setReviewJob({ jobId: "", outcomes: [], status: "running" });
+    setReviewJob({ jobId: null, outcomes: [], status: "running" });
     void api.enqueueCommitReviewBatch(ids).then((summary) => {
       if (vaultSessionId.current !== sessionId) {
         return;

@@ -11,7 +11,9 @@ impl VaultRuntime {
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
         let audit_id = random_identifier("audit");
         let result = store.delete_source_document(document_id, &audit_id);
-        self.document_passwords()?.remove(document_id);
+        if result.is_ok() {
+            self.document_passwords()?.remove(document_id);
+        }
         result.map_err(|error| {
             if error
                 .downcast_ref::<io::Error>()
@@ -641,11 +643,11 @@ pub(super) fn statement_password_unlocks(
     if input.mime_type != "application/pdf" {
         return Err(RuntimeError::new("viewer_unsupported"));
     }
-    match pdf_access(&input.plaintext, None).map_err(document_render_error)? {
-        PdfAccess::Ready => Err(RuntimeError::new("document_not_protected")),
-        PdfAccess::PasswordRequired => pdf_access(&input.plaintext, Some(password))
-            .map(|access| access == PdfAccess::Ready)
-            .map_err(document_render_error),
+    // One parse: the probe reports both whether the document is protected at
+    // all and whether this password unlocks it.
+    match pdf_password_unlocks(&input.plaintext, password).map_err(document_render_error)? {
+        Some(unlocked) => Ok(unlocked),
+        None => Err(RuntimeError::new("document_not_protected")),
     }
 }
 
@@ -654,10 +656,8 @@ pub(super) fn ensure_statement_password_source(
     money_source_id: &str,
 ) -> Result<(), RuntimeError> {
     if store
-        .statement_password_sources()
+        .money_source_exists(money_source_id)
         .map_err(|_| RuntimeError::new("invalid_source_request"))?
-        .iter()
-        .any(|source| source.money_source_id == money_source_id)
     {
         Ok(())
     } else {

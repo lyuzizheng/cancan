@@ -423,38 +423,26 @@ impl VaultRuntime {
                 .and_then(|period| period.to.as_deref()),
         };
         self.require_parse_vault_session(vault_session_generation)?;
+        // Classification and its structured parse commit as one unit: the parse
+        // payload is derived from the routed outcome inside the same store
+        // transaction, so a crash or a rejected proposal cannot leave a
+        // classified document that has no parse record.
         let outcome = {
             let mut store = self.store()?;
             store
                 .as_mut()
                 .ok_or_else(|| RuntimeError::new("vault_locked"))?
-                .apply_trusted_classification_for_parse_job(&classification, parse_job)
-                .map_err(|_| RuntimeError::new("classification_failed"))?
-        };
-        if outcome.status != crate::database::SourceDocumentRoutingStatus::Routed {
-            return self.finish_normalizer_outcome_with_job(
-                parse_job,
-                vault_session_generation,
-                outcome,
-            );
-        }
-        let parse = validated_structured_parse_input(&proposal, &profile, &outcome.account_ids)
-            .ok_or_else(|| RuntimeError::new("normalizer_failed"))?;
-        self.require_parse_vault_session(vault_session_generation)?;
-        {
-            let mut store = self.store()?;
-            store
-                .as_mut()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
-                .persist_validated_structured_parse_for_claimed_job(
-                    document_id,
-                    &parse,
+                .apply_classification_and_parse_for_claimed_job(
+                    &classification,
                     parse_job,
                     &extraction_bundle.file_sha256,
                     &output_hash,
+                    |outcome| {
+                        validated_structured_parse_input(&proposal, &profile, &outcome.account_ids)
+                    },
                 )
-                .map_err(|_| RuntimeError::new("classification_failed"))?;
-        }
+                .map_err(|_| RuntimeError::new("classification_failed"))?
+        };
         self.finish_normalizer_outcome_with_job(parse_job, vault_session_generation, outcome)
     }
 
