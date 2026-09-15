@@ -414,15 +414,12 @@ function documentStatusLabel(document: SourceDocumentSummary) {
   }
 }
 
-const META_MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-] as const;
-
-const GROUP_MONTHS = [
+const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ] as const;
+
+const BYTE_UNIT = 1024;
 
 const SQLITE_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
 
@@ -442,17 +439,17 @@ function formatMetaDate(iso: string) {
   if (Number.isNaN(date.getTime())) {
     return iso;
   }
-  return `${date.getUTCDate()} ${META_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+  return `${date.getUTCDate()} ${(MONTH_NAMES[date.getUTCMonth()] ?? "???").slice(0, 3)} ${date.getUTCFullYear()}`;
 }
 
 function formatByteSize(bytes: number) {
-  if (bytes < 1024) {
+  if (bytes < BYTE_UNIT) {
     return `${bytes} B`;
   }
-  if (bytes < 1024 * 1024) {
-    return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < BYTE_UNIT * BYTE_UNIT) {
+    return `${Math.round(bytes / BYTE_UNIT)} KB`;
   }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (BYTE_UNIT * BYTE_UNIT)).toFixed(1)} MB`;
 }
 
 interface EvidenceMonthGroup {
@@ -479,7 +476,7 @@ function groupEvidenceByMonth(
         documents: [document],
         key,
         label: valid
-          ? `${GROUP_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+          ? `${MONTH_NAMES[date.getUTCMonth()] ?? "Unknown"} ${date.getUTCFullYear()}`
           : "Unknown date",
       });
     }

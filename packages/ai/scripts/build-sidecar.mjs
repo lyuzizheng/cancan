@@ -147,7 +147,7 @@ if (
   messages[3]?.result?.status !== "classified" ||
   messages[3]?.result?.profile?.packageId !== "dbs/bank_statement@1" ||
   messages[3]?.result?.profile?.id !==
-    "mock:dbs/bank_statement@1:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v2"
+    "mock:dbs/bank_statement@1:native-observations-v2:extract-native_text-pdfkit-macos-page-string-v2"
 ) {
   throw new Error("sidecar smoke returned an invalid protocol transcript");
 }

@@ -143,7 +143,7 @@ describe("mock document normalizer", () => {
       documentType: "transfer_export",
       packageId: "synthetic/bank_transfer_export@1",
       normalizerRuntime: "single-pass-mock",
-      inputStrategy: "native-observations-v1",
+      inputStrategy: "native-observations-v2",
       modelProvider: "cancan-deterministic-mock",
       model: "fixture-v1",
       reviewOnly: true,
@@ -211,7 +211,7 @@ describe("mock document normalizer", () => {
         validatorVersion: "1.0.0",
         normalizerRuntime: "single-pass-mock",
         toolContractVersion: "1.0.0",
-        inputStrategy: "native-observations-v1",
+        inputStrategy: "native-observations-v2",
         modelProvider: "cancan-deterministic-mock",
         model: "fixture-v1",
         reviewOnly: true,
@@ -222,7 +222,7 @@ describe("mock document normalizer", () => {
         ocrEngines: [],
       });
       expect(result.profile.id).toBe(
-        `mock:${packageId}:native-observations-v1:extract-native_text-synthetic-provider-fixture-1+extract-table_cell-synthetic-provider-fixture-1`,
+        `mock:${packageId}:native-observations-v2:extract-native_text-synthetic-provider-fixture-1+extract-table_cell-synthetic-provider-fixture-1`,
       );
     },
   );
@@ -253,7 +253,7 @@ describe("mock document normalizer", () => {
         throw new Error("expected the native PDF fixture to classify");
       }
       expect(result.profile).toMatchObject({
-        id: `mock:${packageId}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v2`,
+        id: `mock:${packageId}:native-observations-v2:extract-native_text-pdfkit-macos-page-string-v2`,
         extractionEngines: [
           { kind: "native_text", engine: "pdfkit", version: "macos-page-string-v2" },
         ],

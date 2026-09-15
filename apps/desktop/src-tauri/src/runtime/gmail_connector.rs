@@ -17,6 +17,11 @@ use std::{
 const GMAIL_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(180);
 const GMAIL_CONNECTOR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const GMAIL_CONNECTOR_MAX_MESSAGE_BYTES: usize = 64 * 1024;
+const GMAIL_LOOPBACK_PER_CONNECTION_TIMEOUT: StdDuration = StdDuration::from_secs(2);
+const GMAIL_LOOPBACK_MAX_AUTHORIZATION_URL_BYTES: usize = 16 * 1024;
+const GMAIL_LOOPBACK_REQUEST_INITIAL_CAPACITY_BYTES: usize = 1024;
+const GMAIL_LOOPBACK_REQUEST_CHUNK_BYTES: usize = 512;
+const GMAIL_LOOPBACK_REQUEST_MAX_BYTES: usize = 8192;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -353,7 +358,7 @@ fn matching_gmail_connector_result(
 }
 
 fn valid_google_authorization_url(url: &str) -> bool {
-    url.len() <= 16 * 1024
+    url.len() <= GMAIL_LOOPBACK_MAX_AUTHORIZATION_URL_BYTES
         && url.starts_with("https://accounts.google.com/o/oauth2/v2/auth?")
         && !url.contains(['\r', '\n'])
 }
@@ -377,7 +382,7 @@ fn wait_for_loopback_callback(
                 // port must not kill the authorization flow: each connection gets
                 // its own bounded window, and malformed ones are discarded while we
                 // keep waiting for the real Google callback.
-                let per_connection = remaining.min(StdDuration::from_secs(2));
+                let per_connection = remaining.min(GMAIL_LOOPBACK_PER_CONNECTION_TIMEOUT);
                 if let Ok(url) = read_loopback_request(&mut stream, address, per_connection) {
                     return Ok(url);
                 }
@@ -399,13 +404,15 @@ fn read_loopback_request(
     stream
         .set_read_timeout(Some(read_timeout))
         .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
-    let mut request = Zeroizing::new(Vec::with_capacity(1024));
-    let mut chunk = Zeroizing::new([0_u8; 512]);
+    let mut request = Zeroizing::new(Vec::with_capacity(
+        GMAIL_LOOPBACK_REQUEST_INITIAL_CAPACITY_BYTES,
+    ));
+    let mut chunk = Zeroizing::new([0_u8; GMAIL_LOOPBACK_REQUEST_CHUNK_BYTES]);
     loop {
         let read = stream
             .read(&mut chunk[..])
             .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
-        if read == 0 || request.len() + read > 8192 {
+        if read == 0 || request.len() + read > GMAIL_LOOPBACK_REQUEST_MAX_BYTES {
             return Err(RuntimeError::new("gmail_authorization_failed"));
         }
         request.extend_from_slice(&chunk[..read]);

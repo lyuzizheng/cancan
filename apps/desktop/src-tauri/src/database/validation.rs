@@ -209,7 +209,7 @@ pub(super) fn validate_structured_parse_input(
         || input.normalization_profile_id.len() > 256
         || input.profile_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
         || input.records.is_empty()
-        || input.records.len() > 1_000
+        || input.records.len() > MAX_STRUCTURED_PARSE_RECORDS
         || !matches!(
             serde_json::from_str::<Value>(&input.profile_json),
             Ok(Value::Object(_))
