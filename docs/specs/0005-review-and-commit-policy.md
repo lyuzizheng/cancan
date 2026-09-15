@@ -204,6 +204,8 @@ may affect current displayed asset value
 
 An edit creates the next external-record version and supersedes only the previous uncommitted current-state projection. It preserves the parse run, bounded raw source row, prior validation, review decisions, and audit. A committed record/event is never edited in place. A committed external-record version is terminal: reparse never creates a successor version and never supersedes it; reparse output that diverges from the committed canonical fields attaches review work to the committed record; commit rejects any record whose stable_record_key already has a committed version.
 
+Review work attached to a committed record can only be acknowledged, never edited or removed: acknowledgement closes that review item and writes its append-only audit entry, and it changes nothing about the committed record, its ledger event, its legs, or its match edges. The read model marks those items as attached to a committed record so the renderer offers only that one action and excludes them from the commit selection.
+
 Every edit, remove, relationship, or Add request identifies the review item and expected current record version. The host compares both the version and current review status before writing. A stale request returns a safe conflict with no mutation so the renderer can reload current detail.
 
 `commit_review_batch` is a coarse durable job under `0015-job-engine-error-model.md`. It preflights every selected current record, groups records that form one canonical event, and treats each group as one commit unit:
@@ -292,6 +294,7 @@ read:
 mutate:
   edit one current review record
   remove one current review record
+  acknowledge one review item attached to a committed record
   accept one relationship with explicit allocations
   enqueue one selected review batch
   undo one committed event

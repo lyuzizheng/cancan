@@ -20,6 +20,7 @@ const item: ReviewItemSummary = {
   eventType: "credit_card_repayment",
   postedOn: "2026-07-15",
   reasonCode: "possible_card_repayment",
+  recordCommitted: false,
   recordId: "record-1",
   recordVersion: 1,
   reviewItemId: "review-1",
@@ -32,9 +33,23 @@ const secondItem: ReviewItemSummary = {
   eventType: "credit_card_repayment",
   postedOn: "2026-07-17",
   reasonCode: "possible_card_repayment",
+  recordCommitted: false,
   recordId: "record-2",
   recordVersion: 1,
   reviewItemId: "review-2",
+};
+
+const committedItem: ReviewItemSummary = {
+  accountLabel: "HSBC Everyday",
+  amountValue: "800.00",
+  currency: "SGD",
+  eventType: "credit_card_repayment",
+  postedOn: "2026-06-30",
+  reasonCode: "reparse_divergence",
+  recordCommitted: true,
+  recordId: "record-4",
+  recordVersion: 1,
+  reviewItemId: "review-4",
 };
 
 const detail: ReviewItemDetail = {
@@ -60,6 +75,7 @@ const baseProps: ReviewViewProps = {
   mutatingItemId: null,
   notice: null,
   onAcceptCandidate: () => undefined,
+  onAcknowledge: () => undefined,
   onCancelEdit: () => undefined,
   onCancelRemove: () => undefined,
   onClearSelection: () => undefined,
@@ -169,9 +185,44 @@ describe("ReviewView", () => {
     expect(markup).toContain("Leave it blank to keep the current value");
   });
 
+  it("offers only acknowledge on a record that is already added", () => {
+    const markup = render({
+      detail: {
+        candidates: [],
+        confirmingRemove: false,
+        detail: {
+          ...committedItem,
+          documentLabel: "June statement.pdf",
+          sourceLabel: "HSBC",
+        },
+        editing: null,
+        reviewItemId: committedItem.reviewItemId,
+        summary: committedItem,
+      },
+      items: [committedItem],
+    });
+
+    expect(markup).toContain("Acknowledge");
+    expect(markup).toContain("This record is already added");
+    expect(markup).toContain("Re-parsed values differ");
+    expect(markup).not.toContain("Edit record");
+    expect(markup).not.toContain("Remove record");
+    expect(markup).not.toContain("Accept link");
+    expect(markup).not.toContain("Looks related");
+    expect(markup).not.toContain("Add selected");
+    expect(markup).not.toContain("Select SGD 800.00");
+  });
+
+  it("keeps already-added records out of a mixed selection", () => {
+    const markup = render({ items: [committedItem, item] });
+
+    expect(markup).toContain("Add selected");
+    expect(markup).toContain("Select SGD 512.34 for DBS Multiplier Account");
+    expect(markup).not.toContain("Select SGD 800.00 for HSBC Everyday");
+  });
+
   it("asks for confirmation before removing a record", () => {
     const markup = render({ detail: expandedDetail({ confirmingRemove: true }) });
-
     expect(markup).toContain("Remove this record from Review?");
     expect(markup).toContain("Confirm remove");
     expect(markup).toContain("Keep");

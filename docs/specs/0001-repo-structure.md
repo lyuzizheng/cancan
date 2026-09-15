@@ -172,6 +172,7 @@ apps/desktop/src-tauri/src/runtime/
   inbox.rs           local-inbox methods, job orchestration, and their commands
   documents.rs       document/statement-password methods and their commands
   review.rs          review-ledger methods, batch jobs, and their commands
+  review_records.rs  committed-record review acknowledgement method and command
   tests.rs           runtime test module
 apps/desktop/src-tauri/src/database/
   mod.rs             record types, ManualImportStore and its impl, re-exports
@@ -180,6 +181,7 @@ apps/desktop/src-tauri/src/database/
   validation.rs      decimal/date/identifier validation helpers
   imports.rs         import/deletion persistence and audit helpers
   gmail.rs           Gmail mailbox identity and connection-state repository
+  review_records.rs  committed-record review acknowledgement and its audit entry
   tests.rs           database test module
 ```
 

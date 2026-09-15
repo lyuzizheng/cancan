@@ -126,6 +126,7 @@ export interface ReviewItemSummary {
   eventType: string | null;
   postedOn: string | null;
   reasonCode: string;
+  recordCommitted: boolean;
   recordId: string;
   recordVersion: number;
   reviewItemId: string;
@@ -191,6 +192,7 @@ export interface RelationshipCandidateSummary {
 }
 
 export type ReviewMutationStatus =
+  | "acknowledged"
   | "conflict"
   | "relationship_accepted"
   | "removed"
