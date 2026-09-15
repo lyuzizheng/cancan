@@ -4,6 +4,17 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-09-15
+
+### Completed
+
+- Closed the BRAWUKA-267 gap left by the committed-finality layer: review work attached to a committed record now has an acknowledge path. An open item whose record is committed closes as `dismissed` with one append-only audit entry and no write to the record, its ledger event, its legs, or its match edges; every non-committed item keeps its edit/remove/relationship/commit paths and refuses acknowledgement as stale. The review read models carry `recordCommitted` and include committed records, so Review lists such items, offers only Acknowledge for them, and keeps them out of the commit selection. New module boundaries: `database/review_records.rs` (store mutation plus its focused tests) and `runtime/review_records.rs` (method and command), recorded in `docs/specs/0001-repo-structure.md`; `docs/specs/0005-review-and-commit-policy.md` states the acknowledge-only rule and extends the version-check rule to acknowledge requests.
+- Gates: `cargo test --locked` (222 passed), `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `pnpm verify` (368 unit tests, presentation types current, desktop debug build, website check), `.agents/scripts/agent-preflight.sh` — pass. Independent semantic review (non-author subagent) — pass.
+
+### Next
+
+- Remaining open follow-up from the same review pass: migration `0013` does not remediate two committed versions of one `stable_record_key` (the duplicate-commit audit reports it read-only).
+
 ## 2026-08-11 (harness)
 
 ### Completed
