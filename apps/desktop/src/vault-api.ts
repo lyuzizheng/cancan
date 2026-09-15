@@ -540,20 +540,16 @@ export function commandErrorMessage(error: unknown): string {
   }
 }
 
+/**
+ * Reads the `code` a host command rejects with. Tauri serializes a command's
+ * error value as JSON into the rejection (`format_callback::format_result` in
+ * the tauri crate), so a `VaultCommandError` always arrives as an object; a
+ * string rejection is a host-level message and carries no code.
+ */
 function commandErrorCode(error: unknown): string | null {
-  if (typeof error === "object" && error !== null && "code" in error) {
-    const { code } = error;
-    return typeof code === "string" ? code : null;
-  }
-
-  if (typeof error !== "string") {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
     return null;
   }
-
-  try {
-    const parsed: unknown = JSON.parse(error);
-    return commandErrorCode(parsed);
-  } catch {
-    return null;
-  }
+  const { code } = error;
+  return typeof code === "string" ? code : null;
 }

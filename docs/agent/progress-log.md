@@ -4,6 +4,20 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-09-16
+
+### Completed
+
+- Split the command-center god component (BRAWUKA-304, `refactor/desktop-command-center-hooks`). `app.tsx` drops from 1606 to 357 lines by the file-size guardrail's count (1605 to 356 by `wc -l`), leaving wiring only: the vault session (gate screen, session epoch, shared busy/error banner, lock/unlock/refresh), document intake, review queue, CanCan Inbox, attention, evidence overlays (viewer/preview/statement unlock), and the shared finance read model each own their state and commands in a `use-*.ts` hook; review commands moved to `review-actions.ts`, and `ReviewDetail`/`EvidenceDocumentGroups` moved to `review-detail.tsx`/`evidence-documents.tsx`. The hooks publish their loaders and resetters through a `CommandWiring` seam that `App` fills during render, so no hook depends on a hook declared later in the same component and the gate still resets every domain synchronously. The `app.tsx` file-size exemption is removed — the file now sits under the ordinary 800-line limit.
+- Extracted the repeated command discipline into one `runGuarded` runner (busy flag, error banner, vault-session epoch guard, per-command settle) and moved it onto the commands the twelve busy-flag call sites used to spell out by hand. No call site gained or lost an async hop on the failure path.
+- Behavior-bearing fixes from the audit: batch commit polling backs off (600 ms ×1.5, capped at 5 s) and only fails the job after a 10-minute deadline instead of 50 fixed polls (~30 s), which used to mark slow but successful batches as failed; the unreachable string-JSON branch in `commandErrorCode` is gone, since Tauri serializes a command's error value as JSON into the rejection (`format_callback::format_result`) and a string rejection never carries a code.
+- Frontend performance: the four command-center views are memoized and their callbacks are stable hook callbacks, so an unrelated state change no longer re-renders the mounted view's subtree; derived lists (`existingSources`, focused candidate, task destination routing) are memoized instead of rebuilt every render. The audit's `selectMoneySource` caching finding is deliberately not implemented: the selected source's button is an explicit `Refresh documents` affordance, so skipping that fetch would remove a user-visible action.
+- Gates: `pnpm check:file-size`, `pnpm check:ui-discipline`, `pnpm typecheck`, `pnpm test:unit` (368 passed) — pass.
+
+### Next
+
+- Nothing outstanding from BRAWUKA-304; the remaining audit dimensions stay with their own issues.
+
 ## 2026-09-15
 
 ### Completed
