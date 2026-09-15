@@ -38,12 +38,6 @@ pub(crate) struct RenderedDocumentPage {
     pub(crate) png_base64: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PdfAccess {
-    PasswordRequired,
-    Ready,
-}
-
 #[cfg(test)]
 pub(crate) fn render_pdf_page(pdf: &[u8], page_number: u32) -> io::Result<RenderedDocumentPage> {
     render_pdf_page_with_password(pdf, page_number, None)
@@ -136,24 +130,21 @@ fn rendered_png_bytes(rendered: &RenderedPixels) -> io::Result<Zeroizing<Vec<u8>
     Ok(png)
 }
 
+/// Probes one password against one PDF document in a single open: `None` when
+/// the document needs no password at all (so the probe says nothing about the
+/// candidate), `Some(true)` when that password unlocks it, `Some(false)` when
+/// it does not.
 #[cfg(target_os = "macos")]
-pub(crate) fn pdf_access(pdf: &[u8], password: Option<&[u8]>) -> io::Result<PdfAccess> {
+pub(crate) fn pdf_password_unlocks(pdf: &[u8], password: &[u8]) -> io::Result<Option<bool>> {
     let document = PdfDocument::open(pdf)?;
     if !document.is_encrypted() || document.is_unlocked() {
-        return Ok(PdfAccess::Ready);
+        return Ok(None);
     }
-    let Some(password) = password else {
-        return Ok(PdfAccess::PasswordRequired);
-    };
-    if document.unlock(password)? {
-        Ok(PdfAccess::Ready)
-    } else {
-        Ok(PdfAccess::PasswordRequired)
-    }
+    document.unlock(password).map(Some)
 }
 
 #[cfg(not(target_os = "macos"))]
-pub(crate) fn pdf_access(_pdf: &[u8], _password: Option<&[u8]>) -> io::Result<PdfAccess> {
+pub(crate) fn pdf_password_unlocks(_pdf: &[u8], _password: &[u8]) -> io::Result<Option<bool>> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "protected PDF inspection requires macOS",
@@ -792,16 +783,19 @@ pub(crate) mod tests {
         let pdf = protected_pdf_fixture();
 
         assert_eq!(
-            pdf_access(&pdf, None).expect("inspect protected PDF"),
-            PdfAccess::PasswordRequired
+            pdf_password_unlocks(&pdf, b"wrong-password").expect("reject wrong password"),
+            Some(false)
         );
         assert_eq!(
-            pdf_access(&pdf, Some(b"wrong-password")).expect("reject wrong password"),
-            PdfAccess::PasswordRequired
+            pdf_password_unlocks(&pdf, b"statement-password").expect("accept password"),
+            Some(true)
         );
+        let unprotected = synthetic_pdf(1);
         assert_eq!(
-            pdf_access(&pdf, Some(b"statement-password")).expect("accept password"),
-            PdfAccess::Ready
+            pdf_password_unlocks(&unprotected, b"statement-password")
+                .expect("inspect unprotected PDF"),
+            None,
+            "an unprotected document reports that it needs no password"
         );
         assert_eq!(
             render_pdf_page_with_password(&pdf, 1, Some(b"wrong-password"))

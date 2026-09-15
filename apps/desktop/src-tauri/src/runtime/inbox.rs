@@ -111,12 +111,23 @@ impl VaultRuntime {
         self.local_inbox_status()
     }
 
-    pub(super) fn queued_local_inbox_parse_documents(
-        &self,
-    ) -> Result<Vec<ParseDocumentJob>, RuntimeError> {
+    /// Requeues jobs whose lease expired so this pump pass can retry them.
+    /// Recovery is a write, so it belongs here rather than in the queue reads.
+    pub(super) fn recover_expired_jobs(&self) -> Result<(), RuntimeError> {
         let mut store = self.store()?;
         store
             .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .recover_expired_jobs()
+            .map_err(|_| RuntimeError::new("job_recovery_failed"))
+    }
+
+    pub(super) fn queued_local_inbox_parse_documents(
+        &self,
+    ) -> Result<Vec<ParseDocumentJob>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
             .queued_parse_document_jobs()
             .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
@@ -190,9 +201,9 @@ impl VaultRuntime {
     }
 
     pub(super) fn queued_document_reconciliations(&self) -> Result<Vec<String>, RuntimeError> {
-        let mut store = self.store()?;
+        let store = self.store()?;
         store
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
             .queued_reconcile_document_ids()
             .map_err(|_| RuntimeError::new("reconcile_failed"))
@@ -318,6 +329,12 @@ pub(super) async fn process_queued_local_inbox_parses(
     app: &AppHandle,
     runtime: VaultRuntime,
 ) -> Result<(), VaultCommandError> {
+    tauri::async_runtime::spawn_blocking({
+        let runtime = runtime.clone();
+        move || runtime.recover_expired_jobs()
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
     loop {
         let document_ids = {
             let runtime = runtime.clone();
@@ -447,6 +464,12 @@ pub(super) async fn process_queued_document_reconciliations(
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
         }
     }
+    // The pipeline just advanced, so this is the write side of the Tasks
+    // projection: batches whose items reached a terminal state complete here.
+    // The Tasks read command itself stays a pure read.
+    tauri::async_runtime::spawn_blocking(move || runtime.seal_completed_intake_batches())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
     Ok(())
 }
 

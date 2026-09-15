@@ -15,6 +15,17 @@ Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progres
 
 - Open follow-up tracked separately as BRAWUKA-268: the duplicate-commit audit reports two `committed` versions of one `stable_record_key`, and migration `0013` deliberately does not remediate them.
 
+## 2026-09-15 (transaction audit)
+
+### Completed
+
+- Closed the BRAWUKA-301 transaction-integrity findings. `delete_source_document` now unlinks the encrypted blob before the receipt transaction commits, so a failed unlink leaves the document available for retry instead of leaving a `deleted` row above orphan ciphertext, and the cached statement password is dropped only by a committed deletion. A document's trusted classification, its source-candidate parking, and the structured parse derived from that classification now commit inside one claim-checked transaction (`database/document_routing.rs`, extracted from `database/mod.rs` to respect the file-size ratchet), so a lease that expired mid-step, a crash, or a proposal that cannot yield a parse can no longer park a candidate or route a document with no parse record; the store keeps one test-only parse entry point for direct parse states. The Tasks read command is a pure read: sealed-batch completion moved to the pipeline pump pass and to store open (the spec's restart-reconciled rule), and the queue reads no longer run lease-recovery `UPDATE`s — the pump recovers expired leases once per pass. `statement_password_unlocks` probes one password with a single PDF parse via `pdf_password_unlocks`, and the superseded two-call `pdf_access`/`PdfAccess` probe is deleted. Two findings were pushed back with evidence rather than changed: the undo path's asynchronous prepare already revalidates every fact it depends on inside the write transaction (its snapshot read now shares the write's leg predicate, and the invariant is documented on `persist_review_reversal`), and `remember_on_this_mac` has no read-back verification to remove — the statement-password save it resembles is a deliberate verified write backed by the `pending_save` reconciliation protocol.
+- Gates: `cargo test --locked` (224 passed), `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `pnpm verify`, `.agents/scripts/agent-preflight.sh` — pass.
+
+### Next
+
+- `intake_batches.notification_state` still has no delivery consumer; opt-in batch notification delivery is the next checkpoint on top of the now restart-reconciled completion.
+
 ## 2026-08-11 (harness)
 
 ### Completed

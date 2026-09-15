@@ -99,13 +99,10 @@ pub(crate) struct Tasks {
 
 impl VaultRuntime {
     pub(crate) fn list_tasks(&self, filter: TaskFilter) -> Result<Tasks, RuntimeError> {
-        let mut store_guard = self.store()?;
+        let store_guard = self.store()?;
         let store = store_guard
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        store
-            .reconcile_sealed_batches()
-            .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
         let raw = store
             .derive_task_rows(filter == TaskFilter::Full)
             .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
@@ -230,6 +227,22 @@ impl VaultRuntime {
             needs_action_count,
             rows: display_rows,
         })
+    }
+
+    /// Completes sealed intake batches and decides their notification state.
+    ///
+    /// This is the write half of the Tasks projection and is deliberately not
+    /// part of [`Self::list_tasks`]: the read command must not open a write
+    /// transaction. It runs wherever intake actually advances — after each
+    /// pipeline pump pass and when the Vault opens, so completion stays
+    /// monotonic and restart-reconciled.
+    pub(crate) fn seal_completed_intake_batches(&self) -> Result<(), RuntimeError> {
+        let mut store_guard = self.store()?;
+        store_guard
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .reconcile_sealed_batches()
+            .map_err(|_| RuntimeError::new("seal_batches_failed"))
     }
 }
 
