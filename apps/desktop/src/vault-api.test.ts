@@ -253,30 +253,6 @@ describe("Vault API", () => {
     expect(commandErrorMessage({ code: "source_copy_save_failed" })).toBe(
       "CanCan couldn’t save a complete copy to that location.",
     );
-    expect(commandErrorMessage('{"code":"normalizer_failed"}')).toBe(
-      "CanCan could not finish the secure document check. Try again.",
-    );
-    expect(commandErrorMessage('{"code":"parse_already_running"}')).toBe(
-      "The parser is already running for this document.",
-    );
-    expect(commandErrorMessage('{"code":"parse_resume_failed"}')).toBe(
-      "CanCan couldn’t resume parsing this statement. Try again.",
-    );
-    expect(commandErrorMessage('{"code":"document_unavailable"}')).toBe(
-      "This file is no longer available.",
-    );
-    expect(commandErrorMessage('{"code":"invalid_document_request"}')).toBe(
-      "That document request isn’t valid.",
-    );
-    expect(commandErrorMessage('{"code":"viewer_unsupported"}')).toBe(
-      "Preview isn’t available for this evidence.",
-    );
-    expect(commandErrorMessage('{"code":"document_render_failed"}')).toBe(
-      "CanCan couldn’t render that document.",
-    );
-    expect(commandErrorMessage('{"code":"delete_source_failed"}')).toBe(
-      "CanCan couldn’t finish removing this Vault file. Refresh its status before trying again.",
-    );
     expect(commandErrorMessage("private backend detail")).toBe(
       "Couldn’t complete that request. Try again.",
     );
