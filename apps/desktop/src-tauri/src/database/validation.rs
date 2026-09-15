@@ -200,13 +200,6 @@ pub(super) fn review_commit_key(
     format!("review-{}", hex_encode(&digest))
 }
 
-pub(super) fn needs_attention(
-    document_id: &str,
-    reason: &'static str,
-) -> SourceDocumentRoutingOutcome {
-    SourceDocumentRoutingOutcome::needs_attention(document_id, reason)
-}
-
 pub(super) fn validate_structured_parse_input(
     document_id: &str,
     input: &ValidatedStructuredParseInput,

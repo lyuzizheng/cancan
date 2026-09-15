@@ -1,3 +1,9 @@
+/** Byte cap for a provider raw-record JSON payload; shared with testing.ts. */
+export const MAX_RAW_RECORD_JSON_BYTES = 16_384;
+
+/** Byte cap for the semantic document key. */
+export const MAX_SEMANTIC_KEY_BYTES = 256;
+
 import type {
   CanonicalExternalRecordInput,
   ExtractionBundle,
@@ -367,7 +373,7 @@ export async function validateStructuredProposal(input: {
   recordContract: ProviderRecordContract;
 }): Promise<StructuredProposalValidation> {
   const semanticKeyBytes = new TextEncoder().encode(input.semanticDocumentKey).length;
-  if (input.semanticDocumentKey.length === 0 || semanticKeyBytes > 256) {
+  if (input.semanticDocumentKey.length === 0 || semanticKeyBytes > MAX_SEMANTIC_KEY_BYTES) {
     return { status: "invalid", errors: [{ code: "semantic_document_key_invalid" }] };
   }
   if (semanticDocumentKey(input.proposal.document) !== input.semanticDocumentKey) {

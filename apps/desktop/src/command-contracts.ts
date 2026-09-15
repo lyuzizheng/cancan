@@ -29,7 +29,7 @@ export interface LocalInboxStatus {
   accessState: LocalInboxAccessState;
   backupsPrepared: boolean;
   enabled: boolean;
-  inboxLabel: "Inbox";
+  inboxLabel: string;
   lastScan: LocalInboxScanSummary | null;
 }
 

@@ -492,6 +492,49 @@ export function commandErrorMessage(error: unknown): string {
       return "Couldn’t load your tasks. Try again.";
     case "clock_error":
       return "Couldn’t read the system clock. Try again.";
+    case "import_failed":
+      return "CanCan couldn’t import that file. Try again.";
+    case "review_unavailable":
+      return "CanCan couldn’t load the review queue. Try again.";
+    case "invalid_review_request":
+      return "That review change isn’t valid.";
+    case "invalid_source_request":
+      return "That money source request isn’t valid.";
+    case "statement_password_state_invalid":
+      return "The saved statement password no longer matches. Enter it again.";
+    case "runtime_unavailable":
+      return "CanCan is busy finishing another task. Try again in a moment.";
+    case "undo_unavailable":
+      return "CanCan couldn’t undo that event. Try again.";
+    case "document_not_protected":
+      return "This document isn’t password-protected.";
+    case "invalid_vault":
+      return "That Vault isn’t valid.";
+    case "vault_already_exists":
+      return "A Vault already exists here.";
+    case "vault_create_failed":
+      return "CanCan couldn’t create the Vault. Try again.";
+    case "review_core_failed":
+      return "CanCan couldn’t finish the review check. Try again.";
+    case "normalizer_unavailable":
+      return "The secure document checker isn’t available. Try again.";
+    case "local_inbox_authorization_failed":
+      return "CanCan couldn’t get permission to reach the Inbox folder. Choose it again.";
+    case "local_inbox_parse_failed":
+      return "CanCan couldn’t read a file in the Inbox folder.";
+    case "local_inbox_scan_failed":
+      return "CanCan couldn’t scan the Inbox folder. Try again.";
+    case "local_inbox_observation_failed":
+      return "CanCan couldn’t record what changed in the Inbox folder.";
+    case "local_inbox_import_failed":
+      return "CanCan couldn’t import a file from the Inbox folder.";
+    case "intake_recovery_failed":
+      return "CanCan couldn’t finish recovering an earlier import.";
+    case "intake_finalization_failed":
+      return "CanCan couldn’t finish processing an imported file.";
+    case "recovery_status_read_failed":
+    case "recovery_status_write_failed":
+      return "CanCan couldn’t update the recovery file status.";
     default:
       return "Couldn’t complete that request. Try again.";
   }

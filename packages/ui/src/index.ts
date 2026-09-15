@@ -28,7 +28,6 @@ export {
 export {
   MonogramTile,
   type MonogramTileProps,
-  monogramInitials,
 } from "./patterns/monogram-tile";
 export { Panel } from "./patterns/panel";
 export { SectionHeader, type SectionHeaderProps } from "./patterns/section-header";

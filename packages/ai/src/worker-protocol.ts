@@ -91,6 +91,9 @@ const OBSERVATION_KINDS = new Set([
   "table_cell",
 ]);
 
+const MAX_OBSERVATIONS_PER_BUNDLE = 10_000;
+const MAX_RELATIONSHIP_CANDIDATES = 100;
+
 export function parseWorkerCommand(value: unknown): WorkerCommand | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -173,7 +176,7 @@ function isRelationshipCandidatesInput(value: unknown): boolean {
     isReviewEventType(value.eventType) &&
     isReviewSourceRecord(value.record) &&
     Array.isArray(value.candidates) &&
-    value.candidates.length <= 100 &&
+    value.candidates.length <= MAX_RELATIONSHIP_CANDIDATES &&
     value.candidates.every(isReviewSourceRecord)
   );
 }
@@ -276,6 +279,7 @@ function isExtractionBundle(value: unknown): value is ExtractionBundle {
       value.mimeType !== "image/jpeg") ||
     !isExtractionMetadata(value.metadata) ||
     !Array.isArray(value.observations) ||
+    value.observations.length > MAX_OBSERVATIONS_PER_BUNDLE ||
     value.metadata.observationCount !== value.observations.length ||
     !value.observations.every((observation) =>
       isSourceObservation(observation, value.mimeType),
