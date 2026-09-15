@@ -253,6 +253,9 @@ describe("Vault API", () => {
     expect(commandErrorMessage({ code: "source_copy_save_failed" })).toBe(
       "CanCan couldn’t save a complete copy to that location.",
     );
+    expect(commandErrorMessage({ code: "source_file_too_large" })).toBe(
+      "Choose a file under 128 MB.",
+    );
     expect(commandErrorMessage("private backend detail")).toBe(
       "Couldn’t complete that request. Try again.",
     );

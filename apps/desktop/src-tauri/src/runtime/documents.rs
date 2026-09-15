@@ -13,6 +13,7 @@ impl VaultRuntime {
         let result = store.delete_source_document(document_id, &audit_id);
         if result.is_ok() {
             self.document_passwords()?.remove(document_id);
+            self.forget_cached_source_document(document_id);
         }
         result.map_err(|error| {
             if error
@@ -63,12 +64,18 @@ impl VaultRuntime {
     fn read_source_document(
         &self,
         document_id: &str,
-    ) -> Result<crate::database::SourceDocumentFileInput, RuntimeError> {
+    ) -> Result<SourceDocumentFileInput, RuntimeError> {
         let (plan, generation) = self.source_document_read_plan(document_id)?;
+        if let Some(cached) =
+            self.cached_source_document(document_id, generation, plan.file_sha256())
+        {
+            return Ok(cached);
+        }
         let input = plan
             .read()
             .map_err(|_| RuntimeError::new("document_unavailable"))?;
         self.require_vault_session(generation)?;
+        self.remember_source_document(document_id, generation, &input)?;
         Ok(input)
     }
 
@@ -259,10 +266,7 @@ impl VaultRuntime {
         let documents = store
             .list_documents(money_source_id)
             .map_err(|_| RuntimeError::new("list_documents_failed"))?;
-        documents
-            .into_iter()
-            .map(|document| self.source_document_summary(store, document))
-            .collect()
+        Self::source_document_summaries(store, documents)
     }
 
     pub(crate) fn list_money_sources(&self) -> Result<Vec<MoneySourceSummary>, RuntimeError> {
@@ -340,49 +344,27 @@ impl VaultRuntime {
         let documents = store
             .list_unassigned_documents()
             .map_err(|_| RuntimeError::new("list_documents_failed"))?;
-        documents
-            .into_iter()
-            .map(|document| self.source_document_summary(store, document))
-            .collect()
+        Self::source_document_summaries(store, documents)
     }
 
-    pub(super) fn source_document_summary(
-        &self,
+    fn source_document_summaries(
         store: &ManualImportStore,
-        document: SourceDocumentView,
-    ) -> Result<SourceDocumentSummary, RuntimeError> {
-        let parse_status = store
-            .source_document_parse_status(&document.document_id)
+        documents: Vec<SourceDocumentView>,
+    ) -> Result<Vec<SourceDocumentSummary>, RuntimeError> {
+        let document_ids = documents
+            .iter()
+            .map(|document| document.document_id.clone())
+            .collect::<Vec<_>>();
+        let mut parse_statuses = store
+            .source_document_parse_statuses(&document_ids)
             .map_err(|_| RuntimeError::new("list_documents_failed"))?;
-        let (document_status, attention_reason) = if document.file_state == "deleted" {
-            (SourceDocumentStatus::FileDeleted, None)
-        } else if document.file_state == "missing" {
-            (SourceDocumentStatus::Missing, None)
-        } else if parse_status
-            .as_ref()
-            .is_some_and(|(status, _)| matches!(status.as_str(), "queued" | "running"))
-        {
-            (SourceDocumentStatus::Processing, None)
-        } else if let Some((status, reason)) =
-            parse_status.filter(|(status, _)| matches!(status.as_str(), "blocked" | "failed"))
-        {
-            (
-                SourceDocumentStatus::NeedsAttention,
-                reason.or(Some(status)),
-            )
-        } else {
-            (SourceDocumentStatus::Ready, None)
-        };
-        Ok(SourceDocumentSummary {
-            attention_reason,
-            byte_size: document.byte_size,
-            document_status,
-            document_id: document.document_id,
-            file_state: document.file_state,
-            mime_type: document.mime_type,
-            original_filename: document.original_filename,
-            received_at: document.received_at,
-        })
+        Ok(documents
+            .into_iter()
+            .map(|document| {
+                let parse_status = parse_statuses.remove(&document.document_id);
+                source_document_summary(document, parse_status)
+            })
+            .collect())
     }
 
     pub(crate) fn statement_password_sources(
@@ -580,6 +562,42 @@ impl VaultRuntime {
             return Err(RuntimeError::new("viewer_unsupported"));
         }
         Ok(bounded_text_preview(&input.plaintext))
+    }
+}
+
+/// One listed document plus the parse status its caller batched for the list.
+fn source_document_summary(
+    document: SourceDocumentView,
+    parse_status: Option<(String, Option<String>)>,
+) -> SourceDocumentSummary {
+    let (document_status, attention_reason) = if document.file_state == "deleted" {
+        (SourceDocumentStatus::FileDeleted, None)
+    } else if document.file_state == "missing" {
+        (SourceDocumentStatus::Missing, None)
+    } else if parse_status
+        .as_ref()
+        .is_some_and(|(status, _)| matches!(status.as_str(), "queued" | "running"))
+    {
+        (SourceDocumentStatus::Processing, None)
+    } else if let Some((status, reason)) =
+        parse_status.filter(|(status, _)| matches!(status.as_str(), "blocked" | "failed"))
+    {
+        (
+            SourceDocumentStatus::NeedsAttention,
+            reason.or(Some(status)),
+        )
+    } else {
+        (SourceDocumentStatus::Ready, None)
+    };
+    SourceDocumentSummary {
+        attention_reason,
+        byte_size: document.byte_size,
+        document_status,
+        document_id: document.document_id,
+        file_state: document.file_state,
+        mime_type: document.mime_type,
+        original_filename: document.original_filename,
+        received_at: document.received_at,
     }
 }
 

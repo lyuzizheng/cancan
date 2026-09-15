@@ -1,7 +1,4 @@
-use super::{
-    ManualImportStore, SourceDocumentImport, SourceDocumentImportOutcome,
-    SourceDocumentRoutingOutcome, StoreResult, TrustedDocumentClassification,
-};
+use super::{ManualImportStore, SourceDocumentImport, SourceDocumentImportOutcome, StoreResult};
 use rusqlite::{OptionalExtension, params};
 use zeroize::Zeroizing;
 
@@ -55,14 +52,6 @@ impl ManualImportStore {
             stored,
             restore_deleted_document_id,
         )
-    }
-
-    #[cfg(test)]
-    pub fn apply_trusted_classification(
-        &mut self,
-        input: &TrustedDocumentClassification<'_>,
-    ) -> StoreResult<SourceDocumentRoutingOutcome> {
-        self.apply_trusted_classification_with_parse_job(input, None)
     }
 
     #[cfg(test)]

@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     error::Error,
     fs, io,
     path::Path,
+    sync::Arc,
 };
 use zeroize::Zeroizing;
 
@@ -119,10 +120,11 @@ pub struct SourceDocumentView {
     pub semantic_document_key: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct SourceDocumentFileInput {
     pub file_sha256: String,
     pub mime_type: String,
-    pub plaintext: Zeroizing<Vec<u8>>,
+    pub plaintext: Arc<Zeroizing<Vec<u8>>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -930,7 +932,9 @@ impl ManualImportStore {
             .files
             .verifies(&self.master_key, locator, &document.file_sha256)?
         {
-            mark_missing(&mut self.connection, &document, &document.file_sha256)?;
+            let transaction = self.connection.transaction()?;
+            mark_missing(&transaction, &document, &document.file_sha256)?;
+            transaction.commit()?;
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 "source document file is unavailable",
@@ -975,19 +979,39 @@ impl ManualImportStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    pub(crate) fn source_document_parse_status(
+    pub(crate) fn source_document_parse_statuses(
         &self,
-        document_id: &str,
-    ) -> StoreResult<Option<(String, Option<String>)>> {
-        self.connection
-            .query_row(
-                "SELECT status, blocked_reason FROM jobs WHERE related_source_document_id = ?1 \
-                 AND job_type = ?2 ORDER BY created_at DESC, id DESC LIMIT 1",
-                params![document_id, PARSE_DOCUMENT_JOB_TYPE],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-            .map_err(Into::into)
+        document_ids: &[String],
+    ) -> StoreResult<HashMap<String, (String, Option<String>)>> {
+        if document_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let placeholders = vec!["?"; document_ids.len()].join(", ");
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT related_source_document_id, status, blocked_reason FROM ( \
+               SELECT related_source_document_id, status, blocked_reason, \
+                      ROW_NUMBER() OVER ( \
+                        PARTITION BY related_source_document_id \
+                        ORDER BY created_at DESC, id DESC \
+                      ) AS rank \
+               FROM jobs \
+               WHERE related_source_document_id IN ({placeholders}) \
+                 AND job_type = ? \
+             ) WHERE rank = 1",
+        ))?;
+        let mut parameters = document_ids.iter().map(String::as_str).collect::<Vec<_>>();
+        parameters.push(PARSE_DOCUMENT_JOB_TYPE);
+        let mut statuses = HashMap::new();
+        for row in statement.query_map(rusqlite::params_from_iter(parameters), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?),
+            ))
+        })? {
+            let (document_id, status) = row?;
+            statuses.insert(document_id, status);
+        }
+        Ok(statuses)
     }
 
     pub(crate) fn list_review_items(&self) -> StoreResult<Vec<ReviewItemSummary>> {
@@ -1062,18 +1086,6 @@ impl ManualImportStore {
         for row in rows {
             let (event_id, event_type, event_date, event_class, reverses_event_id, has_no_reversal) =
                 row?;
-            let mut sources = self.connection.prepare(
-                "SELECT DISTINCT COALESCE(money_sources.display_name, 'Unassigned') \
-                 FROM match_edges \
-                 JOIN external_records ON external_records.id = match_edges.external_record_id \
-                 JOIN source_documents ON source_documents.id = external_records.source_document_id \
-                 LEFT JOIN money_sources ON money_sources.id = source_documents.money_source_id \
-                 WHERE match_edges.ledger_event_id = ?1 \
-                 ORDER BY 1",
-            )?;
-            let source_labels = sources
-                .query_map([&event_id], |row| row.get::<_, String>(0))?
-                .collect::<Result<Vec<_>, _>>()?;
             let can_undo = matches!(
                 event_type.as_str(),
                 "same_currency_transfer" | "credit_card_repayment"
@@ -1086,8 +1098,39 @@ impl ManualImportStore {
                 event_id,
                 spending: event_type == "purchase" || event_type == "credit_card_purchase",
                 event_type,
-                source_labels,
+                source_labels: Vec::new(),
             });
+        }
+        drop(statement);
+        // One pass for every listed event's source labels instead of one query
+        // per event.
+        let mut labels = self.connection.prepare(
+            "SELECT DISTINCT match_edges.ledger_event_id, \
+                    COALESCE(money_sources.display_name, 'Unassigned') \
+             FROM match_edges \
+             JOIN external_records ON external_records.id = match_edges.external_record_id \
+             JOIN source_documents ON source_documents.id = external_records.source_document_id \
+             LEFT JOIN money_sources ON money_sources.id = source_documents.money_source_id \
+             WHERE match_edges.ledger_event_id IN ( \
+               SELECT id FROM ledger_events \
+               WHERE status = 'committed' \
+               ORDER BY event_date DESC, created_at DESC, id DESC \
+               LIMIT ?1 \
+             ) \
+             ORDER BY match_edges.ledger_event_id, 2",
+        )?;
+        let mut labels_by_event: HashMap<String, Vec<String>> = HashMap::new();
+        for row in labels.query_map([RECENT_ACTIVITY_LIMIT], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })? {
+            let (event_id, label) = row?;
+            labels_by_event.entry(event_id).or_default().push(label);
+        }
+        drop(labels);
+        for summary in &mut activity {
+            if let Some(labels) = labels_by_event.remove(&summary.event_id) {
+                summary.source_labels = labels;
+            }
         }
         Ok(activity)
     }
@@ -1571,25 +1614,33 @@ impl ManualImportStore {
         &self,
         candidate_ids: &[String],
     ) -> StoreResult<Vec<RelationshipCandidateSummary>> {
+        if candidate_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = vec!["?"; candidate_ids.len()].join(", ");
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT external_records.id, external_records.version, external_records.event_type, \
+                    external_records.posted_on, external_records.amount_value, \
+                    external_records.account_balance_delta, external_records.currency, \
+                    accounts.display_name \
+             FROM external_records \
+             JOIN accounts ON accounts.id = external_records.account_id \
+             WHERE external_records.id IN ({placeholders}) \
+               AND external_records.status IN ('staged', 'review')",
+        ))?;
+        let found = statement
+            .query_map(
+                rusqlite::params_from_iter(candidate_ids.iter()),
+                relationship_candidate_from_row,
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
         let mut candidates = Vec::new();
         for candidate_id in candidate_ids {
-            let candidate = self
-                .connection
-                .query_row(
-                    "SELECT external_records.id, external_records.version, external_records.event_type, \
-                            external_records.posted_on, external_records.amount_value, \
-                            external_records.account_balance_delta, external_records.currency, \
-                            accounts.display_name \
-                     FROM external_records \
-                     JOIN accounts ON accounts.id = external_records.account_id \
-                     WHERE external_records.id = ?1 \
-                       AND external_records.status IN ('staged', 'review')",
-                    [candidate_id],
-                    relationship_candidate_from_row,
-                )
-                .optional()?;
-            if let Some(candidate) = candidate {
-                candidates.push(candidate);
+            if let Some(candidate) = found
+                .iter()
+                .find(|candidate| &candidate.record_id == candidate_id)
+            {
+                candidates.push(candidate.clone());
             }
         }
         Ok(candidates)
@@ -1857,101 +1908,6 @@ impl ManualImportStore {
             lease_owner: lease_owner.to_owned(),
             review_item_ids: input.review_item_ids,
         }))
-    }
-
-    pub(crate) fn prepare_commit_review_groups(
-        &self,
-        claimed: &ClaimedReviewBatch,
-    ) -> StoreResult<(Vec<CommitReviewGroup>, Vec<ReviewBatchGroupOutcome>)> {
-        let mut groups = Vec::new();
-        let mut outcomes = Vec::new();
-        let mut seen_relationships = HashSet::new();
-        let selected_review_items = claimed
-            .review_item_ids
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        for review_item_id in &claimed.review_item_ids {
-            let record_id = self.review_item_record_id(review_item_id)?;
-            let Some(record_id) = record_id else {
-                outcomes.push(ReviewBatchGroupOutcome {
-                    reason: Some("stale_review_item".to_owned()),
-                    record_ids: Vec::new(),
-                    status: ReviewBatchGroupStatus::Stale,
-                });
-                continue;
-            };
-            let relationships = self.relationships_for_review_item(review_item_id)?;
-            let accepted = relationships
-                .iter()
-                .filter(|relationship| relationship.status == "accepted")
-                .collect::<Vec<_>>();
-            let committed = relationships
-                .iter()
-                .filter(|relationship| relationship.status == "committed")
-                .collect::<Vec<_>>();
-            if accepted.len() > 1 {
-                outcomes.push(ReviewBatchGroupOutcome {
-                    reason: Some("ambiguous_relationship".to_owned()),
-                    record_ids: vec![record_id],
-                    status: ReviewBatchGroupStatus::StillNeedsReview,
-                });
-                continue;
-            }
-            if let Some(relationship) = committed.first() {
-                if seen_relationships.insert(relationship.id.clone()) {
-                    outcomes.push(ReviewBatchGroupOutcome {
-                        reason: None,
-                        record_ids: relationship.record_ids(),
-                        status: ReviewBatchGroupStatus::AlreadyCommitted,
-                    });
-                }
-                continue;
-            }
-            let Some(relationship) = accepted.first() else {
-                outcomes.push(ReviewBatchGroupOutcome {
-                    reason: Some("relationship_not_confirmed".to_owned()),
-                    record_ids: vec![record_id],
-                    status: ReviewBatchGroupStatus::StillNeedsReview,
-                });
-                continue;
-            };
-            if !selected_review_items.contains(relationship.first_review_item_id.as_str())
-                || !selected_review_items.contains(relationship.second_review_item_id.as_str())
-            {
-                if seen_relationships.insert(relationship.id.clone()) {
-                    outcomes.push(ReviewBatchGroupOutcome {
-                        reason: Some("relationship_not_selected".to_owned()),
-                        record_ids: vec![record_id],
-                        status: ReviewBatchGroupStatus::StillNeedsReview,
-                    });
-                }
-                continue;
-            }
-            if !seen_relationships.insert(relationship.id.clone()) {
-                continue;
-            }
-            let first = self.core_record_by_id(&relationship.first_record_id)?;
-            let second = self.core_record_by_id(&relationship.second_record_id)?;
-            let (Some(first), Some(second)) = (first, second) else {
-                outcomes.push(ReviewBatchGroupOutcome {
-                    reason: Some("stale_relationship".to_owned()),
-                    record_ids: relationship.record_ids(),
-                    status: ReviewBatchGroupStatus::Stale,
-                });
-                continue;
-            };
-            groups.push(CommitReviewGroup {
-                event_type: relationship.event_type.clone(),
-                records: [first, second],
-                relationship_id: relationship.id.clone(),
-                review_item_ids: [
-                    relationship.first_review_item_id.clone(),
-                    relationship.second_review_item_id.clone(),
-                ],
-            });
-        }
-        Ok((groups, outcomes))
     }
 
     pub(crate) fn commit_prepared_review_group(
@@ -2501,64 +2457,6 @@ impl ManualImportStore {
         Ok(row)
     }
 
-    fn review_item_record_id(&self, review_item_id: &str) -> StoreResult<Option<String>> {
-        Ok(self
-            .connection
-            .query_row(
-                "SELECT external_record_id FROM review_items WHERE id = ?1",
-                [review_item_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?)
-    }
-
-    fn relationships_for_review_item(
-        &self,
-        review_item_id: &str,
-    ) -> StoreResult<Vec<StoredReviewRelationship>> {
-        let mut statement = self.connection.prepare(
-            "SELECT id, event_type, first_external_record_id, second_external_record_id, \
-                    first_review_item_id, second_review_item_id, allocation_value, unit, status \
-             FROM review_relationships \
-             WHERE first_review_item_id = ?1 OR second_review_item_id = ?1 \
-             ORDER BY created_at, id",
-        )?;
-        let rows = statement.query_map([review_item_id], |row| {
-            Ok(StoredReviewRelationship {
-                id: row.get(0)?,
-                event_type: row.get(1)?,
-                first_record_id: row.get(2)?,
-                second_record_id: row.get(3)?,
-                first_review_item_id: row.get(4)?,
-                second_review_item_id: row.get(5)?,
-                allocation_value: row.get(6)?,
-                unit: row.get(7)?,
-                status: row.get(8)?,
-            })
-        })?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
-    }
-
-    fn core_record_by_id(&self, record_id: &str) -> StoreResult<Option<CoreReviewRecord>> {
-        let row = self
-            .connection
-            .query_row(
-                "SELECT external_records.id, external_records.account_id, accounts.account_type, \
-                        external_records.currency, external_records.posted_on, \
-                        external_records.account_balance_delta, instruments.id \
-                 FROM external_records \
-                 JOIN accounts ON accounts.id = external_records.account_id \
-                 JOIN instruments ON instruments.currency = external_records.currency \
-                    AND instruments.instrument_type = 'fiat_currency' \
-                 WHERE external_records.id = ?1 \
-                   AND external_records.status IN ('staged', 'review')",
-                [record_id],
-                core_review_record_from_row,
-            )
-            .optional()?;
-        Ok(row)
-    }
-
     fn reconcile_files(&mut self) -> StoreResult<()> {
         let documents = {
             let mut statement = self.connection.prepare(
@@ -2577,18 +2475,29 @@ impl ManualImportStore {
             rows.collect::<Result<Vec<_>, _>>()?
         };
         let mut referenced = HashSet::new();
+        let mut missing = Vec::new();
         for document in documents {
             let Some(locator) = document.encrypted_locator.as_deref() else {
                 continue;
             };
+            // Every listed locator counts as referenced before verification: a
+            // missing or tampered blob stays addressable for restore/re-import.
             referenced.insert(locator.to_owned());
             if document.file_state == "available"
                 && !self
                     .files
                     .verifies(&self.master_key, locator, &document.file_sha256)?
             {
-                mark_missing(&mut self.connection, &document, &document.file_sha256)?;
+                missing.push(document);
             }
+        }
+        if !missing.is_empty() {
+            // One transaction for the whole open instead of one per document.
+            let transaction = self.connection.transaction()?;
+            for document in &missing {
+                mark_missing(&transaction, document, &document.file_sha256)?;
+            }
+            transaction.commit()?;
         }
         self.files.remove_unreferenced(&referenced)?;
         Ok(())
@@ -2723,6 +2632,7 @@ mod parse_jobs;
 #[cfg(test)]
 mod reparse_tests;
 pub(crate) mod restore_decisions;
+mod review_batches;
 mod review_records;
 #[cfg(test)]
 mod review_records_tests;

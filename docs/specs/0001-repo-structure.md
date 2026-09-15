@@ -160,6 +160,8 @@ A file that outgrows its limit is split along the boundaries below (or a newly d
 The privileged desktop host keeps domain-directory modules instead of single-file crates:
 
 ```text
+apps/desktop/src-tauri/src/
+  source_file.rs     shared source-file ingest ceiling and bounded reads for both acquisition channels
 apps/desktop/src-tauri/src/runtime/
   mod.rs             shared types/constants, VaultRuntime state and core accessors, re-exports
   error.rs           RuntimeError/VaultCommandError codes and the shared blocking-task helper
@@ -180,6 +182,7 @@ apps/desktop/src-tauri/src/database/
   rows.rs            row-to-view mapping and review-record open helpers
   validation.rs      decimal/date/identifier validation helpers
   imports.rs         import/deletion persistence and audit helpers
+  review_batches.rs  review-batch commit preparation and its batched lookups
   gmail.rs           Gmail mailbox identity and connection-state repository
   review_records.rs  committed-record review acknowledgement and its audit entry
   tests.rs           database test module

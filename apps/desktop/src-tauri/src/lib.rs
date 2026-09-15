@@ -3,6 +3,7 @@ mod local_inbox;
 #[cfg(test)]
 mod presentation_types;
 mod runtime;
+mod source_file;
 mod source_observations;
 mod vault;
 mod viewer;

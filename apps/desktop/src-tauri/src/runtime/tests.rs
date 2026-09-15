@@ -132,20 +132,30 @@ fn refuses_an_ambiguous_or_mismatched_core_relationship_candidate() {
 #[test]
 fn local_inbox_bookmark_is_paused_while_locked_and_disable_removes_it() {
     let parent = tempfile::tempdir().expect("temporary app data");
+    let vault_root = parent.path().join("vault");
     let bookmarks = Arc::new(MemoryLocalInboxBookmarkStore::default());
-    let runtime = VaultRuntime::with_secret_stores(
-        parent.path().join("vault"),
+    let setup_runtime = VaultRuntime::with_secret_stores(
+        vault_root.clone(),
         Arc::new(MemoryRememberedKeyStore::default()),
         Arc::new(MemoryStatementPasswordStore::default()),
         bookmarks.clone(),
     );
-    runtime
+    setup_runtime
         .create(b"synthetic-vault-password")
         .expect("create Vault");
+    setup_runtime.lock().expect("lock Vault");
+    drop(setup_runtime);
     bookmarks
         .save(b"security-scoped-bookmark")
         .expect("save bookmark");
-    runtime.lock().expect("lock Vault");
+
+    // A later run starts with the bookmark stored and the Vault locked.
+    let runtime = VaultRuntime::with_secret_stores(
+        vault_root,
+        Arc::new(MemoryRememberedKeyStore::default()),
+        Arc::new(MemoryStatementPasswordStore::default()),
+        bookmarks.clone(),
+    );
 
     let paused = runtime.local_inbox_status().expect("paused status");
     assert_eq!(paused.access_state, LocalInboxAccessState::Paused);
@@ -3469,7 +3479,7 @@ pub(super) fn protected_text_pdf() -> Vec<u8> {
         .to_vec()
 }
 
-fn synthetic_pdf() -> Vec<u8> {
+pub(super) fn synthetic_pdf() -> Vec<u8> {
     synthetic_pdf_with_stream("BT /F1 10 Tf 8 72 Td (CANCAN_SYNTHETIC_STATEMENT_V1) Tj ET")
 }
 

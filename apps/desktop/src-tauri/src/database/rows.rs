@@ -78,7 +78,7 @@ pub(super) struct ReviewRelationshipRecord {
     pub(super) review_item_id: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct StoredReviewRelationship {
     pub(super) allocation_value: String,
     pub(super) event_type: String,

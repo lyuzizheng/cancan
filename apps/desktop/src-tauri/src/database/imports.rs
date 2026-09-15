@@ -28,6 +28,10 @@ pub(crate) struct SourceDocumentReadPlan {
 }
 
 impl SourceDocumentReadPlan {
+    pub(crate) fn file_sha256(&self) -> &str {
+        &self.file_sha256
+    }
+
     pub(crate) fn read(self) -> StoreResult<SourceDocumentFileInput> {
         let plaintext = self
             .files
@@ -35,7 +39,7 @@ impl SourceDocumentReadPlan {
         Ok(SourceDocumentFileInput {
             file_sha256: self.file_sha256,
             mime_type: self.mime_type,
-            plaintext,
+            plaintext: Arc::new(plaintext),
         })
     }
 }
@@ -229,11 +233,10 @@ pub(super) fn persist_import(
 }
 
 pub(super) fn mark_missing(
-    connection: &mut Connection,
+    transaction: &Transaction<'_>,
     document: &ExistingDocument,
     file_sha256: &str,
 ) -> rusqlite::Result<()> {
-    let transaction = connection.transaction()?;
     transaction.execute(
         "UPDATE source_documents \
          SET file_state = 'missing', deleted_at = NULL, deletion_audit_id = NULL \
@@ -247,7 +250,7 @@ pub(super) fn mark_missing(
                    'system', 'storage_verification_failed', ?3, 'vault-storage-v1')",
         params![new_audit_id(), document.document_id, file_sha256],
     )?;
-    transaction.commit()
+    Ok(())
 }
 
 pub(super) fn import_audit_action(status: SourceDocumentImportStatus) -> &'static str {
