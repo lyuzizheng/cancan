@@ -13,7 +13,7 @@ Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progres
 
 ### Next
 
-- Remaining open follow-up from the same review pass: migration `0013` does not remediate two committed versions of one `stable_record_key` (the duplicate-commit audit reports it read-only).
+- Open follow-up tracked separately as BRAWUKA-268: the duplicate-commit audit reports two `committed` versions of one `stable_record_key`, and migration `0013` deliberately does not remediate them.
 
 ## 2026-08-11 (harness)
 
