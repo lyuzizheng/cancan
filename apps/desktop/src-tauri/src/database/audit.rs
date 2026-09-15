@@ -14,9 +14,17 @@ use super::*;
 // has to re-filter a flag named for safety:
 //
 //   - the event exists, is itself committed, and is not itself a reversal;
-//   - the event does not already have a reversal;
+//   - the event does not already have a reversal, so a second repair pass
+//     cannot invert it again;
 //   - every match edge of the event points at a non-canonical committed
 //     version, so inverting it cannot erase a canonical record's effect.
+//
+// The middle two conditions are not about duplicates at all: inverting a
+// pending event, re-inverting a reversal, or reversing an event twice all
+// write a wrong ledger, and a duplicate record can carry any of them. Because
+// the flag carries every clause, `reversal_safe = false` with
+// `ledger_event_has_reversal = true` reads as already repaired, while
+// `false` with `false` reads as needing a human decision.
 //
 // The last condition is why an event can be unsafe even when it heads a
 // duplicate: a commit writes its edges while both records are still
@@ -55,6 +63,10 @@ SELECT committed_versions.stable_record_key, \
        ledger_events.id IS NOT NULL \
          AND ledger_events.status = 'committed' \
          AND ledger_events.reverses_event_id IS NULL \
+         AND NOT EXISTS( \
+           SELECT 1 FROM ledger_events reversal \
+           WHERE reversal.reverses_event_id = ledger_events.id \
+         ) \
          AND NOT EXISTS( \
            SELECT 1 FROM match_edges peer_edge \
            LEFT JOIN committed_versions peer \

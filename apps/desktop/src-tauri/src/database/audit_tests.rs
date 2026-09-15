@@ -333,13 +333,16 @@ BEGIN \
   SELECT RAISE(ABORT, 'committed ledger event is immutable'); \
 END;";
 
-fn duplicate_rows(rows: &[DuplicateCommittedVersionAuditRow]) -> Vec<(&str, Option<&str>, bool)> {
+fn duplicate_rows(
+    rows: &[DuplicateCommittedVersionAuditRow],
+) -> Vec<(&str, Option<&str>, bool, bool)> {
     rows.iter()
         .filter(|row| row.version_rank > 1)
         .map(|row| {
             (
                 row.external_record_id.as_str(),
                 row.ledger_event_status.as_deref(),
+                row.ledger_event_has_reversal,
                 row.reversal_safe,
             )
         })
@@ -347,9 +350,10 @@ fn duplicate_rows(rows: &[DuplicateCommittedVersionAuditRow]) -> Vec<(&str, Opti
 }
 
 /// `reversal_safe` promises the whole precondition, so it must also refuse an
-/// event that never committed and an event that is itself a reversal. Both
-/// anomalies are built directly here; the flag may not depend on a consumer
-/// re-reading event status before inverting.
+/// event that never committed, an event that is itself a reversal, and an
+/// event that already carries one. The three anomalies are built directly
+/// here; the flag may not depend on a consumer re-reading event status or the
+/// reversal column before inverting.
 #[test]
 fn refuses_to_report_an_uncommitted_or_already_reversed_duplicate_event_as_reversible() {
     let root = tempfile::tempdir().expect("temporary Vault");
@@ -389,8 +393,8 @@ fn refuses_to_report_an_uncommitted_or_already_reversed_duplicate_event_as_rever
     assert_eq!(
         duplicate_rows(&pending_event_rows),
         vec![
-            ("record-dbs-card-v2", Some("pending"), false),
-            ("record-hsbc-cash-v2", Some("pending"), false),
+            ("record-dbs-card-v2", Some("pending"), false, false),
+            ("record-hsbc-cash-v2", Some("pending"), false, false),
         ]
     );
 
@@ -402,10 +406,6 @@ fn refuses_to_report_an_uncommitted_or_already_reversed_duplicate_event_as_rever
             [&first_event_id],
         )
         .expect("turn the duplicate event into a reversal");
-    store
-        .connection
-        .execute(COMMITTED_LEDGER_EVENT_IMMUTABILITY_TRIGGER, [])
-        .expect("re-create event immutability trigger");
 
     let reversal_event_rows = store
         .audit_duplicate_committed_versions()
@@ -413,8 +413,8 @@ fn refuses_to_report_an_uncommitted_or_already_reversed_duplicate_event_as_rever
     assert_eq!(
         duplicate_rows(&reversal_event_rows),
         vec![
-            ("record-dbs-card-v2", Some("committed"), false),
-            ("record-hsbc-cash-v2", Some("committed"), false),
+            ("record-dbs-card-v2", Some("committed"), false, false),
+            ("record-hsbc-cash-v2", Some("committed"), false, false),
         ]
     );
     assert!(
@@ -422,5 +422,39 @@ fn refuses_to_report_an_uncommitted_or_already_reversed_duplicate_event_as_rever
             .iter()
             .filter(|row| row.version_rank == 1)
             .all(|row| row.ledger_event_has_reversal && !row.reversal_safe)
+    );
+
+    store
+        .connection
+        .execute(
+            "UPDATE ledger_events SET reverses_event_id = NULL WHERE id = 'event-duplicate'",
+            [],
+        )
+        .expect("restore the duplicate event to a plain posting");
+    store
+        .connection
+        .execute(
+            "INSERT INTO ledger_events( \
+               id, event_type, event_class, event_date, status, commit_idempotency_key, \
+               reverses_event_id \
+             ) VALUES ('event-reversal', 'credit_card_repayment_reversal', 'posting', \
+                       '2026-06-30', 'committed', 'repair:event-duplicate', 'event-duplicate')",
+            [],
+        )
+        .expect("append the reversal a repair would write");
+    store
+        .connection
+        .execute(COMMITTED_LEDGER_EVENT_IMMUTABILITY_TRIGGER, [])
+        .expect("re-create event immutability trigger");
+
+    let repaired_rows = store
+        .audit_duplicate_committed_versions()
+        .expect("audit a duplicate event that a repair already reversed");
+    assert_eq!(
+        duplicate_rows(&repaired_rows),
+        vec![
+            ("record-dbs-card-v2", Some("committed"), true, false),
+            ("record-hsbc-cash-v2", Some("committed"), true, false),
+        ]
     );
 }
