@@ -315,7 +315,7 @@ for CSV evidence, send at most the first 200 lines and 32 KiB of UTF-8 preview p
 a CSV file that fits within both caps may appear in full, but the renderer never receives an unbounded or raw original-file byte payload
 do not create a plaintext temporary file for normal viewing
 release plaintext/page buffers on viewer close and Vault lock as far as the platform permits
-keep at most one decrypted document per Vault session so page paging and CSV preview do not re-read and re-decrypt the stored file; that buffer is dropped on Vault lock, when the document is deleted, and when another document is viewed
+keep at most one decrypted document per Vault session so page paging and CSV preview do not re-read and re-decrypt the stored file; the renderer's viewer-close signal drops that buffer, and it is also dropped on Vault lock, when the document is deleted, and when another document is viewed
 never upload the file to a server merely for preview
 show File deleted or Missing distinctly when the current file is unavailable
 ```
@@ -638,7 +638,7 @@ Clicking a notification recreates the window. If the existing process still has 
 
 - Evidence is accessed from Source detail, not as a dominant standalone sidebar section.
 - Document UI feels personal, polished, and concise.
-- An always-visible embedded PDF preview is not required, but `View document` opens the available source only in CanCan's memory-backed viewer.
+- An always-visible embedded PDF preview is not required, but `View document` opens the available source only in CanCan's memory-backed viewer, and closing that viewer signals the host to release the cached decryption for the document.
 - Normal viewing creates no plaintext temporary file and does not hand the original to an OS viewer.
 - `Save a copy` is an explicit warned plaintext export to a user-selected location.
 - Metadata appears above records in document detail.

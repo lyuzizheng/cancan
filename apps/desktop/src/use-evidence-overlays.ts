@@ -58,26 +58,46 @@ export function useEvidenceOverlays({
   const unlockRequestId = useRef(0);
   const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
 
-  const { run, setNotice } = session;
+  const { run, runGuarded, sessionId, setNotice } = session;
 
   useEffect(() => () => {
     unlockRequestId.current += 1;
     previewRequestId.current += 1;
   }, []);
 
+  /**
+   * Drops the host's cached plaintext for the document whose viewer just
+   * closed. The release is hygiene rather than a user command, so it never
+   * takes the shared busy flag; a failure is still reported like any other
+   * command unless the Vault session it belonged to already ended, because
+   * the lock drops that buffer itself.
+   */
+  const releaseDocumentView = useCallback((documentId: string) => {
+    void runGuarded(
+      () => api.closeSourceDocumentView(documentId),
+      { sessionId: sessionId.current },
+    );
+  }, [api, runGuarded, sessionId]);
+
   const clearViewer = useCallback((restoreFocus = true) => {
     viewerRequestId.current += 1;
+    if (viewer !== null) {
+      releaseDocumentView(viewer.documentId);
+    }
     setViewer(null);
     setViewingPage(false);
     if (!restoreFocus) {
       viewerReturnFocus.current = null;
     }
-  }, []);
+  }, [releaseDocumentView, viewer]);
 
   const clearPreview = useCallback(() => {
     previewRequestId.current += 1;
+    if (preview !== null) {
+      releaseDocumentView(preview.documentId);
+    }
     setPreview(null);
-  }, []);
+  }, [preview, releaseDocumentView]);
 
   const closeUnlock = useCallback(() => {
     unlockRequestId.current += 1;

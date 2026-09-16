@@ -578,6 +578,7 @@ mod vault_lifecycle;
 pub(crate) use accounts::*;
 pub(crate) use audit::*;
 use document_cache::CachedSourceDocument;
+pub(crate) use document_cache::close_source_document_view;
 pub(crate) use documents::*;
 pub(crate) use error::*;
 pub(crate) use inbox::*;

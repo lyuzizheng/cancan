@@ -207,6 +207,7 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     chooseLocalInboxRoot: vi.fn(
       async (): Promise<LocalInboxStatus | null> => null,
     ),
+    closeSourceDocumentView: vi.fn(async (): Promise<void> => undefined),
     confirmSourceCandidate: vi.fn(
       async (): Promise<ConfirmedMoneySourceCandidate> => ({
         candidateId: "candidate-1",

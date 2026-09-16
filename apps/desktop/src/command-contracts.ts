@@ -103,6 +103,8 @@ export type RenderSourceDocumentPageArgs = {
 
 export type PreviewSourceDocumentArgs = { documentId: string };
 
+export type CloseSourceDocumentViewArgs = { documentId: string };
+
 export type DecideCandidateAccountsArgs = {
   request: DecideCandidateAccountsRequest;
 };
