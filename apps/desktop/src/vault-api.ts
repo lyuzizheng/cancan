@@ -6,6 +6,7 @@ import type {
   AccountConfirmationPrompt,
   AcceptReviewRelationshipArgs,
   CandidateAccountDecisionInput,
+  CloseSourceDocumentViewArgs,
   ConfirmSourceCandidateArgs,
   ConfirmedMoneySourceCandidate,
   DecideCandidateAccountsArgs,
@@ -98,6 +99,7 @@ export interface VaultApi {
   ): Promise<MoneySourceCandidateState>;
   createVault(password: string): Promise<VaultStatus>;
   chooseLocalInboxRoot(): Promise<LocalInboxStatus | null>;
+  closeSourceDocumentView(documentId: string): Promise<void>;
   deleteSourceDocument(documentId: string): Promise<boolean>;
   disableLocalInbox(): Promise<LocalInboxStatus>;
   editReviewRecord(
@@ -347,6 +349,13 @@ export function createVaultApi(
       const args: DeleteSourceDocumentArgs = { documentId };
       return call<boolean, DeleteSourceDocumentArgs>(
         "delete_source_document",
+        args,
+      );
+    },
+    closeSourceDocumentView: (documentId) => {
+      const args: CloseSourceDocumentViewArgs = { documentId };
+      return call<void, CloseSourceDocumentViewArgs>(
+        "close_source_document_view",
         args,
       );
     },

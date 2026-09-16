@@ -588,6 +588,7 @@ function Preview() {
         <DocumentPreview
           onClose={noop}
           state={{
+            documentId: "document-csv",
             documentTitle: "wise-export.csv",
             preview: {
               lineCount: 241,

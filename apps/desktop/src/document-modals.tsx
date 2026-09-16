@@ -24,6 +24,7 @@ export interface DocumentViewerState {
 }
 
 export interface DocumentPreviewState {
+  documentId: string;
   documentTitle: string;
   preview: SourceDocumentPreview;
 }

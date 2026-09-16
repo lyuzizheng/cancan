@@ -370,3 +370,74 @@ fn replaces_the_cached_decryption_only_while_the_vault_session_lives() {
         "document_unavailable"
     );
 }
+
+#[test]
+fn releasing_the_viewer_drops_the_cached_decryption_before_the_vault_locks() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let source_path = parent.path().join("wise-export.csv");
+    fs::write(&source_path, b"date,amount\n2026-07-01,10.00\n").expect("write CSV fixture");
+    let vault_root = parent.path().join("vault");
+    let runtime = VaultRuntime::new(vault_root.clone());
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    let imported = runtime
+        .import_selected_document(&source_path)
+        .expect("import CSV");
+
+    runtime
+        .preview_source_document(&imported.document_id)
+        .expect("preview CSV");
+    let encrypted_locator = {
+        let store = runtime.store().expect("active store");
+        store
+            .as_ref()
+            .expect("unlocked store")
+            .list_unassigned_documents()
+            .expect("list imported documents")
+            .into_iter()
+            .find(|document| document.document_id == imported.document_id)
+            .and_then(|document| document.encrypted_locator)
+            .expect("CSV encrypted locator")
+    };
+    fs::remove_file(vault_root.join(encrypted_locator)).expect("remove encrypted blob");
+
+    // The decryption is still cached for this Vault session, so a repeated
+    // preview does not need the stored blob again.
+    runtime
+        .preview_source_document(&imported.document_id)
+        .expect("preview from the session cache");
+
+    // Closing the viewer drops the plaintext buffer while the Vault session
+    // that decrypted it stays live.
+    runtime
+        .close_source_document_view(&imported.document_id)
+        .expect("close viewer");
+    assert_eq!(
+        runtime
+            .preview_source_document(&imported.document_id)
+            .expect_err("reject a preview after the viewer released the buffer")
+            .code(),
+        "document_unavailable"
+    );
+
+    // Releasing an already dropped buffer, a document that was never cached,
+    // or a closed viewer on a locked Vault is a no-op rather than a failure.
+    runtime
+        .close_source_document_view(&imported.document_id)
+        .expect("closing a released viewer stays a no-op");
+    runtime
+        .close_source_document_view("missing-document")
+        .expect("closing an unknown viewer stays a no-op");
+    assert_eq!(
+        runtime
+            .close_source_document_view("")
+            .expect_err("reject an empty document id")
+            .code(),
+        "invalid_document_request"
+    );
+    runtime.test_support_lock().expect("lock Vault");
+    runtime
+        .close_source_document_view(&imported.document_id)
+        .expect("closing a viewer while the Vault is locked stays a no-op");
+}

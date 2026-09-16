@@ -4,6 +4,17 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-09-17
+
+### Completed
+
+- Closed the BRAWUKA-310 gap left by the viewer's session cache: the one-decrypted-document buffer now also drops when the viewer closes. The renderer calls the new `close_source_document_view` command from both close paths the `View document` action opens — the PDF/image pixel viewer and the CSV preview, which the same one-entry buffer backs — so a decryption no longer waits for the next viewed document, the Vault lock, or a deletion. The command is idempotent and Vault-lock independent, because the lock path drops the buffer itself and closing a viewer afterwards must stay a no-op, and an empty document id is refused as `invalid_document_request`; a failed release is reported like any other command unless the Vault session it belonged to already ended, so the lock-path reset stays quiet. `runtime/documents.rs` stays inside its size ratchet by keeping the command and the cache release it drives together in `runtime/document_cache.rs`.
+- Spec 0017 names the trigger in the source-file access rules and in the acceptance criteria as the renderer's viewer-close signal, so the drop list is not read as a plaintext-lifetime guarantee for a destroyed webview: closing the main window never runs the renderer's close handler, and the retained process clears that buffer only on Vault lock or quit (spec 0009).
+
+### Next
+
+- Releasing the plaintext buffer when the main window is destroyed is a separate lifecycle decision under spec 0009's retained-process rule, not part of BRAWUKA-310; the renderer's viewer-close signal is the only release path this change adds.
+
 ## 2026-09-16
 
 ### Completed

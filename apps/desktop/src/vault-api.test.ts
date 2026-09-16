@@ -112,6 +112,7 @@ describe("Vault API", () => {
     await api.reparseSourceDocument("document-1");
     await api.renderSourceDocumentPage("document-1", 2);
     await api.previewSourceDocument("document-1");
+    await api.closeSourceDocumentView("document-1");
 
     expect(calls).toEqual([
       ["vault_status", undefined],
@@ -222,6 +223,7 @@ describe("Vault API", () => {
       ["reparse_source_document", { documentId: "document-1" }],
       ["render_source_document_page", { documentId: "document-1", pageNumber: 2 }],
       ["preview_source_document", { documentId: "document-1" }],
+      ["close_source_document_view", { documentId: "document-1" }],
     ]);
     expect(listenedEvents).toEqual(["vault-locked"]);
   });

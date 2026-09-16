@@ -791,6 +791,7 @@ describe("App manual import orchestration", () => {
     noBodyDialog();
     expect(document.body.querySelector("img")).toBeNull();
     expect(document.activeElement).toBe(viewTrigger);
+    expect(api.closeSourceDocumentView).toHaveBeenCalledWith("document-1");
 
     await click("View document");
     await click("Lock Vault");
@@ -860,6 +861,7 @@ describe("App manual import orchestration", () => {
     await clickDialogButton("Close");
     noBodyDialog();
     expect(document.activeElement).toBe(viewTrigger);
+    expect(api.closeSourceDocumentView).toHaveBeenCalledWith("document-csv");
 
     await click("View document");
     await click("Lock Vault");

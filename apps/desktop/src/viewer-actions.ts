@@ -76,7 +76,7 @@ export function createViewerActions(deps: ViewerActionDeps): ViewerActions {
       try {
         const nextPreview = await api.previewSourceDocument(documentId);
         if (previewRequestId.current === requestId) {
-          setPreview({ documentTitle, preview: nextPreview });
+          setPreview({ documentId, documentTitle, preview: nextPreview });
         }
       } catch (nextError) {
         if (previewRequestId.current !== requestId) {
