@@ -178,6 +178,7 @@ native_paths = [
   "apps/desktop/package.json",
   "packages/ai/**",
   "packages/connectors/**",
+  "packages/core/**",
   "packages/parsers/**",
   "packages/db/migrations/**",
   "package.json",
