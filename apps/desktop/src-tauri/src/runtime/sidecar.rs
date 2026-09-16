@@ -7,6 +7,9 @@ pub(super) fn source_document_metadata(
     if !metadata.is_file() {
         return Err(RuntimeError::new("unsupported_document"));
     }
+    if metadata.len() > crate::source_file::MAX_SOURCE_FILE_BYTES {
+        return Err(RuntimeError::new("source_file_too_large"));
+    }
     source_document_filename_metadata(source_path)
 }
 
@@ -168,6 +171,9 @@ pub(super) async fn run_review_core_sidecar<T: Serialize>(
         };
         match event {
             CommandEvent::Stdout(bytes) => {
+                if bytes.len() > NORMALIZER_MAX_MESSAGE_BYTES {
+                    return fail_review_core(child);
+                }
                 let message = match serde_json::from_slice::<ReviewCoreMessage>(&bytes) {
                     Ok(message) => message,
                     Err(_) => return fail_review_core(child),
@@ -257,7 +263,7 @@ pub(super) fn valid_normalization_profile(
     extraction_bundle: &ExtractionBundle,
 ) -> bool {
     profile.normalizer_runtime == "single-pass-mock"
-        && profile.input_strategy == "native-observations-v1"
+        && profile.input_strategy == NORMALIZER_INPUT_STRATEGY
         && profile.model_provider == "cancan-deterministic-mock"
         && profile.model == "fixture-v1"
         && profile.review_only
@@ -440,7 +446,7 @@ pub(super) fn canonical_profile_extraction_engine(
         (
             NormalizerProfileExtractionKind::NativeText,
             "pdfkit",
-            "macos-page-string-v1"
+            "macos-page-string-v2"
         ) | (
             NormalizerProfileExtractionKind::TableCell,
             "rust-csv",
@@ -486,7 +492,7 @@ pub(super) fn provider_normalization_profile_id(profile: &NormalizerProfile) -> 
         .collect::<Vec<_>>()
         .join("+");
     format!(
-        "mock:{}:native-observations-v1:{engines}",
+        "mock:{}:{NORMALIZER_INPUT_STRATEGY}:{engines}",
         profile.package_id
     )
 }
@@ -548,7 +554,7 @@ pub(super) fn proposal_records(proposal: &NormalizerProposal) -> Option<Vec<&Nor
     let count = proposal.opening_snapshots.len()
         + proposal.records.len()
         + proposal.closing_snapshots.len();
-    if count == 0 || count > 1_000 {
+    if count == 0 || count > crate::database::MAX_STRUCTURED_PARSE_RECORDS {
         return None;
     }
     Some(

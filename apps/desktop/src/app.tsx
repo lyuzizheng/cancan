@@ -1,1340 +1,155 @@
 import { AppShell, LedgerColumn, LedgerRegion } from "@cancan/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import type {
   AccountConfirmationPrompt,
-  CandidateAccountDecisionInput,
-  EditReviewRecordArgs,
-  LocalInboxStatus,
-  MoneyOverview,
-  RelationshipCandidateSummary,
-  ReviewItemSummary,
-  ReviewJobSummary,
   SourceConfirmationPrompt,
-  SourceDocumentSummary,
-  RecentActivitySummary,
-  TaskGroup,
-  Tasks,
 } from "./command-contracts";
+import { EMPTY_COMMAND_WIRING, type CommandWiring } from "./command-wiring";
 import {
   DeleteSourceDocumentDialog,
   DocumentPreview,
   DocumentUnlock,
   DocumentViewer,
-  type DocumentPreviewState,
-  type DocumentUnlockState,
-  type DocumentViewerState,
 } from "./document-modals";
-import { Feedback, type Notice } from "./feedback";
-import { isRealIsoDate, localInboxScanSummaryText, reviewConflictMessage } from "./format";
-import { importNotice } from "./notices";
+import { Feedback } from "./feedback";
 import { OverviewView } from "./overview";
-import {
-  ReviewView,
-  type ReviewDetailState,
-  type ReviewEditState,
-  type ReviewJobPanelState,
-} from "./review";
-import { createSourceConfirmationActions } from "./source-confirmation-actions";
+import { ReviewView } from "./review";
 import { FocusedSourceConfirmationDialog } from "./source-confirmation";
-import { SourcesView, type MoneySourceDocuments } from "./sources-view";
-import { createStatementUnlockActions } from "./statement-unlock-actions";
+import { SourcesView } from "./sources-view";
 import { createTaskDestinationActions } from "./task-destination-actions";
 import { TasksView } from "./tasks-view";
-import {
-  commandErrorMessage,
-  createVaultApi,
-  type VaultApi,
-} from "./vault-api";
+import { useAttention } from "./use-attention";
+import { useCommandCenter } from "./use-command-center";
+import { useEvidenceOverlays } from "./use-evidence-overlays";
+import { useInbox } from "./use-inbox";
+import { useReviewQueue } from "./use-review-queue";
+import { useVaultDocuments } from "./use-vault-documents";
+import { useVaultSession } from "./use-vault-session";
+import { createVaultApi, type VaultApi } from "./vault-api";
 import { VaultGate } from "./vault-gate";
-import { VaultSpine, type AppView, type VaultScreenStatus } from "./vault-spine";
-import { createViewerActions } from "./viewer-actions";
-
-export type { Notice } from "./feedback";
-export type { VaultScreenStatus } from "./vault-spine";
+import { VaultSpine, type AppView } from "./vault-spine";
 
 const defaultVaultApi = createVaultApi();
-const REVIEW_JOB_POLL_INTERVAL_MS = 600;
-const REVIEW_JOB_MAX_POLLS = 50;
 
-const UNSIGNED_DECIMAL = /^(0|[1-9]\d*)(\.\d+)?$/;
-const SIGNED_DECIMAL = /^-?(0|[1-9]\d*)(\.\d+)?$/;
+const NO_ACCOUNT_PROMPTS: AccountConfirmationPrompt[] = [];
+const NO_SOURCE_PROMPTS: SourceConfirmationPrompt[] = [];
 
+/**
+ * The command center: one view at a time over the vault session. Every domain
+ * (documents, review, inbox, attention, overlays, read model) lives in its own
+ * hook and reports back through `wiring`; this component only routes between
+ * them and the views.
+ */
 export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
-  const [vaultStatus, setVaultStatus] = useState<VaultScreenStatus>("loading");
-  const [busy, setBusy] = useState(true);
+  // The session hook is declared first and the domains after it, so the
+  // loaders and resetters they publish here are read at call time — no hook
+  // depends on a hook declared later in this component.
+  const wiring = useRef<CommandWiring>(EMPTY_COMMAND_WIRING);
   const [activeView, setActiveView] = useState<AppView>("overview");
-  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState<SourceDocumentSummary | null>(
-    null,
-  );
-  const [password, setPassword] = useState("");
-  const [rememberedOnThisMac, setRememberedOnThisMac] = useState<boolean | null>(
-    false,
-  );
-  const [recoveryConfigured, setRecoveryConfigured] = useState(false);
-  const [unassignedDocuments, setUnassignedDocuments] = useState<
-    SourceDocumentSummary[]
-  >([]);
-  const [sourceDocuments, setSourceDocuments] = useState<MoneySourceDocuments[]>([]);
-  const [selectedMoneySourceId, setSelectedMoneySourceId] = useState<string | null>(
-    null,
-  );
-  const [loadingDocuments, setLoadingDocuments] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [normalizingDocumentId, setNormalizingDocumentId] = useState<string | null>(
-    null,
-  );
-  const [notice, setNotice] = useState<Notice | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<DocumentViewerState | null>(null);
-  const [preview, setPreview] = useState<DocumentPreviewState | null>(null);
-  const [unlockingDocument, setUnlockingDocument] = useState<DocumentUnlockState | null>(null);
-  const [viewingPage, setViewingPage] = useState(false);
-  const [updatingRemembered, setUpdatingRemembered] = useState(false);
-  const [savingRecoveryFile, setSavingRecoveryFile] = useState(false);
-  const [savingCopyDocumentId, setSavingCopyDocumentId] = useState<string | null>(null);
-  const [reviewItems, setReviewItems] = useState<ReviewItemSummary[] | null>(null);
-  const [selectedReviewIds, setSelectedReviewIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const [reviewDetail, setReviewDetail] = useState<ReviewDetailState | null>(null);
-  const [reviewJob, setReviewJob] = useState<ReviewJobPanelState | null>(null);
-  const [mutatingReviewItemId, setMutatingReviewItemId] = useState<string | null>(null);
-  const [moneyOverview, setMoneyOverview] = useState<MoneyOverview | null>(null);
-  const [recentActivity, setRecentActivity] = useState<RecentActivitySummary[] | null>(
-    null,
-  );
-  const [undoingEventId, setUndoingEventId] = useState<string | null>(null);
-  const [localInbox, setLocalInbox] = useState<LocalInboxStatus | null>(null);
-  const [localInboxError, setLocalInboxError] = useState<string | null>(null);
-  const [inboxBusy, setInboxBusy] = useState(false);
-  const [inboxConfirmingDisable, setInboxConfirmingDisable] = useState(false);
-  const [accountPrompts, setAccountPrompts] = useState<
-    AccountConfirmationPrompt[] | null
-  >(null);
-  const [sourcePrompts, setSourcePrompts] = useState<
-    SourceConfirmationPrompt[] | null
-  >(null);
-  const [attentionBusyKey, setAttentionBusyKey] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<Tasks | null>(null);
-  const [tasksFull, setTasksFull] = useState<Tasks | null>(null);
-  const [tasksFilter, setTasksFilter] = useState<TaskGroup>("needs_action");
-  const [focusedCandidateId, setFocusedCandidateId] = useState<string | null>(null);
-  const viewerRequestId = useRef(0);
-  const previewRequestId = useRef(0);
-  const unlockRequestId = useRef(0);
-  const documentLoadRequestId = useRef(0);
-  const financeLoadRequestId = useRef(0);
-  const reviewDetailRequestId = useRef(0);
-  const reviewJobPollTimer = useRef<number | null>(null);
-  const selectedMoneySourceIdRef = useRef<string | null>(null);
-  const viewerReturnFocus = useRef<HTMLButtonElement | null>(null);
-  const documentLoadsAllowed = useRef(false);
-  const vaultSessionId = useRef(0);
 
-  useEffect(() => () => {
-    vaultSessionId.current += 1;
-    unlockRequestId.current += 1;
-    previewRequestId.current += 1;
-    documentLoadRequestId.current += 1;
-    financeLoadRequestId.current += 1;
-    reviewDetailRequestId.current += 1;
-    if (reviewJobPollTimer.current !== null) {
-      window.clearTimeout(reviewJobPollTimer.current);
-    }
-  }, []);
-
-  const clearViewer = useCallback((restoreFocus = true) => {
-    viewerRequestId.current += 1;
-    setViewer(null);
-    setViewingPage(false);
-    if (!restoreFocus) {
-      viewerReturnFocus.current = null;
-    }
-  }, []);
-
-  const clearPreview = useCallback(() => {
-    previewRequestId.current += 1;
-    setPreview(null);
-  }, []);
-
-  const stopReviewJobPolling = useCallback(() => {
-    if (reviewJobPollTimer.current !== null) {
-      window.clearTimeout(reviewJobPollTimer.current);
-      reviewJobPollTimer.current = null;
-    }
-  }, []);
-
-  const showVaultGate = useCallback((nextStatus: VaultScreenStatus) => {
-    const nextSessionId = vaultSessionId.current + 1;
-    vaultSessionId.current = nextSessionId;
-    documentLoadsAllowed.current = false;
-    documentLoadRequestId.current += 1;
-    financeLoadRequestId.current += 1;
-    reviewDetailRequestId.current += 1;
-    stopReviewJobPolling();
-    clearViewer(false);
-    clearPreview();
-    unlockRequestId.current += 1;
-    setUnlockingDocument(null);
-    setDeletingDocumentId(null);
-    setConfirmingDelete(null);
-    setVaultStatus(nextStatus);
-    setActiveView("overview");
-    setError(null);
-    setNotice(null);
-    setPassword("");
-    setUnassignedDocuments([]);
-    setSourceDocuments([]);
-    selectedMoneySourceIdRef.current = null;
-    setSelectedMoneySourceId(null);
-    setLoadingDocuments(false);
-    setSavingCopyDocumentId(null);
-    setReviewItems(null);
-    setSelectedReviewIds(new Set());
-    setReviewDetail(null);
-    setReviewJob(null);
-    setMutatingReviewItemId(null);
-    setMoneyOverview(null);
-    setRecentActivity(null);
-    setUndoingEventId(null);
-    setLocalInbox(null);
-    setLocalInboxError(null);
-    setInboxBusy(false);
-    setInboxConfirmingDisable(false);
-    setAccountPrompts(null);
-    setSourcePrompts(null);
-    setAttentionBusyKey(null);
-    setTasks(null);
-    setTasksFull(null);
-    setTasksFilter("needs_action");
-    setFocusedCandidateId(null);
-    setBusy(false);
-    return nextSessionId;
-  }, [clearViewer, clearPreview, stopReviewJobPolling]);
-
-  useEffect(() => {
-    if (viewer === null && preview === null && viewerReturnFocus.current) {
-      viewerReturnFocus.current.focus();
-      viewerReturnFocus.current = null;
-    }
-  }, [viewer, preview]);
-
-  const loadDocuments = useCallback(async (requestedSourceId?: string | null) => {
-    if (!documentLoadsAllowed.current) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    const requestId = documentLoadRequestId.current + 1;
-    const selectedSourceId = requestedSourceId === undefined
-      ? selectedMoneySourceIdRef.current
-      : requestedSourceId;
-    documentLoadRequestId.current = requestId;
-    setLoadingDocuments(true);
-    try {
-      const [sources, unassigned] = await Promise.all([
-        api.listMoneySources(),
-        api.listUnassignedSourceDocuments(),
-      ]);
-      const selectedSource = selectedSourceId === null
-        ? undefined
-        : sources.find((source) => source.moneySourceId === selectedSourceId);
-      const selectedDocuments = selectedSource
-        ? await api.listSourceDocuments(selectedSource.moneySourceId)
-        : null;
-      if (
-        vaultSessionId.current === sessionId
-        && documentLoadRequestId.current === requestId
-      ) {
-        const nextSelectedSourceId = selectedSource?.moneySourceId ?? null;
-        selectedMoneySourceIdRef.current = nextSelectedSourceId;
-        setSelectedMoneySourceId(nextSelectedSourceId);
-        setSourceDocuments(sources.map((source) => ({
-          documents: source.moneySourceId === nextSelectedSourceId
-            ? selectedDocuments
-            : null,
-          source,
-        })));
-        setUnassignedDocuments(unassigned);
-      }
-    } catch (nextError) {
-      if (
-        vaultSessionId.current === sessionId
-        && documentLoadRequestId.current === requestId
-      ) {
-        setError(commandErrorMessage(nextError));
-      }
-    } finally {
-      if (
-        vaultSessionId.current === sessionId
-        && documentLoadRequestId.current === requestId
-      ) {
-        setLoadingDocuments(false);
-      }
-    }
-  }, [api]);
-
-  const loadFinanceData = useCallback(async () => {
-    if (!documentLoadsAllowed.current) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    const requestId = financeLoadRequestId.current + 1;
-    financeLoadRequestId.current = requestId;
-    try {
-      const inbox = api.localInboxStatus();
-      void inbox.then(
-        (status) => {
-          if (vaultSessionId.current === sessionId && financeLoadRequestId.current === requestId) {
-            setLocalInbox(status);
-            setLocalInboxError(null);
-          }
-        },
-        (nextError) => {
-          if (vaultSessionId.current === sessionId && financeLoadRequestId.current === requestId) {
-            setLocalInbox(null);
-            setLocalInboxError(commandErrorMessage(nextError));
-          }
-        },
-      );
-      const [items, overview, activity, accounts, sourceConfirmations, commandTasks, fullTasks] = await Promise.all([
-        api.listReviewItems(),
-        api.getMoneyOverview(),
-        api.listRecentActivity(),
-        api.listAccountConfirmationPrompts(),
-        api.listSourceConfirmationPrompts(),
-        api.listTasks("command_center"),
-        api.listTasks("full"),
-      ]);
-      if (
-        vaultSessionId.current === sessionId
-        && financeLoadRequestId.current === requestId
-      ) {
-        setReviewItems(items);
-        setMoneyOverview(overview);
-        setRecentActivity(activity);
-        setAccountPrompts(accounts);
-        setSourcePrompts(sourceConfirmations);
-        setTasks(commandTasks);
-        setTasksFull(fullTasks);
-        setSelectedReviewIds((current) => new Set(
-          [...current].filter((id) =>
-            items.some((item) => item.reviewItemId === id)
-          ),
-        ));
-      }
-    } catch (nextError) {
-      if (
-        vaultSessionId.current === sessionId
-        && financeLoadRequestId.current === requestId
-      ) {
-        setError(commandErrorMessage(nextError));
-      }
-    }
-  }, [api]);
-
-  const selectMoneySource = (moneySourceId: string) => {
-    if (!documentLoadsAllowed.current) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    const requestId = documentLoadRequestId.current + 1;
-    documentLoadRequestId.current = requestId;
-    selectedMoneySourceIdRef.current = moneySourceId;
-    setSelectedMoneySourceId(moneySourceId);
-    setSourceDocuments((current) => current.map((entry) => ({
-      ...entry,
-      documents: null,
-    })));
-    setError(null);
-    setLoadingDocuments(true);
-    void api.listSourceDocuments(moneySourceId).then((documents) => {
-      if (
-        vaultSessionId.current === sessionId
-        && documentLoadRequestId.current === requestId
-      ) {
-        setSourceDocuments((current) => current.map((entry) => (
-          entry.source.moneySourceId === moneySourceId
-            ? { ...entry, documents }
-            : entry
-        )));
-      }
-    }).catch((nextError) => {
-      if (
-        vaultSessionId.current === sessionId
-        && documentLoadRequestId.current === requestId
-      ) {
-        setError(commandErrorMessage(nextError));
-      }
-    }).finally(() => {
-      if (
-        vaultSessionId.current === sessionId
-        && documentLoadRequestId.current === requestId
-      ) {
-        setLoadingDocuments(false);
-      }
-    });
-  };
-
-  const requestVaultLock = useCallback(async () => {
-    const sessionId = showVaultGate("loading");
-    try {
-      const nextStatus = await api.lockVault();
-      if (vaultSessionId.current === sessionId) {
-        documentLoadsAllowed.current = nextStatus === "unlocked";
-        setVaultStatus(nextStatus);
-        return nextStatus === "unlocked";
-      }
-    } catch (nextError) {
-      if (vaultSessionId.current !== sessionId) {
-        return false;
-      }
-      try {
-        const nextStatus = await api.vaultStatus();
-        if (vaultSessionId.current !== sessionId) {
-          return false;
-        }
-        documentLoadsAllowed.current = nextStatus === "unlocked";
-        setVaultStatus(nextStatus);
-        if (nextStatus === "unlocked") {
-          setError(commandErrorMessage(nextError));
-          await loadDocuments();
-          await loadFinanceData();
-          return vaultSessionId.current === sessionId;
-        }
-      } catch {
-        if (vaultSessionId.current === sessionId) {
-          setError(commandErrorMessage(nextError));
-        }
-      }
-    }
-    return false;
-  }, [api, loadDocuments, loadFinanceData, showVaultGate]);
-
-  useEffect(() => {
-    let active = true;
-    let removeListener: (() => void) | undefined;
-    void api.onVaultLocked(() => {
-      if (active) {
-        showVaultGate("locked");
-      }
-    }).then((remove) => {
-      if (active) {
-        removeListener = remove;
-      } else {
-        remove();
-      }
-    }).catch(() => {
-      // Focus and visibility reconciliation remain the fail-closed fallback.
-    });
-
-    return () => {
-      active = false;
-      removeListener?.();
-    };
-  }, [api, showVaultGate]);
-
-  const refreshVaultStatus = useCallback(async () => {
-    const sessionId = vaultSessionId.current;
-    setBusy(true);
-    setVaultStatus("loading");
-    setError(null);
-    try {
-      const access = await api.vaultAccessStatus();
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      const nextStatus = access.status;
-      documentLoadsAllowed.current = nextStatus === "unlocked";
-      setRememberedOnThisMac(access.rememberedOnThisMac);
-      setRecoveryConfigured(access.recoveryConfigured);
-      setVaultStatus(nextStatus);
-      if (nextStatus === "unlocked") {
-        await loadDocuments();
-        await loadFinanceData();
-      } else {
-        showVaultGate(nextStatus);
-      }
-    } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
-        setError(commandErrorMessage(nextError));
-      }
-    } finally {
-      if (vaultSessionId.current === sessionId) {
-        setBusy(false);
-      }
-    }
-  }, [api, loadDocuments, loadFinanceData, showVaultGate]);
-
-  useEffect(() => {
-    const reconcileAfterFocus = () => {
-      if (document.visibilityState === "visible") {
-        void refreshVaultStatus();
-      }
-    };
-    window.addEventListener("focus", reconcileAfterFocus);
-    document.addEventListener("visibilitychange", reconcileAfterFocus);
-    return () => {
-      window.removeEventListener("focus", reconcileAfterFocus);
-      document.removeEventListener("visibilitychange", reconcileAfterFocus);
-    };
-  }, [refreshVaultStatus]);
-
-  useEffect(() => {
-    void refreshVaultStatus();
-  }, [refreshVaultStatus]);
-
-  const run = async (action: () => Promise<void>, sessionId?: number) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-    } catch (nextError) {
-      if (sessionId === undefined || vaultSessionId.current === sessionId) {
-        setError(commandErrorMessage(nextError));
-      }
-    } finally {
-      if (sessionId === undefined || vaultSessionId.current === sessionId) {
-        setBusy(false);
-      }
-    }
-  };
-
-  const finalizeUnlock = async (nextStatus: VaultScreenStatus) => {
-    documentLoadsAllowed.current = nextStatus === "unlocked";
-    setVaultStatus(nextStatus);
-    setPassword("");
-    if (nextStatus === "unlocked") {
-      await loadDocuments();
-      await loadFinanceData();
-    }
-  };
-
-  const submitPassword = () => {
-    if (!password) {
-      setError("Enter a password to continue.");
-      return;
-    }
-
-    const sessionId = vaultSessionId.current;
-    void run(async () => {
-      const nextStatus =
-        vaultStatus === "not_created"
-          ? await api.createVault(password)
-          : await api.unlockVault(password);
-      if (vaultSessionId.current === sessionId) {
-        await finalizeUnlock(nextStatus);
-      }
-    }, sessionId);
-  };
-
-  const unlockWithKeychain = () => {
-    const sessionId = vaultSessionId.current;
-    void run(async () => {
-      try {
-        const nextStatus = await api.unlockVaultWithKeychain();
-        if (vaultSessionId.current === sessionId) {
-          await finalizeUnlock(nextStatus);
-        }
-      } catch (nextError) {
-        if (vaultSessionId.current !== sessionId) {
-          return;
-        }
-        try {
-          const access = await api.vaultAccessStatus();
-          if (vaultSessionId.current === sessionId) {
-            setRememberedOnThisMac(access.rememberedOnThisMac);
-          }
-        } catch {
-          // Keep the original Keychain error as the user-facing outcome.
-        }
-        throw nextError;
-      }
-    }, sessionId);
-  };
-
-  const updateRemembered = (remembered: boolean) => {
-    setUpdatingRemembered(true);
-    void run(async () => {
-      if (remembered) {
-        await api.rememberVaultOnThisMac();
-      } else {
-        await api.forgetVaultOnThisMac();
-      }
-      setRememberedOnThisMac(remembered);
-      setNotice(
-        remembered
-          ? {
-              body: "CanCan can unlock your Vault with Touch ID without running the password check.",
-              tone: "success",
-              title: "Touch ID unlock enabled",
-            }
-          : {
-              body: "Your current Vault stays open. Your password will be required after you lock or restart CanCan.",
-              tone: "success",
-              title: "Touch ID unlock removed",
-            },
-      );
-    }).finally(() => setUpdatingRemembered(false));
-  };
-
-  const importDocument = () => {
-    setImporting(true);
-    void run(async () => {
-      setNotice(null);
-      const outcome = await api.importSourceDocument();
-      setNotice(importNotice(outcome?.status ?? "cancelled"));
-      if (outcome) {
-        await loadDocuments();
-      }
-    }).finally(() => setImporting(false));
-  };
-
-  const saveRecoveryFile = () => {
-    setSavingRecoveryFile(true);
-    void run(async () => {
-      setNotice(null);
-      if (await api.saveRecoveryFile()) {
-        setRecoveryConfigured(true);
-        setNotice({
-          body: "Keep this bearer-secret file somewhere private and separate from your Mac.",
-          tone: "success",
-          title: "Recovery file saved",
-        });
-      } else {
-        setNotice({
-          body: "Your Vault is still usable. This task will stay here until saving succeeds.",
-          tone: "attention",
-          title: "Recovery is not configured",
-        });
-      }
-    }).finally(() => setSavingRecoveryFile(false));
-  };
-
-  const normalizeDocument = (documentId: string) => {
-    setNormalizingDocumentId(documentId);
-    void run(async () => {
-      await api.reparseSourceDocument(documentId);
-      setNotice({
-        body: "CanCan queued a new parser run. The source status will update when it finishes.",
-        tone: "success",
-        title: "Parser re-run started",
-      });
-      await loadDocuments();
-    }).finally(() => setNormalizingDocumentId(null));
-  };
-
-  const deleteDocument = (documentId: string) => {
-    setDeletingDocumentId(documentId);
-    void run(async () => {
-      try {
-        if (await api.deleteSourceDocument(documentId)) {
-          setNotice({
-            body: "The encrypted file was removed. Its document history and links remain in CanCan.",
-            tone: "success",
-            title: "Source file deleted",
-          });
-        }
-      } finally {
-        await loadDocuments();
-      }
-    }).finally(() => {
-      setDeletingDocumentId(null);
-      setConfirmingDelete(null);
-    });
-  };
-
-  const saveSourceCopy = (documentId: string) => {
-    const sessionId = vaultSessionId.current;
-    setSavingCopyDocumentId(documentId);
-    void run(async () => {
-      if (
-        await api.saveSourceDocumentCopy(documentId)
-        && vaultSessionId.current === sessionId
-      ) {
-        setNotice({
-          body: "The copy is outside CanCan’s encrypted Vault and is now your responsibility.",
-          tone: "success",
-          title: "Copy saved",
-        });
-      }
-    }, sessionId).finally(() => {
-      if (vaultSessionId.current === sessionId) {
-        setSavingCopyDocumentId(null);
-      }
-    });
-  };
-
-  const {
-    loadUnlockSources,
-    openDocumentUnlock,
-    selectUnlockSource,
-    submitDocumentPassword,
-  } = createStatementUnlockActions({
+  const session = useVaultSession({ api, wiring });
+  const documents = useVaultDocuments({ api, session });
+  const review = useReviewQueue({ api, session, wiring });
+  const inbox = useInbox({ api, session, wiring });
+  const attention = useAttention({
     api,
-    loadDocuments,
-    setNotice,
-    setUnlockingDocument,
-    unlockingDocument,
-    unlockRequestId,
+    loadDocuments: documents.loadDocuments,
+    session,
+    wiring,
   });
-
-  const { loadDocumentPreview, loadViewerPage } = createViewerActions({
+  const overlays = useEvidenceOverlays({
     api,
-    clearViewer,
-    previewRequestId,
-    run,
-    setPreview,
-    setViewer,
-    setViewingPage,
-    viewer,
-    viewerRequestId,
+    loadDocuments: documents.loadDocuments,
+    session,
   });
+  const commandCenter = useCommandCenter({ api, attention, inbox, review, session, wiring });
 
-  const navigate = (view: AppView) => {
+  wiring.current = {
+    loadDocuments: documents.loadDocuments,
+    loadFinanceData: commandCenter.loadFinanceData,
+    resetSession: () => {
+      setActiveView("overview");
+      documents.reset();
+      review.reset();
+      inbox.reset();
+      attention.reset();
+      overlays.reset();
+      commandCenter.reset();
+    },
+  };
+
+  const { lockVault, notice, refresh, setError, setNotice, status } = session;
+  const { loadFinanceData } = commandCenter;
+
+  const navigate = useCallback((view: AppView) => {
     setActiveView(view);
     setError(null);
     setNotice(null);
-  };
+  }, [setError, setNotice]);
 
-  const { openTaskDestination, viewDocument, viewPromptDocument } = createTaskDestinationActions({
-    loadDocumentPreview,
-    loadViewerPage,
-    navigate,
-    openDocumentUnlock,
-    saveRecoveryFile,
-    selectMoneySource,
-    selectedMoneySourceIdRef,
-    setFocusedCandidateId,
-    setNotice,
-    sourceDocuments,
-    unassignedDocuments,
-    viewerReturnFocus,
-  });
+  const requestLock = useCallback(() => {
+    void lockVault();
+  }, [lockVault]);
 
-  const openReviewDetail = (item: ReviewItemSummary) => {
-    const sessionId = vaultSessionId.current;
-    const requestId = reviewDetailRequestId.current + 1;
-    reviewDetailRequestId.current = requestId;
-    setReviewDetail({
-      candidates: null,
-      confirmingRemove: false,
-      detail: null,
-      editing: null,
-      reviewItemId: item.reviewItemId,
-      summary: item,
-    });
-    void Promise.all([
-      api.getReviewDetail(item.reviewItemId),
-      api.listRelationshipCandidates(item.reviewItemId, item.recordVersion),
-    ]).then(([detail, candidates]) => {
-      if (
-        vaultSessionId.current !== sessionId
-        || reviewDetailRequestId.current !== requestId
-      ) {
-        return;
-      }
-      if (detail === null) {
-        setReviewDetail(null);
-        setNotice({
-          body: "That item is no longer waiting for review.",
-          tone: "attention",
-          title: "Already resolved",
-        });
-        void loadFinanceData();
-        return;
-      }
-      setReviewDetail({
-        candidates,
-        confirmingRemove: false,
-        detail,
-        editing: null,
-        reviewItemId: item.reviewItemId,
-        summary: item,
-      });
-    }).catch((nextError) => {
-      if (
-        vaultSessionId.current === sessionId
-        && reviewDetailRequestId.current === requestId
-      ) {
-        reviewDetailRequestId.current += 1;
-        setReviewDetail(null);
-        setError(commandErrorMessage(nextError));
-      }
-    });
-  };
+  const requestRefresh = useCallback(() => {
+    void refresh();
+  }, [refresh]);
 
-  const closeReviewDetail = () => {
-    reviewDetailRequestId.current += 1;
-    setReviewDetail(null);
-  };
-
-  const toggleReviewSelection = (reviewItemId: string) => {
-    setSelectedReviewIds((current) => {
-      const next = new Set(current);
-      if (next.has(reviewItemId)) {
-        next.delete(reviewItemId);
-      } else {
-        next.add(reviewItemId);
-      }
-      return next;
-    });
-  };
-
-  const handleReviewConflict = async (reason: string | null) => {
-    setNotice({
-      body: reviewConflictMessage(reason),
-      tone: "attention",
-      title: "Couldn’t apply that change",
-    });
-    reviewDetailRequestId.current += 1;
-    setReviewDetail(null);
-    await loadFinanceData();
-  };
-
-  const startReviewEdit = () => {
-    setReviewDetail((current) => current === null
-      ? current
-      : {
-          ...current,
-          confirmingRemove: false,
-          editing: {
-            accountBalanceDelta: "",
-            amountValue: current.summary.amountValue ?? "",
-            error: null,
-            postedOn: current.summary.postedOn ?? "",
-            saving: false,
-          },
-        });
-  };
-
-  const cancelReviewEdit = () => {
-    setReviewDetail((current) => current === null
-      ? current
-      : { ...current, editing: null });
-  };
-
-  const changeReviewEdit = (
-    patch: Partial<Pick<
-      ReviewEditState,
-      "accountBalanceDelta" | "amountValue" | "postedOn"
-    >>,
-  ) => {
-    setReviewDetail((current) => current?.editing
-      ? { ...current, editing: { ...current.editing, ...patch, error: null } }
-      : current);
-  };
-
-  const setReviewEditError = (message: string) => {
-    setReviewDetail((current) => current?.editing
-      ? { ...current, editing: { ...current.editing, error: message, saving: false } }
-      : current);
-  };
-
-  const saveReviewEdit = async () => {
-    const state = reviewDetail;
-    if (!state?.editing || mutatingReviewItemId !== null) {
-      return;
-    }
-    const { editing } = state;
-    const patch: Omit<EditReviewRecordArgs, "expectedRecordVersion" | "reviewItemId"> = {};
-    const amountValue = editing.amountValue.trim();
-    const postedOn = editing.postedOn.trim();
-    const accountBalanceDelta = editing.accountBalanceDelta.trim();
-    if (amountValue !== (state.summary.amountValue ?? "")) {
-      if (!UNSIGNED_DECIMAL.test(amountValue)) {
-        setReviewEditError("Amount must be a positive decimal, such as 128.50.");
-        return;
-      }
-      patch.amountValue = amountValue;
-    }
-    if (postedOn !== (state.summary.postedOn ?? "")) {
-      if (!isRealIsoDate(postedOn)) {
-        setReviewEditError("Date must use the YYYY-MM-DD format, such as 2026-07-19.");
-        return;
-      }
-      patch.postedOn = postedOn;
-    }
-    if (accountBalanceDelta !== "") {
-      if (!SIGNED_DECIMAL.test(accountBalanceDelta)) {
-        setReviewEditError("Balance change must be a signed decimal, such as -128.50.");
-        return;
-      }
-      patch.accountBalanceDelta = accountBalanceDelta;
-    }
-    if (
-      patch.amountValue === undefined
-      && patch.postedOn === undefined
-      && patch.accountBalanceDelta === undefined
-    ) {
-      setReviewEditError("Change something before saving.");
-      return;
-    }
-
-    const sessionId = vaultSessionId.current;
-    setMutatingReviewItemId(state.reviewItemId);
-    setReviewDetail((current) => current?.editing
-      ? { ...current, editing: { ...current.editing, saving: true } }
-      : current);
-    try {
-      const outcome = await api.editReviewRecord(
-        state.reviewItemId,
-        state.summary.recordVersion,
-        patch,
-      );
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      if (outcome.status === "conflict") {
-        setMutatingReviewItemId(null);
-        await handleReviewConflict(outcome.reason);
-        return;
-      }
-      setNotice({
-        body: "CanCan will use the corrected details from now on.",
-        tone: "success",
-        title: "Edit saved",
-      });
-      setMutatingReviewItemId(null);
-      await loadFinanceData();
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      if (outcome.reviewItemId !== null) {
-        const refreshed = await api.listReviewItems();
-        if (vaultSessionId.current !== sessionId) {
-          return;
-        }
-        const nextItem = refreshed.find(
-          (item) => item.reviewItemId === outcome.reviewItemId,
-        );
-        if (nextItem) {
-          openReviewDetail(nextItem);
-        } else {
-          closeReviewDetail();
-        }
-      } else {
-        closeReviewDetail();
-      }
-    } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
-        setMutatingReviewItemId(null);
-        setReviewDetail((current) => current?.editing
-          ? { ...current, editing: { ...current.editing, saving: false } }
-          : current);
-        setError(commandErrorMessage(nextError));
-      }
-    }
-  };
-
-  const requestReviewRemove = () => {
-    setReviewDetail((current) => current === null
-      ? current
-      : { ...current, confirmingRemove: true, editing: null });
-  };
-
-  const cancelReviewRemove = () => {
-    setReviewDetail((current) => current === null
-      ? current
-      : { ...current, confirmingRemove: false });
-  };
-
-  const confirmReviewRemove = async () => {
-    const state = reviewDetail;
-    if (!state || mutatingReviewItemId !== null) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    setMutatingReviewItemId(state.reviewItemId);
-    try {
-      const outcome = await api.removeReviewRecord(
-        state.reviewItemId,
-        state.summary.recordVersion,
-      );
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      setMutatingReviewItemId(null);
-      if (outcome.status === "conflict") {
-        await handleReviewConflict(outcome.reason);
-        return;
-      }
-      reviewDetailRequestId.current += 1;
-      setReviewDetail(null);
-      setSelectedReviewIds((current) => {
-        const next = new Set(current);
-        next.delete(state.reviewItemId);
-        return next;
-      });
-      setNotice({
-        body: "The staged record is out of the queue. Its history stays in your audit trail.",
-        tone: "success",
-        title: "Record removed",
-      });
-      await loadFinanceData();
-    } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
-        setMutatingReviewItemId(null);
-        setError(commandErrorMessage(nextError));
-      }
-    }
-  };
-
-  const acceptReviewCandidate = async (candidate: RelationshipCandidateSummary) => {
-    const state = reviewDetail;
-    if (!state || mutatingReviewItemId !== null) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    setMutatingReviewItemId(state.reviewItemId);
-    try {
-      const outcome = await api.acceptReviewRelationship(
-        state.reviewItemId,
-        state.summary.recordVersion,
-        candidate.recordId,
-        candidate.recordVersion,
-      );
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      setMutatingReviewItemId(null);
-      if (outcome.status === "conflict") {
-        await handleReviewConflict(outcome.reason);
-        return;
-      }
-      setSelectedReviewIds((current) => {
-        const next = new Set(current);
-        next.add(state.reviewItemId);
-        const linked = reviewItems?.find(
-          (item) => item.recordId === candidate.recordId,
-        );
-        if (linked) {
-          next.add(linked.reviewItemId);
-        }
-        return next;
-      });
-      setNotice({
-        body: "CanCan will treat them as one event. Add both together when you’re ready.",
-        tone: "success",
-        title: "Linked",
-      });
-      await loadFinanceData();
-      if (vaultSessionId.current === sessionId) {
-        openReviewDetail(state.summary);
-      }
-    } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
-        setMutatingReviewItemId(null);
-        setError(commandErrorMessage(nextError));
-      }
-    }
-  };
-
-  const finishReviewJob = (summary: ReviewJobSummary) => {
-    if (summary.status === "succeeded") {
-      setReviewJob({ jobId: summary.jobId, outcomes: summary.outcomes, status: "done" });
-    } else {
-      setReviewJob({ jobId: summary.jobId, outcomes: summary.outcomes, status: "failed" });
-    }
-    setSelectedReviewIds(new Set());
+  const reloadFinance = useCallback(() => {
     void loadFinanceData();
-  };
+  }, [loadFinanceData]);
 
-  const pollReviewJob = (jobId: string, attempt: number) => {
-    stopReviewJobPolling();
-    if (attempt >= REVIEW_JOB_MAX_POLLS) {
-      setReviewJob({ jobId, outcomes: [], status: "failed" });
-      setSelectedReviewIds(new Set());
-      void loadFinanceData();
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    reviewJobPollTimer.current = window.setTimeout(() => {
-      reviewJobPollTimer.current = null;
-      void api.getReviewJob(jobId).then((summary) => {
-        if (vaultSessionId.current !== sessionId) {
-          return;
-        }
-        if (summary === null) {
-          setReviewJob({ jobId, outcomes: [], status: "failed" });
-          setSelectedReviewIds(new Set());
-          void loadFinanceData();
-          return;
-        }
-        if (
-          summary.status === "queued"
-          || summary.status === "running"
-        ) {
-          pollReviewJob(jobId, attempt + 1);
-          return;
-        }
-        finishReviewJob(summary);
-      }).catch(() => {
-        if (vaultSessionId.current === sessionId) {
-          pollReviewJob(jobId, attempt + 1);
-        }
-      });
-    }, REVIEW_JOB_POLL_INTERVAL_MS);
-  };
+  const openSources = useCallback(() => navigate("sources"), [navigate]);
+  const openTasks = useCallback(() => navigate("tasks"), [navigate]);
 
-  const enqueueReviewBatch = () => {
-    if (reviewItems === null || reviewJob?.status === "running") {
-      return;
-    }
-    const ids = reviewItems
-      .filter((item) => selectedReviewIds.has(item.reviewItemId))
-      .map((item) => item.reviewItemId);
-    if (ids.length === 0) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    setNotice(null);
-    setReviewJob({ jobId: "", outcomes: [], status: "running" });
-    void api.enqueueCommitReviewBatch(ids).then((summary) => {
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      setReviewJob({ jobId: summary.jobId, outcomes: [], status: "running" });
-      if (summary.status === "queued" || summary.status === "running") {
-        pollReviewJob(summary.jobId, 0);
-        return;
-      }
-      finishReviewJob(summary);
-    }).catch((nextError) => {
-      if (vaultSessionId.current === sessionId) {
-        setReviewJob(null);
-        setError(commandErrorMessage(nextError));
-      }
-    });
-  };
-
-  const undoCommittedEvent = (eventId: string) => {
-    if (undoingEventId !== null) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    setUndoingEventId(eventId);
-    void run(async () => {
-      const outcome = await api.undoCommittedEvent(eventId);
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      setNotice(
-        outcome.status === "undone"
-          ? {
-              body: "CanCan added the reversal to your recent activity.",
-              tone: "success",
-              title: "Undone",
-            }
-          : {
-              body: "That event was already reversed.",
-              tone: "attention",
-              title: "Already undone",
-            },
-      );
-      await loadFinanceData();
-    }, sessionId).finally(() => {
-      if (vaultSessionId.current === sessionId) {
-        setUndoingEventId(null);
-      }
-    });
-  };
-
-  const chooseInboxFolder = async () => {
-    if (inboxBusy) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    setInboxBusy(true);
-    try {
-      const status = await api.chooseLocalInboxRoot();
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      if (status === null) {
-        return;
-      }
-      setLocalInbox(status);
-      setLocalInboxError(null);
-      setInboxConfirmingDisable(false);
-      setNotice({
-        body: "New statements you save to Inbox are added for you. The folder stays outside your encrypted Vault.",
-        tone: "success",
-        title: "CanCan Inbox is on",
-      });
-      await loadFinanceData();
-    } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
-        setError(commandErrorMessage(nextError));
-      }
-    } finally {
-      if (vaultSessionId.current === sessionId) {
-        setInboxBusy(false);
-      }
-    }
-  };
-
-  const rescanInbox = async () => {
-    if (inboxBusy) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    setInboxBusy(true);
-    try {
-      const summary = await api.rescanLocalInbox();
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      setLocalInbox((current) => current === null
-        ? current
-        : { ...current, lastScan: summary });
-      setLocalInboxError(null);
-      setNotice({
-        body: localInboxScanSummaryText(summary),
-        tone: "success",
-        title: "Inbox checked",
-      });
-      await loadFinanceData();
-    } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
-        setError(commandErrorMessage(nextError));
-      }
-    } finally {
-      if (vaultSessionId.current === sessionId) {
-        setInboxBusy(false);
-      }
-    }
-  };
-
-  const disableInbox = async () => {
-    if (inboxBusy) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    setInboxBusy(true);
-    try {
-      const status = await api.disableLocalInbox();
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      setLocalInbox(status);
-      setLocalInboxError(null);
-      setInboxConfirmingDisable(false);
-      setNotice({
-        body: "Your Cancan folder and its files stay untouched. You can choose it again anytime.",
-        tone: "success",
-        title: "CanCan Inbox is off",
-      });
-    } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
-        setError(commandErrorMessage(nextError));
-      }
-    } finally {
-      if (vaultSessionId.current === sessionId) {
-        setInboxBusy(false);
-      }
-    }
-  };
-
-  const decideAccounts = async (
-    prompt: AccountConfirmationPrompt,
-    decisions: CandidateAccountDecisionInput[],
-  ) => {
-    if (attentionBusyKey !== null) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    setAttentionBusyKey(`account:${prompt.moneySourceId}`);
-    try {
-      const outcome = await api.decideCandidateAccounts(prompt.moneySourceId, prompt.proposalVersion, decisions);
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      if (outcome.status === "conflict") {
-        setNotice({
-          body: "CanCan reloaded the latest account list. Check it and save your choices again.",
-          tone: "attention",
-          title: "That account list changed",
-        });
-      } else {
-        setNotice({
-          body: outcome.status === "already_confirmed" ? "These account choices were already saved." : "Accepted accounts can enter review. Dismissed records remain in history.",
-          tone: "success",
-          title: outcome.status === "already_confirmed" ? "Account choices already saved" : "Account choices saved",
-        });
-      }
-      await loadFinanceData();
-    } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
-        setNotice({
-          body: commandErrorMessage(nextError),
-          tone: "attention",
-          title: "Couldn’t save those account choices",
-        });
-        await loadFinanceData();
-      }
-    } finally {
-      if (vaultSessionId.current === sessionId) {
-        setAttentionBusyKey(null);
-      }
-    }
-  };
-
-  const restoreAccount = async (accountId: string) => {
-    if (attentionBusyKey !== null) {
-      return;
-    }
-    const sessionId = vaultSessionId.current;
-    setAttentionBusyKey(`restore:${accountId}`);
-    try {
-      const outcome = await api.restoreDismissedCandidateAccount(accountId);
-      if (vaultSessionId.current !== sessionId) {
-        return;
-      }
-      setNotice(outcome.status === "restored"
-        ? {
-            body: "The account is back in review with its latest records.",
-            tone: "success",
-            title: "Account restored",
-          }
-        : {
-            body: "CanCan reloaded the latest account list.",
-            tone: "attention",
-            title: "That account changed",
-          });
-      await loadFinanceData();
-    } catch (nextError) {
-      if (vaultSessionId.current === sessionId) {
-        setNotice({
-          body: commandErrorMessage(nextError),
-          tone: "attention",
-          title: "Couldn’t restore that account",
-        });
-      }
-    } finally {
-      if (vaultSessionId.current === sessionId) {
-        setAttentionBusyKey(null);
-      }
-    }
-  };
-
-  const { confirmSourceCandidate, parkSourceCandidate } = createSourceConfirmationActions({
-    api,
-    attentionBusyKey,
-    loadDocuments,
-    loadFinanceData,
-    setAttentionBusyKey,
+  const {
+    openTaskDestination,
+    viewDocument,
+    viewPromptDocument,
+  } = useMemo(() => createTaskDestinationActions({
+    loadDocumentPreview: overlays.loadDocumentPreview,
+    loadViewerPage: overlays.loadViewerPage,
+    navigate,
+    openDocumentUnlock: overlays.openDocumentUnlock,
+    saveRecoveryFile: documents.saveRecoveryFile,
+    selectMoneySource: documents.selectMoneySource,
+    selectedMoneySourceIdRef: documents.selectedMoneySourceIdRef,
+    setFocusedCandidateId: attention.setFocusedCandidateId,
     setNotice,
-    vaultSessionId,
-  });
+    sourceDocuments: documents.sourceDocuments,
+    unassignedDocuments: documents.unassignedDocuments,
+    viewerReturnFocus: overlays.viewerReturnFocus,
+  }), [
+    attention.setFocusedCandidateId,
+    documents.saveRecoveryFile,
+    documents.selectMoneySource,
+    documents.selectedMoneySourceIdRef,
+    documents.sourceDocuments,
+    documents.unassignedDocuments,
+    navigate,
+    overlays.loadDocumentPreview,
+    overlays.loadViewerPage,
+    overlays.openDocumentUnlock,
+    overlays.viewerReturnFocus,
+    setNotice,
+  ]);
 
-  const modalOpen = viewer !== null || preview !== null || unlockingDocument !== null
-    || focusedCandidateId !== null || confirmingDelete !== null;
-  const unlocked = vaultStatus === "unlocked";
-  const existingSources = sourceDocuments.map((entry) => entry.source);
-  const focusedCandidate = focusedCandidateId === null ? undefined
-    : (sourcePrompts ?? []).find((prompt) => prompt.candidateId === focusedCandidateId);
+  const modalOpen = overlays.viewer !== null || overlays.preview !== null
+    || overlays.unlockingDocument !== null || attention.focusedCandidateId !== null
+    || documents.confirmingDelete !== null;
+  const unlocked = status === "unlocked";
+  const existingSources = useMemo(
+    () => documents.sourceDocuments.map((entry) => entry.source),
+    [documents.sourceDocuments],
+  );
+  const focusedCandidateId = attention.focusedCandidateId;
+  const focusedCandidate = useMemo(
+    () => focusedCandidateId === null ? undefined
+      : (attention.sourcePrompts ?? NO_SOURCE_PROMPTS)
+        .find((prompt) => prompt.candidateId === focusedCandidateId),
+    [attention.sourcePrompts, focusedCandidateId],
+  );
 
   return (
     <AppShell>
@@ -1342,203 +157,197 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         activeView={activeView}
         inert={modalOpen}
         onNavigate={navigate}
-        reviewCount={unlocked ? reviewItems?.length ?? null : null}
-        tasksCount={unlocked ? tasks?.needsActionCount ?? null : null}
-        vaultStatus={vaultStatus}
+        reviewCount={unlocked ? review.reviewItems?.length ?? null : null}
+        tasksCount={unlocked ? commandCenter.tasks?.needsActionCount ?? null : null}
+        vaultStatus={status}
       />
 
       <LedgerRegion
         aria-hidden={modalOpen ? true : undefined}
         inert={modalOpen}
-        aria-busy={vaultStatus === "loading"}
+        aria-busy={status === "loading"}
       >
         <LedgerColumn>
-        {error ? (
-          <Feedback tone="error" title="Something needs your attention" body={error} action={() => void refreshVaultStatus()} />
+        {session.error ? (
+          <Feedback tone="error" title="Something needs your attention" body={session.error} action={requestRefresh} />
         ) : null}
 
-        {vaultStatus === "loading" ? (
+        {status === "loading" ? (
           <VaultGate busy title="Checking your Vault" body="Confirming the local Vault state before showing evidence." />
         ) : null}
 
-        {vaultStatus === "not_created" || vaultStatus === "locked" ? (
+        {status === "not_created" || status === "locked" ? (
           <VaultGate
-            busy={busy}
-            body={vaultStatus === "not_created" ? "Create a local Vault before adding your first statement or export." : "Unlock your local Vault to add a file or check its routing. While CanCan stays open, background intake keeps working and your Mac’s login session protects the live Vault; CanCan locks only when you lock it or quit the app."}
-            password={password}
-            rememberedOnThisMac={rememberedOnThisMac}
-            title={vaultStatus === "not_created" ? "Create your Vault" : "Unlock your Vault"}
-            onPasswordChange={setPassword}
-            onSubmit={submitPassword}
-            onUnlockWithKeychain={vaultStatus === "locked" ? unlockWithKeychain : undefined}
+            busy={session.busy}
+            body={status === "not_created" ? "Create a local Vault before adding your first statement or export." : "Unlock your local Vault to add a file or check its routing. While CanCan stays open, background intake keeps working and your Mac’s login session protects the live Vault; CanCan locks only when you lock it or quit the app."}
+            password={session.password}
+            rememberedOnThisMac={session.rememberedOnThisMac}
+            title={status === "not_created" ? "Create your Vault" : "Unlock your Vault"}
+            onPasswordChange={session.setPassword}
+            onSubmit={session.unlock}
+            onUnlockWithKeychain={status === "locked" ? session.unlockWithKeychain : undefined}
           />
         ) : null}
 
         {unlocked && activeView === "overview" ? (
           <OverviewView
-            loading={moneyOverview === null && recentActivity === null}
-            moneyOverview={moneyOverview}
+            loading={commandCenter.moneyOverview === null && commandCenter.recentActivity === null}
+            moneyOverview={commandCenter.moneyOverview}
             notice={notice}
-            onLock={() => void requestVaultLock()}
-            onOpenSources={() => navigate("sources")}
+            onLock={requestLock}
+            onOpenSources={openSources}
             onOpenTask={openTaskDestination}
-            onRefresh={() => void refreshVaultStatus()}
-            onUndo={undoCommittedEvent}
-            onViewAllTasks={() => navigate("tasks")}
-            recentActivity={recentActivity}
-            tasks={tasks}
-            undoingEventId={undoingEventId}
+            onRefresh={requestRefresh}
+            onUndo={commandCenter.undoCommittedEvent}
+            onViewAllTasks={openTasks}
+            recentActivity={commandCenter.recentActivity}
+            tasks={commandCenter.tasks}
+            undoingEventId={commandCenter.undoingEventId}
           />
         ) : null}
 
         {unlocked && activeView === "tasks" ? (
           <TasksView
-            filter={tasksFilter}
-            onFilterChange={setTasksFilter}
-            onLock={() => void requestVaultLock()}
+            filter={commandCenter.tasksFilter}
+            onFilterChange={commandCenter.setTasksFilter}
+            onLock={requestLock}
             onOpenTask={openTaskDestination}
-            onRefresh={() => void refreshVaultStatus()}
-            tasks={tasksFull}
+            onRefresh={requestRefresh}
+            tasks={commandCenter.tasksFull}
           />
         ) : null}
 
         {unlocked && activeView === "review" ? (
           <ReviewView
-            detail={reviewDetail}
-            items={reviewItems}
-            job={reviewJob}
-            mutatingItemId={mutatingReviewItemId}
+            detail={review.reviewDetail}
+            items={review.reviewItems}
+            job={review.reviewJob}
+            mutatingItemId={review.mutatingReviewItemId}
             notice={notice}
-            onAcceptCandidate={(candidate) => void acceptReviewCandidate(candidate)}
-            onCancelEdit={cancelReviewEdit}
-            onCancelRemove={cancelReviewRemove}
-            onClearSelection={() => setSelectedReviewIds(new Set())}
-            onCloseDetail={closeReviewDetail}
-            onConfirmRemove={() => void confirmReviewRemove()}
-            onEditChange={changeReviewEdit}
-            onEnqueue={enqueueReviewBatch}
-            onLock={() => void requestVaultLock()}
-            onOpenDetail={openReviewDetail}
-            onRefresh={() => void refreshVaultStatus()}
-            onRemove={requestReviewRemove}
-            onSaveEdit={() => void saveReviewEdit()}
-            onSelectAll={() => setSelectedReviewIds(new Set(
-              reviewItems?.map((item) => item.reviewItemId) ?? [],
-            ))}
-            onStartEdit={startReviewEdit}
-            onToggleSelect={toggleReviewSelection}
-            selectedIds={selectedReviewIds}
+            onAcceptCandidate={review.acceptCandidate}
+            onAcknowledge={review.acknowledge}
+            onCancelEdit={review.cancelEdit}
+            onCancelRemove={review.cancelRemove}
+            onClearSelection={review.clearSelection}
+            onCloseDetail={review.closeDetail}
+            onConfirmRemove={review.confirmRemove}
+            onEditChange={review.changeEdit}
+            onEnqueue={review.enqueueBatch}
+            onLock={requestLock}
+            onOpenDetail={review.openDetail}
+            onRefresh={requestRefresh}
+            onRemove={review.requestRemove}
+            onSaveEdit={review.saveEdit}
+            onSelectAll={review.selectAll}
+            onStartEdit={review.startEdit}
+            onToggleSelect={review.toggleSelection}
+            selectedIds={review.selectedReviewIds}
           />
         ) : null}
 
         {unlocked && activeView === "sources" ? (
           <SourcesView
-            accountPrompts={accountPrompts ?? []}
-            attentionBusyKey={attentionBusyKey}
-            busy={busy}
+            accountPrompts={attention.accountPrompts ?? NO_ACCOUNT_PROMPTS}
+            attentionBusyKey={attention.attentionBusyKey}
+            busy={session.busy}
             existingSources={existingSources}
-            importing={importing}
-            inbox={localInbox}
-            inboxError={localInboxError}
-            inboxBusy={inboxBusy}
-            inboxConfirmingDisable={inboxConfirmingDisable}
-            loadingDocuments={loadingDocuments}
-            normalizingDocumentId={normalizingDocumentId}
+            importing={documents.importing}
+            inbox={inbox.status}
+            inboxError={inbox.error}
+            inboxBusy={inbox.busy}
+            inboxConfirmingDisable={inbox.confirmingDisable}
+            loadingDocuments={documents.loadingDocuments}
+            normalizingDocumentId={documents.normalizingDocumentId}
             notice={notice}
-            onConfirmSourceCandidate={(prompt, displayName, sourceType) =>
-              void confirmSourceCandidate(prompt, displayName, sourceType)}
-            onDecideAccounts={(prompt, decisions) => void decideAccounts(prompt, decisions)}
-            onImport={importDocument}
-            onInboxCancelDisable={() => setInboxConfirmingDisable(false)}
-            onInboxChoose={() => void chooseInboxFolder()}
-            onInboxConfirmDisable={() => void disableInbox()}
-            onInboxRequestDisable={() => setInboxConfirmingDisable(true)}
-            onInboxRescan={() => void rescanInbox()}
-            onInboxRetry={() => void loadFinanceData()}
-            onKeepSourceCandidateUnassigned={(prompt) => void parkSourceCandidate(prompt)}
-            onLock={() => void requestVaultLock()}
-            onNormalize={normalizeDocument}
-            onOpenUnlock={openDocumentUnlock}
-            onRefresh={() => void refreshVaultStatus()}
-            onRememberedChange={updateRemembered}
-            onRequestDelete={setConfirmingDelete}
-            onRestoreAccount={(accountId) => void restoreAccount(accountId)}
-            onSelectMoneySource={selectMoneySource}
-            onSaveRecoveryFile={saveRecoveryFile}
-            onSaveSourceCopy={saveSourceCopy}
+            onConfirmSourceCandidate={attention.confirmSourceCandidate}
+            onDecideAccounts={attention.decideAccounts}
+            onImport={documents.importDocument}
+            onInboxCancelDisable={inbox.cancelDisable}
+            onInboxChoose={inbox.choose}
+            onInboxConfirmDisable={inbox.confirmDisable}
+            onInboxRequestDisable={inbox.requestDisable}
+            onInboxRescan={inbox.rescan}
+            onInboxRetry={reloadFinance}
+            onKeepSourceCandidateUnassigned={attention.parkSourceCandidate}
+            onLock={requestLock}
+            onNormalize={documents.normalizeDocument}
+            onOpenUnlock={overlays.openDocumentUnlock}
+            onRefresh={requestRefresh}
+            onRememberedChange={documents.updateRemembered}
+            onRequestDelete={documents.setConfirmingDelete}
+            onRestoreAccount={attention.restoreAccount}
+            onSelectMoneySource={documents.selectMoneySource}
+            onSaveRecoveryFile={documents.saveRecoveryFile}
+            onSaveSourceCopy={documents.saveSourceCopy}
             onView={viewDocument}
             onViewPromptDocument={viewPromptDocument}
-            recoveryConfigured={recoveryConfigured}
-            rememberedOnThisMac={rememberedOnThisMac}
-            savingCopyDocumentId={savingCopyDocumentId}
-            savingRecoveryFile={savingRecoveryFile}
-            selectedMoneySourceId={selectedMoneySourceId}
-            sourceDocuments={sourceDocuments}
-            sourcePrompts={sourcePrompts ?? []}
-            unassignedDocuments={unassignedDocuments}
-            updatingRemembered={updatingRemembered}
+            recoveryConfigured={session.recoveryConfigured}
+            rememberedOnThisMac={session.rememberedOnThisMac}
+            savingCopyDocumentId={documents.savingCopyDocumentId}
+            savingRecoveryFile={documents.savingRecoveryFile}
+            selectedMoneySourceId={documents.selectedMoneySourceId}
+            sourceDocuments={documents.sourceDocuments}
+            sourcePrompts={attention.sourcePrompts ?? NO_SOURCE_PROMPTS}
+            unassignedDocuments={documents.unassignedDocuments}
+            updatingRemembered={documents.updatingRemembered}
           />
         ) : null}
         </LedgerColumn>
       </LedgerRegion>
-      {unlocked && viewer ? (
+      {unlocked && overlays.viewer ? (
         <DocumentViewer
-          onClose={clearViewer}
+          onClose={overlays.clearViewer}
           onPage={(pageNumber) => {
-            if (viewer) {
-              loadViewerPage(viewer.documentId, viewer.documentTitle, pageNumber);
+            const openViewer = overlays.viewer;
+            if (openViewer) {
+              overlays.loadViewerPage(
+                openViewer.documentId,
+                openViewer.documentTitle,
+                pageNumber,
+              );
             }
           }}
-          viewer={viewer}
-          viewingPage={viewingPage}
+          viewer={overlays.viewer}
+          viewingPage={overlays.viewingPage}
         />
       ) : null}
-      {unlocked && preview ? (
+      {unlocked && overlays.preview ? (
         <DocumentPreview
-          onClose={clearPreview}
-          state={preview}
+          onClose={overlays.clearPreview}
+          state={overlays.preview}
         />
       ) : null}
-      {unlocked && unlockingDocument ? (
+      {unlocked && overlays.unlockingDocument ? (
         <DocumentUnlock
-          onClose={() => {
-            unlockRequestId.current += 1;
-            setUnlockingDocument(null);
-          }}
-          onPasswordChange={(nextPassword) => setUnlockingDocument((current) => current
-            ? { ...current, error: null, password: nextPassword }
-            : current)}
-          onRetrySources={() => {
-            if (unlockingDocument) {
-              loadUnlockSources(unlockingDocument.documentId, unlockingDocument.documentTitle);
-            }
-          }}
-          onSourceChange={selectUnlockSource}
-          onSubmit={submitDocumentPassword}
-          state={unlockingDocument}
+          onClose={overlays.closeUnlock}
+          onPasswordChange={overlays.setUnlockPassword}
+          onRetrySources={overlays.retryUnlockSources}
+          onSourceChange={overlays.selectUnlockSource}
+          onSubmit={overlays.submitDocumentPassword}
+          state={overlays.unlockingDocument}
         />
       ) : null}
       {unlocked ? (
         <DeleteSourceDocumentDialog
-          deleting={deletingDocumentId !== null}
-          document={confirmingDelete}
-          onCancel={() => setConfirmingDelete(null)}
+          deleting={documents.deletingDocumentId !== null}
+          document={documents.confirmingDelete}
+          onCancel={documents.cancelDelete}
           onConfirm={() => {
-            if (confirmingDelete) {
-              deleteDocument(confirmingDelete.documentId);
+            if (documents.confirmingDelete) {
+              documents.deleteDocument(documents.confirmingDelete.documentId);
             }
           }}
         />
       ) : null}
       {unlocked ? (
         <FocusedSourceConfirmationDialog
-          busyKey={attentionBusyKey}
+          busyKey={attention.attentionBusyKey}
           existingSources={existingSources}
           focusedCandidate={focusedCandidate}
-          onClose={() => setFocusedCandidateId(null)}
+          onClose={() => attention.setFocusedCandidateId(null)}
           onConfirm={(prompt, displayName, sourceType) =>
-            void confirmSourceCandidate(prompt, displayName, sourceType)}
-          onKeepUnassigned={(prompt) => void parkSourceCandidate(prompt)}
+            void attention.confirmSourceCandidate(prompt, displayName, sourceType)}
+          onKeepUnassigned={(prompt) => void attention.parkSourceCandidate(prompt)}
           onViewDocument={viewPromptDocument}
         />
       ) : null}

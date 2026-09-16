@@ -7,6 +7,7 @@ import type {
   MoneyOverview,
   RecentActivitySummary,
   RelationshipCandidateSummary,
+  ReviewItemDetail,
   ReviewItemSummary,
   ReviewJobSummary,
   ReviewMutationOutcome,
@@ -15,6 +16,8 @@ import {
   button,
   buttons,
   click,
+  committedReviewDetail,
+  committedReviewItem,
   container,
   createApi,
   deferred,
@@ -226,6 +229,36 @@ describe("App review and overview orchestration", () => {
 
     expect(api.removeReviewRecord).toHaveBeenCalledWith("review-1", 1);
     expect(container.textContent).toContain("Record removed");
+    expect(container.textContent).toContain("Nothing needs your check");
+  });
+
+  it("acknowledges a check on an already-added record without offering edit or remove", async () => {
+    const api = createApi({
+      getReviewDetail: vi.fn(
+        async (): Promise<ReviewItemDetail | null> => committedReviewDetail,
+      ),
+      listReviewItems: vi.fn()
+        .mockResolvedValueOnce([committedReviewItem])
+        .mockResolvedValue([]),
+    });
+    await mount(api, "review");
+
+    expect(container.textContent).toContain("Re-parsed values differ");
+    await click("Review details");
+
+    expect(button("Acknowledge")).toBeDefined();
+    expect(buttons("Edit record")).toHaveLength(0);
+    expect(buttons("Remove record")).toHaveLength(0);
+    expect(api.listRelationshipCandidates).not.toHaveBeenCalled();
+
+    await click("Acknowledge");
+    await act(async () => {
+      await settle();
+      await settle();
+    });
+
+    expect(api.acknowledgeReviewItem).toHaveBeenCalledWith("review-4", 1);
+    expect(container.textContent).toContain("Check cleared");
     expect(container.textContent).toContain("Nothing needs your check");
   });
 

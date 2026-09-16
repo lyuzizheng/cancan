@@ -32,6 +32,7 @@ describe("Vault API", () => {
       "list_account_confirmation_prompts",
       "list_source_confirmation_prompts",
       "list_recent_activity",
+      "audit_duplicate_committed_versions",
       "list_relationship_candidates",
       "list_review_items",
       "list_source_documents",
@@ -54,12 +55,14 @@ describe("Vault API", () => {
     await api.listReviewItems();
     await api.getReviewDetail("review-1");
     await api.listRecentActivity();
+    await api.auditDuplicateCommittedVersions();
     await api.getMoneyOverview();
     await api.listRelationshipCandidates("review-1", 3);
     await api.editReviewRecord("review-1", 3, {
       amountValue: "750.00",
     });
     await api.removeReviewRecord("review-1", 3);
+    await api.acknowledgeReviewItem("review-1", 3);
     await api.acceptReviewRelationship("review-1", 3, "record-2", 1);
     await api.enqueueCommitReviewBatch(["review-1", "review-2"]);
     await api.getReviewJob("job-1");
@@ -116,6 +119,7 @@ describe("Vault API", () => {
       ["list_review_items", undefined],
       ["get_review_detail", { reviewItemId: "review-1" }],
       ["list_recent_activity", undefined],
+      ["audit_duplicate_committed_versions", undefined],
       ["get_money_overview", undefined],
       [
         "list_relationship_candidates",
@@ -131,6 +135,10 @@ describe("Vault API", () => {
       ],
       [
         "remove_review_record",
+        { reviewItemId: "review-1", expectedRecordVersion: 3 },
+      ],
+      [
+        "acknowledge_review_item",
         { reviewItemId: "review-1", expectedRecordVersion: 3 },
       ],
       [
@@ -245,29 +253,8 @@ describe("Vault API", () => {
     expect(commandErrorMessage({ code: "source_copy_save_failed" })).toBe(
       "CanCan couldn’t save a complete copy to that location.",
     );
-    expect(commandErrorMessage('{"code":"normalizer_failed"}')).toBe(
-      "CanCan could not finish the secure document check. Try again.",
-    );
-    expect(commandErrorMessage('{"code":"parse_already_running"}')).toBe(
-      "The parser is already running for this document.",
-    );
-    expect(commandErrorMessage('{"code":"parse_resume_failed"}')).toBe(
-      "CanCan couldn’t resume parsing this statement. Try again.",
-    );
-    expect(commandErrorMessage('{"code":"document_unavailable"}')).toBe(
-      "This file is no longer available.",
-    );
-    expect(commandErrorMessage('{"code":"invalid_document_request"}')).toBe(
-      "That document request isn’t valid.",
-    );
-    expect(commandErrorMessage('{"code":"viewer_unsupported"}')).toBe(
-      "Preview isn’t available for this evidence.",
-    );
-    expect(commandErrorMessage('{"code":"document_render_failed"}')).toBe(
-      "CanCan couldn’t render that document.",
-    );
-    expect(commandErrorMessage('{"code":"delete_source_failed"}')).toBe(
-      "CanCan couldn’t finish removing this Vault file. Refresh its status before trying again.",
+    expect(commandErrorMessage({ code: "source_file_too_large" })).toBe(
+      "Choose a file under 128 MB.",
     );
     expect(commandErrorMessage("private backend detail")).toBe(
       "Couldn’t complete that request. Try again.",

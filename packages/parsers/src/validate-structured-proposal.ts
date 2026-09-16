@@ -1,12 +1,41 @@
+/** Byte cap for a provider raw-record JSON payload; shared with testing.ts. */
+export const MAX_RAW_RECORD_JSON_BYTES = 16_384;
+
+/** Byte cap for the semantic document key. */
+export const MAX_SEMANTIC_KEY_BYTES = 256;
+
 import type {
   CanonicalExternalRecordInput,
   ExtractionBundle,
   ProviderRecordContract,
   SourceObservation,
+  StructuredDocumentIdentity,
   StructuredParseProposal,
   StructuredProposalValidation,
   ValidatedExternalRecord,
 } from "./contracts";
+
+/**
+ * Canonical semantic document key. Byte-identical to the trusted host
+ * derivation (`derive_semantic_document_key` in
+ * `apps/desktop/src-tauri/src/runtime/mod.rs`):
+ * `providerKey` + (`:${providerRootId}` when present) + `:${statementId}`.
+ * Returns `undefined` when no canonical identity exists (missing/empty
+ * statement ID); callers must reject rather than fall back.
+ */
+export function semanticDocumentKey(
+  document: StructuredDocumentIdentity,
+): string | undefined {
+  const statementId = document.statementId;
+  if (statementId === undefined || statementId === null || statementId.length === 0) {
+    return undefined;
+  }
+  const providerRootId = document.providerRootId;
+  if (providerRootId === undefined || providerRootId === null) {
+    return `${document.providerKey}:${statementId}`;
+  }
+  return `${document.providerKey}:${providerRootId}:${statementId}`;
+}
 
 function normalized(value: string): string {
   return value.trim().replace(/\s+/g, " ");
@@ -71,7 +100,121 @@ function nonTableTextGroundsValue(text: string, expected: string): boolean {
   return text.includes(expected);
 }
 
-function rawRecordIsGrounded(values: string[], bundle: ExtractionBundle): boolean {
+export const MAX_LOCATOR_ROW_SPAN = 4;
+
+export type ParsedRecordLocator =
+  | { kind: "absent" }
+  | { kind: "malformed" }
+  | { kind: "valid"; page?: number; row: number; rowEnd?: number };
+
+function isLocatorCoordinate(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+
+/**
+ * Parses `raw.locator` into a row range the validator narrows grounding to.
+ * Shape: `{ page?: number, row: number, rowEnd?: number }` with
+ * `0 <= rowEnd - row <= MAX_LOCATOR_ROW_SPAN`. `row` is required: a rowless
+ * locator is malformed and rejects the record. Identity ignores the locator.
+ */
+export function parseRecordLocator(raw: Record<string, unknown>): ParsedRecordLocator {
+  const locator = raw.locator;
+  if (locator === undefined) {
+    return { kind: "absent" };
+  }
+  if (locator === null || Array.isArray(locator) || typeof locator !== "object") {
+    return { kind: "malformed" };
+  }
+  const { page, row, rowEnd } = locator as Record<string, unknown>;
+  if (page !== undefined && !isLocatorCoordinate(page)) {
+    return { kind: "malformed" };
+  }
+  if (!isLocatorCoordinate(row)) {
+    return { kind: "malformed" };
+  }
+  const startRow = row as number;
+  if (rowEnd !== undefined) {
+    if (
+      !isLocatorCoordinate(rowEnd) ||
+      (rowEnd as number) < startRow ||
+      (rowEnd as number) - startRow > MAX_LOCATOR_ROW_SPAN
+    ) {
+      return { kind: "malformed" };
+    }
+  }
+  return {
+    kind: "valid",
+    ...(page === undefined ? {} : { page }),
+    row: startRow,
+    ...(rowEnd === undefined ? {} : { rowEnd: rowEnd as number }),
+  };
+}
+
+function locatorMatchesObservation(
+  locator: { page?: number; row: number; rowEnd?: number },
+  observation: SourceObservation,
+): boolean {
+  if (observation.row === undefined) {
+    return false;
+  }
+  if (
+    locator.page !== undefined &&
+    observation.page !== undefined &&
+    observation.page !== locator.page
+  ) {
+    return false;
+  }
+  const rowEnd = locator.rowEnd ?? locator.row;
+  return observation.row >= locator.row && observation.row <= rowEnd;
+}
+
+/**
+ * Observations inside a record's locator range, merged into one grounding
+ * group. Empty when the locator is absent/malformed or points at a range with
+ * no observations. Pageless observations (CSV rows) match any locator page.
+ */
+export function groundingRegionObservations(
+  bundle: ExtractionBundle,
+  raw: Record<string, unknown>,
+): SourceObservation[] {
+  const locator = parseRecordLocator(raw);
+  if (locator.kind !== "valid") {
+    return [];
+  }
+  return bundle.observations.filter((observation) =>
+    locatorMatchesObservation(locator, observation),
+  );
+}
+
+function observationMatchesValue(observation: SourceObservation, expected: string): boolean {
+  const text = normalized(observation.text);
+  return (
+    text === expected ||
+    (observation.kind !== "table_cell" && nonTableTextGroundsValue(text, expected))
+  );
+}
+
+function groundingHitsForValues(
+  observations: SourceObservation[],
+  values: string[],
+): SourceObservation[] | undefined {
+  const used: SourceObservation[] = [];
+  for (const value of values) {
+    const expected = normalized(value);
+    const hit = observations.find((observation) => observationMatchesValue(observation, expected));
+    if (hit === undefined) {
+      return undefined;
+    }
+    used.push(hit);
+  }
+  return used;
+}
+
+function rawRecordIsGrounded(
+  values: string[],
+  bundle: ExtractionBundle,
+  raw: Record<string, unknown>,
+): boolean {
   if (
     values.length === 0 ||
     values.some((value) => typeof value !== "string" || normalized(value).length === 0)
@@ -79,39 +222,69 @@ function rawRecordIsGrounded(values: string[], bundle: ExtractionBundle): boolea
     return false;
   }
 
+  const locator = parseRecordLocator(raw);
+  if (locator.kind === "malformed") {
+    return false;
+  }
+  if (locator.kind === "valid") {
+    const region = groundingRegionObservations(bundle, raw);
+    if (region.length === 0) {
+      return false;
+    }
+    const used = groundingHitsForValues(region, values);
+    if (used === undefined) {
+      return false;
+    }
+    if (region.some(({ kind }) => kind === "table_cell")) {
+      const anchored = used.some(
+        (observation) => observation.kind === "table_cell" && observation.row === locator.row,
+      );
+      if (!anchored) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const pool = bundle.observations.some((observation) => observation.row !== undefined)
+    ? bundle.observations.filter((observation) => observation.row !== undefined)
+    : bundle.observations;
   const groups = new Map<string, SourceObservation[]>();
-  for (const observation of bundle.observations) {
+  for (const observation of pool) {
     const key = observationGroupKey(observation);
     const observations = groups.get(key) ?? [];
     observations.push(observation);
     groups.set(key, observations);
   }
 
-  return [...groups.values()].some((observations) =>
-    values.every((value) => {
-      const expected = normalized(value);
-      return observations.some((observation) => {
-        const text = normalized(observation.text);
-        return (
-          text === expected ||
-          (observation.kind !== "table_cell" && nonTableTextGroundsValue(text, expected))
-        );
-      });
-    }),
-  );
+  return [...groups.values()].some((observations) => groundingHitsForValues(observations, values) !== undefined);
 }
 
-function stableJson(value: unknown): string {
+/**
+ * Deterministic JSON serialization for financial identity hashing. Mirrors
+ * `JSON.stringify` value semantics (object `undefined` members omitted, array
+ * `undefined` holes become `null`, top-level `undefined` unrepresentable) but
+ * orders object keys by UTF-16 code-unit comparison, which — unlike
+ * `localeCompare` — is stable across ICU versions and never collapses distinct
+ * strings (e.g. `ﬀ` vs `ff`) to equal.
+ */
+function stableJson(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
   if (Array.isArray(value)) {
-    return `[${value.map(stableJson).join(",")}]`;
+    return `[${value.map((entry) => stableJson(entry) ?? "null").join(",")}]`;
   }
   if (value && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`);
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .flatMap(([key, entry]) => {
+        const encoded = stableJson(entry);
+        return encoded === undefined ? [] : [`${JSON.stringify(key)}:${encoded}`];
+      });
     return `{${entries.join(",")}}`;
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value) as string | undefined;
 }
 
 function canonicalFieldsMatch(
@@ -199,6 +372,13 @@ export async function validateStructuredProposal(input: {
   proposal: StructuredParseProposal;
   recordContract: ProviderRecordContract;
 }): Promise<StructuredProposalValidation> {
+  const semanticKeyBytes = new TextEncoder().encode(input.semanticDocumentKey).length;
+  if (input.semanticDocumentKey.length === 0 || semanticKeyBytes > MAX_SEMANTIC_KEY_BYTES) {
+    return { status: "invalid", errors: [{ code: "semantic_document_key_invalid" }] };
+  }
+  if (semanticDocumentKey(input.proposal.document) !== input.semanticDocumentKey) {
+    return { status: "invalid", errors: [{ code: "semantic_document_key_mismatch" }] };
+  }
   const recordInputs = [
     ...input.proposal.openingSnapshots,
     ...input.proposal.records,
@@ -244,7 +424,7 @@ export async function validateStructuredProposal(input: {
       continue;
     }
 
-    if (!rawRecordIsGrounded(inspection.groundingValues, input.extractionBundle)) {
+    if (!rawRecordIsGrounded(inspection.groundingValues, input.extractionBundle, record.raw)) {
       errors.push({ proposalRecordId: record.proposalRecordId, code: "raw_record_not_grounded" });
       continue;
     }
@@ -262,10 +442,15 @@ export async function validateStructuredProposal(input: {
       errors.push({ proposalRecordId: record.proposalRecordId, code: "canonical_record_mismatch" });
       continue;
     }
+    const projectedIdentity = stableJson(inspection.identityProjection);
+    if (projectedIdentity === undefined) {
+      errors.push({ proposalRecordId: record.proposalRecordId, code: "canonical_record_mismatch" });
+      continue;
+    }
 
     const identity = record.providerRecordId
       ? `provider:${input.proposal.document.providerKey}:${record.providerRecordId}`
-      : await sha256(`${input.semanticDocumentKey}:${stableJson(inspection.identityProjection)}`);
+      : await sha256(`${input.semanticDocumentKey}:${projectedIdentity}`);
     const stableRecordKey = record.providerRecordId
       ? identity
       : `${identity}:${(occurrenceByIdentity.get(identity) ?? 0) + 1}`;

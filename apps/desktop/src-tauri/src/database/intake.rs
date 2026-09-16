@@ -183,22 +183,6 @@ impl ManualImportStore {
         )?)
     }
 
-    #[cfg(test)]
-    pub(crate) fn persist_captured_import(
-        &mut self,
-        input: &SourceDocumentImport<'_>,
-        stored: &StoredFile,
-        restore_deleted_document_id: Option<&str>,
-    ) -> StoreResult<SourceDocumentImportOutcome> {
-        Ok(persist_import(
-            &mut self.connection,
-            input,
-            stored,
-            restore_deleted_document_id,
-            None,
-        )?)
-    }
-
     pub(crate) fn intake_source_capture_plan(
         &mut self,
         input: &SourceDocumentImport<'_>,

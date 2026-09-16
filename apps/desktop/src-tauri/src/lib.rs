@@ -3,12 +3,14 @@ mod local_inbox;
 #[cfg(test)]
 mod presentation_types;
 mod runtime;
+mod source_file;
 mod source_observations;
 mod vault;
 mod viewer;
 
 use runtime::{
-    VaultRuntime, accept_review_relationship, choose_local_inbox_root, confirm_source_candidate,
+    VaultRuntime, accept_review_relationship, acknowledge_review_item,
+    audit_duplicate_committed_versions, choose_local_inbox_root, confirm_source_candidate,
     create_vault, decide_candidate_accounts, delete_source_document, disable_local_inbox,
     edit_review_record, enqueue_commit_review_batch, forget_vault_on_this_mac, get_money_overview,
     get_review_detail, get_review_job, import_source_document, list_account_confirmation_prompts,
@@ -71,6 +73,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             vault_status,
             vault_access_status,
+            audit_duplicate_committed_versions,
             choose_local_inbox_root,
             local_inbox_status,
             disable_local_inbox,
@@ -109,6 +112,7 @@ pub fn run() {
             list_relationship_candidates,
             edit_review_record,
             remove_review_record,
+            acknowledge_review_item,
             accept_review_relationship,
             enqueue_commit_review_batch,
             get_review_job,

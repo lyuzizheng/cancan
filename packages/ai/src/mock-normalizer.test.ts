@@ -63,19 +63,64 @@ function providerFixtureInput(providerKey: string, documentType: string) {
 
 function providerPdfFixtureInput(providerKey: string, documentType: string) {
   const input = providerFixtureInput(providerKey, documentType);
-  const text = input.extractionBundle.observations.map(({ text: value }) => value).join("\n");
-  input.extractionBundle.observations = [
-    {
-      id: "pdf-page-1-native-text",
+  const rows = new Map<number, string[]>();
+  const otherObservations: Array<{ id: string; text: string }> = [];
+
+  for (const observation of input.extractionBundle.observations) {
+    if (observation.kind === "table_cell" && observation.row !== undefined) {
+      const line = rows.get(observation.row) ?? [];
+      line.push(observation.text);
+      rows.set(observation.row, line);
+    } else {
+      otherObservations.push({ id: observation.id, text: observation.text });
+    }
+  }
+
+  const pdfObservations: Array<{
+    id: string;
+    kind: "native_text";
+    page: number;
+    row: number;
+    textSpan: { start: 0; end: number };
+    text: string;
+    engine: string;
+    engineVersion: string;
+  }> = [];
+
+  for (const [row, cellTexts] of rows.entries()) {
+    const text = cellTexts.join(" ");
+    pdfObservations.push({
+      id: `pdf-page-1-native-text-${row}`,
       kind: "native_text",
       page: 1,
+      row,
       textSpan: { start: 0, end: text.length },
       text,
       engine: "pdfkit",
-      engineVersion: "macos-page-string-v1",
-    },
-  ];
-  input.extractionBundle.metadata.observationCount = input.extractionBundle.observations.length;
+      engineVersion: "macos-page-string-v2",
+    });
+  }
+
+  let nextRow = rows.size + 1;
+  for (const other of otherObservations) {
+    pdfObservations.push({
+      id: `pdf-page-1-native-text-${nextRow}`,
+      kind: "native_text",
+      page: 1,
+      row: nextRow,
+      textSpan: { start: 0, end: other.text.length },
+      text: other.text,
+      engine: "pdfkit",
+      engineVersion: "macos-page-string-v2",
+    });
+    nextRow++;
+  }
+
+  input.extractionBundle.observations = pdfObservations;
+  input.extractionBundle.metadata = {
+    extractionVersion: "native-observations-v2",
+    observationCount: pdfObservations.length,
+  };
   return input;
 }
 
@@ -98,7 +143,7 @@ describe("mock document normalizer", () => {
       documentType: "transfer_export",
       packageId: "synthetic/bank_transfer_export@1",
       normalizerRuntime: "single-pass-mock",
-      inputStrategy: "native-observations-v1",
+      inputStrategy: "native-observations-v2",
       modelProvider: "cancan-deterministic-mock",
       model: "fixture-v1",
       reviewOnly: true,
@@ -108,6 +153,7 @@ describe("mock document normalizer", () => {
       ]),
       ocrEngines: [],
     });
+    expect(result.semanticDocumentKey).toBe("synthetic-bank:transfer-2026-07");
     expect(
       [
         ...result.proposal.openingSnapshots,
@@ -165,7 +211,7 @@ describe("mock document normalizer", () => {
         validatorVersion: "1.0.0",
         normalizerRuntime: "single-pass-mock",
         toolContractVersion: "1.0.0",
-        inputStrategy: "native-observations-v1",
+        inputStrategy: "native-observations-v2",
         modelProvider: "cancan-deterministic-mock",
         model: "fixture-v1",
         reviewOnly: true,
@@ -176,7 +222,7 @@ describe("mock document normalizer", () => {
         ocrEngines: [],
       });
       expect(result.profile.id).toBe(
-        `mock:${packageId}:native-observations-v1:extract-native_text-synthetic-provider-fixture-1+extract-table_cell-synthetic-provider-fixture-1`,
+        `mock:${packageId}:native-observations-v2:extract-native_text-synthetic-provider-fixture-1+extract-table_cell-synthetic-provider-fixture-1`,
       );
     },
   );
@@ -207,9 +253,9 @@ describe("mock document normalizer", () => {
         throw new Error("expected the native PDF fixture to classify");
       }
       expect(result.profile).toMatchObject({
-        id: `mock:${packageId}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1`,
+        id: `mock:${packageId}:native-observations-v2:extract-native_text-pdfkit-macos-page-string-v2`,
         extractionEngines: [
-          { kind: "native_text", engine: "pdfkit", version: "macos-page-string-v1" },
+          { kind: "native_text", engine: "pdfkit", version: "macos-page-string-v2" },
         ],
         ocrEngines: [],
       });
@@ -254,16 +300,17 @@ describe("mock document normalizer", () => {
           sourceDocumentId: "document-unknown",
           fileSha256: "b".repeat(64),
           mimeType: "application/pdf",
-          metadata: { extractionVersion: "native-observations-v1", observationCount: 1 },
+          metadata: { extractionVersion: "native-observations-v2", observationCount: 1 },
           observations: [
             {
-              id: "pdf-page-1-native-text",
+              id: "pdf-page-1-native-text-1",
               kind: "native_text",
               page: 1,
+              row: 1,
               textSpan: { start: 0, end: 21 },
               text: "unknown provider text",
               engine: "pdfkit",
-              engineVersion: "macos-page-string-v1",
+              engineVersion: "macos-page-string-v2",
             },
           ],
         },

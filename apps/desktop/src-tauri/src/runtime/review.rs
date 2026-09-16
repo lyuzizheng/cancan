@@ -312,8 +312,12 @@ impl VaultRuntime {
                 serde_json::to_vec(&result).map_err(|_| RuntimeError::new("normalizer_failed"))?,
             )
         );
-        let (profile, proposal) = match result {
-            NormalizerResult::Classified { profile, proposal } => (*profile, proposal),
+        let (profile, proposal, sidecar_key) = match result {
+            NormalizerResult::Classified {
+                profile,
+                proposal,
+                semantic_document_key,
+            } => (*profile, proposal, semantic_document_key),
             NormalizerResult::NeedsAttention { reason } => {
                 let reason = if reason == "unsupported_document" {
                     "unsupported_document"
@@ -328,6 +332,16 @@ impl VaultRuntime {
             }
         };
         let Some(statement_id) = proposal.document.statement_id.as_deref() else {
+            return self.finish_normalizer_outcome_with_job(
+                parse_job,
+                vault_session_generation,
+                SourceDocumentRoutingOutcome::needs_attention(
+                    document_id,
+                    "classification_uncertain",
+                ),
+            );
+        };
+        if statement_id.is_empty() || statement_id.len() > 256 {
             return self.finish_normalizer_outcome_with_job(
                 parse_job,
                 vault_session_generation,
@@ -357,19 +371,21 @@ impl VaultRuntime {
                 ),
             );
         }
-        let semantic_document_key = match proposal.document.provider_root_id.as_deref() {
-            Some(root_id) => format!(
-                "{}:{}:{}",
-                proposal.document.provider_key.as_str(),
-                root_id,
-                statement_id
-            ),
-            None => format!(
-                "{}:{}",
-                proposal.document.provider_key.as_str(),
-                statement_id
-            ),
-        };
+        let semantic_document_key = super::derive_semantic_document_key(
+            proposal.document.provider_key.as_str(),
+            proposal.document.provider_root_id.as_deref(),
+            statement_id,
+        );
+        if semantic_document_key.len() > 256 || sidecar_key != semantic_document_key {
+            return self.finish_normalizer_outcome_with_job(
+                parse_job,
+                vault_session_generation,
+                SourceDocumentRoutingOutcome::needs_attention(
+                    document_id,
+                    "classification_uncertain",
+                ),
+            );
+        }
         let account_ids = (0..proposal.accounts.len())
             .map(|_| random_identifier("account"))
             .collect::<Vec<_>>();
@@ -407,38 +423,26 @@ impl VaultRuntime {
                 .and_then(|period| period.to.as_deref()),
         };
         self.require_parse_vault_session(vault_session_generation)?;
+        // Classification and its structured parse commit as one unit: the parse
+        // payload is derived from the routed outcome inside the same store
+        // transaction, so a crash or a rejected proposal cannot leave a
+        // classified document that has no parse record.
         let outcome = {
             let mut store = self.store()?;
             store
                 .as_mut()
                 .ok_or_else(|| RuntimeError::new("vault_locked"))?
-                .apply_trusted_classification_for_parse_job(&classification, parse_job)
-                .map_err(|_| RuntimeError::new("classification_failed"))?
-        };
-        if outcome.status != crate::database::SourceDocumentRoutingStatus::Routed {
-            return self.finish_normalizer_outcome_with_job(
-                parse_job,
-                vault_session_generation,
-                outcome,
-            );
-        }
-        let parse = validated_structured_parse_input(&proposal, &profile, &outcome.account_ids)
-            .ok_or_else(|| RuntimeError::new("normalizer_failed"))?;
-        self.require_parse_vault_session(vault_session_generation)?;
-        {
-            let mut store = self.store()?;
-            store
-                .as_mut()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
-                .persist_validated_structured_parse_for_claimed_job(
-                    document_id,
-                    &parse,
+                .apply_classification_and_parse_for_claimed_job(
+                    &classification,
                     parse_job,
                     &extraction_bundle.file_sha256,
                     &output_hash,
+                    |outcome| {
+                        validated_structured_parse_input(&proposal, &profile, &outcome.account_ids)
+                    },
                 )
-                .map_err(|_| RuntimeError::new("classification_failed"))?;
-        }
+                .map_err(|_| RuntimeError::new("classification_failed"))?
+        };
         self.finish_normalizer_outcome_with_job(parse_job, vault_session_generation, outcome)
     }
 
@@ -465,22 +469,6 @@ impl VaultRuntime {
             self.require_vault_session(vault_session_generation)?;
         }
         Ok(())
-    }
-
-    #[cfg(test)]
-    pub(super) fn seed_money_source(
-        &self,
-        id: &str,
-        provider_key: &str,
-        display_name: &str,
-        source_type: &str,
-    ) -> Result<(), RuntimeError> {
-        let store = self.store()?;
-        store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .seed_money_source(id, provider_key, display_name, source_type)
-            .map_err(|_| RuntimeError::new("seed_failed"))
     }
 }
 

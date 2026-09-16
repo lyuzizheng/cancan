@@ -74,7 +74,7 @@ async function authorize(
       type: "error",
       code:
         error instanceof GmailOAuthExecutionError &&
-        error.message === "Gmail request failed."
+        error.failureKind === "request_failed"
           ? "gmail_request_failed"
           : "gmail_authorization_failed",
     });

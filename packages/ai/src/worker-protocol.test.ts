@@ -70,6 +70,68 @@ describe("normalizer worker protocol", () => {
     });
   });
 
+  it("accepts native-observations-v2 and row-scoped native_text and ocr_text", () => {
+    const v2Native = validCommand();
+    v2Native.extractionBundle.metadata.extractionVersion = "native-observations-v2";
+    v2Native.extractionBundle.mimeType = "application/pdf";
+    v2Native.extractionBundle.observations = [
+      {
+        id: "pdf-page-1-native-text-1",
+        kind: "native_text",
+        page: 1,
+        row: 1,
+        text: "statement line",
+        textSpan: { start: 0, end: 14 },
+        engine: "pdfkit",
+        engineVersion: "macos-page-string-v2",
+      },
+      {
+        id: "pdf-page-1-ocr-text-1",
+        kind: "ocr_text",
+        page: 1,
+        row: 1,
+        text: "ocr statement line",
+        boundingBox: { x: 0.1, y: 0.2, width: 0.5, height: 0.1 },
+        confidence: 0.95,
+        engine: "apple-vision",
+        engineVersion: "revision-3-accurate",
+      },
+    ] as never;
+    v2Native.extractionBundle.metadata.observationCount = 2;
+
+    expect(parseWorkerCommand(v2Native)).toMatchObject({
+      type: "normalize",
+      documentId: "document-fixture",
+    });
+
+    const invalidRow = validCommand();
+    invalidRow.extractionBundle.mimeType = "application/pdf";
+    invalidRow.extractionBundle.observations[0] = {
+      id: "pdf-page-1-native-text-1",
+      kind: "native_text",
+      page: 1,
+      row: 0,
+      text: "bad row",
+      textSpan: { start: 0, end: 7 },
+      engine: "pdfkit",
+      engineVersion: "macos-page-string-v2",
+    } as never;
+    expect(parseWorkerCommand(invalidRow)).toBeUndefined();
+
+    const imageWithRow = validCommand();
+    imageWithRow.extractionBundle.mimeType = "image/png";
+    imageWithRow.extractionBundle.observations[0] = {
+      id: "image-ocr-text-1",
+      kind: "ocr_text",
+      row: 1,
+      text: "image ocr",
+      confidence: 0.99,
+      engine: "apple-vision",
+      engineVersion: "revision-3-accurate",
+    } as never;
+    expect(parseWorkerCommand(imageWithRow)).toBeUndefined();
+  });
+
   it("rejects observation kinds without a current producer", () => {
     const command = validCommand();
     command.extractionBundle.observations[0] = {

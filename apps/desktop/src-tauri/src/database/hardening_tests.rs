@@ -203,7 +203,7 @@ fn reopen_requeues_an_unexpired_reconcile_job() {
         .expect("seed interrupted reconcile job");
     drop(store);
 
-    let mut reopened =
+    let reopened =
         ManualImportStore::open_existing(root.path(), Zeroizing::new(KEY)).expect("reopen Vault");
     assert_eq!(
         reopened
@@ -295,9 +295,12 @@ fn stale_parse_claim_cannot_change_a_newer_attempt() {
             [&first.job_id],
         )
         .expect("expire first lease");
+    store
+        .recover_expired_jobs()
+        .expect("recover expired parse job");
     let retry = store
         .queued_parse_document_jobs()
-        .expect("recover expired parse job")
+        .expect("read requeued parse job")
         .pop()
         .expect("requeued parse job");
     let second = store
@@ -325,10 +328,24 @@ fn stale_parse_claim_cannot_change_a_newer_attempt() {
         statement_period_from: Some("2026-07-01"),
         statement_period_to: Some("2026-07-31"),
     };
+    let mut parse_built = false;
     assert!(
         store
-            .apply_trusted_classification_for_parse_job(&classification, &first)
+            .apply_classification_and_parse_for_claimed_job(
+                &classification,
+                &first,
+                "input-hash",
+                "output-hash",
+                |_| {
+                    parse_built = true;
+                    None
+                },
+            )
             .is_err()
+    );
+    assert!(
+        !parse_built,
+        "a stale claim must be rejected before any parse payload is built"
     );
     assert!(
         store
@@ -360,6 +377,175 @@ fn stale_parse_claim_cannot_change_a_newer_attempt() {
         )
         .expect("newer lease remains active");
     assert_eq!(lease_owner, second.claim_token);
+}
+
+#[test]
+fn a_rejected_parse_payload_rolls_back_the_classification() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let source_path = root.path().join("statement.pdf");
+    fs::write(&source_path, b"%PDF atomic classification").expect("write fixture");
+    let mut store = open_store(root.path());
+    store
+        .register_import(
+            &import(&source_path, "document-atomic", "audit-import"),
+            None,
+        )
+        .expect("import document");
+    let job = store
+        .queued_parse_document_jobs()
+        .expect("read parse job")
+        .pop()
+        .expect("queued parse job");
+    let claim = store
+        .start_parse_document_job(&job)
+        .expect("claim attempt")
+        .expect("attempt claimed");
+    let accounts = [TrustedAccountCandidate {
+        account_id: "account-atomic",
+        account_type: "deposit_account",
+        currency: Some("SGD"),
+        display_name: "Checking",
+        masked_identifier: None,
+        provider_account_id: Some("checking-atomic"),
+    }];
+    let classification = TrustedDocumentClassification {
+        accounts: &accounts,
+        audit_id: "audit-atomic",
+        document_id: "document-atomic",
+        document_type: Some("account_statement"),
+        provider_key: "dbs",
+        provider_root_id: None,
+        semantic_document_key: "dbs:checking:2026-07",
+        statement_period_from: Some("2026-07-01"),
+        statement_period_to: Some("2026-07-31"),
+    };
+    assert!(
+        store
+            .apply_classification_and_parse_for_claimed_job(
+                &classification,
+                &claim,
+                "input-hash-atomic",
+                "output-hash-atomic",
+                |_| None,
+            )
+            .is_err()
+    );
+
+    let identity: (Option<String>, Option<String>) = store
+        .connection
+        .query_row(
+            "SELECT money_source_id, semantic_document_key \
+             FROM source_documents WHERE id = 'document-atomic'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("document identity");
+    assert_eq!(
+        identity,
+        (None, None),
+        "a parse payload that cannot be built must leave the document unclassified"
+    );
+    let accounts_created: i64 = store
+        .connection
+        .query_row("SELECT count(*) FROM accounts", [], |row| row.get(0))
+        .expect("account count");
+    assert_eq!(accounts_created, 0);
+    let audit_entries: i64 = store
+        .connection
+        .query_row(
+            "SELECT count(*) FROM audit_log WHERE action = 'trusted_classification_applied'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("classification audit count");
+    assert_eq!(audit_entries, 0);
+    let status: String = store
+        .connection
+        .query_row(
+            "SELECT status FROM jobs WHERE id = ?1",
+            [&claim.job_id],
+            |row| row.get(0),
+        )
+        .expect("job status");
+    assert_eq!(
+        status, "running",
+        "the claim survives the rollback so the attempt can still finish or fail"
+    );
+}
+
+#[test]
+fn a_claim_that_lost_its_lease_cannot_park_a_source_candidate() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let source_path = root.path().join("statement.pdf");
+    fs::write(&source_path, b"%PDF stale candidate").expect("write fixture");
+    let mut store = open_store(root.path());
+    store
+        .register_import(
+            &import(&source_path, "document-stale-candidate", "audit-import"),
+            None,
+        )
+        .expect("import document");
+    let job = store
+        .queued_parse_document_jobs()
+        .expect("read parse job")
+        .pop()
+        .expect("queued parse job");
+    let first = store
+        .start_parse_document_job(&job)
+        .expect("claim first attempt")
+        .expect("first attempt claimed");
+    store
+        .connection
+        .execute(
+            "UPDATE jobs SET lease_until = datetime('now', '-1 second') WHERE id = ?1",
+            [&first.job_id],
+        )
+        .expect("expire first lease");
+    store
+        .recover_expired_jobs()
+        .expect("recover expired parse job");
+
+    let accounts = [TrustedAccountCandidate {
+        account_id: "account-stale-candidate",
+        account_type: "deposit_account",
+        currency: Some("SGD"),
+        display_name: "Checking",
+        masked_identifier: None,
+        provider_account_id: Some("checking-stale-candidate"),
+    }];
+    let classification = TrustedDocumentClassification {
+        accounts: &accounts,
+        audit_id: "audit-stale-candidate",
+        document_id: "document-stale-candidate",
+        document_type: Some("account_statement"),
+        provider_key: "hsbc",
+        provider_root_id: None,
+        semantic_document_key: "hsbc:checking:2026-07",
+        statement_period_from: Some("2026-07-01"),
+        statement_period_to: Some("2026-07-31"),
+    };
+    assert!(
+        store
+            .apply_classification_and_parse_for_claimed_job(
+                &classification,
+                &first,
+                "input-hash-stale",
+                "output-hash-stale",
+                |_| None,
+            )
+            .is_err()
+    );
+
+    let candidates: i64 = store
+        .connection
+        .query_row("SELECT count(*) FROM money_source_candidates", [], |row| {
+            row.get(0)
+        })
+        .expect("candidate count");
+    assert_eq!(
+        candidates, 0,
+        "a lease that expired before the parking transaction must not attach a candidate"
+    );
 }
 
 #[test]

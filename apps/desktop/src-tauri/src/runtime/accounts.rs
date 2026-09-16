@@ -18,6 +18,7 @@ pub(crate) async fn list_account_confirmation_prompts(
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct DecideCandidateAccountsRequest {
     decisions: Vec<CandidateAccountDecisionInput>,
     money_source_id: String,

@@ -1,3 +1,7 @@
+// Optional cloud image OCR adapter and transport executor (spec 0004). The
+// adapter plus injected-fetch executor are approved; credential storage,
+// app/Tauri/sidecar/UI wiring, request logging, live provider calls, and
+// provider-specific parsing are explicitly out of scope.
 export const CLOUD_OCR_PROMPT_VERSION = "cloud-ocr-transcription-v1";
 
 export const CLOUD_OCR_TRANSCRIPTION_PROMPT =

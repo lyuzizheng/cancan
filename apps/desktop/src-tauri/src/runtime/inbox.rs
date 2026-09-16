@@ -23,6 +23,7 @@ impl VaultRuntime {
             .local_inbox_bookmarks
             .save(&bookmark)
             .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?;
+        self.invalidate_local_inbox_bookmark();
         *self
             .inner
             .local_inbox_access
@@ -38,15 +39,14 @@ impl VaultRuntime {
     }
 
     pub(crate) fn local_inbox_status(&self) -> Result<LocalInboxStatus, RuntimeError> {
-        let configured = self
-            .inner
-            .local_inbox_bookmarks
-            .load()
-            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?
-            .is_some();
+        let configured = self.local_inbox_bookmark()?.is_some();
         let vault_status = self.status()?;
         if configured
             && vault_status == VaultStatus::Unlocked
+            && !self
+                .inner
+                .local_inbox_needs_reauthorization
+                .load(Ordering::SeqCst)
             && !self
                 .inner
                 .local_inbox_access
@@ -101,6 +101,7 @@ impl VaultRuntime {
             .local_inbox_bookmarks
             .delete()
             .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?;
+        self.invalidate_local_inbox_bookmark();
         self.clear_local_inbox_access();
         self.inner
             .local_inbox_needs_reauthorization
@@ -111,12 +112,23 @@ impl VaultRuntime {
         self.local_inbox_status()
     }
 
-    pub(super) fn queued_local_inbox_parse_documents(
-        &self,
-    ) -> Result<Vec<ParseDocumentJob>, RuntimeError> {
+    /// Requeues jobs whose lease expired so this pump pass can retry them.
+    /// Recovery is a write, so it belongs here rather than in the queue reads.
+    pub(super) fn recover_expired_jobs(&self) -> Result<(), RuntimeError> {
         let mut store = self.store()?;
         store
             .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .recover_expired_jobs()
+            .map_err(|_| RuntimeError::new("job_recovery_failed"))
+    }
+
+    pub(super) fn queued_local_inbox_parse_documents(
+        &self,
+    ) -> Result<Vec<ParseDocumentJob>, RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
             .queued_parse_document_jobs()
             .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
@@ -190,9 +202,9 @@ impl VaultRuntime {
     }
 
     pub(super) fn queued_document_reconciliations(&self) -> Result<Vec<String>, RuntimeError> {
-        let mut store = self.store()?;
+        let store = self.store()?;
         store
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?
             .queued_reconcile_document_ids()
             .map_err(|_| RuntimeError::new("reconcile_failed"))
@@ -242,12 +254,7 @@ impl VaultRuntime {
         {
             return Ok(true);
         }
-        let Some(bookmark) = self
-            .inner
-            .local_inbox_bookmarks
-            .load()
-            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?
-        else {
+        let Some(bookmark) = self.local_inbox_bookmark()? else {
             return Ok(false);
         };
         match resolve_root_bookmark(&bookmark) {
@@ -291,6 +298,45 @@ impl VaultRuntime {
             *access = None;
         }
     }
+
+    /// The device-local Inbox bookmark, read from the Keychain at most once per
+    /// run. Status refresh and activation both need it, and a live Keychain read
+    /// on every refresh is what the cache removes.
+    fn local_inbox_bookmark(&self) -> Result<Option<Zeroizing<Vec<u8>>>, RuntimeError> {
+        let cached = {
+            let cache = self
+                .inner
+                .local_inbox_bookmark_cache
+                .lock()
+                .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+            match &*cache {
+                LocalInboxBookmarkCache::Loaded(bookmark) => Some(bookmark.clone()),
+                LocalInboxBookmarkCache::Unloaded => None,
+            }
+        };
+        if let Some(bookmark) = cached {
+            return Ok(bookmark);
+        }
+        // A live Keychain read: keep it outside the cache lock.
+        let bookmark = self
+            .inner
+            .local_inbox_bookmarks
+            .load()
+            .map_err(|_| RuntimeError::new("local_inbox_storage_failed"))?;
+        let mut cache = self
+            .inner
+            .local_inbox_bookmark_cache
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+        *cache = LocalInboxBookmarkCache::Loaded(bookmark.clone());
+        Ok(bookmark)
+    }
+
+    fn invalidate_local_inbox_bookmark(&self) {
+        if let Ok(mut cache) = self.inner.local_inbox_bookmark_cache.lock() {
+            *cache = LocalInboxBookmarkCache::Unloaded;
+        }
+    }
 }
 
 pub(super) async fn rescan_and_process_local_inbox(
@@ -318,6 +364,12 @@ pub(super) async fn process_queued_local_inbox_parses(
     app: &AppHandle,
     runtime: VaultRuntime,
 ) -> Result<(), VaultCommandError> {
+    tauri::async_runtime::spawn_blocking({
+        let runtime = runtime.clone();
+        move || runtime.recover_expired_jobs()
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
     loop {
         let document_ids = {
             let runtime = runtime.clone();
@@ -447,6 +499,12 @@ pub(super) async fn process_queued_document_reconciliations(
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
         }
     }
+    // The pipeline just advanced, so this is the write side of the Tasks
+    // projection: batches whose items reached a terminal state complete here.
+    // The Tasks read command itself stays a pure read.
+    tauri::async_runtime::spawn_blocking(move || runtime.seal_completed_intake_batches())
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
     Ok(())
 }
 

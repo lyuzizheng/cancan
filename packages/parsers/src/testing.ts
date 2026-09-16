@@ -6,6 +6,7 @@ import type {
   StructuredParseProposal,
 } from "./contracts";
 import type { ProviderDocumentPackage } from "./provider-document-package";
+import { MAX_RAW_RECORD_JSON_BYTES, semanticDocumentKey } from "./validate-structured-proposal";
 
 const syntheticRawKeys = new Set([
   "type",
@@ -36,7 +37,7 @@ function validateSyntheticRaw(raw: Record<string, unknown>): void {
   if (Object.keys(raw).some((key) => !syntheticRawKeys.has(key))) {
     throw new Error("synthetic row contains unsupported fields");
   }
-  if (JSON.stringify(raw).length > 16_384) {
+  if (JSON.stringify(raw).length > MAX_RAW_RECORD_JSON_BYTES) {
     throw new Error("synthetic row exceeds the bounded raw-record limit");
   }
   const locator = raw.locator;
@@ -145,21 +146,13 @@ export function createSyntheticTransferFixture(): {
     })),
   );
 
-  return {
-    semanticDocumentKey: "synthetic:transfer:2026-07",
-    extractionBundle: {
-      sourceDocumentId: "document-transfer",
-      fileSha256: "b".repeat(64),
-      mimeType: "text/csv",
-      observations,
-      metadata: {
-        extractionVersion: "native-observations-v1",
-        observationCount: observations.length,
-      },
+  const proposal: StructuredParseProposal = {
+    document: {
+      providerKey: "synthetic-bank",
+      documentType: "transfer_export",
+      statementId: "transfer-2026-07",
     },
-    proposal: {
-      document: { providerKey: "synthetic-bank", documentType: "transfer_export" },
-      accounts: [
+    accounts: [
         {
           proposalAccountId: "account-checking",
           accountType: "deposit_account",
@@ -285,7 +278,24 @@ export function createSyntheticTransferFixture(): {
           },
         },
       ],
+  };
+  const key = semanticDocumentKey(proposal.document);
+  if (key === undefined) {
+    throw new Error("synthetic transfer fixture requires a statement identity");
+  }
+  return {
+    semanticDocumentKey: key,
+    extractionBundle: {
+      sourceDocumentId: "document-transfer",
+      fileSha256: "b".repeat(64),
+      mimeType: "text/csv",
+      observations,
+      metadata: {
+        extractionVersion: "native-observations-v2",
+        observationCount: observations.length,
+      },
     },
+    proposal,
   };
 }
 
@@ -312,11 +322,12 @@ function providerDecimal(value: bigint): string {
   return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, "0")}`;
 }
 
-function nativeFixtureObservation(id: string, text: string): SourceObservation {
+function nativeFixtureObservation(id: string, text: string, row?: number): SourceObservation {
   return {
     id,
     kind: "native_text",
     page: 1,
+    ...(row !== undefined ? { row } : {}),
     textSpan: { start: 0, end: text.length },
     text,
     engine: "synthetic-provider-fixture",
@@ -416,6 +427,7 @@ export function createSyntheticProviderStatementFixture(
         engineVersion: "1",
       })),
   );
+  let currentRow = rawRows.length + 1;
   observations.push(
     nativeFixtureObservation(
       "fixture-marker",
@@ -425,62 +437,80 @@ export function createSyntheticProviderStatementFixture(
         `document_type=${providerPackage.documentType}`,
         `package_id=${providerPackage.packageId}`,
         `statement_id=${statementId}`,
-      ].join("\n"),
+      ].join(" "),
+      currentRow++,
     ),
-    nativeFixtureObservation("fingerprint", providerPackage.fingerprint.requiredAnchors.join(" ")),
-    nativeFixtureObservation("provider-account-id", `Account number ${providerAccountId}`),
-    nativeFixtureObservation("statement-currency", "Statement currency SGD"),
+    nativeFixtureObservation(
+      "fingerprint",
+      providerPackage.fingerprint.requiredAnchors.join(" "),
+      currentRow++,
+    ),
+    nativeFixtureObservation(
+      "provider-account-id",
+      `Account number ${providerAccountId}`,
+      currentRow++,
+    ),
+    nativeFixtureObservation(
+      "statement-currency",
+      "Statement currency SGD",
+      currentRow++,
+    ),
   );
 
+  const proposal: StructuredParseProposal = {
+    document: {
+      providerKey: providerPackage.providerKey,
+      documentType: providerPackage.documentType,
+      statementId,
+      statementPeriod: { from: "2026-07-01", to: closingDate },
+    },
+    accounts: [
+      {
+        proposalAccountId: accountId,
+        accountType: providerPackage.capabilities.accountType,
+        providerAccountId,
+        maskedIdentifier: "••6789",
+        currency: "SGD",
+      },
+    ],
+    openingSnapshots: [
+      {
+        proposalRecordId: "opening",
+        recordType: "balance",
+        proposalAccountId: accountId,
+        postedOn: "2026-07-01",
+        balanceAfter: { value: "100.00", currency: "SGD" },
+        raw: rawRows[0] as Record<string, unknown>,
+      },
+    ],
+    records,
+    closingSnapshots: [
+      {
+        proposalRecordId: "closing",
+        recordType: "balance",
+        proposalAccountId: accountId,
+        postedOn: closingDate,
+        balanceAfter: { value: closingRaw.balance, currency: "SGD" },
+        raw: closingRaw,
+      },
+    ],
+  };
+  const key = semanticDocumentKey(proposal.document);
+  if (key === undefined) {
+    throw new Error("synthetic provider fixture requires a statement identity");
+  }
   return {
-    semanticDocumentKey: `${providerPackage.packageId}:2026-07`,
+    semanticDocumentKey: key,
     extractionBundle: {
       sourceDocumentId: `document-${providerPackage.packageId}`,
       fileSha256: "c".repeat(64),
       mimeType: "application/pdf",
       observations,
       metadata: {
-        extractionVersion: "native-observations-v1",
+        extractionVersion: "native-observations-v2",
         observationCount: observations.length,
       },
     },
-    proposal: {
-      document: {
-        providerKey: providerPackage.providerKey,
-        documentType: providerPackage.documentType,
-        statementId,
-        statementPeriod: { from: "2026-07-01", to: closingDate },
-      },
-      accounts: [
-        {
-          proposalAccountId: accountId,
-          accountType: providerPackage.capabilities.accountType,
-          providerAccountId,
-          maskedIdentifier: "••6789",
-          currency: "SGD",
-        },
-      ],
-      openingSnapshots: [
-        {
-          proposalRecordId: "opening",
-          recordType: "balance",
-          proposalAccountId: accountId,
-          postedOn: "2026-07-01",
-          balanceAfter: { value: "100.00", currency: "SGD" },
-          raw: rawRows[0] as Record<string, unknown>,
-        },
-      ],
-      records,
-      closingSnapshots: [
-        {
-          proposalRecordId: "closing",
-          recordType: "balance",
-          proposalAccountId: accountId,
-          postedOn: closingDate,
-          balanceAfter: { value: closingRaw.balance, currency: "SGD" },
-          raw: closingRaw,
-        },
-      ],
-    },
+    proposal,
   };
 }

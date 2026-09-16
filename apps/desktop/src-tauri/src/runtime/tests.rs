@@ -3,6 +3,8 @@ use super::*;
 use crate::database::{CandidateAccountDecision, SourceDocumentImportStatus};
 use crate::vault::open_recovery_file;
 #[cfg(target_os = "macos")]
+use crate::viewer::pdf_password_unlocks;
+#[cfg(target_os = "macos")]
 use crate::viewer::tests::{protected_pdf_fixture, synthetic_png_fixture};
 use std::{collections::HashMap, sync::atomic::Ordering, thread, time::Duration};
 
@@ -130,20 +132,30 @@ fn refuses_an_ambiguous_or_mismatched_core_relationship_candidate() {
 #[test]
 fn local_inbox_bookmark_is_paused_while_locked_and_disable_removes_it() {
     let parent = tempfile::tempdir().expect("temporary app data");
+    let vault_root = parent.path().join("vault");
     let bookmarks = Arc::new(MemoryLocalInboxBookmarkStore::default());
-    let runtime = VaultRuntime::with_secret_stores(
-        parent.path().join("vault"),
+    let setup_runtime = VaultRuntime::with_secret_stores(
+        vault_root.clone(),
         Arc::new(MemoryRememberedKeyStore::default()),
         Arc::new(MemoryStatementPasswordStore::default()),
         bookmarks.clone(),
     );
-    runtime
+    setup_runtime
         .create(b"synthetic-vault-password")
         .expect("create Vault");
+    setup_runtime.test_support_lock().expect("lock Vault");
+    drop(setup_runtime);
     bookmarks
         .save(b"security-scoped-bookmark")
         .expect("save bookmark");
-    runtime.lock().expect("lock Vault");
+
+    // A later run starts with the bookmark stored and the Vault locked.
+    let runtime = VaultRuntime::with_secret_stores(
+        vault_root,
+        Arc::new(MemoryRememberedKeyStore::default()),
+        Arc::new(MemoryStatementPasswordStore::default()),
+        bookmarks.clone(),
+    );
 
     let paused = runtime.local_inbox_status().expect("paused status");
     assert_eq!(paused.access_state, LocalInboxAccessState::Paused);
@@ -233,7 +245,7 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
     runtime
         .render_source_document_page(&outcome.document_id, 1)
         .expect("render session-unlocked statement");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("reopen locked Vault");
@@ -261,7 +273,9 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
             .as_slice(),
         b"statement-password"
     );
-    runtime.lock().expect("lock saved-password session");
+    runtime
+        .test_support_lock()
+        .expect("lock saved-password session");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("reopen saved-password Vault");
@@ -337,8 +351,9 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         fs::read(&source).expect("read original protected source")
     );
     assert_eq!(
-        pdf_access(&copied_bytes, None).expect("inspect protected source copy"),
-        PdfAccess::PasswordRequired
+        pdf_password_unlocks(&copied_bytes, b"statement-password")
+            .expect("inspect protected source copy"),
+        Some(true)
     );
 
     let files_directory = parent.path().join("vault").join("files");
@@ -357,11 +372,25 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         "delete_source_failed"
     );
     assert!(
+        runtime
+            .document_passwords()
+            .expect("document password cache")
+            .contains_key(&outcome.document_id),
+        "a failed deletion leaves the still-available document untouched"
+    );
+    runtime
+        .source_document_copy_context(&outcome.document_id)
+        .expect("a failed deletion keeps the source readable");
+
+    runtime
+        .delete_source_document(&outcome.document_id)
+        .expect("retry the deletion once the blob can be removed");
+    assert!(
         !runtime
             .document_passwords()
             .expect("document password cache")
             .contains_key(&outcome.document_id),
-        "deletion must clear the document password even when blob cleanup fails"
+        "a committed deletion clears the cached document password"
     );
     assert_eq!(
         runtime
@@ -565,7 +594,7 @@ fn saves_an_atomic_plaintext_copy_only_outside_the_vault() {
             .code(),
         "source_copy_location_invalid"
     );
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .save_source_document_copy(&imported.document_id, &destination, session_generation,)
@@ -671,7 +700,10 @@ fn creates_locks_and_unlocks_a_vault_without_exposing_the_master_key() {
             .windows("synthetic-vault-password".len())
             .any(|bytes| bytes == b"synthetic-vault-password")
     );
-    assert_eq!(runtime.lock().expect("lock Vault"), VaultStatus::Locked);
+    assert_eq!(
+        runtime.test_support_lock().expect("lock Vault"),
+        VaultStatus::Locked
+    );
     assert_eq!(
         runtime
             .unlock(b"wrong-password")
@@ -754,7 +786,7 @@ fn saves_recovery_outside_the_vault_and_persists_only_its_fingerprint() {
         "recovery_already_configured"
     );
 
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     drop(runtime);
     let restarted = VaultRuntime::new(root);
     assert!(
@@ -834,7 +866,7 @@ fn lock_waits_for_store_cleanup_and_rejects_a_stale_vault_session_generation() {
     let (finished, completion) = std::sync::mpsc::channel();
     thread::spawn(move || {
         finished
-            .send(locking_runtime.lock())
+            .send(locking_runtime.test_support_lock())
             .expect("send lock result");
     });
 
@@ -894,7 +926,7 @@ fn remembers_unlock_in_the_secret_store_and_removes_it_explicitly() {
             status: VaultStatus::Unlocked,
         }
     );
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     drop(runtime);
 
     let restarted = VaultRuntime::with_remembered_keys(root.clone(), remembered_keys.clone());
@@ -913,7 +945,7 @@ fn remembers_unlock_in_the_secret_store_and_removes_it_explicitly() {
         VaultStatus::Unlocked
     );
     restarted.forget_this_mac().expect("forget this Mac");
-    restarted.lock().expect("lock forgotten Vault");
+    restarted.test_support_lock().expect("lock forgotten Vault");
     drop(restarted);
 
     let forgotten = VaultRuntime::with_remembered_keys(root, remembered_keys);
@@ -985,7 +1017,7 @@ fn saves_updates_and_removes_one_statement_password_per_money_source() {
         .save_statement_password("source-dbs", b"locked-statement-password")
         .expect("save before lock");
     let locked_state = statement_password_state(&runtime).expect("state before lock");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .save_statement_password("source-dbs", b"password")
@@ -1078,7 +1110,7 @@ fn reconciles_statement_password_crash_boundaries_after_unlock() {
     statement_passwords
         .save(&storage_key, b"unverified-different-password")
         .expect("simulate unverified Keychain write before crash");
-    runtime.lock().expect("simulate process lock");
+    runtime.test_support_lock().expect("simulate process lock");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("unlock and discard unverified pending save");
@@ -1103,7 +1135,9 @@ fn reconciles_statement_password_crash_boundaries_after_unlock() {
     statement_passwords
         .delete(&storage_key)
         .expect("simulate Keychain delete before crash");
-    runtime.lock().expect("simulate second process lock");
+    runtime
+        .test_support_lock()
+        .expect("simulate second process lock");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("unlock and reconcile pending delete");
@@ -1130,7 +1164,7 @@ fn unlock_paths_propagate_statement_password_reconciliation_failures() {
     statement_passwords
         .fail_delete
         .store(true, Ordering::SeqCst);
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
 
     assert_eq!(
         runtime
@@ -1163,7 +1197,7 @@ fn unlock_paths_propagate_statement_password_reconciliation_failures() {
     statement_passwords
         .fail_delete
         .store(true, Ordering::SeqCst);
-    runtime.lock().expect("lock Vault again");
+    runtime.test_support_lock().expect("lock Vault again");
 
     assert_eq!(
         runtime
@@ -1252,7 +1286,7 @@ fn rejects_empty_passwords_and_existing_or_corrupt_vaults() {
     runtime
         .create(b"synthetic-vault-password")
         .expect("create Vault");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .create(b"another-password")
@@ -1327,7 +1361,10 @@ fn classifies_a_missing_wrapper_consistently_as_an_invalid_vault() {
         "invalid_vault"
     );
     assert_eq!(
-        runtime.lock().expect_err("invalid lock").code(),
+        runtime
+            .test_support_lock()
+            .expect_err("invalid lock")
+            .code(),
         "invalid_vault"
     );
 }
@@ -1393,7 +1430,7 @@ fn rejects_unlock_when_the_existing_vault_database_is_missing() {
     runtime
         .create(b"synthetic-vault-password")
         .expect("create Vault");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     let database_path = root.join(DATABASE_FILE_NAME);
     fs::remove_file(&database_path).expect("remove Vault database");
 
@@ -1508,7 +1545,7 @@ fn imports_and_lists_an_unassigned_document_only_while_unlocked() {
         assert_eq!(persisted[0].semantic_document_key, None);
     }
 
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .list_unassigned_source_documents()
@@ -1567,7 +1604,7 @@ fn renders_an_imported_pdf_in_memory_only_while_the_vault_is_unlocked() {
     assert_eq!(rendered.page_number, 1);
     assert!(!rendered.png_base64.is_empty());
     assert_eq!(vault_entries(&vault_root), before);
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .render_source_document_page(&imported.document_id, 1)
@@ -1802,7 +1839,7 @@ fn previews_only_bounded_csv_lines_while_the_vault_is_unlocked() {
         "document_unavailable"
     );
 
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     assert_eq!(
         runtime
             .preview_source_document(&imported.document_id)
@@ -2027,10 +2064,13 @@ fn persists_validated_records_and_reconciles_an_explicit_parser_re_run() {
             .expect("claim recovery candidate")
     );
     expire_reconcile_lease_for_test(&runtime, &imported.document_id);
+    runtime
+        .recover_expired_jobs()
+        .expect("recover expired reconcile job");
     assert_eq!(
         runtime
             .queued_document_reconciliations()
-            .expect("recover expired reconcile job"),
+            .expect("read requeued reconcile job"),
         vec![imported.document_id.clone()]
     );
     assert!(
@@ -2138,7 +2178,9 @@ fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() 
             .access_state,
         LocalInboxAccessState::Enabled
     );
-    runtime.lock().expect("lock Vault before restart");
+    runtime
+        .test_support_lock()
+        .expect("lock Vault before restart");
     drop(runtime);
 
     let runtime = VaultRuntime::with_secret_stores(
@@ -2197,7 +2239,7 @@ fn local_inbox_commits_a_cross_month_hsbc_to_dbs_card_repayment_after_restart() 
         let observation = &input.observations[0];
         assert_eq!(observation.kind, SourceObservationKind::NativeText);
         assert_eq!(observation.engine, "pdfkit");
-        assert_eq!(observation.engine_version, "macos-page-string-v1");
+        assert_eq!(observation.engine_version, "macos-page-string-v2");
 
         let routed = if observation.text.contains("provider=hsbc") {
             hsbc_document_id = Some(job.document_id.clone());
@@ -2616,6 +2658,143 @@ fn rejects_invalid_normalizer_posting_status_without_persisting_records_or_revie
         (0, 0, 0)
     );
 }
+#[test]
+fn rejects_sidecar_semantic_key_mismatch_without_persisting_records() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let source_path = parent.path().join("synthetic.csv");
+    fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+    let runtime = VaultRuntime::new(parent.path().join("vault"));
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    runtime
+        .seed_money_source(
+            "source-synthetic",
+            "synthetic-bank",
+            "Synthetic Bank",
+            "bank",
+        )
+        .expect("seed source");
+    let imported = runtime
+        .import_selected_document(&source_path)
+        .expect("capture statement");
+    let input = runtime
+        .normalization_input(&imported.document_id)
+        .expect("extract complete synthetic observations");
+    let mut mismatched = synthetic_normalizer_result();
+    let NormalizerResult::Classified {
+        semantic_document_key,
+        ..
+    } = &mut mismatched
+    else {
+        panic!("synthetic result must be classified");
+    };
+    *semantic_document_key = "synthetic-bank:tampered-2026-07".to_owned();
+
+    let outcome = runtime
+        .apply_normalizer_result(&imported.document_id, &input, mismatched)
+        .expect("reject mismatched sidecar key safely");
+    assert_eq!(
+        outcome.status,
+        crate::database::SourceDocumentRoutingStatus::NeedsAttention
+    );
+    let state = structured_parse_test_state(&runtime, &imported.document_id);
+    assert_eq!(
+        (state.parse_runs, state.records, state.open_review_items),
+        (0, 0, 0)
+    );
+}
+
+#[test]
+fn derives_semantic_document_key_like_the_typescript_canonicalizer() {
+    assert_eq!(
+        derive_semantic_document_key("synthetic-bank", None, "transfer-2026-07"),
+        "synthetic-bank:transfer-2026-07",
+    );
+    assert_eq!(
+        derive_semantic_document_key("dbs", Some("statements/2026"), "dbs-bank_statement-2026-07",),
+        "dbs:statements/2026:dbs-bank_statement-2026-07",
+    );
+}
+#[test]
+fn normalizer_result_wire_shape_uses_camel_case_sidecar_key() {
+    let value =
+        serde_json::to_value(synthetic_normalizer_result()).expect("serialize normalizer result");
+    assert_eq!(
+        value.get("semanticDocumentKey"),
+        Some(&serde_json::Value::String(
+            "synthetic-bank:transfer-2026-07".to_owned()
+        )),
+    );
+    assert!(value.get("semantic_document_key").is_none());
+    let roundtrip: NormalizerResult =
+        serde_json::from_value(value).expect("parse emitted wire shape");
+    assert!(matches!(roundtrip, NormalizerResult::Classified { .. }));
+}
+
+#[test]
+fn rejects_wire_payload_with_snake_case_sidecar_key() {
+    let mut legacy =
+        serde_json::to_value(synthetic_normalizer_result()).expect("serialize normalizer result");
+    let key = legacy
+        .get("semanticDocumentKey")
+        .cloned()
+        .unwrap_or_default();
+    if let Some(object) = legacy.as_object_mut() {
+        object.remove("semanticDocumentKey");
+        object.insert("semantic_document_key".to_owned(), key);
+    }
+    assert!(serde_json::from_value::<NormalizerResult>(legacy).is_err());
+}
+
+#[test]
+fn rejects_empty_statement_id_despite_matching_sidecar_key() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let source_path = parent.path().join("synthetic.csv");
+    fs::write(&source_path, synthetic_statement_csv()).expect("write statement fixture");
+    let runtime = VaultRuntime::new(parent.path().join("vault"));
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    runtime
+        .seed_money_source(
+            "source-synthetic",
+            "synthetic-bank",
+            "Synthetic Bank",
+            "bank",
+        )
+        .expect("seed source");
+    let imported = runtime
+        .import_selected_document(&source_path)
+        .expect("capture statement");
+    let input = runtime
+        .normalization_input(&imported.document_id)
+        .expect("extract complete synthetic observations");
+    let mut degenerate = synthetic_normalizer_result();
+    let NormalizerResult::Classified {
+        proposal,
+        semantic_document_key,
+        ..
+    } = &mut degenerate
+    else {
+        panic!("synthetic result must be classified");
+    };
+    proposal.document.statement_id = Some(String::new());
+    *semantic_document_key = "synthetic-bank:".to_owned();
+
+    let outcome = runtime
+        .apply_normalizer_result(&imported.document_id, &input, degenerate)
+        .expect("reject degenerate statement identity safely");
+    assert_eq!(
+        outcome.status,
+        crate::database::SourceDocumentRoutingStatus::NeedsAttention
+    );
+    let state = structured_parse_test_state(&runtime, &imported.document_id);
+    assert_eq!(
+        (state.parse_runs, state.records, state.open_review_items),
+        (0, 0, 0)
+    );
+}
 
 fn structured_parse_test_state(
     runtime: &VaultRuntime,
@@ -2654,6 +2833,7 @@ fn expire_reconcile_lease_for_test(runtime: &VaultRuntime, document_id: &str) {
 fn synthetic_normalizer_result() -> NormalizerResult {
     NormalizerResult::Classified {
         profile: Box::new(synthetic_normalization_profile()),
+        semantic_document_key: "synthetic-bank:transfer-2026-07".to_owned(),
         proposal: Box::new(NormalizerProposal {
             document: NormalizerDocument {
                 document_type: "transfer_export".to_owned(),
@@ -2760,7 +2940,7 @@ fn synthetic_normalization_profile() -> NormalizerProfile {
         validator_version: "synthetic-bank-v1".to_owned(),
         normalizer_runtime: "single-pass-mock".to_owned(),
         tool_contract_version: "synthetic-bank-v1".to_owned(),
-        input_strategy: "native-observations-v1".to_owned(),
+        input_strategy: NORMALIZER_INPUT_STRATEGY.to_owned(),
         extraction_engines: vec![NormalizerProfileExtractionEngine {
             kind: NormalizerProfileExtractionKind::TableCell,
             engine: "rust-csv".to_owned(),
@@ -2782,7 +2962,7 @@ fn synthetic_pdf_normalizer_result() -> NormalizerResult {
     profile.extraction_engines = vec![NormalizerProfileExtractionEngine {
         kind: NormalizerProfileExtractionKind::NativeText,
         engine: "pdfkit".to_owned(),
-        version: "macos-page-string-v1".to_owned(),
+        version: "macos-page-string-v2".to_owned(),
     }];
     result
 }
@@ -2791,6 +2971,7 @@ fn synthetic_pdf_normalizer_result() -> NormalizerResult {
 fn dbs_bank_normalizer_result() -> NormalizerResult {
     NormalizerResult::Classified {
         profile: Box::new(dbs_bank_normalization_profile()),
+        semantic_document_key: "dbs:dbs-bank_statement-2026-07".to_owned(),
         proposal: Box::new(NormalizerProposal {
             document: NormalizerDocument {
                 document_type: "bank_statement".to_owned(),
@@ -2854,6 +3035,7 @@ fn hsbc_bank_repayment_normalizer_result() -> NormalizerResult {
             "bank_statement",
             "hsbc/bank_statement@1",
         )),
+        semantic_document_key: "hsbc:hsbc-bank_statement-2026-06".to_owned(),
         proposal: Box::new(NormalizerProposal {
             document: NormalizerDocument {
                 document_type: "bank_statement".to_owned(),
@@ -2917,6 +3099,7 @@ fn dbs_card_repayment_normalizer_result() -> NormalizerResult {
             "credit_card_statement",
             "dbs/credit_card_statement@1",
         )),
+        semantic_document_key: "dbs:dbs-credit_card_statement-2026-07".to_owned(),
         proposal: Box::new(NormalizerProposal {
             document: NormalizerDocument {
                 document_type: "credit_card_statement".to_owned(),
@@ -2980,7 +3163,7 @@ fn provider_pdf_normalization_profile(
 ) -> NormalizerProfile {
     NormalizerProfile {
         id: format!(
-            "mock:{package_id}:native-observations-v1:extract-native_text-pdfkit-macos-page-string-v1"
+            "mock:{package_id}:{NORMALIZER_INPUT_STRATEGY}:extract-native_text-pdfkit-macos-page-string-v2"
         ),
         provider_key: provider_key.to_owned(),
         document_type: document_type.to_owned(),
@@ -2993,11 +3176,11 @@ fn provider_pdf_normalization_profile(
         validator_version: "1.0.0".to_owned(),
         normalizer_runtime: "single-pass-mock".to_owned(),
         tool_contract_version: "1.0.0".to_owned(),
-        input_strategy: "native-observations-v1".to_owned(),
+        input_strategy: NORMALIZER_INPUT_STRATEGY.to_owned(),
         extraction_engines: vec![NormalizerProfileExtractionEngine {
             kind: NormalizerProfileExtractionKind::NativeText,
             engine: "pdfkit".to_owned(),
-            version: "macos-page-string-v1".to_owned(),
+            version: "macos-page-string-v2".to_owned(),
         }],
         ocr_engines: Vec::new(),
         model_provider: "cancan-deterministic-mock".to_owned(),
@@ -3246,6 +3429,7 @@ fn extracts_native_pdf_and_csv_observations_without_creating_files() {
         crate::source_observations::SourceObservationKind::NativeText
     );
     assert_eq!(pdf_observation.page, Some(1));
+    assert_eq!(pdf_observation.row, Some(1));
     assert!(
         pdf_observation
             .text
@@ -3260,7 +3444,7 @@ fn extracts_native_pdf_and_csv_observations_without_creating_files() {
         Some(pdf_observation.text.encode_utf16().count() as u64)
     );
     assert_eq!(pdf_observation.engine, "pdfkit");
-    assert_eq!(pdf_observation.engine_version, "macos-page-string-v1");
+    assert_eq!(pdf_observation.engine_version, "macos-page-string-v2");
 
     assert_eq!(csv_bundle.observations.len(), 4);
     assert_eq!(csv_bundle.observations[0].id, "csv-row-1-column-1");
@@ -3307,7 +3491,7 @@ pub(super) fn protected_text_pdf() -> Vec<u8> {
         .to_vec()
 }
 
-fn synthetic_pdf() -> Vec<u8> {
+pub(super) fn synthetic_pdf() -> Vec<u8> {
     synthetic_pdf_with_stream("BT /F1 10 Tf 8 72 Td (CANCAN_SYNTHETIC_STATEMENT_V1) Tj ET")
 }
 

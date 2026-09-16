@@ -80,6 +80,7 @@ export const reviewItem: ReviewItemSummary = {
   eventType: "credit_card_repayment",
   postedOn: "2026-07-15",
   reasonCode: "possible_card_repayment",
+  recordCommitted: false,
   recordId: "record-1",
   recordVersion: 1,
   reviewItemId: "review-1",
@@ -90,6 +91,23 @@ export const linkedReviewItem: ReviewItemSummary = {
   postedOn: "2026-07-17",
   recordId: "record-2",
   reviewItemId: "review-2",
+};
+export const committedReviewItem: ReviewItemSummary = {
+  accountLabel: "HSBC Everyday",
+  amountValue: "800.00",
+  currency: "SGD",
+  eventType: "credit_card_repayment",
+  postedOn: "2026-06-30",
+  reasonCode: "reparse_divergence",
+  recordCommitted: true,
+  recordId: "record-4",
+  recordVersion: 1,
+  reviewItemId: "review-4",
+};
+export const committedReviewDetail: ReviewItemDetail = {
+  ...committedReviewItem,
+  documentLabel: "June statement.pdf",
+  sourceLabel: "HSBC",
 };
 export const reviewDetail: ReviewItemDetail = {
   ...reviewItem,
@@ -179,6 +197,12 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
       recordVersion: null,
       reviewItemId: null,
       status: "relationship_accepted",
+    })),
+    acknowledgeReviewItem: vi.fn(async (): Promise<ReviewMutationOutcome> => ({
+      reason: null,
+      recordVersion: null,
+      reviewItemId: null,
+      status: "acknowledged",
     })),
     chooseLocalInboxRoot: vi.fn(
       async (): Promise<LocalInboxStatus | null> => null,

@@ -1,8 +1,7 @@
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
-    fs,
-    io::{self, Read},
+    fs, io,
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::Duration,
@@ -49,6 +48,7 @@ pub(crate) enum CaptureDeferReason {
     ChangedAfterRead,
     ChangedBeforeRead,
     NativePreflight,
+    TooLarge,
     Unreadable,
     Unsupported,
 }
@@ -293,6 +293,9 @@ where
     if before_read != first {
         return CaptureOutcome::Deferred(CaptureDeferReason::ChangedBeforeRead);
     }
+    if before_read.size > crate::source_file::MAX_SOURCE_FILE_BYTES {
+        return CaptureOutcome::Deferred(CaptureDeferReason::TooLarge);
+    }
     let mut file = match open_read_only(path) {
         Ok(file) => file,
         Err(()) => return CaptureOutcome::Deferred(CaptureDeferReason::Unreadable),
@@ -304,10 +307,13 @@ where
     if opened != before_read {
         return CaptureOutcome::Deferred(CaptureDeferReason::ChangedBeforeRead);
     }
-    let mut bytes = Zeroizing::new(Vec::new());
-    if file.read_to_end(&mut bytes).is_err() {
-        return CaptureOutcome::Deferred(CaptureDeferReason::Unreadable);
-    }
+    let bytes = match crate::source_file::read_bounded_source_file(&mut file) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::FileTooLarge => {
+            return CaptureOutcome::Deferred(CaptureDeferReason::TooLarge);
+        }
+        Err(_) => return CaptureOutcome::Deferred(CaptureDeferReason::Unreadable),
+    };
     if !matches!(snapshot_open_file(&file), Ok(after_read) if after_read == opened)
         || !matches!(snapshot(path), Ok(after_read) if after_read == opened)
     {
@@ -549,6 +555,26 @@ mod tests {
         assert_eq!(
             fs::read(root.0.join(INBOX_DIRECTORY_NAME)).expect("conflict remains"),
             b"not a folder"
+        );
+    }
+
+    #[test]
+    fn defers_a_source_above_the_supported_size_without_reading_it() {
+        let root = TestDirectory::new();
+        let source = root.file("huge-statement.pdf", b"");
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .open(&source)
+            .expect("open oversized source");
+        file.set_len(crate::source_file::MAX_SOURCE_FILE_BYTES + 1)
+            .expect("grow sparse source");
+        drop(file);
+        let first = snapshot(&source).expect("first snapshot");
+        assert_eq!(
+            capture_after_second_scan(&source, first, &BTreeSet::new(), |_| panic!(
+                "an oversized source must be deferred before it is read"
+            )),
+            CaptureOutcome::Deferred(CaptureDeferReason::TooLarge)
         );
     }
 

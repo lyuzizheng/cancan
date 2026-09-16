@@ -1,5 +1,7 @@
 import { Button, EmptyState, LedgerHeader, Skeleton, cx } from "@cancan/ui";
 
+import { memo } from "react";
+
 import type { TaskGroup, TaskRow, Tasks } from "./command-contracts";
 import { TaskRowList, taskGroupLabel } from "./tasks";
 
@@ -32,7 +34,7 @@ export interface TasksViewProps {
  * survives deep-link returns via app-level state; scroll restore is a
  * tracked follow-up.
  */
-export function TasksView(props: TasksViewProps) {
+export const TasksView = memo(function TasksView(props: TasksViewProps) {
   const counts = new Map<TaskGroup, number>();
   for (const group of filterOrder) {
     counts.set(group, 0);
@@ -103,4 +105,4 @@ export function TasksView(props: TasksViewProps) {
       </div>
     </>
   );
-}
+});
