@@ -253,3 +253,74 @@ fn reopening_the_vault_keeps_entries_inside_the_retention_window() {
         1
     );
 }
+
+#[test]
+fn a_failure_reported_from_the_real_error_keeps_the_reason_and_retryability() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let source_path = root.path().join("statement.pdf");
+    fs::write(&source_path, b"%PDF transient transport failure").expect("write fixture");
+    let mut store = open_store(root.path());
+    store
+        .register_import(
+            &import_source(&source_path, "document-transport", "audit-transport"),
+            None,
+        )
+        .expect("import source");
+    // The runtime attaches the error where it happens; the job row and the log
+    // entry have to keep it instead of restating the static code.
+    let detail = JobFailureDetail::from_error(
+        Some("normalizer"),
+        &io::Error::new(
+            io::ErrorKind::TimedOut,
+            "the normalizer produced no result before it timed out",
+        ),
+    );
+
+    while let Some(job) = store
+        .queued_parse_document_jobs()
+        .expect("read queued parse job")
+        .pop()
+    {
+        let claim = store
+            .start_parse_document_job(&job)
+            .expect("start parse job")
+            .expect("claim parse job");
+        store
+            .fail_parse_document_job(&claim, "normalizer_failed", Some(&detail))
+            .expect("record parse failure");
+    }
+
+    let error_json: String = store
+        .connection
+        .query_row(
+            "SELECT error_json FROM jobs WHERE job_type = 'parse_document'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read failed job error_json");
+    let error_json: serde_json::Value =
+        serde_json::from_str(&error_json).expect("error_json is an object");
+    assert_eq!(error_json["errorCode"], "normalizer_failed");
+    assert_eq!(error_json["technical"]["errorKind"], "io");
+    assert_eq!(error_json["technical"]["retryable"], true);
+    assert_eq!(
+        error_json["technical"]["message"],
+        "the normalizer produced no result before it timed out"
+    );
+
+    let (detail, error_kind, error_code): (String, Option<String>, String) = store
+        .connection
+        .query_row(
+            "SELECT detail, error_kind, error_code FROM operational_logs \
+             WHERE component = 'job.parse_document' ORDER BY id DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("read the job entry");
+    assert_eq!(error_kind.as_deref(), Some("io"));
+    assert_eq!(error_code, "normalizer_failed");
+    assert_eq!(
+        detail, "the normalizer produced no result before it timed out",
+        "the log keeps the reported reason, not the static code"
+    );
+}

@@ -36,7 +36,7 @@ impl VaultRuntime {
             .map_store_error(store, "statement_password_state", "invalid_source_request")?;
         match state {
             Some(state) if state.status == StatementPasswordStatus::Saved => {
-                self.save_verified_statement_password(&state.secret_storage_key, password)
+                self.save_verified_statement_password(store, &state.secret_storage_key, password)
             }
             None => {
                 let secret_storage_key = statement_password_storage_key(money_source_id);
@@ -47,7 +47,7 @@ impl VaultRuntime {
                         "begin_statement_password_save",
                         "invalid_source_request",
                     )?;
-                self.save_verified_statement_password(&secret_storage_key, password)?;
+                self.save_verified_statement_password(store, &secret_storage_key, password)?;
                 store
                     .mark_statement_password_saved(money_source_id)
                     .map_store_error(
@@ -63,18 +63,33 @@ impl VaultRuntime {
 
     pub(super) fn save_verified_statement_password(
         &self,
+        store: &ManualImportStore,
         secret_ref: &str,
         password: &[u8],
     ) -> Result<(), RuntimeError> {
         self.inner
             .statement_passwords
             .save(secret_ref, password)
-            .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
+            .map_err(|error| {
+                store_failure(
+                    store,
+                    "statement_password_save",
+                    "statement_password_save_failed",
+                    &error,
+                )
+            })?;
         let saved = self
             .inner
             .statement_passwords
             .load(secret_ref)
-            .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
+            .map_err(|error| {
+                store_failure(
+                    store,
+                    "statement_password_load",
+                    "statement_password_save_failed",
+                    &error,
+                )
+            })?;
         if saved.as_ref().map(|secret| secret.as_slice()) != Some(password) {
             return Err(RuntimeError::new("statement_password_save_failed"));
         }
@@ -109,7 +124,14 @@ impl VaultRuntime {
                 self.inner
                     .statement_passwords
                     .delete(&state.secret_storage_key)
-                    .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
+                    .map_err(|error| {
+                        store_failure(
+                            store,
+                            "statement_password_delete",
+                            "statement_password_remove_failed",
+                            &error,
+                        )
+                    })?;
                 store
                     .remove_statement_password_ref(money_source_id, "pending_delete")
                     .map_store_error(
@@ -137,7 +159,14 @@ impl VaultRuntime {
                     self.inner
                         .statement_passwords
                         .delete(&state.secret_storage_key)
-                        .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
+                        .map_err(|error| {
+                            store_failure(
+                                store,
+                                "statement_password_delete",
+                                "statement_password_save_failed",
+                                &error,
+                            )
+                        })?;
                     store
                         .remove_statement_password_ref(&state.money_source_id, "pending_save")
                         .map_store_error(
@@ -150,7 +179,14 @@ impl VaultRuntime {
                     self.inner
                         .statement_passwords
                         .delete(&state.secret_storage_key)
-                        .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
+                        .map_err(|error| {
+                            store_failure(
+                                store,
+                                "statement_password_delete",
+                                "statement_password_remove_failed",
+                                &error,
+                            )
+                        })?;
                     store
                         .remove_statement_password_ref(&state.money_source_id, "pending_delete")
                         .map_store_error(

@@ -1,5 +1,45 @@
 use super::*;
 
+pub(super) fn source_document_metadata(
+    runtime: &VaultRuntime,
+    source_path: &Path,
+) -> Result<(String, &'static str), RuntimeError> {
+    let metadata = fs::metadata(source_path).map_err(|error| {
+        runtime_failure(runtime, "source_document_metadata", "import_failed", &error)
+    })?;
+    if !metadata.is_file() {
+        return Err(RuntimeError::new("unsupported_document"));
+    }
+    if metadata.len() > crate::source_file::MAX_SOURCE_FILE_BYTES {
+        return Err(RuntimeError::new("source_file_too_large"));
+    }
+    source_document_filename_metadata(source_path)
+}
+
+pub(super) fn source_document_filename_metadata(
+    source_path: &Path,
+) -> Result<(String, &'static str), RuntimeError> {
+    let mime_type = match source_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("pdf") => "application/pdf",
+        Some("csv") => "text/csv",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        _ => return Err(RuntimeError::new("unsupported_document")),
+    };
+    let original_filename = source_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| RuntimeError::new("unsupported_document"))?
+        .to_owned();
+    Ok((original_filename, mime_type))
+}
+
 impl VaultRuntime {
     pub(super) fn finalize_intake_rejection(
         &self,
@@ -67,7 +107,7 @@ impl VaultRuntime {
                 })
                 .map_store_error(store, "create_intake_batch", "import_failed")?;
         }
-        let (original_filename, mime_type) = match source_document_metadata(source_path) {
+        let (original_filename, mime_type) = match source_document_metadata(self, source_path) {
             Ok(metadata) => metadata,
             Err(error) => {
                 let code = error.code;
@@ -192,7 +232,7 @@ impl VaultRuntime {
         document_id: &str,
         intake_item_id: &str,
     ) -> Result<SourceDocumentImportOutcome, RuntimeError> {
-        let (original_filename, mime_type) = source_document_metadata(source_path)?;
+        let (original_filename, mime_type) = source_document_metadata(self, source_path)?;
         let audit_id = random_identifier("audit");
         let input = SourceDocumentImport {
             audit_actor: "user",

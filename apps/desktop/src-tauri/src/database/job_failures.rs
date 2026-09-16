@@ -5,6 +5,19 @@
 
 use super::*;
 
+/// The operational-log entry for a failed job: the technical layer the runtime
+/// carried with the failure when there is one, otherwise the static code alone.
+fn job_failure_log_entry(
+    component: &'static str,
+    reason: &str,
+    detail: Option<&JobFailureDetail>,
+) -> OperationalLogEntry {
+    match detail {
+        Some(detail) => OperationalLogEntry::from_detail(component, reason, detail),
+        None => OperationalLogEntry::failure_code(component, reason),
+    }
+}
+
 impl ManualImportStore {
     pub(crate) fn fail_reconcile_document(
         &mut self,
@@ -35,9 +48,11 @@ impl ManualImportStore {
         if changed == 1
             && let Some(context) = context
         {
-            let _ = self.record_operational_log(&context.log_entry(
-                OperationalLogEntry::failure_code("job.reconcile_document", reason),
-            ));
+            let _ = self.record_operational_log(&context.log_entry(job_failure_log_entry(
+                "job.reconcile_document",
+                reason,
+                detail,
+            )));
         }
         Ok(())
     }
@@ -109,10 +124,7 @@ impl ManualImportStore {
             };
             let _ = self.record_operational_log(
                 &context
-                    .log_entry(OperationalLogEntry::failure_code(
-                        "job.parse_document",
-                        reason,
-                    ))
+                    .log_entry(job_failure_log_entry("job.parse_document", reason, detail))
                     .with_level(level),
             );
         }
@@ -163,9 +175,11 @@ impl ManualImportStore {
             .into());
         };
         if let Some(context) = context {
-            let _ = self.record_operational_log(&context.log_entry(
-                OperationalLogEntry::failure_code("job.commit_review_batch", error_code),
-            ));
+            let _ = self.record_operational_log(&context.log_entry(job_failure_log_entry(
+                "job.commit_review_batch",
+                error_code,
+                detail,
+            )));
         }
         Ok(summary)
     }

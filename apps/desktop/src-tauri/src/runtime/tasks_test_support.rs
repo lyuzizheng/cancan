@@ -3,7 +3,7 @@ use crate::database::{
     SourceDocumentRoutingOutcome, TrustedAccountCandidate, TrustedDocumentClassification,
 };
 use crate::diagnostics::JobFailureDetail;
-use crate::runtime::tests::{
+use crate::runtime::test_support::{
     MemoryLocalInboxBookmarkStore, MemoryRememberedKeyStore, MemoryStatementPasswordStore,
 };
 use std::fs;

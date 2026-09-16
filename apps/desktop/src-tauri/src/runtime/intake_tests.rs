@@ -1,5 +1,5 @@
 use super::inbox_intake::local_inbox_snapshot_version;
-use super::tests::{
+use super::test_support::{
     MemoryLocalInboxBookmarkStore, MemoryRememberedKeyStore, MemoryStatementPasswordStore,
 };
 use super::*;

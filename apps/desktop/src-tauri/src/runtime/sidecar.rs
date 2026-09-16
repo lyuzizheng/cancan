@@ -1,48 +1,38 @@
 use super::*;
+use serde::de::DeserializeOwned;
 
-pub(super) fn source_document_metadata(
-    source_path: &Path,
-) -> Result<(String, &'static str), RuntimeError> {
-    let metadata = fs::metadata(source_path).map_err(|_| RuntimeError::new("import_failed"))?;
-    if !metadata.is_file() {
-        return Err(RuntimeError::new("unsupported_document"));
-    }
-    if metadata.len() > crate::source_file::MAX_SOURCE_FILE_BYTES {
-        return Err(RuntimeError::new("source_file_too_large"));
-    }
-    source_document_filename_metadata(source_path)
+/// One protocol message from either sidecar mode. Both modes share the
+/// handshake, the result envelope, and the error report, so they share the
+/// reader too.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum SidecarMessage<T> {
+    Ready {
+        #[serde(rename = "protocolVersion")]
+        protocol_version: u8,
+        runtime: String,
+        #[serde(rename = "environmentCleared")]
+        environment_cleared: bool,
+    },
+    Result {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        result: T,
+    },
+    Error {
+        code: String,
+    },
 }
 
-pub(super) fn source_document_filename_metadata(
-    source_path: &Path,
-) -> Result<(String, &'static str), RuntimeError> {
-    let mime_type = match source_path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("pdf") => "application/pdf",
-        Some("csv") => "text/csv",
-        Some("png") => "image/png",
-        Some("jpg" | "jpeg") => "image/jpeg",
-        _ => return Err(RuntimeError::new("unsupported_document")),
-    };
-    let original_filename = source_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .ok_or_else(|| RuntimeError::new("unsupported_document"))?
-        .to_owned();
-    Ok((original_filename, mime_type))
-}
-
+/// Runs one normalizer exchange: serialize the request, then speak the
+/// normalizer protocol.
 pub(super) async fn run_normalizer_sidecar(
     app: &AppHandle,
     document_id: &str,
     extraction_bundle: &ExtractionBundle,
 ) -> Result<NormalizerResult, RuntimeError> {
     let request_id = random_identifier("normalize");
+    let exchange = SidecarExchange::new("normalizer", "normalizer_failed");
     let command = Zeroizing::new(
         serde_json::to_vec(&NormalizerCommand {
             document_id,
@@ -50,101 +40,20 @@ pub(super) async fn run_normalizer_sidecar(
             request_id: &request_id,
             kind: "normalize",
         })
-        .map_err(|_| RuntimeError::new("normalizer_unavailable"))?,
+        .map_err(|error| exchange.transport(&error))?,
     );
-    let sidecar = app
-        .shell()
-        .sidecar("cancan-document-normalizer")
-        .map_err(|_| RuntimeError::new("normalizer_unavailable"))?
-        .env_clear();
-    let (mut events, mut child) = sidecar
-        .spawn()
-        .map_err(|_| RuntimeError::new("normalizer_unavailable"))?;
-    let deadline = Instant::now() + NORMALIZER_TIMEOUT;
-    let mut ready = false;
-    let result = loop {
-        let event = match timeout_at(deadline, events.recv()).await {
-            Ok(Some(event)) => event,
-            Ok(None) | Err(_) => return fail_normalizer(child),
-        };
-        match event {
-            CommandEvent::Stdout(bytes) => {
-                if bytes.len() > NORMALIZER_MAX_MESSAGE_BYTES {
-                    return fail_normalizer(child);
-                }
-                let message = match serde_json::from_slice::<NormalizerMessage>(&bytes) {
-                    Ok(message) => message,
-                    Err(_) => return fail_normalizer(child),
-                };
-                match message {
-                    NormalizerMessage::Ready {
-                        protocol_version,
-                        runtime,
-                        environment_cleared,
-                    } if !ready
-                        && valid_normalizer_ready(
-                            protocol_version,
-                            &runtime,
-                            environment_cleared,
-                        ) =>
-                    {
-                        let mut framed = Zeroizing::new(command.to_vec());
-                        framed.push(b'\n');
-                        if child.write(&framed).is_err() {
-                            return fail_normalizer(child);
-                        }
-                        ready = true;
-                    }
-                    NormalizerMessage::Result {
-                        request_id: response_id,
-                        result,
-                    } if ready && response_id == request_id => break result,
-                    NormalizerMessage::Error { code } => {
-                        let _ = code;
-                        return fail_normalizer(child);
-                    }
-                    NormalizerMessage::Ready { .. } | NormalizerMessage::Result { .. } => {
-                        return fail_normalizer(child);
-                    }
-                }
-            }
-            CommandEvent::Terminated(_) => {
-                return Err(RuntimeError::new("normalizer_failed"));
-            }
-            CommandEvent::Stderr(_) | CommandEvent::Error(_) => return fail_normalizer(child),
-            _ => return fail_normalizer(child),
-        }
-    };
-
-    if child.write(b"{\"type\":\"shutdown\"}\n").is_err() {
-        return fail_normalizer(child);
-    }
-    let shutdown_deadline = Instant::now() + NORMALIZER_SHUTDOWN_TIMEOUT;
-    let event = match timeout_at(shutdown_deadline, events.recv()).await {
-        Ok(Some(event)) => event,
-        Ok(None) | Err(_) => return fail_normalizer(child),
-    };
-    match event {
-        CommandEvent::Terminated(payload) if payload.code == Some(0) => Ok(result),
-        CommandEvent::Terminated(_) => Err(RuntimeError::new("normalizer_failed")),
-        CommandEvent::Stdout(_) | CommandEvent::Stderr(_) | CommandEvent::Error(_) => {
-            fail_normalizer(child)
-        }
-        _ => fail_normalizer(child),
-    }
+    run_sidecar_exchange(app, exchange, "the normalizer", &request_id, command).await
 }
 
-pub(super) fn fail_normalizer(child: CommandChild) -> Result<NormalizerResult, RuntimeError> {
-    let _ = child.kill();
-    Err(RuntimeError::new("normalizer_failed"))
-}
-
+/// Runs one review-core exchange: serialize the request, then speak the same
+/// protocol as the normalizer.
 pub(super) async fn run_review_core_sidecar<T: Serialize>(
     app: &AppHandle,
     operation: &'static str,
     input: &T,
 ) -> Result<ReviewCoreResult, RuntimeError> {
     let request_id = random_identifier("review-core");
+    let exchange = SidecarExchange::new("review_core", "review_core_failed");
     let command = Zeroizing::new(
         serde_json::to_vec(&ReviewCoreCommand {
             input,
@@ -152,34 +61,64 @@ pub(super) async fn run_review_core_sidecar<T: Serialize>(
             request_id: &request_id,
             kind: "core",
         })
-        .map_err(|_| RuntimeError::new("review_core_failed"))?,
+        .map_err(|error| exchange.transport(&error))?,
     );
+    run_sidecar_exchange(app, exchange, "the review core", &request_id, command).await
+}
+
+/// One sidecar exchange: spawn, handshake, request, result, shutdown.
+///
+/// Every way out that is not a result names the condition that broke the run,
+/// so the job row explains the failure instead of repeating the static code.
+async fn run_sidecar_exchange<T: DeserializeOwned>(
+    app: &AppHandle,
+    exchange: SidecarExchange,
+    label: &str,
+    request_id: &str,
+    command: Zeroizing<Vec<u8>>,
+) -> Result<T, RuntimeError> {
     let sidecar = app
         .shell()
         .sidecar("cancan-document-normalizer")
-        .map_err(|_| RuntimeError::new("review_core_failed"))?
+        .map_err(|error| exchange.transport(&error))?
         .env_clear();
     let (mut events, mut child) = sidecar
         .spawn()
-        .map_err(|_| RuntimeError::new("review_core_failed"))?;
+        .map_err(|error| exchange.transport(&error))?;
     let deadline = Instant::now() + NORMALIZER_TIMEOUT;
     let mut ready = false;
     let result = loop {
         let event = match timeout_at(deadline, events.recv()).await {
             Ok(Some(event)) => event,
-            Ok(None) | Err(_) => return fail_review_core(child),
+            Ok(None) | Err(_) => {
+                return Err(exchange.transient(
+                    child,
+                    format!("{label} produced no result before it timed out"),
+                ));
+            }
         };
         match event {
+            CommandEvent::Stdout(bytes) if bytes.len() > NORMALIZER_MAX_MESSAGE_BYTES => {
+                return Err(exchange.protocol(
+                    child,
+                    format!(
+                        "{label} sent a {} byte message, over the {NORMALIZER_MAX_MESSAGE_BYTES} byte limit",
+                        bytes.len()
+                    ),
+                ));
+            }
             CommandEvent::Stdout(bytes) => {
-                if bytes.len() > NORMALIZER_MAX_MESSAGE_BYTES {
-                    return fail_review_core(child);
-                }
-                let message = match serde_json::from_slice::<ReviewCoreMessage>(&bytes) {
+                let message = match serde_json::from_slice::<SidecarMessage<T>>(&bytes) {
                     Ok(message) => message,
-                    Err(_) => return fail_review_core(child),
+                    Err(error) => {
+                        return Err(exchange.protocol(
+                            child,
+                            format!("{label} sent a message that is not valid JSON: {error}"),
+                        ));
+                    }
                 };
                 match message {
-                    ReviewCoreMessage::Ready {
+                    SidecarMessage::Ready {
                         protocol_version,
                         runtime,
                         environment_cleared,
@@ -193,50 +132,97 @@ pub(super) async fn run_review_core_sidecar<T: Serialize>(
                         let mut framed = Zeroizing::new(command.to_vec());
                         framed.push(b'\n');
                         if child.write(&framed).is_err() {
-                            return fail_review_core(child);
+                            return Err(exchange.transient(
+                                child,
+                                format!(
+                                    "{label} closed the request stream before the request was sent"
+                                ),
+                            ));
                         }
                         ready = true;
                     }
-                    ReviewCoreMessage::Result {
+                    SidecarMessage::Result {
                         request_id: response_id,
                         result,
                     } if ready && response_id == request_id => break result,
-                    ReviewCoreMessage::Error { code } => {
-                        let _ = code;
-                        return fail_review_core(child);
+                    SidecarMessage::Error { code } => {
+                        return Err(exchange.protocol(child, format!("{label} reported {code}")));
                     }
-                    ReviewCoreMessage::Ready { .. } | ReviewCoreMessage::Result { .. } => {
-                        return fail_review_core(child);
+                    SidecarMessage::Ready { .. } | SidecarMessage::Result { .. } => {
+                        return Err(exchange.protocol(
+                            child,
+                            format!("{label} sent a message out of protocol order"),
+                        ));
                     }
                 }
             }
-            CommandEvent::Terminated(_) => return Err(RuntimeError::new("review_core_failed")),
-            CommandEvent::Stderr(_) | CommandEvent::Error(_) => return fail_review_core(child),
-            _ => return fail_review_core(child),
+            CommandEvent::Terminated(payload) => {
+                return Err(
+                    exchange.transient(child, format!("{label} {}", exit_reason(payload.code)))
+                );
+            }
+            CommandEvent::Stderr(bytes) => {
+                return Err(exchange.transient(
+                    child,
+                    format!("{label} wrote to stderr: {}", stderr_tail(&bytes)),
+                ));
+            }
+            CommandEvent::Error(error) => {
+                return Err(exchange.transient(child, format!("{label} transport failed: {error}")));
+            }
+            _ => {
+                return Err(exchange.transient(
+                    child,
+                    format!("{label} closed its event stream unexpectedly"),
+                ));
+            }
         }
     };
-
     if child.write(b"{\"type\":\"shutdown\"}\n").is_err() {
-        return fail_review_core(child);
+        return Err(exchange.transient(
+            child,
+            format!("{label} closed the request stream before shutdown was sent"),
+        ));
     }
     let shutdown_deadline = Instant::now() + NORMALIZER_SHUTDOWN_TIMEOUT;
     let event = match timeout_at(shutdown_deadline, events.recv()).await {
         Ok(Some(event)) => event,
-        Ok(None) | Err(_) => return fail_review_core(child),
+        Ok(None) | Err(_) => {
+            return Err(exchange.transient(
+                child,
+                format!("{label} did not acknowledge shutdown in time"),
+            ));
+        }
     };
     match event {
         CommandEvent::Terminated(payload) if payload.code == Some(0) => Ok(result),
-        CommandEvent::Terminated(_) => Err(RuntimeError::new("review_core_failed")),
-        CommandEvent::Stdout(_) | CommandEvent::Stderr(_) | CommandEvent::Error(_) => {
-            fail_review_core(child)
-        }
-        _ => fail_review_core(child),
+        CommandEvent::Terminated(payload) => Err(exchange.transient(
+            child,
+            format!(
+                "{label} {} after returning a result",
+                exit_reason(payload.code)
+            ),
+        )),
+        CommandEvent::Stderr(bytes) => Err(exchange.transient(
+            child,
+            format!(
+                "{label} wrote to stderr while shutting down: {}",
+                stderr_tail(&bytes)
+            ),
+        )),
+        _ => Err(exchange.transient(
+            child,
+            format!("{label} sent an unexpected reply to shutdown"),
+        )),
     }
 }
 
-pub(super) fn fail_review_core(child: CommandChild) -> Result<ReviewCoreResult, RuntimeError> {
-    let _ = child.kill();
-    Err(RuntimeError::new("review_core_failed"))
+/// How a sidecar process stopped, for the record a failed run leaves.
+fn exit_reason(code: Option<i32>) -> String {
+    match code {
+        Some(code) => format!("exited with status {code}"),
+        None => "was terminated by a signal".to_owned(),
+    }
 }
 
 pub(super) fn is_unique_requested_relationship_candidate(
@@ -740,16 +726,20 @@ pub(super) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 pub(super) fn ensure_copy_outside_vault(
+    runtime: &VaultRuntime,
     vault_root: &Path,
     destination: &Path,
 ) -> Result<(), RuntimeError> {
-    let vault_root = fs::canonicalize(vault_root)
-        .map_err(|_| RuntimeError::new("source_copy_location_invalid"))?;
+    let failed = |component: &'static str, error: &io::Error| {
+        runtime_failure(runtime, component, "source_copy_location_invalid", error)
+    };
+    let vault_root =
+        fs::canonicalize(vault_root).map_err(|error| failed("resolve_vault_root", &error))?;
     let parent = destination
         .parent()
         .ok_or_else(|| RuntimeError::new("source_copy_location_invalid"))?;
     let parent =
-        fs::canonicalize(parent).map_err(|_| RuntimeError::new("source_copy_location_invalid"))?;
+        fs::canonicalize(parent).map_err(|error| failed("resolve_copy_destination", &error))?;
     if parent.starts_with(&vault_root)
         || destination
             .canonicalize()

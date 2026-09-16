@@ -62,8 +62,14 @@ impl VaultRuntime {
                 "local_inbox_scan_failed",
             )?
         };
-        let entries =
-            fs::read_dir(inbox).map_err(|_| RuntimeError::new("local_inbox_scan_failed"))?;
+        let entries = fs::read_dir(inbox).map_err(|error| {
+            runtime_failure(
+                self,
+                "local_inbox_read_dir",
+                "local_inbox_scan_failed",
+                &error,
+            )
+        })?;
         let mut summary = LocalInboxScanSummary::default();
         let preflight = SystemNativePreflight;
         let mut observed_candidates = Vec::new();
@@ -330,7 +336,8 @@ impl VaultRuntime {
         captured_bytes: Zeroizing<Vec<u8>>,
         intake_item_id: &str,
     ) -> Result<SourceDocumentImportOutcome, RuntimeError> {
-        let (original_filename, mime_type) = source_document_filename_metadata(source_path)?;
+        let (original_filename, mime_type) =
+            super::documents_intake::source_document_filename_metadata(source_path)?;
         let document_id = random_identifier("document");
         let audit_id = random_identifier("audit");
         let input = SourceDocumentImport {

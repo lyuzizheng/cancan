@@ -213,7 +213,7 @@ impl VaultRuntime {
         &self,
         attempt: &ParseDocumentAttempt,
         reason: &'static str,
-        detail: &JobFailureDetail,
+        detail: Option<&JobFailureDetail>,
     ) -> Result<(), RuntimeError> {
         self.require_vault_session(attempt.vault_session_generation)?;
         let mut store = self.store()?;
@@ -221,7 +221,7 @@ impl VaultRuntime {
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
         store
-            .fail_parse_document_job(&attempt.claim, reason, Some(detail))
+            .fail_parse_document_job(&attempt.claim, reason, detail)
             .map_store_error(store, "fail_parse_document_job", "local_inbox_parse_failed")
     }
 
@@ -268,14 +268,14 @@ impl VaultRuntime {
         &self,
         document_id: &str,
         reason: &'static str,
-        detail: &JobFailureDetail,
+        detail: Option<&JobFailureDetail>,
     ) -> Result<(), RuntimeError> {
         let mut store = self.store()?;
         let store = store
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
         store
-            .fail_reconcile_document(document_id, reason, Some(detail))
+            .fail_reconcile_document(document_id, reason, detail)
             .map_store_error(store, "fail_reconcile_document", "reconcile_failed")
     }
 
@@ -462,11 +462,11 @@ pub(super) async fn process_queued_local_inbox_parses(
             let result = match run_normalizer_sidecar(app, &job.document_id, &input.bundle).await {
                 Ok(result) => result,
                 Err(error) => {
-                    let detail = JobFailureDetail::from_code(Some("normalizer"), error.code);
+                    let detail = error.detail_or_code(Some("normalizer"));
                     let runtime = runtime.clone();
                     let attempt = attempt.clone();
                     tauri::async_runtime::spawn_blocking(move || {
-                        runtime.fail_local_inbox_parse(&attempt, "normalizer_failed", &detail)
+                        runtime.fail_local_inbox_parse(&attempt, "normalizer_failed", Some(&detail))
                     })
                     .await
                     .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
@@ -527,11 +527,15 @@ pub(super) async fn process_queued_document_reconciliations(
                 .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
         };
         if let Err(error) = reconciled {
-            let detail = JobFailureDetail::from_code(Some("reconcile"), error.code);
+            let detail = error.detail_or_code(Some("reconcile"));
             let runtime = runtime.clone();
             let document_id = document_id.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                runtime.fail_document_reconciliation(&document_id, "reconcile_failed", &detail)
+                runtime.fail_document_reconciliation(
+                    &document_id,
+                    "reconcile_failed",
+                    Some(&detail),
+                )
             })
             .await
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;

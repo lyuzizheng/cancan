@@ -72,9 +72,14 @@ impl VaultRuntime {
         {
             return Ok(cached);
         }
-        let input = plan
-            .read()
-            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+        let input = plan.read().map_err(|error| {
+            runtime_failure(
+                self,
+                "read_source_document",
+                "document_unavailable",
+                &*error,
+            )
+        })?;
         self.require_vault_session(generation)?;
         self.remember_source_document(document_id, generation, &input)?;
         Ok(input)
@@ -89,12 +94,18 @@ impl VaultRuntime {
         if document_id.is_empty() {
             return Err(RuntimeError::new("invalid_document_request"));
         }
-        ensure_copy_outside_vault(&self.inner.root, destination)?;
+        ensure_copy_outside_vault(self, &self.inner.root, destination)?;
         self.require_vault_session(session_generation)?;
         let input = self.read_source_document(document_id)?;
         self.require_vault_session(session_generation)?;
-        write_export_atomically(destination, &input.plaintext)
-            .map_err(|_| RuntimeError::new("source_copy_save_failed"))
+        write_export_atomically(destination, &input.plaintext).map_err(|error| {
+            runtime_failure(
+                self,
+                "write_export_atomically",
+                "source_copy_save_failed",
+                &error,
+            )
+        })
     }
 
     pub(super) fn require_unlocked(&self) -> Result<(), RuntimeError> {
@@ -153,7 +164,9 @@ impl VaultRuntime {
                     })
                     .collect()
             })
-            .map_err(|_| RuntimeError::new("list_sources_failed"))
+            .map_err(|error| {
+                store_failure(store, "list_money_sources", "list_sources_failed", &*error)
+            })
     }
 
     pub(crate) fn list_account_confirmation_prompts(
@@ -272,7 +285,14 @@ impl VaultRuntime {
                     })
                     .collect()
             })
-            .map_err(|_| RuntimeError::new("list_sources_failed"))
+            .map_err(|error| {
+                store_failure(
+                    store,
+                    "statement_password_sources",
+                    "list_sources_failed",
+                    &*error,
+                )
+            })
     }
 
     pub(crate) fn try_saved_statement_password(
@@ -305,7 +325,14 @@ impl VaultRuntime {
             .inner
             .statement_passwords
             .load(&secret_storage_key)
-            .map_err(|_| RuntimeError::new("statement_password_load_failed"))?
+            .map_err(|error| {
+                runtime_failure(
+                    self,
+                    "statement_password_load",
+                    "statement_password_load_failed",
+                    &error,
+                )
+            })?
         else {
             return Ok(SavedStatementPasswordResult::Unavailable);
         };
@@ -681,9 +708,9 @@ pub(crate) async fn save_source_document_copy(
         let Some(selected) = selected else {
             return Ok(false);
         };
-        let destination = selected
-            .into_path()
-            .map_err(|_| RuntimeError::new("file_selection_failed"))?;
+        let destination = selected.into_path().map_err(|error| {
+            runtime_failure(&runtime, "save_a_copy_destination", "file_selection_failed", &error)
+        })?;
         runtime.save_source_document_copy(&document_id, &destination, session_generation)?;
         Ok(true)
     })
@@ -710,9 +737,14 @@ pub(crate) async fn import_source_document(
         let Some(selected) = selected else {
             return Ok(None);
         };
-        let path = selected
-            .into_path()
-            .map_err(|_| RuntimeError::new("file_selection_failed"))?;
+        let path = selected.into_path().map_err(|error| {
+            runtime_failure(
+                &import_runtime,
+                "import_destination",
+                "file_selection_failed",
+                &error,
+            )
+        })?;
         let outcome = import_runtime.import_selected_document(&path)?;
         if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired {
             return Ok(Some(outcome));

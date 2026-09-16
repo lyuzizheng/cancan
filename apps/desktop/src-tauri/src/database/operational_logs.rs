@@ -161,7 +161,10 @@ impl ManualImportStore {
     }
 
     /// The most recent entries, oldest first.
-    fn operational_log_rows(&self, limit: u32) -> StoreResult<Vec<OperationalLogRow>> {
+    ///
+    /// Read by the preview and the export, and by the tests that pin what a
+    /// failure leaves behind.
+    pub(crate) fn operational_log_rows(&self, limit: u32) -> StoreResult<Vec<OperationalLogRow>> {
         let mut statement = self.connection.prepare(
             "SELECT created_at, level, component, error_code, error_kind, detail, cause, \
                     job_type, job_status, attempt, duration_ms, app_version \

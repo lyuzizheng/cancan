@@ -112,14 +112,14 @@ impl VaultRuntime {
     pub(super) fn fail_review_batch(
         &self,
         claimed: &ClaimedReviewBatch,
-        detail: &JobFailureDetail,
+        detail: Option<&JobFailureDetail>,
     ) -> Result<ReviewJobSummary, RuntimeError> {
         let mut store = self.store()?;
         let store = store
             .as_mut()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
         store
-            .fail_review_batch(claimed, "review_core_failed", Some(detail))
+            .fail_review_batch(claimed, "review_core_failed", detail)
             .map_store_error(store, "fail_review_batch", "review_unavailable")
     }
 }

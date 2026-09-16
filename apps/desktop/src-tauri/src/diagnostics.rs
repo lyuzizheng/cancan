@@ -81,6 +81,57 @@ pub(crate) fn classify_error(error: &(dyn Error + 'static)) -> &'static str {
     "unknown"
 }
 
+/// Whether a failure of this kind is worth another attempt, following the
+/// retry policy of spec 0015.
+///
+/// Only transient kinds qualify: an interrupted, timed-out, or dropped
+/// connection, and the SQLite busy/locked codes that clear once the concurrent
+/// writer finishes. Deterministic failures — missing files, constraint
+/// violations, malformed payloads — are reported once, and validation failures
+/// stay with the user decision they belong to.
+pub(crate) fn error_is_retryable(error: &(dyn Error + 'static)) -> bool {
+    if let Some(error) = find_cause::<io::Error>(error) {
+        return matches!(
+            error.kind(),
+            io::ErrorKind::Interrupted
+                | io::ErrorKind::TimedOut
+                | io::ErrorKind::WouldBlock
+                | io::ErrorKind::ConnectionReset
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::BrokenPipe
+                | io::ErrorKind::NotConnected
+                | io::ErrorKind::UnexpectedEof
+        );
+    }
+    if let Some(rusqlite::Error::SqliteFailure(failure, _)) = find_cause::<rusqlite::Error>(error) {
+        return matches!(
+            failure.code,
+            rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+        );
+    }
+    false
+}
+
+/// The immediate source of an error, redacted: the layer that explains a
+/// generic wrapper message.
+fn redacted_source(error: &(dyn Error + 'static)) -> Option<RedactedText> {
+    error
+        .source()
+        .map(|source| RedactedText::from_text(&source.to_string()))
+}
+
+/// The first error of the requested type in the source chain.
+fn find_cause<'a, T: Error + 'static>(error: &'a (dyn Error + 'static)) -> Option<&'a T> {
+    let mut current = Some(error);
+    while let Some(error) = current {
+        if let Some(found) = error.downcast_ref::<T>() {
+            return Some(found);
+        }
+        current = error.source();
+    }
+    None
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OperationalLogLevel {
     /// The operation was retried or parked; nothing is broken yet.
@@ -130,9 +181,29 @@ impl OperationalLogEntry {
             error_code: Some(Cow::Owned(error_code.to_owned())),
             error_kind: Some(classify_error(error)),
             detail: RedactedText::from_error(error),
-            cause: error
-                .source()
-                .map(|source| RedactedText::from_text(&source.to_string())),
+            cause: redacted_source(error),
+            job_type: None,
+            job_status: None,
+            attempt: None,
+            duration_ms: None,
+        }
+    }
+
+    /// A failed step recorded from the technical layer that travelled with the
+    /// failure, for the job paths whose error object is no longer in scope
+    /// when the row is written.
+    pub(crate) fn from_detail(
+        component: &'static str,
+        error_code: &str,
+        detail: &JobFailureDetail,
+    ) -> Self {
+        Self {
+            level: OperationalLogLevel::Error,
+            component,
+            error_code: Some(Cow::Owned(error_code.to_owned())),
+            error_kind: Some(detail.error_kind),
+            detail: detail.message.clone(),
+            cause: detail.cause.clone(),
             job_type: None,
             job_status: None,
             attempt: None,
@@ -197,6 +268,45 @@ impl JobFailureDetail {
             cause: None,
             retryable: false,
             provider,
+        }
+    }
+
+    /// The technical layer of a failure whose error object is still in scope.
+    ///
+    /// The message, cause, and retryability come from the real error, so the
+    /// durable record explains the failure instead of restating the code.
+    pub(crate) fn from_error(
+        provider: Option<&'static str>,
+        error: &(dyn Error + 'static),
+    ) -> Self {
+        Self {
+            error_kind: classify_error(error),
+            message: RedactedText::from_error(error),
+            cause: redacted_source(error),
+            retryable: error_is_retryable(error),
+            provider,
+        }
+    }
+
+    /// The technical layer of a failure that left no error object behind: a
+    /// protocol observation, a timeout, or a validation rejection. The message
+    /// is written by the reporting component and redacted like every other.
+    pub(crate) fn from_message(provider: Option<&'static str>, message: &str) -> Self {
+        Self {
+            error_kind: "observed",
+            message: RedactedText::from_text(message),
+            cause: None,
+            retryable: false,
+            provider,
+        }
+    }
+
+    /// [`Self::from_message`] for a failure that a later attempt could clear,
+    /// such as a sidecar that crashed or timed out.
+    pub(crate) fn from_transient_message(provider: Option<&'static str>, message: &str) -> Self {
+        Self {
+            retryable: true,
+            ..Self::from_message(provider, message)
         }
     }
 }

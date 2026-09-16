@@ -1,4 +1,7 @@
-use super::test_support::{statement_password_runtime, statement_password_state};
+use super::test_support::{
+    MemoryLocalInboxBookmarkStore, MemoryRememberedKeyStore, MemoryStatementPasswordStore,
+    statement_password_runtime, statement_password_state,
+};
 use super::*;
 use crate::database::{CandidateAccountDecision, SourceDocumentImportStatus};
 use crate::diagnostics::JobFailureDetail;
@@ -7,101 +10,7 @@ use crate::vault::open_recovery_file;
 use crate::viewer::pdf_password_unlocks;
 #[cfg(target_os = "macos")]
 use crate::viewer::tests::{protected_pdf_fixture, synthetic_png_fixture};
-use std::{collections::HashMap, sync::atomic::Ordering, thread, time::Duration};
-
-#[derive(Default)]
-pub(super) struct MemoryRememberedKeyStore {
-    secret: Mutex<Option<Vec<u8>>>,
-}
-
-impl RememberedKeyStore for MemoryRememberedKeyStore {
-    fn delete(&self) -> Result<(), ()> {
-        *self.secret.lock().map_err(|_| ())? = None;
-        Ok(())
-    }
-
-    fn is_present(&self) -> Result<bool, ()> {
-        Ok(self.secret.lock().map_err(|_| ())?.is_some())
-    }
-
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
-        Ok(self
-            .secret
-            .lock()
-            .map_err(|_| ())?
-            .clone()
-            .map(Zeroizing::new))
-    }
-
-    fn save(&self, secret: &[u8]) -> Result<(), ()> {
-        *self.secret.lock().map_err(|_| ())? = Some(secret.to_vec());
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-pub(super) struct MemoryStatementPasswordStore {
-    fail_delete: AtomicBool,
-    fail_save: AtomicBool,
-    secrets: Mutex<HashMap<String, Vec<u8>>>,
-}
-
-impl StatementPasswordStore for MemoryStatementPasswordStore {
-    fn delete(&self, secret_ref: &str) -> Result<(), ()> {
-        if self.fail_delete.load(Ordering::SeqCst) {
-            return Err(());
-        }
-        self.secrets.lock().map_err(|_| ())?.remove(secret_ref);
-        Ok(())
-    }
-
-    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
-        Ok(self
-            .secrets
-            .lock()
-            .map_err(|_| ())?
-            .get(secret_ref)
-            .cloned()
-            .map(Zeroizing::new))
-    }
-
-    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()> {
-        if self.fail_save.load(Ordering::SeqCst) {
-            return Err(());
-        }
-        self.secrets
-            .lock()
-            .map_err(|_| ())?
-            .insert(secret_ref.to_owned(), secret.to_vec());
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-pub(super) struct MemoryLocalInboxBookmarkStore {
-    bookmark: Mutex<Option<Vec<u8>>>,
-}
-
-impl LocalInboxBookmarkStore for MemoryLocalInboxBookmarkStore {
-    fn delete(&self) -> Result<(), ()> {
-        *self.bookmark.lock().map_err(|_| ())? = None;
-        Ok(())
-    }
-
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
-        Ok(self
-            .bookmark
-            .lock()
-            .map_err(|_| ())?
-            .clone()
-            .map(Zeroizing::new))
-    }
-
-    fn save(&self, bookmark: &[u8]) -> Result<(), ()> {
-        *self.bookmark.lock().map_err(|_| ())? = Some(bookmark.to_vec());
-        Ok(())
-    }
-}
+use std::{sync::atomic::Ordering, thread, time::Duration};
 
 #[test]
 fn refuses_an_ambiguous_or_mismatched_core_relationship_candidate() {
@@ -2020,7 +1929,10 @@ fn persists_validated_records_and_reconciles_an_explicit_parser_re_run() {
         .fail_document_reconciliation(
             &imported.document_id,
             "reconcile_failed",
-            &JobFailureDetail::from_code(Some("reconcile"), "reconcile_failed"),
+            Some(&JobFailureDetail::from_code(
+                Some("reconcile"),
+                "reconcile_failed",
+            )),
         )
         .expect("record safe reconcile failure");
     let failed = structured_parse_test_state(&runtime, &imported.document_id);

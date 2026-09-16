@@ -737,11 +737,11 @@ pub(super) async fn process_review_batch_job(
         let result = match result {
             Ok(result) => result,
             Err(error) => {
-                let detail = JobFailureDetail::from_code(Some("review_core"), error.code);
+                let detail = error.detail_or_code(Some("review_core"));
                 let failure_runtime = runtime.clone();
                 let failure_claimed = claimed.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || {
-                    failure_runtime.fail_review_batch(&failure_claimed, &detail)
+                    failure_runtime.fail_review_batch(&failure_claimed, Some(&detail))
                 })
                 .await;
                 return Err(error.into());
@@ -778,14 +778,14 @@ pub(super) async fn process_review_batch_job(
                 event: ReviewCoreReadyEvent::Reversal(_),
             }
             | ReviewCoreResult::Candidates { .. } => {
-                let detail = JobFailureDetail::from_code(
+                let detail = JobFailureDetail::from_message(
                     Some("review_core"),
-                    "review_core_result_unsupported",
+                    "review core returned a result the batch cannot apply",
                 );
                 let failure_runtime = runtime.clone();
                 let failure_claimed = claimed.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || {
-                    failure_runtime.fail_review_batch(&failure_claimed, &detail)
+                    failure_runtime.fail_review_batch(&failure_claimed, Some(&detail))
                 })
                 .await;
                 return Err(VaultCommandError::new("review_core_failed"));

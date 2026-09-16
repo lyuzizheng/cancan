@@ -1,3 +1,7 @@
+use super::test_support::{
+    MemoryLocalInboxBookmarkStore, MemoryRememberedKeyStore, MemoryStatementPasswordStore,
+    poisoned_keychain_lock,
+};
 use super::*;
 use crate::database::{GmailAccountState, GmailAccountStatus};
 use sha2::{Digest, Sha256};
@@ -10,36 +14,39 @@ struct MemoryGmailRefreshTokenStore {
 }
 
 impl GmailRefreshTokenStore for MemoryGmailRefreshTokenStore {
-    fn delete(&self, secret_ref: &str) -> Result<(), ()> {
+    fn delete(&self, secret_ref: &str) -> Result<(), SecretStoreError> {
         if self
             .fail_delete_refs
             .lock()
-            .map_err(|_| ())?
+            .map_err(|_| poisoned_keychain_lock())?
             .contains(secret_ref)
         {
-            return Err(());
+            return Err(SecretStoreError::new("test keychain failure"));
         }
-        self.secrets.lock().map_err(|_| ())?.remove(secret_ref);
+        self.secrets
+            .lock()
+            .map_err(|_| poisoned_keychain_lock())?
+            .remove(secret_ref);
         Ok(())
     }
 
-    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
         Ok(self
             .secrets
             .lock()
-            .map_err(|_| ())?
+            .map_err(|_| poisoned_keychain_lock())?
             .get(secret_ref)
             .cloned()
             .map(Zeroizing::new))
     }
 
-    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()> {
+    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), SecretStoreError> {
         if self.fail_save.load(Ordering::SeqCst) {
-            return Err(());
+            return Err(SecretStoreError::new("test keychain failure"));
         }
         self.secrets
             .lock()
-            .map_err(|_| ())?
+            .map_err(|_| poisoned_keychain_lock())?
             .insert(secret_ref.to_owned(), secret.to_vec());
         Ok(())
     }
@@ -51,9 +58,9 @@ fn gmail_runtime(
 ) -> VaultRuntime {
     let runtime = VaultRuntime::with_all_secret_stores(
         root.to_path_buf(),
-        Arc::new(super::tests::MemoryRememberedKeyStore::default()),
-        Arc::new(super::tests::MemoryStatementPasswordStore::default()),
-        Arc::new(super::tests::MemoryLocalInboxBookmarkStore::default()),
+        Arc::new(MemoryRememberedKeyStore::default()),
+        Arc::new(MemoryStatementPasswordStore::default()),
+        Arc::new(MemoryLocalInboxBookmarkStore::default()),
         gmail_refresh_tokens,
     );
     runtime

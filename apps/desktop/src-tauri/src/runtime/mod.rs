@@ -390,26 +390,6 @@ struct NormalizerCommand<'a> {
     kind: &'static str,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-enum NormalizerMessage {
-    Ready {
-        #[serde(rename = "protocolVersion")]
-        protocol_version: u8,
-        runtime: String,
-        #[serde(rename = "environmentCleared")]
-        environment_cleared: bool,
-    },
-    Result {
-        #[serde(rename = "requestId")]
-        request_id: String,
-        result: NormalizerResult,
-    },
-    Error {
-        code: String,
-    },
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ReviewCoreCommand<'a, T> {
@@ -461,26 +441,6 @@ enum ReviewCoreResult {
     Candidates { candidates: Vec<CoreCandidate> },
     Ready { event: ReviewCoreReadyEvent },
     Review { reasons: Vec<String> },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-enum ReviewCoreMessage {
-    Ready {
-        #[serde(rename = "protocolVersion")]
-        protocol_version: u8,
-        runtime: String,
-        #[serde(rename = "environmentCleared")]
-        environment_cleared: bool,
-    },
-    Result {
-        #[serde(rename = "requestId")]
-        request_id: String,
-        result: ReviewCoreResult,
-    },
-    Error {
-        code: String,
-    },
 }
 
 #[derive(Clone)]
@@ -566,6 +526,7 @@ mod review;
 mod review_jobs;
 mod review_records;
 mod sidecar;
+mod sidecar_failure;
 mod source_confirmation;
 mod statement_passwords;
 mod tasks;
@@ -593,24 +554,52 @@ pub(crate) use lifecycle::*;
 pub(crate) use review::*;
 pub(crate) use review_records::*;
 use sidecar::*;
+use sidecar_failure::*;
 pub(crate) use source_confirmation::*;
 pub(crate) use tasks::*;
 pub(crate) use undo::*;
 pub(crate) use vault_lifecycle::*;
 
+/// The store handle for one operation, and the record that this thread holds
+/// the lock the logging fallbacks need.
+///
+/// Dereferences to the store itself, so callers keep using it as the guard.
+pub(super) struct StoreGuard<'a> {
+    guard: MutexGuard<'a, Option<ManualImportStore>>,
+    _held: StoreGuardHeld,
+}
+
+impl Deref for StoreGuard<'_> {
+    type Target = Option<ManualImportStore>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl std::ops::DerefMut for StoreGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Option<ManualImportStore> {
+        &mut self.guard
+    }
+}
+
 impl VaultRuntime {
-    pub(super) fn store(&self) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
-        self.inner
-            .store
-            .lock()
-            .map_err(|_| RuntimeError::new("runtime_unavailable"))
+    pub(super) fn store(&self) -> Result<StoreGuard<'_>, RuntimeError> {
+        Ok(StoreGuard {
+            guard: self
+                .inner
+                .store
+                .lock()
+                .map_err(|_| RuntimeError::new("runtime_unavailable"))?,
+            _held: StoreGuardHeld::new(),
+        })
     }
 
     #[cfg(test)]
     pub(super) fn store_for_vault_session(
         &self,
         vault_session_generation: u64,
-    ) -> Result<MutexGuard<'_, Option<ManualImportStore>>, RuntimeError> {
+    ) -> Result<StoreGuard<'_>, RuntimeError> {
         let store = self.store()?;
         if self.inner.vault_session_generation.load(Ordering::SeqCst) != vault_session_generation {
             return Err(RuntimeError::new("vault_locked"));
@@ -709,9 +698,12 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("runtime_unavailable"))
     }
 
+    /// Loads the Touch ID-protected master key. The keychain failure is
+    /// returned rather than collapsed, so the caller can record why the
+    /// remembered unlock did not happen.
     pub(super) fn load_remembered_master_key(
         &self,
-    ) -> Result<Option<Zeroizing<[u8; KEY_LEN]>>, ()> {
+    ) -> Result<Option<Zeroizing<[u8; KEY_LEN]>>, SecretStoreError> {
         let secret = match self.inner.remembered_keys.load() {
             Ok(Some(secret)) if secret.len() == KEY_LEN => secret,
             Ok(_) => {
@@ -720,7 +712,7 @@ impl VaultRuntime {
                 self.inner.remembered_keys.delete()?;
                 return Ok(None);
             }
-            Err(()) if self.inner.remembered_keys.invalidated() => {
+            Err(_) if self.inner.remembered_keys.invalidated() => {
                 // The enrolled Touch ID fingerprint set changed and invalidated
                 // the item; clean up both items so the UI stops offering a
                 // Touch ID unlock that can never succeed. Other load errors
@@ -729,7 +721,7 @@ impl VaultRuntime {
                 self.inner.remembered_keys.delete()?;
                 return Ok(None);
             }
-            Err(()) => return Err(()),
+            Err(error) => return Err(error),
         };
         Ok(Some(Zeroizing::new(
             <[u8; KEY_LEN]>::try_from(secret.as_slice()).expect("length checked"),

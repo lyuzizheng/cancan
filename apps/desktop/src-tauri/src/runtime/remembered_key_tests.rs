@@ -1,63 +1,63 @@
-use super::tests::MemoryRememberedKeyStore;
+use super::test_support::{MemoryRememberedKeyStore, poisoned_keychain_lock};
 use super::*;
 
 struct FailingRememberedKeyStore;
 
 impl RememberedKeyStore for FailingRememberedKeyStore {
-    fn delete(&self) -> Result<(), ()> {
-        Err(())
+    fn delete(&self) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 
-    fn is_present(&self) -> Result<bool, ()> {
-        Err(())
+    fn is_present(&self) -> Result<bool, SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
         Ok(None)
     }
 
-    fn save(&self, _secret: &[u8]) -> Result<(), ()> {
-        Err(())
+    fn save(&self, _secret: &[u8]) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 }
 
 struct PresenceOnlyRememberedKeyStore;
 
 impl RememberedKeyStore for PresenceOnlyRememberedKeyStore {
-    fn delete(&self) -> Result<(), ()> {
-        Err(())
+    fn delete(&self) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 
-    fn is_present(&self) -> Result<bool, ()> {
+    fn is_present(&self) -> Result<bool, SecretStoreError> {
         Ok(true)
     }
 
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
         panic!("status must not load the remembered secret")
     }
 
-    fn save(&self, _secret: &[u8]) -> Result<(), ()> {
-        Err(())
+    fn save(&self, _secret: &[u8]) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 }
 
 struct MalformedDeleteFailingRememberedKeyStore;
 
 impl RememberedKeyStore for MalformedDeleteFailingRememberedKeyStore {
-    fn delete(&self) -> Result<(), ()> {
-        Err(())
+    fn delete(&self) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 
-    fn is_present(&self) -> Result<bool, ()> {
+    fn is_present(&self) -> Result<bool, SecretStoreError> {
         Ok(true)
     }
 
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
         Ok(Some(Zeroizing::new(vec![0x55; KEY_LEN - 1])))
     }
 
-    fn save(&self, _secret: &[u8]) -> Result<(), ()> {
-        Err(())
+    fn save(&self, _secret: &[u8]) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 }
 
@@ -77,25 +77,25 @@ impl InvalidatedRememberedKeyStore {
 }
 
 impl RememberedKeyStore for InvalidatedRememberedKeyStore {
-    fn delete(&self) -> Result<(), ()> {
-        *self.deleted.lock().map_err(|_| ())? = true;
+    fn delete(&self) -> Result<(), SecretStoreError> {
+        *self.deleted.lock().map_err(|_| poisoned_keychain_lock())? = true;
         Ok(())
     }
 
-    fn is_present(&self) -> Result<bool, ()> {
-        Ok(!*self.deleted.lock().map_err(|_| ())?)
+    fn is_present(&self) -> Result<bool, SecretStoreError> {
+        Ok(!*self.deleted.lock().map_err(|_| poisoned_keychain_lock())?)
     }
 
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
-        Err(())
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 
     fn invalidated(&self) -> bool {
         true
     }
 
-    fn save(&self, _secret: &[u8]) -> Result<(), ()> {
-        Err(())
+    fn save(&self, _secret: &[u8]) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 }
 
@@ -105,20 +105,20 @@ impl RememberedKeyStore for InvalidatedRememberedKeyStore {
 struct TransientFailureRememberedKeyStore;
 
 impl RememberedKeyStore for TransientFailureRememberedKeyStore {
-    fn delete(&self) -> Result<(), ()> {
-        Err(())
+    fn delete(&self) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 
-    fn is_present(&self) -> Result<bool, ()> {
+    fn is_present(&self) -> Result<bool, SecretStoreError> {
         Ok(true)
     }
 
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
-        Err(())
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 
-    fn save(&self, _secret: &[u8]) -> Result<(), ()> {
-        Err(())
+    fn save(&self, _secret: &[u8]) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::new("test keychain failure"))
     }
 }
 

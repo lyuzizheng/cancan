@@ -1,4 +1,5 @@
 use super::*;
+use std::fmt;
 
 #[cfg(target_os = "macos")]
 use security_framework::{
@@ -9,10 +10,53 @@ use security_framework::{
     },
 };
 
+/// A failed Keychain operation.
+///
+/// The platform's message is kept — it names the OSStatus or the Keychain
+/// Services failure, never the stored secret — so the operational log can
+/// explain why a saved statement password or unlock key could not be read,
+/// written, or removed. Callers still collapse it into their static code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SecretStoreError(String);
+
+impl SecretStoreError {
+    #[cfg_attr(
+        all(target_os = "macos", not(test)),
+        allow(
+            dead_code,
+            reason = "only the non-macOS stubs and the test fakes build this from a message"
+        )
+    )]
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+
+    /// Records an error raised by the platform's credential storage.
+    fn from_error(error: impl fmt::Display) -> Self {
+        Self(error.to_string())
+    }
+}
+
+impl fmt::Display for SecretStoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for SecretStoreError {}
+
+/// The credential store used by this build. Every non-macOS build reports a
+/// keychain failure without a platform message, because there is no keychain
+/// to talk to.
+#[cfg(not(target_os = "macos"))]
+fn keychain_unavailable() -> SecretStoreError {
+    SecretStoreError::new("the Keychain is unavailable on this platform")
+}
+
 pub(super) trait RememberedKeyStore: Send + Sync {
-    fn delete(&self) -> Result<(), ()>;
-    fn is_present(&self) -> Result<bool, ()>;
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
+    fn delete(&self) -> Result<(), SecretStoreError>;
+    fn is_present(&self) -> Result<bool, SecretStoreError>;
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError>;
     /// True when the operating system has permanently invalidated the stored
     /// secret (for example, the enrolled Touch ID fingerprint set changed), so
     /// the presence marker and any stale secret should be cleaned up instead of
@@ -20,13 +64,13 @@ pub(super) trait RememberedKeyStore: Send + Sync {
     fn invalidated(&self) -> bool {
         false
     }
-    fn save(&self, secret: &[u8]) -> Result<(), ()>;
+    fn save(&self, secret: &[u8]) -> Result<(), SecretStoreError>;
 }
 
 pub(super) trait StatementPasswordStore: Send + Sync {
-    fn delete(&self, secret_ref: &str) -> Result<(), ()>;
-    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
-    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()>;
+    fn delete(&self, secret_ref: &str) -> Result<(), SecretStoreError>;
+    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError>;
+    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), SecretStoreError>;
 }
 
 #[cfg_attr(
@@ -37,15 +81,15 @@ pub(super) trait StatementPasswordStore: Send + Sync {
     )
 )]
 pub(super) trait GmailRefreshTokenStore: Send + Sync {
-    fn delete(&self, secret_ref: &str) -> Result<(), ()>;
-    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
-    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()>;
+    fn delete(&self, secret_ref: &str) -> Result<(), SecretStoreError>;
+    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError>;
+    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), SecretStoreError>;
 }
 
 pub(super) trait LocalInboxBookmarkStore: Send + Sync {
-    fn delete(&self) -> Result<(), ()>;
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()>;
-    fn save(&self, bookmark: &[u8]) -> Result<(), ()>;
+    fn delete(&self) -> Result<(), SecretStoreError>;
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError>;
+    fn save(&self, bookmark: &[u8]) -> Result<(), SecretStoreError>;
 }
 
 #[derive(Clone)]
@@ -115,32 +159,37 @@ impl KeychainRememberedKeyStore {
     }
 
     #[cfg(target_os = "macos")]
-    fn delete_item(&self, account: &str, use_protected: bool) -> Result<(), ()> {
+    fn delete_item(&self, account: &str, use_protected: bool) -> Result<(), SecretStoreError> {
         let options = self.item_options(account, use_protected);
         match delete_generic_password_options(options) {
             Ok(()) => Ok(()),
             Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(()),
-            Err(_) => Err(()),
+            Err(error) => Err(SecretStoreError::from_error(error)),
         }
     }
 
     #[cfg(target_os = "macos")]
-    fn write_item(&self, account: &str, value: &[u8], access_control: usize) -> Result<(), ()> {
+    fn write_item(
+        &self,
+        account: &str,
+        value: &[u8],
+        access_control: usize,
+    ) -> Result<(), SecretStoreError> {
         let mut options = self.item_options(account, true);
         options.set_access_synchronized(Some(false));
         let access = SecAccessControl::create_with_protection(
             Some(ProtectionMode::AccessibleWhenUnlockedThisDeviceOnly),
             access_control,
         )
-        .map_err(|_| ())?;
+        .map_err(SecretStoreError::from_error)?;
         options.set_access_control(access);
-        set_generic_password_options(value, options).map_err(|_| ())
+        set_generic_password_options(value, options).map_err(SecretStoreError::from_error)
     }
 }
 
 impl RememberedKeyStore for KeychainRememberedKeyStore {
     #[cfg(target_os = "macos")]
-    fn delete(&self) -> Result<(), ()> {
+    fn delete(&self) -> Result<(), SecretStoreError> {
         let protected = [
             self.delete_item(&self.account, true),
             self.delete_item(&self.marker_account, true),
@@ -149,28 +198,24 @@ impl RememberedKeyStore for KeychainRememberedKeyStore {
         // error there must not fail a forget that already removed the
         // Touch ID-protected items.
         let _ = self.delete_item(&self.account, false);
-        if protected.iter().any(|result| result.is_err()) {
-            Err(())
-        } else {
-            Ok(())
-        }
+        protected.into_iter().find(Result::is_err).unwrap_or(Ok(()))
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn delete(&self) -> Result<(), ()> {
-        Err(())
+    fn delete(&self) -> Result<(), SecretStoreError> {
+        Err(keychain_unavailable())
     }
 
     #[cfg(target_os = "macos")]
-    fn is_present(&self) -> Result<bool, ()> {
+    fn is_present(&self) -> Result<bool, SecretStoreError> {
         self.read_item(&self.marker_account)
             .map(|secret| secret.is_some())
-            .map_err(|_| ())
+            .map_err(SecretStoreError::from_error)
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn is_present(&self) -> Result<bool, ()> {
-        Err(())
+    fn is_present(&self) -> Result<bool, SecretStoreError> {
+        Err(keychain_unavailable())
     }
 
     #[cfg(target_os = "macos")]
@@ -186,19 +231,19 @@ impl RememberedKeyStore for KeychainRememberedKeyStore {
     }
 
     #[cfg(target_os = "macos")]
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
         self.read_item(&self.account)
             .map(|secret| secret.map(Zeroizing::new))
-            .map_err(|_| ())
+            .map_err(SecretStoreError::from_error)
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
-        Err(())
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
+        Err(keychain_unavailable())
     }
 
     #[cfg(target_os = "macos")]
-    fn save(&self, secret: &[u8]) -> Result<(), ()> {
+    fn save(&self, secret: &[u8]) -> Result<(), SecretStoreError> {
         const MARKER_VALUE: &[u8] = &[1];
 
         let _ = self.delete();
@@ -214,8 +259,8 @@ impl RememberedKeyStore for KeychainRememberedKeyStore {
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn save(&self, _secret: &[u8]) -> Result<(), ()> {
-        Err(())
+    fn save(&self, _secret: &[u8]) -> Result<(), SecretStoreError> {
+        Err(keychain_unavailable())
     }
 }
 
@@ -236,20 +281,20 @@ impl KeychainStatementPasswordStore {
     }
 
     #[cfg(target_os = "macos")]
-    fn entry(&self, secret_ref: &str) -> Result<KeyringEntry, ()> {
+    fn entry(&self, secret_ref: &str) -> Result<KeyringEntry, SecretStoreError> {
         KeychainCredential::build(MacKeychainDomain::User, &self.service, secret_ref)
-            .map_err(|_| ())
+            .map_err(SecretStoreError::from_error)
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn entry(&self, _secret_ref: &str) -> Result<KeyringEntry, ()> {
-        Err(())
+    fn entry(&self, _secret_ref: &str) -> Result<KeyringEntry, SecretStoreError> {
+        Err(keychain_unavailable())
     }
 
     #[cfg(target_os = "macos")]
-    fn item_query(&self, secret_ref: &str) -> Result<ItemSearchOptions, ()> {
-        let keychain =
-            SecKeychain::default_for_domain(SecPreferencesDomain::User).map_err(|_| ())?;
+    fn item_query(&self, secret_ref: &str) -> Result<ItemSearchOptions, SecretStoreError> {
+        let keychain = SecKeychain::default_for_domain(SecPreferencesDomain::User)
+            .map_err(SecretStoreError::from_error)?;
         let mut query = ItemSearchOptions::new();
         query
             .keychains(&[keychain])
@@ -263,29 +308,31 @@ impl KeychainStatementPasswordStore {
 
 impl StatementPasswordStore for KeychainStatementPasswordStore {
     #[cfg(target_os = "macos")]
-    fn delete(&self, secret_ref: &str) -> Result<(), ()> {
+    fn delete(&self, secret_ref: &str) -> Result<(), SecretStoreError> {
         match self.item_query(secret_ref)?.delete() {
             Ok(()) => Ok(()),
             Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(()),
-            Err(_) => Err(()),
+            Err(error) => Err(SecretStoreError::from_error(error)),
         }
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn delete(&self, _secret_ref: &str) -> Result<(), ()> {
-        Err(())
+    fn delete(&self, _secret_ref: &str) -> Result<(), SecretStoreError> {
+        Err(keychain_unavailable())
     }
 
-    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
         match self.entry(secret_ref)?.get_secret() {
             Ok(secret) => Ok(Some(Zeroizing::new(secret))),
             Err(KeyringError::NoEntry) => Ok(None),
-            Err(_) => Err(()),
+            Err(error) => Err(SecretStoreError::from_error(error)),
         }
     }
 
-    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()> {
-        self.entry(secret_ref)?.set_secret(secret).map_err(|_| ())
+    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), SecretStoreError> {
+        self.entry(secret_ref)?
+            .set_secret(secret)
+            .map_err(SecretStoreError::from_error)
     }
 }
 
@@ -313,20 +360,20 @@ impl KeychainGmailRefreshTokenStore {
     }
 
     #[cfg(target_os = "macos")]
-    fn entry(&self, secret_ref: &str) -> Result<KeyringEntry, ()> {
+    fn entry(&self, secret_ref: &str) -> Result<KeyringEntry, SecretStoreError> {
         KeychainCredential::build(MacKeychainDomain::User, &self.service, secret_ref)
-            .map_err(|_| ())
+            .map_err(SecretStoreError::from_error)
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn entry(&self, _secret_ref: &str) -> Result<KeyringEntry, ()> {
-        Err(())
+    fn entry(&self, _secret_ref: &str) -> Result<KeyringEntry, SecretStoreError> {
+        Err(keychain_unavailable())
     }
 
     #[cfg(target_os = "macos")]
-    fn item_query(&self, secret_ref: &str) -> Result<ItemSearchOptions, ()> {
-        let keychain =
-            SecKeychain::default_for_domain(SecPreferencesDomain::User).map_err(|_| ())?;
+    fn item_query(&self, secret_ref: &str) -> Result<ItemSearchOptions, SecretStoreError> {
+        let keychain = SecKeychain::default_for_domain(SecPreferencesDomain::User)
+            .map_err(SecretStoreError::from_error)?;
         let mut query = ItemSearchOptions::new();
         query
             .keychains(&[keychain])
@@ -340,29 +387,31 @@ impl KeychainGmailRefreshTokenStore {
 
 impl GmailRefreshTokenStore for KeychainGmailRefreshTokenStore {
     #[cfg(target_os = "macos")]
-    fn delete(&self, secret_ref: &str) -> Result<(), ()> {
+    fn delete(&self, secret_ref: &str) -> Result<(), SecretStoreError> {
         match self.item_query(secret_ref)?.delete() {
             Ok(()) => Ok(()),
             Err(error) if error.code() == KEYCHAIN_ITEM_NOT_FOUND_STATUS => Ok(()),
-            Err(_) => Err(()),
+            Err(error) => Err(SecretStoreError::from_error(error)),
         }
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn delete(&self, _secret_ref: &str) -> Result<(), ()> {
-        Err(())
+    fn delete(&self, _secret_ref: &str) -> Result<(), SecretStoreError> {
+        Err(keychain_unavailable())
     }
 
-    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+    fn load(&self, secret_ref: &str) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
         match self.entry(secret_ref)?.get_secret() {
             Ok(secret) => Ok(Some(Zeroizing::new(secret))),
             Err(KeyringError::NoEntry) => Ok(None),
-            Err(_) => Err(()),
+            Err(error) => Err(SecretStoreError::from_error(error)),
         }
     }
 
-    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), ()> {
-        self.entry(secret_ref)?.set_secret(secret).map_err(|_| ())
+    fn save(&self, secret_ref: &str, secret: &[u8]) -> Result<(), SecretStoreError> {
+        self.entry(secret_ref)?
+            .set_secret(secret)
+            .map_err(SecretStoreError::from_error)
     }
 }
 
@@ -381,34 +430,36 @@ impl KeychainLocalInboxBookmarkStore {
     }
 
     #[cfg(target_os = "macos")]
-    fn entry(&self) -> Result<KeyringEntry, ()> {
+    fn entry(&self) -> Result<KeyringEntry, SecretStoreError> {
         KeychainCredential::build(MacKeychainDomain::User, &self.service, &self.account)
-            .map_err(|_| ())
+            .map_err(SecretStoreError::from_error)
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn entry(&self) -> Result<KeyringEntry, ()> {
-        Err(())
+    fn entry(&self) -> Result<KeyringEntry, SecretStoreError> {
+        Err(keychain_unavailable())
     }
 }
 
 impl LocalInboxBookmarkStore for KeychainLocalInboxBookmarkStore {
-    fn delete(&self) -> Result<(), ()> {
+    fn delete(&self) -> Result<(), SecretStoreError> {
         match self.entry()?.delete_credential() {
             Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
-            Err(_) => Err(()),
+            Err(error) => Err(SecretStoreError::from_error(error)),
         }
     }
 
-    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ()> {
+    fn load(&self) -> Result<Option<Zeroizing<Vec<u8>>>, SecretStoreError> {
         match self.entry()?.get_secret() {
             Ok(bookmark) => Ok(Some(Zeroizing::new(bookmark))),
             Err(KeyringError::NoEntry) => Ok(None),
-            Err(_) => Err(()),
+            Err(error) => Err(SecretStoreError::from_error(error)),
         }
     }
 
-    fn save(&self, bookmark: &[u8]) -> Result<(), ()> {
-        self.entry()?.set_secret(bookmark).map_err(|_| ())
+    fn save(&self, bookmark: &[u8]) -> Result<(), SecretStoreError> {
+        self.entry()?
+            .set_secret(bookmark)
+            .map_err(SecretStoreError::from_error)
     }
 }
