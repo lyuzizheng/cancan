@@ -267,7 +267,7 @@ fn automatically_retries_failed_parse_jobs_with_the_same_logical_run_until_exhau
         .expect("start first parse")
         .expect("claim first parse");
     store
-        .fail_parse_document_job(&first_claim, "normalizer_failed")
+        .fail_parse_document_job(&first_claim, "normalizer_failed", None)
         .expect("requeue transient parse failure");
     let retry_state: (String, i64, bool) = store
         .connection
@@ -293,14 +293,14 @@ fn automatically_retries_failed_parse_jobs_with_the_same_logical_run_until_exhau
         .expect("retry parse")
         .expect("claim retry parse");
     store
-        .fail_parse_document_job(&retry_claim, "normalizer_failed")
+        .fail_parse_document_job(&retry_claim, "normalizer_failed", None)
         .expect("requeue second parse failure");
     let final_claim = store
         .start_parse_document_job(&retry_job)
         .expect("final retry")
         .expect("claim final retry");
     store
-        .fail_parse_document_job(&final_claim, "normalizer_failed")
+        .fail_parse_document_job(&final_claim, "normalizer_failed", None)
         .expect("record exhausted failure");
     let terminal: (String, i64, String) = store
         .connection
@@ -2166,7 +2166,7 @@ fn records_a_safe_failure_for_a_claimed_review_batch() {
         .expect("queued job claims once");
 
     let failed = store
-        .fail_review_batch(&claimed, "review_core_failed")
+        .fail_review_batch(&claimed, "review_core_failed", None)
         .expect("persist safe job failure");
 
     assert_eq!(failed.status, ReviewJobStatus::Failed);

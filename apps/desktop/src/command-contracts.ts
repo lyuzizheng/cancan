@@ -61,6 +61,8 @@ export type {
   SourceDocumentPreview,
   SourceDocumentStatus,
   SourceDocumentSummary,
+  OperationalDiagnosticsCategory,
+  OperationalDiagnosticsPreview,
   StatementPasswordSourceSummary,
   TaskConsequence,
   TaskDestination,

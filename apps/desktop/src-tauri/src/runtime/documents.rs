@@ -40,7 +40,7 @@ impl VaultRuntime {
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
         let mime_type = store
             .source_document_mime_type(document_id)
-            .map_err(|_| RuntimeError::new("document_unavailable"))?;
+            .map_store_error(store, "source_document_mime_type", "document_unavailable")?;
         let generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
         Ok((mime_type, generation))
     }
@@ -52,11 +52,12 @@ impl VaultRuntime {
         let generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
         let plan = {
             let store = self.store()?;
-            store
+            let store = store
                 .as_ref()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            store
                 .source_document_read_plan(document_id)
-                .map_err(|_| RuntimeError::new("document_unavailable"))?
+                .map_store_error(store, "source_document_read_plan", "document_unavailable")?
         };
         Ok((plan, generation))
     }
@@ -116,142 +117,6 @@ impl VaultRuntime {
             .fetch_add(1, Ordering::SeqCst);
     }
 
-    #[cfg(test)]
-    pub(crate) fn save_statement_password(
-        &self,
-        money_source_id: &str,
-        password: &[u8],
-    ) -> Result<(), RuntimeError> {
-        let store = self.store()?;
-        let store = store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        if money_source_id.is_empty() {
-            return Err(RuntimeError::new("invalid_source_request"));
-        }
-        if password.is_empty() {
-            return Err(RuntimeError::new("statement_password_required"));
-        }
-        self.save_statement_password_in_store(store, money_source_id, password)
-    }
-
-    pub(super) fn save_statement_password_in_store(
-        &self,
-        store: &ManualImportStore,
-        money_source_id: &str,
-        password: &[u8],
-    ) -> Result<(), RuntimeError> {
-        self.reconcile_statement_passwords(store)?;
-        let state = store
-            .statement_password_state(money_source_id)
-            .map_err(|_| RuntimeError::new("invalid_source_request"))?;
-        match state {
-            Some(state) if state.status == StatementPasswordStatus::Saved => {
-                self.save_verified_statement_password(&state.secret_storage_key, password)
-            }
-            None => {
-                let secret_storage_key = statement_password_storage_key(money_source_id);
-                store
-                    .begin_statement_password_save(money_source_id, &secret_storage_key)
-                    .map_err(|_| RuntimeError::new("invalid_source_request"))?;
-                self.save_verified_statement_password(&secret_storage_key, password)?;
-                store
-                    .mark_statement_password_saved(money_source_id)
-                    .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
-                Ok(())
-            }
-            Some(_) => Err(RuntimeError::new("statement_password_state_invalid")),
-        }
-    }
-
-    pub(super) fn save_verified_statement_password(
-        &self,
-        secret_ref: &str,
-        password: &[u8],
-    ) -> Result<(), RuntimeError> {
-        self.inner
-            .statement_passwords
-            .save(secret_ref, password)
-            .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
-        let saved = self
-            .inner
-            .statement_passwords
-            .load(secret_ref)
-            .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
-        if saved.as_ref().map(|secret| secret.as_slice()) != Some(password) {
-            return Err(RuntimeError::new("statement_password_save_failed"));
-        }
-        Ok(())
-    }
-
-    pub(crate) fn remove_statement_password(
-        &self,
-        money_source_id: &str,
-    ) -> Result<(), RuntimeError> {
-        let store = self.store()?;
-        let store = store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        if money_source_id.is_empty() {
-            return Err(RuntimeError::new("invalid_source_request"));
-        }
-        self.reconcile_statement_passwords(store)?;
-        let state = store
-            .statement_password_state(money_source_id)
-            .map_err(|_| RuntimeError::new("invalid_source_request"))?;
-        match state {
-            None => Ok(()),
-            Some(state) if state.status == StatementPasswordStatus::Saved => {
-                store
-                    .begin_statement_password_delete(money_source_id)
-                    .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
-                self.inner
-                    .statement_passwords
-                    .delete(&state.secret_storage_key)
-                    .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
-                store
-                    .remove_statement_password_ref(money_source_id, "pending_delete")
-                    .map_err(|_| RuntimeError::new("statement_password_remove_failed"))
-            }
-            Some(_) => Err(RuntimeError::new("statement_password_state_invalid")),
-        }
-    }
-
-    pub(super) fn reconcile_statement_passwords(
-        &self,
-        store: &ManualImportStore,
-    ) -> Result<(), RuntimeError> {
-        let states = store
-            .pending_statement_password_states()
-            .map_err(|_| RuntimeError::new("statement_password_state_invalid"))?;
-        for state in states {
-            match state.status {
-                StatementPasswordStatus::PendingSave => {
-                    self.inner
-                        .statement_passwords
-                        .delete(&state.secret_storage_key)
-                        .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
-                    store
-                        .remove_statement_password_ref(&state.money_source_id, "pending_save")
-                        .map_err(|_| RuntimeError::new("statement_password_save_failed"))?;
-                }
-                StatementPasswordStatus::PendingDelete => {
-                    self.inner
-                        .statement_passwords
-                        .delete(&state.secret_storage_key)
-                        .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
-                    store
-                        .remove_statement_password_ref(&state.money_source_id, "pending_delete")
-                        .map_err(|_| RuntimeError::new("statement_password_remove_failed"))?;
-                }
-                StatementPasswordStatus::Saved => {
-                    return Err(RuntimeError::new("statement_password_state_invalid"));
-                }
-            }
-        }
-        Ok(())
-    }
-
     pub(crate) fn list_source_documents(
         &self,
         money_source_id: &str,
@@ -263,9 +128,11 @@ impl VaultRuntime {
         let store = store
             .as_ref()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        let documents = store
-            .list_documents(money_source_id)
-            .map_err(|_| RuntimeError::new("list_documents_failed"))?;
+        let documents = store.list_documents(money_source_id).map_store_error(
+            store,
+            "list_documents",
+            "list_documents_failed",
+        )?;
         Self::source_document_summaries(store, documents)
     }
 
@@ -293,11 +160,14 @@ impl VaultRuntime {
         &self,
     ) -> Result<Vec<AccountConfirmationPrompt>, RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .list_account_confirmation_prompts()
-            .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.list_account_confirmation_prompts().map_store_error(
+            store,
+            "list_account_confirmation_prompts",
+            "account_confirmation_unavailable",
+        )
     }
 
     pub(crate) fn decide_candidate_accounts(
@@ -311,11 +181,16 @@ impl VaultRuntime {
         }
         let audit_id = random_identifier("audit");
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .decide_candidate_accounts(money_source_id, proposal_version, decisions, &audit_id)
-            .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
+            .map_store_error(
+                store,
+                "decide_candidate_accounts",
+                "account_confirmation_unavailable",
+            )
     }
 
     pub(crate) fn restore_dismissed_candidate_account(
@@ -327,11 +202,16 @@ impl VaultRuntime {
         }
         let audit_id = random_identifier("audit");
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .restore_dismissed_candidate_account(account_id, &audit_id)
-            .map_err(|_| RuntimeError::new("account_confirmation_unavailable"))
+            .map_store_error(
+                store,
+                "restore_dismissed_candidate_account",
+                "account_confirmation_unavailable",
+            )
     }
 
     pub(crate) fn list_unassigned_source_documents(
@@ -341,9 +221,11 @@ impl VaultRuntime {
         let store = store
             .as_ref()
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        let documents = store
-            .list_unassigned_documents()
-            .map_err(|_| RuntimeError::new("list_documents_failed"))?;
+        let documents = store.list_unassigned_documents().map_store_error(
+            store,
+            "list_unassigned_documents",
+            "list_documents_failed",
+        )?;
         Self::source_document_summaries(store, documents)
     }
 
@@ -357,7 +239,11 @@ impl VaultRuntime {
             .collect::<Vec<_>>();
         let mut parse_statuses = store
             .source_document_parse_statuses(&document_ids)
-            .map_err(|_| RuntimeError::new("list_documents_failed"))?;
+            .map_store_error(
+                store,
+                "source_document_parse_statuses",
+                "list_documents_failed",
+            )?;
         Ok(documents
             .into_iter()
             .map(|document| {
@@ -406,7 +292,7 @@ impl VaultRuntime {
             self.reconcile_statement_passwords(store)?;
             let Some(state) = store
                 .statement_password_state(money_source_id)
-                .map_err(|_| RuntimeError::new("invalid_source_request"))?
+                .map_store_error(store, "statement_password_state", "invalid_source_request")?
             else {
                 return Ok(SavedStatementPasswordResult::Unavailable);
             };
@@ -475,11 +361,16 @@ impl VaultRuntime {
         document_id: &str,
     ) -> Result<(), RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .requeue_password_blocked_parse_document_job(document_id)
-            .map_err(|_| RuntimeError::new("parse_resume_failed"))?;
+            .map_store_error(
+                store,
+                "requeue_password_blocked_parse_document_job",
+                "parse_resume_failed",
+            )?;
         Ok(())
     }
 
@@ -673,10 +564,11 @@ pub(super) fn ensure_statement_password_source(
     store: &ManualImportStore,
     money_source_id: &str,
 ) -> Result<(), RuntimeError> {
-    if store
-        .money_source_exists(money_source_id)
-        .map_err(|_| RuntimeError::new("invalid_source_request"))?
-    {
+    if store.money_source_exists(money_source_id).map_store_error(
+        store,
+        "money_source_exists",
+        "invalid_source_request",
+    )? {
         Ok(())
     } else {
         Err(RuntimeError::new("invalid_source_request"))

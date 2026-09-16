@@ -7,11 +7,12 @@ impl VaultRuntime {
         expected_record_version: i64,
     ) -> Result<ReviewMutationOutcome, RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .acknowledge_review_item(review_item_id, expected_record_version)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(store, "acknowledge_review_item", "review_unavailable")
     }
 }
 

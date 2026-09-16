@@ -1,4 +1,5 @@
 use super::*;
+use crate::diagnostics::JobFailureDetail;
 
 #[derive(Clone)]
 pub(super) struct ParseDocumentAttempt {
@@ -116,22 +117,28 @@ impl VaultRuntime {
     /// Recovery is a write, so it belongs here rather than in the queue reads.
     pub(super) fn recover_expired_jobs(&self) -> Result<(), RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .recover_expired_jobs()
-            .map_err(|_| RuntimeError::new("job_recovery_failed"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.recover_expired_jobs().map_store_error(
+            store,
+            "recover_expired_jobs",
+            "job_recovery_failed",
+        )
     }
 
     pub(super) fn queued_local_inbox_parse_documents(
         &self,
     ) -> Result<Vec<ParseDocumentJob>, RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .queued_parse_document_jobs()
-            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.queued_parse_document_jobs().map_store_error(
+            store,
+            "queued_parse_document_jobs",
+            "local_inbox_parse_failed",
+        )
     }
 
     pub(super) fn enqueue_source_document_reparse(
@@ -142,11 +149,16 @@ impl VaultRuntime {
             return Err(RuntimeError::new("invalid_document_request"));
         }
         let mut store = self.store()?;
-        let enqueued = store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        let enqueued = store
             .enqueue_source_document_pipeline(document_id)
-            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))?;
+            .map_store_error(
+                store,
+                "enqueue_source_document_pipeline",
+                "local_inbox_parse_failed",
+            )?;
         if !enqueued {
             return Err(RuntimeError::new("parse_already_running"));
         }
@@ -160,11 +172,16 @@ impl VaultRuntime {
         let vault_session_generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
         self.require_vault_session(vault_session_generation)?;
         let mut store = self.store()?;
-        let claim = store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .start_parse_document_job(job)
-            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))?;
+        let claim = {
+            let store = store
+                .as_mut()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            store.start_parse_document_job(job).map_store_error(
+                store,
+                "start_parse_document_job",
+                "local_inbox_parse_failed",
+            )?
+        };
         drop(store);
         self.require_vault_session(vault_session_generation)?;
         Ok(claim.map(|claim| ParseDocumentAttempt {
@@ -180,34 +197,44 @@ impl VaultRuntime {
     ) -> Result<(), RuntimeError> {
         self.require_vault_session(attempt.vault_session_generation)?;
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .block_parse_document_job(&attempt.claim, reason)
-            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+            .map_store_error(
+                store,
+                "block_parse_document_job",
+                "local_inbox_parse_failed",
+            )
     }
 
     pub(super) fn fail_local_inbox_parse(
         &self,
         attempt: &ParseDocumentAttempt,
         reason: &'static str,
+        detail: &JobFailureDetail,
     ) -> Result<(), RuntimeError> {
         self.require_vault_session(attempt.vault_session_generation)?;
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .fail_parse_document_job(&attempt.claim, reason)
-            .map_err(|_| RuntimeError::new("local_inbox_parse_failed"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
+            .fail_parse_document_job(&attempt.claim, reason, Some(detail))
+            .map_store_error(store, "fail_parse_document_job", "local_inbox_parse_failed")
     }
 
     pub(super) fn queued_document_reconciliations(&self) -> Result<Vec<String>, RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .queued_reconcile_document_ids()
-            .map_err(|_| RuntimeError::new("reconcile_failed"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.queued_reconcile_document_ids().map_store_error(
+            store,
+            "queued_reconcile_document_ids",
+            "reconcile_failed",
+        )
     }
 
     pub(super) fn start_document_reconciliation(
@@ -215,33 +242,41 @@ impl VaultRuntime {
         document_id: &str,
     ) -> Result<bool, RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .start_reconcile_document(document_id)
-            .map_err(|_| RuntimeError::new("reconcile_failed"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.start_reconcile_document(document_id).map_store_error(
+            store,
+            "start_reconcile_document",
+            "reconcile_failed",
+        )
     }
 
     pub(super) fn reconcile_document(&self, document_id: &str) -> Result<(), RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .reconcile_document(document_id)
-            .map_err(|_| RuntimeError::new("reconcile_failed"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.reconcile_document(document_id).map_store_error(
+            store,
+            "reconcile_document",
+            "reconcile_failed",
+        )
     }
 
     pub(super) fn fail_document_reconciliation(
         &self,
         document_id: &str,
         reason: &'static str,
+        detail: &JobFailureDetail,
     ) -> Result<(), RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .fail_reconcile_document(document_id, reason)
-            .map_err(|_| RuntimeError::new("reconcile_failed"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
+            .fail_reconcile_document(document_id, reason, Some(detail))
+            .map_store_error(store, "fail_reconcile_document", "reconcile_failed")
     }
 
     pub(super) fn activate_local_inbox_from_bookmark(&self) -> Result<bool, RuntimeError> {
@@ -426,11 +461,12 @@ pub(super) async fn process_queued_local_inbox_parses(
             };
             let result = match run_normalizer_sidecar(app, &job.document_id, &input.bundle).await {
                 Ok(result) => result,
-                Err(_) => {
+                Err(error) => {
+                    let detail = JobFailureDetail::from_code(Some("normalizer"), error.code);
                     let runtime = runtime.clone();
                     let attempt = attempt.clone();
                     tauri::async_runtime::spawn_blocking(move || {
-                        runtime.fail_local_inbox_parse(&attempt, "normalizer_failed")
+                        runtime.fail_local_inbox_parse(&attempt, "normalizer_failed", &detail)
                     })
                     .await
                     .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
@@ -490,10 +526,12 @@ pub(super) async fn process_queued_document_reconciliations(
                 .await
                 .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
         };
-        if reconciled.is_err() {
+        if let Err(error) = reconciled {
+            let detail = JobFailureDetail::from_code(Some("reconcile"), error.code);
             let runtime = runtime.clone();
+            let document_id = document_id.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                runtime.fail_document_reconciliation(&document_id, "reconcile_failed")
+                runtime.fail_document_reconciliation(&document_id, "reconcile_failed", &detail)
             })
             .await
             .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;

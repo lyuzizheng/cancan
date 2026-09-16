@@ -1,6 +1,7 @@
 use super::test_support::{statement_password_runtime, statement_password_state};
 use super::*;
 use crate::database::{CandidateAccountDecision, SourceDocumentImportStatus};
+use crate::diagnostics::JobFailureDetail;
 use crate::vault::open_recovery_file;
 #[cfg(target_os = "macos")]
 use crate::viewer::pdf_password_unlocks;
@@ -2016,7 +2017,11 @@ fn persists_validated_records_and_reconciles_an_explicit_parser_re_run() {
             .expect("claim reconcile job")
     );
     runtime
-        .fail_document_reconciliation(&imported.document_id, "reconcile_failed")
+        .fail_document_reconciliation(
+            &imported.document_id,
+            "reconcile_failed",
+            &JobFailureDetail::from_code(Some("reconcile"), "reconcile_failed"),
+        )
         .expect("record safe reconcile failure");
     let failed = structured_parse_test_state(&runtime, &imported.document_id);
     assert_eq!((failed.staged_records, failed.open_review_items), (6, 0));

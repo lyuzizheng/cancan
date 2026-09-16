@@ -23,6 +23,7 @@ import type {
   MoneyOverview,
   MoneySourceCandidateState,
   MoneySourceSummary,
+  OperationalDiagnosticsPreview,
   ParkSourceCandidateArgs,
   ReparseSourceDocumentArgs,
   PreviewSourceDocumentArgs,
@@ -129,6 +130,7 @@ export interface VaultApi {
   lockVault(): Promise<VaultStatus>;
   localInboxStatus(): Promise<LocalInboxStatus>;
   onVaultLocked(handler: () => void): Promise<() => void>;
+  operationalDiagnosticsPreview(): Promise<OperationalDiagnosticsPreview>;
   previewSourceDocument(documentId: string): Promise<SourceDocumentPreview>;
   reparseSourceDocument(documentId: string): Promise<void>;
   rememberVaultOnThisMac(): Promise<void>;
@@ -143,6 +145,7 @@ export interface VaultApi {
     pageNumber: number,
   ): Promise<RenderedDocumentPage>;
   rescanLocalInbox(): Promise<LocalInboxScanSummary>;
+  saveOperationalDiagnostics(): Promise<boolean>;
   saveRecoveryFile(): Promise<boolean>;
   saveSourceDocumentCopy(documentId: string): Promise<boolean>;
   trySavedStatementPassword(
@@ -337,7 +340,11 @@ export function createVaultApi(
       );
     },
     lockVault: () => call<VaultStatus>("lock_vault"),
+    operationalDiagnosticsPreview: () =>
+      call<OperationalDiagnosticsPreview>("operational_diagnostics_preview"),
     saveRecoveryFile: () => call<boolean>("save_recovery_file"),
+    saveOperationalDiagnostics: () =>
+      call<boolean>("save_operational_diagnostics"),
     saveSourceDocumentCopy: (documentId) => {
       const args: SaveSourceDocumentCopyArgs = { documentId };
       return call<boolean, SaveSourceDocumentCopyArgs>(

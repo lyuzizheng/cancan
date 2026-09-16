@@ -538,6 +538,9 @@ enum IntakeTestFault {
 
 mod accounts;
 mod audit;
+mod diagnostics;
+#[cfg(test)]
+mod diagnostics_tests;
 mod document_cache;
 mod documents;
 mod documents_intake;
@@ -560,9 +563,11 @@ mod lifecycle;
 #[cfg(test)]
 mod remembered_key_tests;
 mod review;
+mod review_jobs;
 mod review_records;
 mod sidecar;
 mod source_confirmation;
+mod statement_passwords;
 mod tasks;
 #[cfg(test)]
 mod tasks_test_support;
@@ -577,6 +582,7 @@ mod vault_lifecycle;
 
 pub(crate) use accounts::*;
 pub(crate) use audit::*;
+pub(crate) use diagnostics::*;
 use document_cache::CachedSourceDocument;
 pub(crate) use document_cache::close_source_document_view;
 pub(crate) use documents::*;

@@ -9,11 +9,14 @@ impl VaultRuntime {
         &self,
     ) -> Result<Vec<SourceConfirmationPrompt>, RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .list_source_confirmation_prompts()
-            .map_err(|_| RuntimeError::new("source_confirmation_unavailable"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.list_source_confirmation_prompts().map_store_error(
+            store,
+            "list_source_confirmation_prompts",
+            "source_confirmation_unavailable",
+        )
     }
 
     pub(crate) fn confirm_source_candidate(
@@ -29,9 +32,10 @@ impl VaultRuntime {
         let audit_id = random_identifier("audit");
         let proposed_money_source_id = random_identifier("source");
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .confirm_money_source_candidate(&ConfirmMoneySourceCandidateInput {
                 audit_id: &audit_id,
                 candidate_id,
@@ -40,7 +44,11 @@ impl VaultRuntime {
                 proposed_money_source_id: &proposed_money_source_id,
                 source_type,
             })
-            .map_err(|_| RuntimeError::new("source_confirmation_unavailable"))
+            .map_store_error(
+                store,
+                "confirm_money_source_candidate",
+                "source_confirmation_unavailable",
+            )
     }
 
     pub(crate) fn park_source_candidate(
@@ -52,11 +60,16 @@ impl VaultRuntime {
             return Err(RuntimeError::new("invalid_source_confirmation_request"));
         }
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .keep_money_source_candidate_unassigned(candidate_id, expected_version)
-            .map_err(|_| RuntimeError::new("source_confirmation_unavailable"))
+            .map_store_error(
+                store,
+                "keep_money_source_candidate_unassigned",
+                "source_confirmation_unavailable",
+            )
     }
 }
 

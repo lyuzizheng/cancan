@@ -32,7 +32,11 @@ impl VaultRuntime {
                     parked: false,
                 },
             )
-            .map_err(|_| RuntimeError::new("intake_finalization_failed"))
+            .map_store_error(
+                store,
+                "finalize_intake_batch_item",
+                "intake_finalization_failed",
+            )
     }
 
     pub(crate) fn import_selected_document(
@@ -46,9 +50,10 @@ impl VaultRuntime {
         let safe_input_label = explicit_safe_input_label(source_path);
         {
             let mut store = self.store()?;
-            store
+            let store = store
                 .as_mut()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            store
                 .create_intake_batch(&IntakeBatchInput {
                     id: &batch_id,
                     acquisition_channel: IntakeAcquisitionChannel::ExplicitHandoff,
@@ -60,7 +65,7 @@ impl VaultRuntime {
                         retry_of_batch_item_id: None,
                     }],
                 })
-                .map_err(|_| RuntimeError::new("import_failed"))?;
+                .map_store_error(store, "create_intake_batch", "import_failed")?;
         }
         let (original_filename, mime_type) = match source_document_metadata(source_path) {
             Ok(metadata) => metadata,
@@ -114,12 +119,12 @@ impl VaultRuntime {
             } else {
                 store
                     .intake_source_capture_plan(&input, &source, &intake_item_id, false)
-                    .map_err(|_| RuntimeError::new("import_failed"))
+                    .map_store_error(store, "intake_source_capture_plan", "import_failed")
             }
             #[cfg(not(test))]
             store
                 .intake_source_capture_plan(&input, &source, &intake_item_id, false)
-                .map_err(|_| RuntimeError::new("import_failed"))
+                .map_store_error(store, "intake_source_capture_plan", "import_failed")
         })();
         let plan = match plan_result {
             Ok(plan) => plan,
@@ -164,12 +169,12 @@ impl VaultRuntime {
             } else {
                 store
                     .persist_captured_intake_import(&input, &stored, &intake_item_id)
-                    .map_err(|_| RuntimeError::new("import_failed"))
+                    .map_store_error(store, "persist_captured_intake_import", "import_failed")
             }
             #[cfg(not(test))]
             store
                 .persist_captured_intake_import(&input, &stored, &intake_item_id)
-                .map_err(|_| RuntimeError::new("import_failed"))
+                .map_store_error(store, "persist_captured_intake_import", "import_failed")
         })();
         match persist_result {
             Ok(outcome) => Ok(outcome),
@@ -201,8 +206,10 @@ impl VaultRuntime {
             source_path,
         };
         let session_generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
-        let source = ManualImportStore::prepare_source_path(mime_type, source_path)
-            .map_err(|_| RuntimeError::new("import_failed"))?;
+        let source =
+            ManualImportStore::prepare_source_path(mime_type, source_path).map_err(|error| {
+                runtime_failure(self, "prepare_source_path", "import_failed", &*error)
+            })?;
         if self.inner.vault_session_generation.load(Ordering::SeqCst) != session_generation {
             return Err(RuntimeError::new("vault_locked"));
         }
@@ -213,7 +220,7 @@ impl VaultRuntime {
                 .ok_or_else(|| RuntimeError::new("vault_locked"))?;
             match store
                 .restore_decision_state(document_id, intake_item_id, source.file_sha256())
-                .map_err(|_| RuntimeError::new("import_failed"))?
+                .map_store_error(store, "restore_decision_state", "import_failed")?
             {
                 RestoreDecisionState::AlreadyRestored => {
                     return Ok(SourceDocumentImportOutcome {
@@ -229,7 +236,7 @@ impl VaultRuntime {
             }
             match store
                 .source_capture_plan(&input, &source, Some(document_id))
-                .map_err(|_| RuntimeError::new("import_failed"))?
+                .map_store_error(store, "source_capture_plan", "import_failed")?
             {
                 SourceCapturePlan::Capture(capture) => capture,
                 SourceCapturePlan::RestoreConfirmationRequired(_) => {
@@ -242,16 +249,17 @@ impl VaultRuntime {
         }
         let stored = capture
             .store_prepared(&source)
-            .map_err(|_| RuntimeError::new("import_failed"))?;
+            .map_err(|error| runtime_failure(self, "store_prepared", "import_failed", &*error))?;
         if self.inner.vault_session_generation.load(Ordering::SeqCst) != session_generation {
             return Err(RuntimeError::new("vault_locked"));
         }
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .persist_confirmed_restore(&input, &stored, document_id, intake_item_id)
-            .map_err(|_| RuntimeError::new("import_failed"))
+            .map_store_error(store, "persist_confirmed_restore", "import_failed")
     }
 
     pub(crate) fn decline_restore_selected_document(
@@ -260,11 +268,12 @@ impl VaultRuntime {
         intake_item_id: &str,
     ) -> Result<(), RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .record_restore_declined(document_id, intake_item_id)
-            .map_err(|_| RuntimeError::new("import_failed"))
+            .map_store_error(store, "record_restore_declined", "import_failed")
     }
 }
 

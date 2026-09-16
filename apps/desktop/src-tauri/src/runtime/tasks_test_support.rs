@@ -2,6 +2,7 @@ use super::*;
 use crate::database::{
     SourceDocumentRoutingOutcome, TrustedAccountCandidate, TrustedDocumentClassification,
 };
+use crate::diagnostics::JobFailureDetail;
 use crate::runtime::tests::{
     MemoryLocalInboxBookmarkStore, MemoryRememberedKeyStore, MemoryStatementPasswordStore,
 };
@@ -34,11 +35,12 @@ impl VaultRuntime {
         source_type: &str,
     ) -> Result<(), RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .seed_money_source(id, provider_key, display_name, source_type)
-            .map_err(|_| RuntimeError::new("seed_failed"))
+            .map_store_error(store, "seed_money_source", "seed_failed")
     }
 }
 
@@ -306,7 +308,14 @@ fn lists_needs_attention_after_failed_reconcile_with_money_source_assigned() {
         .start_reconcile_document(&imported.document_id)
         .expect("start reconcile job");
     store
-        .fail_reconcile_document(&imported.document_id, "provider_unavailable")
+        .fail_reconcile_document(
+            &imported.document_id,
+            "provider_unavailable",
+            Some(&JobFailureDetail::from_code(
+                Some("provider"),
+                "provider_unavailable",
+            )),
+        )
         .expect("fail reconcile");
     drop(store_guard);
 
