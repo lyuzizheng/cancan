@@ -24,6 +24,24 @@ pub(super) fn runtime_fixture() -> (tempfile::TempDir, VaultRuntime) {
     (parent, runtime)
 }
 
+#[cfg(test)]
+impl VaultRuntime {
+    pub(super) fn seed_money_source(
+        &self,
+        id: &str,
+        provider_key: &str,
+        display_name: &str,
+        source_type: &str,
+    ) -> Result<(), RuntimeError> {
+        let store = self.store()?;
+        store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .seed_money_source(id, provider_key, display_name, source_type)
+            .map_err(|_| RuntimeError::new("seed_failed"))
+    }
+}
+
 pub(super) fn write_source(
     parent: &std::path::Path,
     name: &str,
@@ -180,10 +198,18 @@ fn reconcile_sealed_batches_completes_actionable_and_suppresses_non_actionable()
         .expect("insert visible rejection");
     drop(store_guard);
 
-    // list_tasks reconciles all sealed batches.
-    let _ = runtime
+    // The write half of the Tasks projection completes every sealed batch; the
+    // read command itself stays pure.
+    runtime
+        .seal_completed_intake_batches()
+        .expect("seal completed batches");
+    let tasks = runtime
         .list_tasks(TaskFilter::CommandCenter)
         .expect("list tasks");
+    assert!(
+        !tasks.rows.is_empty(),
+        "the actionable batch still renders its task rows"
+    );
 
     let mut store_guard = runtime.store().expect("open store");
     let store = store_guard.as_mut().expect("unlocked store");
@@ -356,6 +382,10 @@ fn parked_local_inbox_rejection_is_suppressed_not_pending() {
         row_with_consequence(&tasks.rows, TaskConsequence::InboxFileCouldNotBeAdded).is_none(),
         "parked inbox item must not also render as could-not-be-added"
     );
+
+    runtime
+        .seal_completed_intake_batches()
+        .expect("seal completed batches");
 
     let mut store_guard = runtime.store().expect("open store");
     let store = store_guard.as_mut().expect("unlocked store");

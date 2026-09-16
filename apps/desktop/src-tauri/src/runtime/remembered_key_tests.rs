@@ -132,7 +132,7 @@ fn clears_an_os_invalidated_touch_id_item_and_keeps_password_fallback() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     setup.remember_on_this_mac().expect("remember on this Mac");
-    setup.lock().expect("lock Vault");
+    setup.test_support_lock().expect("lock Vault");
     drop(setup);
 
     let invalidated = Arc::new(InvalidatedRememberedKeyStore::new());
@@ -182,7 +182,7 @@ fn keeps_the_touch_id_offer_when_the_read_fails_transiently() {
         .create(b"synthetic-vault-password")
         .expect("create Vault");
     setup.remember_on_this_mac().expect("remember on this Mac");
-    setup.lock().expect("lock Vault");
+    setup.test_support_lock().expect("lock Vault");
     drop(setup);
 
     // A transient failure (user cancel / authentication unavailable) errors on
@@ -218,7 +218,7 @@ fn access_status_checks_presence_without_loading_the_secret() {
     setup
         .create(b"synthetic-vault-password")
         .expect("create Vault");
-    setup.lock().expect("lock Vault");
+    setup.test_support_lock().expect("lock Vault");
     drop(setup);
 
     let runtime =
@@ -242,7 +242,7 @@ fn removes_a_malformed_remembered_secret_before_password_fallback() {
     runtime
         .create(b"synthetic-vault-password")
         .expect("create Vault");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     remembered_keys
         .save(&[0x55; KEY_LEN - 1])
         .expect("seed malformed secret");
@@ -274,7 +274,7 @@ fn reports_cleanup_failure_for_a_malformed_remembered_secret() {
     setup
         .create(b"synthetic-vault-password")
         .expect("create Vault");
-    setup.lock().expect("lock Vault");
+    setup.test_support_lock().expect("lock Vault");
     drop(setup);
 
     let runtime = VaultRuntime::with_remembered_keys(
@@ -306,7 +306,7 @@ fn preserves_an_unverified_key_after_open_failure_and_keeps_password_unlock_avai
     runtime
         .create(b"synthetic-vault-password")
         .expect("create Vault");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     remembered_keys
         .save(&[0x55; KEY_LEN])
         .expect("seed stale key");

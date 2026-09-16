@@ -421,7 +421,7 @@ fn interrupted_explicit_intake_is_terminal_after_store_restart() {
             })
             .expect("create pending batch");
     }
-    runtime.lock().expect("lock before restart");
+    runtime.test_support_lock().expect("lock before restart");
     drop(runtime);
 
     let restarted = VaultRuntime::with_secret_stores(

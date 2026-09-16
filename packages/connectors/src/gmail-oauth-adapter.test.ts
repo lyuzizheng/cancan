@@ -211,6 +211,7 @@ describe("privileged Gmail OAuth adapter", () => {
         async persistAuthorizedMailbox() {
           throw new GmailOAuthExecutionError(
             `save failed for ${refreshToken}`,
+            "authorization_failed",
           );
         },
       });

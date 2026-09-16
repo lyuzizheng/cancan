@@ -1,3 +1,5 @@
+// Dedicated Gmail OAuth contract (spec 0003). Test-only until the later
+// onboarding checkpoint: no renderer or Tauri command consumes it yet.
 export const GMAIL_READONLY_SCOPE =
   "https://www.googleapis.com/auth/gmail.readonly";
 

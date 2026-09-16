@@ -52,6 +52,7 @@ export interface CanonicalExternalRecordInput {
 export interface StructuredDocumentIdentity {
   providerKey: string;
   documentType: string;
+  providerRootId?: string;
   statementId?: string;
   statementPeriod?: { from?: string; to?: string };
 }

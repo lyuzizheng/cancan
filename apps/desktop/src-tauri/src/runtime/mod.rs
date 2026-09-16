@@ -8,14 +8,15 @@ use crate::{
     database::{
         AccountConfirmationOutcome, AccountConfirmationPrompt, CandidateAccountDecisionInput,
         ClaimedReviewBatch, CommitReviewGroup, CorePreparedReversalEvent, CorePreparedReviewEvent,
-        CoreReviewRecord, DATABASE_FILE_NAME, ManualImportStore, MoneyOverview, ParseDocumentClaim,
-        ParseDocumentJob, RecentActivitySummary, RelationshipCandidateSummary,
-        ReviewBatchGroupOutcome, ReviewBatchGroupStatus, ReviewItemDetail, ReviewItemSummary,
-        ReviewJobSummary, ReviewMutationOutcome, ReviewMutationStatus,
-        ReviewRelationshipCandidateInput, SourceDocumentImport, SourceDocumentImportOutcome,
-        SourceDocumentImportStatus, SourceDocumentRoutingOutcome, SourceDocumentView,
-        StatementPasswordStatus, TrustedAccountCandidate, TrustedDocumentClassification,
-        UndoOutcome, ValidatedExternalRecordInput, ValidatedStructuredParseInput,
+        CoreReviewRecord, DATABASE_FILE_NAME, DuplicateCommittedVersionAuditRow, ManualImportStore,
+        MoneyOverview, ParseDocumentClaim, ParseDocumentJob, RecentActivitySummary,
+        RelationshipCandidateSummary, ReviewBatchGroupOutcome, ReviewBatchGroupStatus,
+        ReviewItemDetail, ReviewItemSummary, ReviewJobSummary, ReviewMutationOutcome,
+        ReviewMutationStatus, ReviewRelationshipCandidateInput, SourceDocumentFileInput,
+        SourceDocumentImport, SourceDocumentImportOutcome, SourceDocumentImportStatus,
+        SourceDocumentRoutingOutcome, SourceDocumentView, StatementPasswordStatus,
+        TrustedAccountCandidate, TrustedDocumentClassification, UndoOutcome,
+        ValidatedExternalRecordInput, ValidatedStructuredParseInput,
     },
     local_inbox::{
         AuthorizedRoot, BACKUPS_DIRECTORY_NAME, BookmarkResolution, CaptureDeferReason,
@@ -29,7 +30,7 @@ use crate::{
         password_wrapper_profile, recovery_file_fingerprint,
     },
     viewer::{
-        PdfAccess, RenderedDocumentPage, pdf_access, render_image_document,
+        RenderedDocumentPage, pdf_password_unlocks, render_image_document,
         render_pdf_page_with_password,
     },
 };
@@ -85,6 +86,7 @@ const IMPORT_POLICY_VERSION: &str = "manual-import-v1";
 const NORMALIZER_TIMEOUT: Duration = Duration::from_secs(10);
 const NORMALIZER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const NORMALIZER_MAX_MESSAGE_BYTES: usize = 256 * 1024;
+const NORMALIZER_INPUT_STRATEGY: &str = "native-observations-v2";
 // A CSV preview returns at most the first lines of the decrypted text. A small
 // CSV may appear in full, but the renderer never receives raw original-file
 // bytes or unbounded content. The caps keep IPC bounded while giving enough
@@ -109,6 +111,7 @@ impl Deref for ExtractedDocument {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum VaultStatus {
     NotCreated,
     Locked,
@@ -117,6 +120,7 @@ pub(crate) enum VaultStatus {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum SavedStatementPasswordResult {
     Invalid,
     Unavailable,
@@ -125,6 +129,7 @@ pub(crate) enum SavedStatementPasswordResult {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct VaultAccessStatus {
     recovery_configured: bool,
     remembered_on_this_mac: Option<bool>,
@@ -133,6 +138,7 @@ pub(crate) struct VaultAccessStatus {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum LocalInboxAccessState {
     Disabled,
     Enabled,
@@ -143,6 +149,7 @@ pub(crate) enum LocalInboxAccessState {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct LocalInboxScanSummary {
     already_present: u64,
     deferred: u64,
@@ -152,6 +159,7 @@ pub(crate) struct LocalInboxScanSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct LocalInboxStatus {
     access_state: LocalInboxAccessState,
     backups_prepared: bool,
@@ -187,6 +195,7 @@ pub(crate) struct SourceDocumentSummary {
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct MoneySourceSummary {
     display_name: String,
     money_source_id: String,
@@ -195,6 +204,7 @@ pub(crate) struct MoneySourceSummary {
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct StatementPasswordSourceSummary {
     display_name: String,
     has_saved_password: bool,
@@ -203,6 +213,7 @@ pub(crate) struct StatementPasswordSourceSummary {
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct SourceDocumentPreview {
     line_count: u64,
     preview_lines: u64,
@@ -238,15 +249,38 @@ struct NormalizerStatementPeriod {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case", tag = "status", deny_unknown_fields)]
+#[serde(
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    tag = "status",
+    deny_unknown_fields
+)]
 enum NormalizerResult {
     Classified {
         profile: Box<NormalizerProfile>,
         proposal: Box<NormalizerProposal>,
+        /// Sidecar-echoed canonical document key. The host re-derives this
+        /// value in `review.rs` and rejects mismatches; it never reaches
+        /// persistence.
+        semantic_document_key: String,
     },
     NeedsAttention {
         reason: String,
     },
+}
+
+/// Canonical semantic document key. Byte-identical to the TypeScript
+/// `semanticDocumentKey` in `packages/parsers/src/validate-structured-proposal.ts`:
+/// `providerKey` + (`:${providerRootId}` when present) + `:${statementId}`.
+pub(super) fn derive_semantic_document_key(
+    provider_key: &str,
+    provider_root_id: Option<&str>,
+    statement_id: &str,
+) -> String {
+    match provider_root_id {
+        Some(root_id) => format!("{provider_key}:{root_id}:{statement_id}"),
+        None => format!("{provider_key}:{statement_id}"),
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -458,6 +492,7 @@ struct RuntimeInner {
     document_passwords: Mutex<DocumentPasswordSessions>,
     gmail_refresh_tokens: Arc<dyn GmailRefreshTokenStore>,
     local_inbox_access: Mutex<Option<AuthorizedRoot>>,
+    local_inbox_bookmark_cache: Mutex<LocalInboxBookmarkCache>,
     local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
     local_inbox_last_scan: Mutex<Option<LocalInboxScanSummary>>,
     local_inbox_scan_guard: Mutex<()>,
@@ -466,11 +501,21 @@ struct RuntimeInner {
     local_inbox_needs_reauthorization: AtomicBool,
     remembered_keys: Arc<dyn RememberedKeyStore>,
     root: PathBuf,
+    source_document_cache: Mutex<Option<CachedSourceDocument>>,
     statement_passwords: Arc<dyn StatementPasswordStore>,
     store: Mutex<Option<ManualImportStore>>,
     vault_session_generation: AtomicU64,
     #[cfg(test)]
     intake_test_hooks: Mutex<IntakeTestHooks>,
+}
+
+/// Whether the device-local Local Inbox bookmark has been read from the
+/// Keychain in this run, and what it said. `Load` is a live Keychain read on
+/// the status path, so the answer is remembered until Inbox configuration
+/// changes.
+enum LocalInboxBookmarkCache {
+    Unloaded,
+    Loaded(Option<Zeroizing<Vec<u8>>>),
 }
 
 #[cfg(test)]
@@ -492,6 +537,8 @@ enum IntakeTestFault {
 }
 
 mod accounts;
+mod audit;
+mod document_cache;
 mod documents;
 mod documents_intake;
 mod error;
@@ -513,6 +560,7 @@ mod lifecycle;
 #[cfg(test)]
 mod remembered_key_tests;
 mod review;
+mod review_records;
 mod sidecar;
 mod source_confirmation;
 mod tasks;
@@ -528,12 +576,15 @@ mod undo;
 mod vault_lifecycle;
 
 pub(crate) use accounts::*;
+pub(crate) use audit::*;
+use document_cache::CachedSourceDocument;
 pub(crate) use documents::*;
 pub(crate) use error::*;
 pub(crate) use inbox::*;
 use keyring::*;
 pub(crate) use lifecycle::*;
 pub(crate) use review::*;
+pub(crate) use review_records::*;
 use sidecar::*;
 pub(crate) use source_confirmation::*;
 pub(crate) use tasks::*;

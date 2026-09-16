@@ -79,6 +79,7 @@ const REVIEW_REASON_LABELS: Record<string, string> = {
   possible_card_repayment: "Looks like a card repayment",
   possible_transfer: "Looks like a transfer",
   record_edited: "Edited record",
+  reparse_divergence: "Re-parsed values differ",
   source_file_deleted: "Source file deleted",
 };
 

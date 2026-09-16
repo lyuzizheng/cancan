@@ -1,10 +1,10 @@
 #[cfg(target_os = "macos")]
 use super::test_support::statement_password_runtime;
-#[cfg(target_os = "macos")]
-use super::tests::protected_text_pdf;
 use super::tests::{
     MemoryLocalInboxBookmarkStore, MemoryRememberedKeyStore, MemoryStatementPasswordStore,
 };
+#[cfg(target_os = "macos")]
+use super::tests::{protected_text_pdf, synthetic_pdf};
 use super::*;
 use std::{fs, path::Path, sync::Arc};
 
@@ -45,7 +45,7 @@ fn lock_and_unlock_reject_a_parse_result_extracted_by_the_old_vault_session() {
         .normalization_input(&imported.document_id)
         .expect("extract input in current session");
 
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     runtime
         .unlock(b"synthetic-vault-password")
         .expect("unlock Vault");
@@ -94,7 +94,7 @@ fn reopen_recovers_expired_parse_work_when_local_inbox_is_disabled() {
         .expect("unlocked store")
         .expire_parse_document_lease_for_test(&attempt.claim.job_id)
         .expect("expire parse lease");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     drop(runtime);
 
     let reopened = test_runtime(&vault_root, bookmarks);
@@ -142,7 +142,7 @@ fn reopen_requeues_an_unexpired_parse_claim_and_rejects_the_old_token() {
         .start_local_inbox_parse(&job)
         .expect("claim parse job")
         .expect("parse job claimed");
-    runtime.lock().expect("lock Vault");
+    runtime.test_support_lock().expect("lock Vault");
     drop(runtime);
 
     let reopened = test_runtime(&vault_root, bookmarks);
@@ -290,4 +290,83 @@ fn unlocking_a_password_blocked_parse_requeues_the_same_logical_run() {
         SourceDocumentStatus::Processing
     );
     assert!(runtime.normalization_input(&imported.document_id).is_ok());
+}
+
+#[test]
+fn rejects_an_oversized_document_import_without_reading_it() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let runtime = VaultRuntime::new(parent.path().join("vault"));
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    let oversized = parent.path().join("huge-statement.pdf");
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&oversized)
+        .expect("open oversized fixture");
+    file.set_len(crate::source_file::MAX_SOURCE_FILE_BYTES + 1)
+        .expect("grow sparse source");
+    drop(file);
+
+    assert_eq!(
+        runtime
+            .import_selected_document(&oversized)
+            .expect_err("reject oversized document")
+            .code(),
+        "source_file_too_large"
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn replaces_the_cached_decryption_only_while_the_vault_session_lives() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let source_path = parent.path().join("statement.pdf");
+    fs::write(&source_path, synthetic_pdf()).expect("write PDF fixture");
+    let vault_root = parent.path().join("vault");
+    let runtime = VaultRuntime::new(vault_root.clone());
+    runtime
+        .create(b"synthetic-vault-password")
+        .expect("create Vault");
+    let imported = runtime
+        .import_selected_document(&source_path)
+        .expect("import PDF");
+
+    runtime
+        .render_source_document_page(&imported.document_id, 1)
+        .expect("render PDF");
+    let encrypted_locator = {
+        let store = runtime.store().expect("active store");
+        store
+            .as_ref()
+            .expect("unlocked store")
+            .list_unassigned_documents()
+            .expect("list imported documents")
+            .into_iter()
+            .find(|document| document.document_id == imported.document_id)
+            .and_then(|document| document.encrypted_locator)
+            .expect("PDF encrypted locator")
+    };
+    fs::remove_file(vault_root.join(encrypted_locator)).expect("remove encrypted blob");
+
+    // The decryption is cached for this Vault session, so a repeated render does
+    // not need the stored blob again.
+    runtime
+        .render_source_document_page(&imported.document_id, 1)
+        .expect("render from the session cache");
+
+    // Locking drops the cached plaintext; the same render must now reach storage.
+    runtime.test_support_lock().expect("lock Vault");
+    runtime
+        .unlock(b"synthetic-vault-password")
+        .expect("unlock Vault");
+    assert_eq!(
+        runtime
+            .render_source_document_page(&imported.document_id, 1)
+            .expect_err("reject a render whose stored blob is gone")
+            .code(),
+        "document_unavailable"
+    );
 }

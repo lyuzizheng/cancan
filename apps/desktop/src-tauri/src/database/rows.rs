@@ -78,7 +78,7 @@ pub(super) struct ReviewRelationshipRecord {
     pub(super) review_item_id: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct StoredReviewRelationship {
     pub(super) allocation_value: String,
     pub(super) event_type: String,
@@ -114,6 +114,7 @@ pub(super) fn review_item_summary_from_row(row: &Row<'_>) -> rusqlite::Result<Re
         event_type: row.get(6)?,
         posted_on: row.get(7)?,
         account_label: row.get(8)?,
+        record_committed: row.get(9)?,
     })
 }
 
@@ -130,6 +131,7 @@ pub(super) fn review_item_detail_from_row(row: &Row<'_>) -> rusqlite::Result<Rev
         account_label: row.get(8)?,
         document_label: row.get(9)?,
         source_label: row.get(10)?,
+        record_committed: row.get(11)?,
     })
 }
 

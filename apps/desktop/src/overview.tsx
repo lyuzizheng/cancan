@@ -8,6 +8,8 @@ import {
   Skeleton,
 } from "@cancan/ui";
 
+import { memo } from "react";
+
 import type {
   MoneyOverview,
   MoneyOverviewAmount,
@@ -43,7 +45,7 @@ export interface OverviewViewProps {
  * section, then the money overview and recent activity streams on the open
  * ledger rhythm (hairline rules, no card grid).
  */
-export function OverviewView(props: OverviewViewProps) {
+export const OverviewView = memo(function OverviewView(props: OverviewViewProps) {
   const overviewEmpty = props.moneyOverview !== null
     && props.moneyOverview.assets.length === 0
     && props.moneyOverview.liabilities.length === 0;
@@ -139,7 +141,7 @@ export function OverviewView(props: OverviewViewProps) {
       </div>
     </>
   );
-}
+});
 
 function MoneyGroup({
   amounts,

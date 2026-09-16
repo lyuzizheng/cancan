@@ -91,6 +91,9 @@ const OBSERVATION_KINDS = new Set([
   "table_cell",
 ]);
 
+const MAX_OBSERVATIONS_PER_BUNDLE = 10_000;
+const MAX_RELATIONSHIP_CANDIDATES = 100;
+
 export function parseWorkerCommand(value: unknown): WorkerCommand | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -173,7 +176,7 @@ function isRelationshipCandidatesInput(value: unknown): boolean {
     isReviewEventType(value.eventType) &&
     isReviewSourceRecord(value.record) &&
     Array.isArray(value.candidates) &&
-    value.candidates.length <= 100 &&
+    value.candidates.length <= MAX_RELATIONSHIP_CANDIDATES &&
     value.candidates.every(isReviewSourceRecord)
   );
 }
@@ -276,6 +279,7 @@ function isExtractionBundle(value: unknown): value is ExtractionBundle {
       value.mimeType !== "image/jpeg") ||
     !isExtractionMetadata(value.metadata) ||
     !Array.isArray(value.observations) ||
+    value.observations.length > MAX_OBSERVATIONS_PER_BUNDLE ||
     value.metadata.observationCount !== value.observations.length ||
     !value.observations.every((observation) =>
       isSourceObservation(observation, value.mimeType),
@@ -292,13 +296,14 @@ function isExtractionBundle(value: unknown): value is ExtractionBundle {
 type SourceObservationRecord = Record<string, unknown> & { id: string };
 
 function isExtractionMetadata(value: unknown): value is {
-  extractionVersion: "native-observations-v1";
+  extractionVersion: "native-observations-v1" | "native-observations-v2";
   observationCount: number;
 } {
   return (
     isRecord(value) &&
     hasExactKeys(value, ["extractionVersion", "observationCount"]) &&
-    value.extractionVersion === "native-observations-v1" &&
+    (value.extractionVersion === "native-observations-v1" ||
+      value.extractionVersion === "native-observations-v2") &&
     typeof value.observationCount === "number" &&
     Number.isSafeInteger(value.observationCount) &&
     value.observationCount >= 0
@@ -329,7 +334,6 @@ function isSourceObservation(value: unknown, mimeType: unknown): boolean {
       value.page !== undefined &&
       value.textSpan !== undefined &&
       isTextSpanWithinText(value.textSpan, value.text) &&
-      value.row === undefined &&
       value.column === undefined &&
       value.boundingBox === undefined &&
       value.confidence === undefined
@@ -347,11 +351,10 @@ function isSourceObservation(value: unknown, mimeType: unknown): boolean {
   }
   if (value.kind === "ocr_text") {
     return (
-      value.row === undefined &&
       value.column === undefined &&
       value.textSpan === undefined &&
       (mimeType === "image/png" || mimeType === "image/jpeg"
-        ? value.page === undefined && value.boundingBox === undefined
+        ? value.page === undefined && value.boundingBox === undefined && value.row === undefined
         : value.page !== undefined && value.boundingBox !== undefined)
     );
   }

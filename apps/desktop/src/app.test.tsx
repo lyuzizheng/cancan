@@ -10,12 +10,9 @@ import type {
   SourceDocumentSummary,
 } from "./command-contracts";
 import { DocumentViewer } from "./document-modals";
+import { parseReceivedAt } from "./evidence-documents";
 import { importNotice } from "./notices";
-import {
-  SourcesView,
-  parseReceivedAt,
-  type SourcesViewProps,
-} from "./sources-view";
+import { SourcesView, type SourcesViewProps } from "./sources-view";
 import { VaultGate } from "./vault-gate";
 
 const document: SourceDocumentSummary = {

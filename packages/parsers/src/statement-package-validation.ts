@@ -5,7 +5,12 @@ import type {
   StructuredProposalValidation,
 } from "./contracts";
 import type { ProviderDocumentPackage } from "./provider-document-package";
-import { validateStructuredProposal } from "./validate-structured-proposal";
+import {
+  groundingRegionObservations,
+  MAX_RAW_RECORD_JSON_BYTES,
+  parseRecordLocator,
+  validateStructuredProposal,
+} from "./validate-structured-proposal";
 
 const rawKeys = new Set([
   "kind",
@@ -34,12 +39,11 @@ function normalizedDescription(value: string): string {
 }
 
 function validateRaw(raw: Record<string, unknown>): void {
-  if (Object.keys(raw).some((key) => !rawKeys.has(key)) || JSON.stringify(raw).length > 16_384) {
+  if (Object.keys(raw).some((key) => !rawKeys.has(key)) || JSON.stringify(raw).length > MAX_RAW_RECORD_JSON_BYTES) {
     throw new Error("unsupported statement row");
   }
-  const locator = raw.locator;
-  if (locator !== undefined && (!locator || Array.isArray(locator) || typeof locator !== "object")) {
-    throw new Error("invalid statement row locator");
+  if (parseRecordLocator(raw).kind !== "valid") {
+    throw new Error("statement row requires a valid locator");
   }
 }
 
@@ -169,6 +173,25 @@ function rawString(record: CanonicalExternalRecordInput, field: string): string 
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * Foreign-currency tripwire for statement rows. Only SG-plausible settlement
+ * codes count, and only when the code sits next to an amount-like number, so
+ * ordinary description words (TOP-UP, ANG MO KIO, SDN BHD) never trip it.
+ * A region with no such code inherits document-level SGD grounding.
+ */
+const FOREIGN_SETTLEMENT_CURRENCIES: ReadonlySet<string> = new Set([
+  "USD", "EUR", "GBP", "JPY", "AUD", "HKD", "CNY", "MYR", "THB", "IDR",
+  "INR", "PHP", "VND", "KRW", "TWD", "NZD", "CAD", "CHF",
+]);
+
+const AMOUNT_ADJACENT_CURRENCY = new RegExp(
+  String.raw`\b(${[...FOREIGN_SETTLEMENT_CURRENCIES].join("|")})\b\s*[-+]?[\d,]*\d(?:\.\d+)?` +
+    String.raw`|\b[-+]?[\d,]*\d(?:\.\d+)?\s*\b(${[...FOREIGN_SETTLEMENT_CURRENCIES].join("|")})\b`,
+);
+
+function groundingRegionHasForeignCurrency(text: string): boolean {
+  return AMOUNT_ADJACENT_CURRENCY.test(text.toUpperCase());
+}
 export async function validateStatementPackage(
   providerPackage: ProviderDocumentPackage,
   input: {
@@ -198,6 +221,22 @@ export async function validateStatementPackage(
   }
   if (input.proposal.document.documentType !== providerPackage.documentType) {
     add("document_type_mismatch");
+  }
+  const statementId = input.proposal.document.statementId;
+  if (
+    statementId === undefined ||
+    statementId.length === 0 ||
+    !documentGroundsValue(input.extractionBundle, statementId)
+  ) {
+    add("statement_id_not_grounded");
+  }
+  const providerRootId = input.proposal.document.providerRootId;
+  if (
+    providerRootId !== undefined &&
+    (providerRootId.length === 0 ||
+      !documentGroundsValue(input.extractionBundle, providerRootId))
+  ) {
+    add("provider_root_id_not_grounded");
   }
   if (!providerPackage.mimeTypes.includes(input.extractionBundle.mimeType)) {
     add("mime_type_mismatch");
@@ -279,6 +318,11 @@ export async function validateStatementPackage(
     ) {
       add("currency_or_precision_unsupported", record.proposalRecordId);
     }
+    const region = groundingRegionObservations(input.extractionBundle, record.raw);
+    const regionText = region.map(({ text }) => text).join("\n");
+    if (groundingRegionHasForeignCurrency(regionText)) {
+      add("currency_or_precision_unsupported", record.proposalRecordId);
+    }
   }
 
   for (const record of input.proposal.records) {
@@ -327,24 +371,47 @@ export async function validateStatementPackage(
       add("opening_closing_snapshot_required");
       continue;
     }
-    const openingValue = opening[0]?.balanceAfter
-      ? twoDecimalMinorUnits(opening[0].balanceAfter.value)
-      : undefined;
-    const closingValue = closing[0]?.balanceAfter
-      ? twoDecimalMinorUnits(closing[0].balanceAfter.value)
-      : undefined;
-    const deltas = postings.map(({ accountBalanceDelta }) =>
-      accountBalanceDelta ? twoDecimalMinorUnits(accountBalanceDelta.value) : undefined,
+    const openingRecord = opening[0] as CanonicalExternalRecordInput;
+    const closingRecord = closing[closing.length - 1] as CanonicalExternalRecordInput;
+    const snapshotIds = new Set([openingRecord.proposalRecordId, closingRecord.proposalRecordId]);
+    const chainRows = [openingRecord, ...(postings as CanonicalExternalRecordInput[]), closingRecord].map(
+      (record) => {
+        const locator = parseRecordLocator(record.raw);
+        const isSnapshot = snapshotIds.has(record.proposalRecordId);
+        const delta = isSnapshot
+          ? 0n
+          : record.accountBalanceDelta
+            ? twoDecimalMinorUnits(record.accountBalanceDelta.value)
+            : undefined;
+        return {
+          record,
+          order: locator.kind === "valid" ? locator.row : undefined,
+          balance: record.balanceAfter ? twoDecimalMinorUnits(record.balanceAfter.value) : undefined,
+          delta,
+        };
+      },
     );
-    if (
-      openingValue === undefined ||
-      closingValue === undefined ||
-      deltas.some((value) => value === undefined) ||
-      openingValue +
-        deltas.reduce<bigint>((sum, value) => sum + (value as bigint), 0n) !==
-        closingValue
-    ) {
+    if (chainRows.some(({ order }) => order === undefined)) {
       add("statement_reconciliation_failed");
+      continue;
+    }
+    const ordered = chainRows.sort((left, right) => (left.order as number) - (right.order as number));
+    const head = ordered[0];
+    if (head?.balance === undefined) {
+      add("statement_reconciliation_failed", head?.record.proposalRecordId);
+      continue;
+    }
+    let running = head.balance;
+    for (const link of ordered.slice(1)) {
+      if (link.delta === undefined) {
+        add("statement_reconciliation_failed", link.record.proposalRecordId);
+        break;
+      }
+      if (link.balance === undefined || running + link.delta !== link.balance) {
+        add("statement_reconciliation_failed", link.record.proposalRecordId);
+        break;
+      }
+      running = link.balance;
     }
   }
 

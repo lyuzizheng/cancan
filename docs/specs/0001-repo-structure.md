@@ -160,6 +160,8 @@ A file that outgrows its limit is split along the boundaries below (or a newly d
 The privileged desktop host keeps domain-directory modules instead of single-file crates:
 
 ```text
+apps/desktop/src-tauri/src/
+  source_file.rs     shared source-file ingest ceiling and bounded reads for both acquisition channels
 apps/desktop/src-tauri/src/runtime/
   mod.rs             shared types/constants, VaultRuntime state and core accessors, re-exports
   error.rs           RuntimeError/VaultCommandError codes and the shared blocking-task helper
@@ -172,6 +174,7 @@ apps/desktop/src-tauri/src/runtime/
   inbox.rs           local-inbox methods, job orchestration, and their commands
   documents.rs       document/statement-password methods and their commands
   review.rs          review-ledger methods, batch jobs, and their commands
+  review_records.rs  committed-record review acknowledgement method and command
   tests.rs           runtime test module
 apps/desktop/src-tauri/src/database/
   mod.rs             record types, ManualImportStore and its impl, re-exports
@@ -179,11 +182,13 @@ apps/desktop/src-tauri/src/database/
   rows.rs            row-to-view mapping and review-record open helpers
   validation.rs      decimal/date/identifier validation helpers
   imports.rs         import/deletion persistence and audit helpers
+  review_batches.rs  review-batch commit preparation and its batched lookups
   gmail.rs           Gmail mailbox identity and connection-state repository
+  review_records.rs  committed-record review acknowledgement and its audit entry
   tests.rs           database test module
 ```
 
-Splitting the `ManualImportStore` impl into per-aggregate modules is a registered follow-up in `docs/alignment-temp/alignment-progress.md`. Files that predate the guardrail (including that store impl, `app.tsx`, and the single-file `vault`/`viewer`/`source_observations` modules) carry ratchet-only per-file exemptions recorded in the `EXEMPTIONS` map of `scripts/check-source-file-size.mjs`; an exemption ceiling may only shrink, never grow, and removing one requires the split described here.
+Splitting the `ManualImportStore` impl into per-aggregate modules is a registered follow-up in `docs/alignment-temp/alignment-progress.md`. Files that predate the guardrail (including that store impl and the single-file `vault`/`viewer`/`source_observations` modules) carry ratchet-only per-file exemptions recorded in the `EXEMPTIONS` map of `scripts/check-source-file-size.mjs`; an exemption ceiling may only shrink, never grow, and removing one requires the split described here.
 
 The store mutex protects only bounded state/repository reads, job claims, and transactional writes. File I/O, PDF/image decode, OCR, sidecar/model execution, hashing, and other long-running extraction work happen outside it. A worker snapshots the required IDs/version while holding the lock, releases it for the long work, then reacquires it and validates the current version/idempotency key before applying the result. The per-aggregate impl split remains a readability follow-up; long-work lock ownership is already decided and does not wait for that refactor.
 
@@ -195,7 +200,7 @@ Idle background execution uses no busy loop or filesystem polling; Inbox work is
 
 Measure idle RSS, CPU, and energy after the WebView is destroyed. Add an XPC service, helper, or LaunchAgent only if measured evidence proves the single-process runtime cannot meet an accepted budget; do not create a second Vault owner, parser pipeline, or job authority speculatively.
 
-The renderer keeps `app.tsx` as orchestration state only; presentational views live in sibling modules (`sources-view.tsx`, `document-modals.tsx`, `vault-gate.tsx`, `notices.ts`, `overview.tsx`, `review.tsx`, `vault-spine.tsx`). Interaction tests split per flow with shared fixtures instead of one monolithic file.
+The renderer keeps `app.tsx` as wiring only: every command-center domain (vault session, documents, review queue, Inbox, attention, evidence overlays, shared read model) owns its state in a `use-*.ts` hook, its commands live in that hook or in the `*-actions.ts` factory the hook drives (`review-actions.ts`, `viewer-actions.ts`, `statement-unlock-actions.ts`, `source-confirmation-actions.ts`, `task-destination-actions.ts`), and presentational views live in sibling modules (`sources-view.tsx`, `evidence-documents.tsx`, `review-detail.tsx`, `document-modals.tsx`, `vault-gate.tsx`, `notices.ts`, `overview.tsx`, `review.tsx`, `vault-spine.tsx`). Hooks publish their loaders and resetters through the `CommandWiring` seam so no hook depends on a hook declared later in the same component. Interaction tests split per flow with shared fixtures instead of one monolithic file.
 
 The presentation-safe Rust command surface generates its TypeScript request/response types into committed files. The native CI gate builds the required sidecars, reruns the focused Rust comparison test, and fails when its generated string differs from the committed file; the standalone check builds the sidecars itself before running that test. Semantic renderer API wrappers remain handwritten, and the current per-view React state/session guards remain in place. Do not add React Query, another cache framework, or a renderer state replatform merely to generate command types.
 

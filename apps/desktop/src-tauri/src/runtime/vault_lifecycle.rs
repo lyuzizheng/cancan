@@ -57,6 +57,7 @@ impl VaultRuntime {
                 document_passwords: Mutex::new(HashMap::new()),
                 gmail_refresh_tokens,
                 local_inbox_access: Mutex::new(None),
+                local_inbox_bookmark_cache: Mutex::new(LocalInboxBookmarkCache::Unloaded),
                 local_inbox_bookmarks,
                 local_inbox_last_scan: Mutex::new(None),
                 local_inbox_scan_guard: Mutex::new(()),
@@ -65,6 +66,7 @@ impl VaultRuntime {
                 local_inbox_needs_reauthorization: AtomicBool::new(false),
                 remembered_keys,
                 root,
+                source_document_cache: Mutex::new(None),
                 statement_passwords,
                 store: Mutex::new(None),
                 vault_session_generation: AtomicU64::new(0),
@@ -365,14 +367,38 @@ impl VaultRuntime {
             .map_err(|_| RuntimeError::new("recovery_status_failed"))
     }
 
-    pub(crate) fn lock(&self) -> Result<VaultStatus, RuntimeError> {
+    /// Locks the Vault without telling the renderer. Production callers use
+    /// [`lock_and_notify`]; this stays private so a new lock path cannot reach
+    /// the locked state while leaving unlocked data on screen.
+    fn lock(&self) -> Result<VaultStatus, RuntimeError> {
         self.advance_vault_session();
         self.clear_local_inbox_access();
         let mut store = self.store()?;
         *store = None;
         self.document_passwords()?.clear();
+        self.clear_cached_source_document()?;
         self.locked_status()
     }
+
+    /// Test-only alias for [`Self::lock`]: tests drive the locked state without
+    /// an `AppHandle` to notify.
+    #[cfg(test)]
+    pub(super) fn test_support_lock(&self) -> Result<VaultStatus, RuntimeError> {
+        self.lock()
+    }
+}
+
+/// Locks the Vault and tells the renderer it locked.
+///
+/// `vault-locked` is the renderer's only signal that the Vault locked — it is
+/// what clears document names and rendered pixels.
+pub(crate) fn lock_and_notify(
+    app: &AppHandle,
+    runtime: &VaultRuntime,
+) -> Result<VaultStatus, RuntimeError> {
+    let status = runtime.lock()?;
+    let _ = app.emit("vault-locked", ());
+    Ok(status)
 }
 
 pub(super) fn cleanup_inactive_vault_candidates(parent: &Path) {
@@ -502,9 +528,8 @@ pub(crate) async fn lock_vault(
     runtime: State<'_, VaultRuntime>,
 ) -> Result<VaultStatus, VaultCommandError> {
     let runtime = runtime.inner().clone();
-    let status = run_runtime_task(move || runtime.lock()).await?;
-    let _ = app.emit("vault-locked", ());
-    Ok(status)
+    let lock_app = app.clone();
+    run_runtime_task(move || lock_and_notify(&lock_app, &runtime)).await
 }
 
 #[tauri::command]

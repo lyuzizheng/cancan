@@ -2,7 +2,7 @@
  * Dev-only visual inspection harness. Renders the Command Center views with
  * deterministic fixtures, selected via `?state=` (overview, overview-empty,
  * tasks, tasks-parked, source-confirm, review, review-empty, review-detail,
- * review-job, sources, sources-inbox-disabled, sources-inbox-enabled,
+ * review-committed, review-job, sources, sources-inbox-disabled, sources-inbox-enabled,
  * sources-inbox-reauth, document-viewer, document-preview, document-unlock,
  * delete-confirm, vault-gate-loading, vault-gate-create,
  * vault-gate-locked, primitives, primitives-dialog).
@@ -101,6 +101,7 @@ const reviewItems: ReviewItemSummary[] = [
     eventType: "credit_card_repayment",
     postedOn: "2026-07-15",
     reasonCode: "possible_card_repayment",
+    recordCommitted: false,
     recordId: "record-1",
     recordVersion: 1,
     reviewItemId: "review-1",
@@ -112,6 +113,7 @@ const reviewItems: ReviewItemSummary[] = [
     eventType: "credit_card_repayment",
     postedOn: "2026-07-17",
     reasonCode: "possible_card_repayment",
+    recordCommitted: false,
     recordId: "record-2",
     recordVersion: 1,
     reviewItemId: "review-2",
@@ -123,9 +125,22 @@ const reviewItems: ReviewItemSummary[] = [
     eventType: "purchase",
     postedOn: null,
     reasonCode: "classification_conflict",
+    recordCommitted: false,
     recordId: "record-3",
     recordVersion: 1,
     reviewItemId: "review-3",
+  },
+  {
+    accountLabel: "HSBC Everyday",
+    amountValue: "800.00",
+    currency: "SGD",
+    eventType: "credit_card_repayment",
+    postedOn: "2026-06-30",
+    reasonCode: "reparse_divergence",
+    recordCommitted: true,
+    recordId: "record-4",
+    recordVersion: 1,
+    reviewItemId: "review-4",
   },
 ];
 
@@ -133,6 +148,19 @@ const reviewDetail: ReviewItemDetail = {
   ...reviewItems[0]!,
   documentLabel: "July statement.pdf",
   sourceLabel: "DBS",
+};
+
+const committedReviewDetail: ReviewDetailState = {
+  candidates: [],
+  confirmingRemove: false,
+  detail: {
+    ...reviewItems[3]!,
+    documentLabel: "June statement.pdf",
+    sourceLabel: "HSBC",
+  },
+  editing: null,
+  reviewItemId: "review-4",
+  summary: reviewItems[3]!,
 };
 
 const reviewCandidates: RelationshipCandidateSummary[] = [
@@ -482,7 +510,11 @@ function Preview() {
     activeView = "review";
     content = (
       <ReviewView
-        detail={state === "review-detail" ? expandedDetail : null}
+        detail={state === "review-detail"
+          ? expandedDetail
+          : state === "review-committed"
+          ? committedReviewDetail
+          : null}
         items={state === "review-empty" ? [] : reviewItems}
         job={state === "review-job" ? finishedJob : null}
         mutatingItemId={null}
@@ -494,6 +526,7 @@ function Preview() {
             }
           : null}
         onAcceptCandidate={noop}
+        onAcknowledge={noop}
         onCancelEdit={noop}
         onCancelRemove={noop}
         onClearSelection={noop}

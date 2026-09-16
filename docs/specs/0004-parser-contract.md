@@ -310,7 +310,9 @@ required amount/date/currency/balance fields must reproduce or deterministically
 provider-defined transformations and validation outcomes are summarized in external_records.validation_json
 native/OCR disagreement remains a validation conflict
 multimodal-only output that cannot be grounded may enter Review but cannot auto-commit
+native text observations are emitted per text line with a row index; OCR text observations are clustered into visual rows by bounding-box overlap; observations without a row index do not participate in grounding groups when row-scoped observations exist in the same bundle
 optional page/row/region data inside raw JSON is a display hint, not grounding authority or a required query dimension
+raw.locator declares the inclusive row range the record spans, with a required row anchor; the validator narrows grounding to observations inside that range and rejects ranges with no observations; statement packages require a locator per record and chain-verify running balances row by row; a foreign settlement code (USD/EUR/GBP/JPY/AUD/HKD/CNY/MYR/THB/IDR/INR/PHP/VND/KRW/TWD/NZD/CAD/CHF) sitting next to an amount-like number inside a record's grounding region rejects the package
 every committed event remains traceable to source document, parse run, record version, raw source object, and validation summary
 ```
 
@@ -346,6 +348,8 @@ The import flow returns per-file outcomes as they become grounded: file capture 
 
 Stable external-record identity uses a provider record ID when available. Otherwise it is derived deterministically from semantic document identity and a provider-owned canonical identity projection of the validated raw record. That projection contains only stable source values: it excludes optional locators, OCR/model confidence, observation IDs, extraction/runtime metadata, and mutable normalized descriptions. If the source contains literally identical projected rows, an occurrence ordinal within that identical-row group distinguishes them.
 
+Semantic document identity is derived by the trusted host from grounded provider statement identity (provider statement ID, and provider root ID when present); the sidecar-supplied semanticDocumentKey is validated for equality against the host-derived value and never reaches persistence unchecked; statementId and providerRootId must be grounded to source observations before use in identity. Canonical key format is `providerKey:statementId`, or `providerKey:providerRootId:statementId` when a provider root ID is present; object keys in the deterministic identity serialization order by UTF-16 code-unit comparison. Note: changing the key derivation alters `stable_record_key` values for records without a provider record ID, so re-parsing a previously parsed statement may stage new record rows instead of versioning the old ones; re-resolve duplicates in Review rather than auto-merging.
+
 Reparse rules:
 
 ```text
@@ -357,6 +361,10 @@ new uncommitted records supersede prior uncommitted versions
 committed ledger events are never rewritten automatically by reparse
 changed output that conflicts with committed facts creates review work
 deleting the current source file makes its uncommitted records ineligible for future automatic commit but does not delete record history or alter committed events
+a committed external-record version is terminal: reparse never creates a successor
+version and never supersedes it; reparse output that diverges from the committed
+canonical fields attaches review work to the committed record; commit rejects any
+record whose stable_record_key already has a committed version
 ```
 
 ## Normalization profiles and confidence calibration
@@ -438,6 +446,7 @@ duplicate row hash
 account mapping status
 impossible signs or values
 ```
+Statement packages chain-verify running balances row by row from the opening snapshot through each posting to the closing snapshot, so swapped or forged intermediate balances fail even when the statement total still closes. Per-row currency is a negative check only: a foreign settlement code next to an amount-like number inside a record's grounding region rejects the package, while a region with no such code inherits the document-level SGD grounding. Ordinary description words that merely contain a currency-like trigram (TOP-UP, ANG MO KIO, SDN BHD) never trip it. A foreign-currency row with no amount-adjacent code still books as SGD; per-row `raw.currency` plus generalized `capabilities.currency` is a separate follow-up.
 
 Structured model confidence may contribute to eligibility only through the accepted package/document threshold. It never grants eligibility alone: grounded evidence, deterministic validators, identity/deduplication/reconciliation gates, and the review/commit policy remain authoritative.
 

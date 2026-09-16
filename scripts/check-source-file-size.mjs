@@ -13,9 +13,8 @@ const LIMITS = [
 // ceiling as the file shrinks; never raise it. The open decomposition decisions
 // live in docs/alignment-temp/alignment-progress.md.
 const EXEMPTIONS = new Map([
-  ["apps/desktop/src/app.tsx", 1651],
-  ["apps/desktop/src-tauri/src/database/mod.rs", 3322],
-  ["apps/desktop/src-tauri/src/runtime/documents.rs", 992],
+  ["apps/desktop/src-tauri/src/database/mod.rs", 2656],
+  ["apps/desktop/src-tauri/src/runtime/documents.rs", 939],
   ["apps/desktop/src-tauri/src/runtime/review.rs", 908],
   ["apps/desktop/src-tauri/src/runtime/tests.rs", 3587],
   ["apps/desktop/src-tauri/src/source_observations.rs", 950],

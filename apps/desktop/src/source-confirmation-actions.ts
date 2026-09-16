@@ -15,7 +15,7 @@ export interface SourceConfirmationActionDeps {
   api: VaultApi;
   attentionBusyKey: string | null;
   loadDocuments: () => Promise<void>;
-  loadFinanceData: () => Promise<void>;
+  loadFinanceData: () => Promise<unknown>;
   setAttentionBusyKey: (key: string | null) => void;
   setNotice: (notice: Notice) => void;
   vaultSessionId: { current: number };

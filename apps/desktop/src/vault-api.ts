@@ -13,6 +13,7 @@ import type {
   EnqueueCommitReviewBatchArgs,
   GetReviewJobArgs,
   DeleteSourceDocumentArgs,
+  DuplicateCommittedVersionAuditRow,
   ListSourceDocumentsArgs,
   ListTasksArgs,
   TaskFilter,
@@ -73,6 +74,13 @@ export interface VaultApi {
     candidateRecordId: string,
     expectedCandidateVersion: number,
   ): Promise<ReviewMutationOutcome>;
+  acknowledgeReviewItem(
+    reviewItemId: string,
+    expectedRecordVersion: number,
+  ): Promise<ReviewMutationOutcome>;
+  auditDuplicateCommittedVersions(): Promise<
+    DuplicateCommittedVersionAuditRow[]
+  >;
   decideCandidateAccounts(
     moneySourceId: string,
     proposalVersion: string,
@@ -173,6 +181,10 @@ export function createVaultApi(
     },
     listRecentActivity: () =>
       call<RecentActivitySummary[]>("list_recent_activity"),
+    auditDuplicateCommittedVersions: () =>
+      call<DuplicateCommittedVersionAuditRow[]>(
+        "audit_duplicate_committed_versions",
+      ),
     getMoneyOverview: () => call<MoneyOverview>("get_money_overview"),
     listRelationshipCandidates: (reviewItemId, expectedRecordVersion) => {
       const args: ReviewVersionArgs = { reviewItemId, expectedRecordVersion };
@@ -196,6 +208,13 @@ export function createVaultApi(
       const args: ReviewVersionArgs = { reviewItemId, expectedRecordVersion };
       return call<ReviewMutationOutcome, ReviewVersionArgs>(
         "remove_review_record",
+        args,
+      );
+    },
+    acknowledgeReviewItem: (reviewItemId, expectedRecordVersion) => {
+      const args: ReviewVersionArgs = { reviewItemId, expectedRecordVersion };
+      return call<ReviewMutationOutcome, ReviewVersionArgs>(
+        "acknowledge_review_item",
         args,
       );
     },
@@ -388,6 +407,17 @@ export function createVaultApi(
   };
 }
 
+/**
+ * The renderer's only error boundary: every failed command reaches the user as
+ * one of these lines, so a code without a case silently degrades to the generic
+ * fallback.
+ *
+ * The cases below cover every code production Rust code can put on the wire,
+ * except two groups that cannot reach the renderer at all:
+ * `gmail_*` (the Gmail commands are not registered in `generate_handler!`) and
+ * `seed_failed` (only constructed from `#[cfg(test)]` store support). Add a
+ * case here in the same change that starts emitting a new code.
+ */
 export function commandErrorMessage(error: unknown): string {
   switch (commandErrorCode(error)) {
     case "invalid_credentials":
@@ -432,6 +462,8 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t save a complete copy to that location.";
     case "unsupported_document":
       return "Choose a PDF, CSV, PNG, or JPEG file.";
+    case "source_file_too_large":
+      return "Choose a file under 128 MB.";
     case "normalizer_failed":
       return "CanCan could not finish the secure document check. Try again.";
     case "parse_already_running":
@@ -471,27 +503,80 @@ export function commandErrorMessage(error: unknown): string {
       return "That money source confirmation isn’t valid.";
     case "list_tasks_failed":
       return "Couldn’t load your tasks. Try again.";
+    case "list_documents_failed":
+      return "Couldn’t load your documents. Try again.";
+    case "list_sources_failed":
+      return "Couldn’t load your Money Sources. Try again.";
+    case "audit_unavailable":
+      return "CanCan couldn’t run the duplicate-record check. Try again.";
     case "clock_error":
       return "Couldn’t read the system clock. Try again.";
+    case "import_failed":
+      return "CanCan couldn’t import that file. Try again.";
+    case "review_unavailable":
+      return "CanCan couldn’t load the review queue. Try again.";
+    case "invalid_review_request":
+      return "That review change isn’t valid.";
+    case "invalid_source_request":
+      return "That money source request isn’t valid.";
+    case "statement_password_state_invalid":
+      return "The saved statement password no longer matches. Enter it again.";
+    case "runtime_unavailable":
+      return "CanCan is busy finishing another task. Try again in a moment.";
+    case "undo_unavailable":
+      return "CanCan couldn’t undo that event. Try again.";
+    case "document_not_protected":
+      return "This document isn’t password-protected.";
+    case "invalid_vault":
+      return "That Vault isn’t valid.";
+    case "vault_already_exists":
+      return "A Vault already exists here.";
+    case "vault_create_failed":
+      return "CanCan couldn’t create the Vault. Try again.";
+    case "review_core_failed":
+      return "CanCan couldn’t finish the review check. Try again.";
+    case "classification_failed":
+      return "CanCan couldn’t finish reading that statement. Try again.";
+    case "reconcile_failed":
+      return "CanCan couldn’t match that statement to your records. Try again.";
+    case "normalizer_unavailable":
+      return "The secure document checker isn’t available. Try again.";
+    case "local_inbox_authorization_failed":
+      return "CanCan couldn’t get permission to reach the Inbox folder. Choose it again.";
+    case "local_inbox_parse_failed":
+      return "CanCan couldn’t read a file in the Inbox folder.";
+    case "local_inbox_scan_failed":
+      return "CanCan couldn’t scan the Inbox folder. Try again.";
+    case "local_inbox_observation_failed":
+      return "CanCan couldn’t record what changed in the Inbox folder.";
+    case "local_inbox_import_failed":
+      return "CanCan couldn’t import a file from the Inbox folder.";
+    case "intake_recovery_failed":
+      return "CanCan couldn’t finish recovering an earlier import.";
+    case "job_recovery_failed":
+      return "CanCan couldn’t resume an earlier import. Try again.";
+    case "seal_batches_failed":
+      return "CanCan couldn’t finish completing an earlier import. Try again.";
+    case "intake_finalization_failed":
+      return "CanCan couldn’t finish processing an imported file.";
+    case "recovery_status_read_failed":
+    case "recovery_status_write_failed":
+      return "CanCan couldn’t update the recovery file status.";
     default:
       return "Couldn’t complete that request. Try again.";
   }
 }
 
+/**
+ * Reads the `code` a host command rejects with. Tauri serializes a command's
+ * error value as JSON into the rejection (`format_callback::format_result` in
+ * the tauri crate), so a `VaultCommandError` always arrives as an object; a
+ * string rejection is a host-level message and carries no code.
+ */
 function commandErrorCode(error: unknown): string | null {
-  if (typeof error === "object" && error !== null && "code" in error) {
-    const { code } = error;
-    return typeof code === "string" ? code : null;
-  }
-
-  if (typeof error !== "string") {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
     return null;
   }
-
-  try {
-    const parsed: unknown = JSON.parse(error);
-    return commandErrorCode(parsed);
-  } catch {
-    return null;
-  }
+  const { code } = error;
+  return typeof code === "string" ? code : null;
 }

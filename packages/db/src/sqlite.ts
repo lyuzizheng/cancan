@@ -18,7 +18,11 @@ export function inTransaction<T>(database: SqliteDatabase, operation: () => T): 
     database.exec("COMMIT");
     return result;
   } catch (error) {
-    database.exec("ROLLBACK");
+    try {
+      database.exec("ROLLBACK");
+    } catch {
+      // A failed rollback must not mask the original error.
+    }
     throw error;
   }
 }

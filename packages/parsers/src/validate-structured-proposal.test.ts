@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { validateStructuredProposal } from "./index";
+import { semanticDocumentKey, validateStructuredProposal } from "./index";
+import type { ExtractionBundle, StructuredParseProposal } from "./index";
 import { createSyntheticTransferFixture, syntheticBankRecordContract } from "./testing";
 
 describe("validateStructuredProposal", () => {
@@ -73,7 +74,7 @@ describe("validateStructuredProposal", () => {
     if (!relocatedRecord) {
       throw new Error("synthetic fixture is missing its first record");
     }
-    relocatedRecord.raw.locator = { page: 4, row: 99, confidence: 0.72 };
+    relocatedRecord.raw.locator = { page: 1, row: 2, confidence: 0.72 };
 
     const first = await validateStructuredProposal({
       ...original,
@@ -88,6 +89,224 @@ describe("validateStructuredProposal", () => {
     }
 
     expect(second.records[0]?.stableRecordKey).toBe(first.records[0]?.stableRecordKey);
+  });
+
+  it("rejects a locator that points at a row range with no observations", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    if (!record) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    record.raw.locator = { row: 99 };
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      errors: [
+        {
+          proposalRecordId: "record-checking-out",
+          code: "raw_record_not_grounded",
+        },
+      ],
+    });
+  });
+
+  it.each([{ locator: {} }, { locator: { page: 1 } }, { locator: { rowEnd: 3 } }])(
+    "rejects a rowless locator %o instead of widening grounding",
+    async ({ locator }) => {
+      const fixture = createSyntheticTransferFixture();
+      const record = fixture.proposal.records[0];
+      if (!record) {
+        throw new Error("synthetic fixture is missing its first record");
+      }
+      record.raw.locator = locator;
+
+      const result = await validateStructuredProposal({
+        ...fixture,
+        recordContract: syntheticBankRecordContract,
+      });
+
+      expect(result).toEqual({
+        status: "invalid",
+        errors: [
+          {
+            proposalRecordId: "record-checking-out",
+            code: "raw_record_not_grounded",
+          },
+        ],
+      });
+    },
+  );
+
+  it("grounds a row wrapped into the next line through a bounded multi-row locator", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    if (!record) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    const description = fixture.extractionBundle.observations.find(
+      ({ row, column }) => row === 2 && column === 2,
+    );
+    if (!description) {
+      throw new Error("synthetic fixture is missing its description observation");
+    }
+    description.row = 3;
+    description.id = "cell-3-2-wrapped";
+    record.raw.locator = { row: 2, rowEnd: 3 };
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result.status).toBe("valid");
+  });
+
+  it("rejects a record whose values are spliced across locator rows", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    if (!record) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    record.raw.balance = "350.00";
+    record.balanceAfter = { value: "350.00", currency: "SGD" };
+    record.raw.locator = { row: 2 };
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      errors: [
+        {
+          proposalRecordId: "record-checking-out",
+          code: "raw_record_not_grounded",
+        },
+      ],
+    });
+  });
+
+  it("rejects a locator whose row span exceeds the wrapped-description limit", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    if (!record) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    record.raw.locator = { row: 1, rowEnd: 6 };
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      errors: [
+        {
+          proposalRecordId: "record-checking-out",
+          code: "raw_record_not_grounded",
+        },
+      ],
+    });
+  });
+
+  it("rejects a locator that claims a different row than the grounded cells", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    if (!record) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    record.raw.locator = { row: 5 };
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      errors: [
+        {
+          proposalRecordId: "record-checking-out",
+          code: "raw_record_not_grounded",
+        },
+      ],
+    });
+  });
+
+  it("rejects a single-row locator when the description wrapped to the next row", async () => {
+    const narrowed = createSyntheticTransferFixture();
+    const narrowedRecord = narrowed.proposal.records[0];
+    if (!narrowedRecord) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    const description = narrowed.extractionBundle.observations.find(
+      ({ row, column }) => row === 2 && column === 2,
+    );
+    if (!description) {
+      throw new Error("synthetic fixture is missing its description observation");
+    }
+    description.row = 3;
+    description.id = "cell-3-99";
+    narrowedRecord.raw.locator = { row: 2 };
+
+    const result = await validateStructuredProposal({
+      ...narrowed,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      errors: [
+        {
+          proposalRecordId: "record-checking-out",
+          code: "raw_record_not_grounded",
+        },
+      ],
+    });
+  });
+
+  it("ignores rowless observations once row-scoped observations exist", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const record = fixture.proposal.records[0];
+    if (!record) {
+      throw new Error("synthetic fixture is missing its first record");
+    }
+    for (const observation of fixture.extractionBundle.observations) {
+      if (observation.row === 2) {
+        observation.text = "redacted";
+      }
+    }
+    fixture.extractionBundle.observations.push({
+      id: "page-text",
+      kind: "native_text",
+      page: 1,
+      text: "2026-07-01 Transfer to savings 250.00 SGD 750.00",
+      engine: "synthetic-fixture",
+      engineVersion: "1",
+    });
+    delete record.raw.locator;
+
+    const result = await validateStructuredProposal({
+      ...fixture,
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      errors: [
+        {
+          proposalRecordId: "record-checking-out",
+          code: "raw_record_not_grounded",
+        },
+      ],
+    });
   });
 
   it("rejects non-canonical decimal forms before a record can be eligible", async () => {
@@ -506,5 +725,125 @@ describe("validateStructuredProposal", () => {
         },
       ],
     });
+  });
+});
+
+describe("semanticDocumentKey identity", () => {
+  it("derives the host-canonical key with and without a provider root", async () => {
+    expect(
+      semanticDocumentKey({ providerKey: "synthetic-bank", documentType: "transfer_export" }),
+    ).toBeUndefined();
+    expect(
+      semanticDocumentKey({
+        providerKey: "synthetic-bank",
+        documentType: "transfer_export",
+        statementId: "transfer-2026-07",
+      }),
+    ).toBe("synthetic-bank:transfer-2026-07");
+    expect(
+      semanticDocumentKey({
+        providerKey: "dbs",
+        documentType: "bank_statement",
+        providerRootId: "statements/2026",
+        statementId: "dbs-bank_statement-2026-07",
+      }),
+    ).toBe("dbs:statements/2026:dbs-bank_statement-2026-07");
+  });
+
+  it("rejects an empty or overlong semantic document key", async () => {
+    for (const candidate of ["", `synthetic-bank:${"x".repeat(256)}`]) {
+      const fixture = createSyntheticTransferFixture();
+      const result = await validateStructuredProposal({
+        ...fixture,
+        semanticDocumentKey: candidate,
+        recordContract: syntheticBankRecordContract,
+      });
+
+      expect(result).toEqual({
+        status: "invalid",
+        errors: [{ code: "semantic_document_key_invalid" }],
+      });
+    }
+  });
+
+  it("rejects a well-formed key that does not match the canonical derivation", async () => {
+    const fixture = createSyntheticTransferFixture();
+    const result = await validateStructuredProposal({
+      ...fixture,
+      semanticDocumentKey: "synthetic-bank:other-statement",
+      recordContract: syntheticBankRecordContract,
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      errors: [{ code: "semantic_document_key_mismatch" }],
+    });
+  });
+
+  it("hashes identity projections independent of key order with JSON undefined semantics", async () => {
+    const contractFor = (projection: Record<string, unknown>) => ({
+      inspect(raw: Record<string, unknown>) {
+        const inspection = syntheticBankRecordContract.inspect(raw);
+        return { ...inspection, identityProjection: projection };
+      },
+    });
+    const fixture = createSyntheticTransferFixture();
+    const probe = syntheticBankRecordContract.inspect(
+      fixture.proposal.records[0]?.raw ?? {},
+    ).identityProjection;
+    const runs: Array<{
+      semanticDocumentKey: string;
+      extractionBundle: ExtractionBundle;
+      proposal: StructuredParseProposal;
+    }> = [fixture, createSyntheticTransferFixture(), createSyntheticTransferFixture()];
+    const contracts = [
+      contractFor({
+        Z: "upper",
+        ff: "letters",
+        "ﬀ": "ligature",
+        z: "lower",
+        holes: [null, "kept"],
+        ...probe,
+      }),
+      contractFor({
+        z: "lower",
+        "ﬀ": "ligature",
+        ff: "letters",
+        Z: "upper",
+        maybe: undefined,
+        holes: [null, "kept"],
+        ...probe,
+      }),
+      contractFor({
+        Z: "upper",
+        ff: "letters",
+        "ﬀ": "ligature",
+        z: "lower",
+        holes: [undefined, "kept"],
+        ...probe,
+      }),
+    ];
+    const keys: string[] = [];
+    for (const [index, input] of runs.entries()) {
+      const contract = contracts[index];
+      if (!contract) {
+        throw new Error("missing projection contract");
+      }
+      const result = await validateStructuredProposal({
+        ...input,
+        recordContract: contract,
+      });
+      if (result.status !== "valid") {
+        throw new Error("synthetic fixture did not validate");
+      }
+      const key = result.records[0]?.stableRecordKey;
+      if (!key) {
+        throw new Error("synthetic fixture is missing its first record");
+      }
+      keys.push(key);
+    }
+
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).toBe(keys[0]);
   });
 });

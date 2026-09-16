@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     error::Error,
     fs, io,
     path::Path,
+    sync::Arc,
 };
 use zeroize::Zeroizing;
 
@@ -38,6 +39,9 @@ const RECONCILE_DOCUMENT_LEASE_SECONDS: i64 = 300;
 const COMMIT_REVIEW_BATCH_LEASE_SECONDS: i64 = 300;
 const MAX_SUPPORTED_RELATIONSHIP_WINDOW_DAYS: i64 = 7;
 const MAX_PERSISTED_PARSE_JSON_BYTES: usize = 16 * 1024;
+pub(crate) const MAX_STRUCTURED_PARSE_RECORDS: usize = 1_000;
+const RECENT_ACTIVITY_LIMIT: i64 = 50;
+const RELATIONSHIP_CANDIDATE_LIMIT: i64 = 100;
 
 type StoreResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -56,6 +60,14 @@ pub(crate) struct ParseDocumentClaim {
     pub(crate) logical_run_key: String,
 }
 
+/// The claimed parse job plus the run hashes its validated parse records.
+#[derive(Clone, Copy)]
+pub(crate) struct ParseJobContext<'a> {
+    pub(crate) claim: &'a ParseDocumentClaim,
+    pub(crate) input_hash: &'a str,
+    pub(crate) output_hash: &'a str,
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ParseDocumentJobInput {
@@ -65,6 +77,7 @@ struct ParseDocumentJobInput {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SourceDocumentImportStatus {
     Imported,
     AlreadyPresent,
@@ -74,6 +87,7 @@ pub enum SourceDocumentImportStatus {
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct SourceDocumentImportOutcome {
     pub document_id: String,
     pub status: SourceDocumentImportStatus,
@@ -108,14 +122,16 @@ pub struct SourceDocumentView {
     pub semantic_document_key: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct SourceDocumentFileInput {
     pub file_sha256: String,
     pub mime_type: String,
-    pub plaintext: Zeroizing<Vec<u8>>,
+    pub plaintext: Arc<Zeroizing<Vec<u8>>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewItemSummary {
     pub(crate) account_label: String,
     pub(crate) amount_value: Option<String>,
@@ -123,6 +139,7 @@ pub(crate) struct ReviewItemSummary {
     pub(crate) event_type: Option<String>,
     pub(crate) posted_on: Option<String>,
     pub(crate) reason_code: String,
+    pub(crate) record_committed: bool,
     pub(crate) record_id: String,
     pub(crate) record_version: i64,
     pub(crate) review_item_id: String,
@@ -130,6 +147,7 @@ pub(crate) struct ReviewItemSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewItemDetail {
     pub(crate) account_label: String,
     pub(crate) amount_value: Option<String>,
@@ -138,6 +156,7 @@ pub(crate) struct ReviewItemDetail {
     pub(crate) event_type: Option<String>,
     pub(crate) posted_on: Option<String>,
     pub(crate) reason_code: String,
+    pub(crate) record_committed: bool,
     pub(crate) record_id: String,
     pub(crate) record_version: i64,
     pub(crate) review_item_id: String,
@@ -146,6 +165,7 @@ pub(crate) struct ReviewItemDetail {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct RecentActivitySummary {
     pub(crate) can_undo: bool,
     pub(crate) event_date: String,
@@ -157,6 +177,7 @@ pub(crate) struct RecentActivitySummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct MoneyOverviewAmount {
     pub(crate) account_id: String,
     pub(crate) account_label: String,
@@ -167,6 +188,7 @@ pub(crate) struct MoneyOverviewAmount {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct MoneyOverview {
     pub(crate) assets: Vec<MoneyOverviewAmount>,
     pub(crate) liabilities: Vec<MoneyOverviewAmount>,
@@ -174,6 +196,7 @@ pub(crate) struct MoneyOverview {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct RelationshipCandidateSummary {
     pub(crate) account_label: String,
     pub(crate) amount_value: String,
@@ -186,7 +209,9 @@ pub(crate) struct RelationshipCandidateSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum ReviewMutationStatus {
+    Acknowledged,
     Conflict,
     RelationshipAccepted,
     Removed,
@@ -195,6 +220,7 @@ pub(crate) enum ReviewMutationStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewMutationOutcome {
     pub(crate) reason: Option<&'static str>,
     pub(crate) record_version: Option<i64>,
@@ -204,6 +230,7 @@ pub(crate) struct ReviewMutationOutcome {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum ReviewJobStatus {
     Blocked,
     Cancelled,
@@ -215,6 +242,7 @@ pub(crate) enum ReviewJobStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum ReviewBatchGroupStatus {
     AlreadyCommitted,
     Committed,
@@ -224,6 +252,7 @@ pub(crate) enum ReviewBatchGroupStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewBatchGroupOutcome {
     pub(crate) reason: Option<String>,
     pub(crate) record_ids: Vec<String>,
@@ -232,6 +261,7 @@ pub(crate) struct ReviewBatchGroupOutcome {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ReviewJobSummary {
     pub(crate) created_at: String,
     pub(crate) finished_at: Option<String>,
@@ -291,6 +321,7 @@ pub(crate) struct CorePreparedReversalEvent {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum UndoStatus {
     AlreadyUndone,
     Undone,
@@ -298,6 +329,7 @@ pub(crate) enum UndoStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct UndoOutcome {
     pub(crate) event_id: String,
     pub(crate) status: UndoStatus,
@@ -426,18 +458,6 @@ pub(crate) struct ValidatedStructuredParseInput {
     pub(crate) records: Vec<ValidatedExternalRecordInput>,
 }
 
-#[cfg(test)]
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) struct StructuredParseTestState {
-    pub(crate) balance_snapshots_without_amount: i64,
-    pub(crate) ledger_events: i64,
-    pub(crate) open_review_items: i64,
-    pub(crate) parse_runs: i64,
-    pub(crate) reconcile_status: Option<String>,
-    pub(crate) records: i64,
-    pub(crate) staged_records: i64,
-}
-
 #[derive(Debug)]
 struct ExistingDocument {
     document_id: String,
@@ -481,39 +501,15 @@ impl ManualImportStore {
         };
         store.reconcile_files()?;
         store.recover_interrupted_intake_items()?;
-        store.recover_expired_parse_document_jobs()?;
+        store.recover_expired_jobs()?;
         store.recover_interrupted_parse_document_jobs()?;
         store.recover_interrupted_review_jobs()?;
-        store.recover_expired_review_jobs()?;
+        store.reconcile_sealed_batches()?;
         Ok(store)
     }
 
     pub(crate) fn master_key(&self) -> &[u8; KEY_LEN] {
         &self.master_key
-    }
-
-    #[cfg(test)]
-    pub fn register_import(
-        &mut self,
-        input: &SourceDocumentImport<'_>,
-        restore_deleted_document_id: Option<&str>,
-    ) -> StoreResult<SourceDocumentImportOutcome> {
-        validate_import(input)?;
-        let source = FileVault::prepare(input.source_path)?;
-        self.register_prepared_import(input, source, restore_deleted_document_id)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn register_captured_import(
-        &mut self,
-        input: &SourceDocumentImport<'_>,
-        captured_bytes: Zeroizing<Vec<u8>>,
-        restore_deleted_document_id: Option<&str>,
-    ) -> StoreResult<SourceDocumentImportOutcome> {
-        validate_import(input)?;
-        validate_captured_container(input.mime_type, &captured_bytes)?;
-        let source = FileVault::prepare_bytes(captured_bytes)?;
-        self.register_prepared_import(input, source, restore_deleted_document_id)
     }
 
     pub(crate) fn prepare_source_path(
@@ -576,32 +572,6 @@ impl ManualImportStore {
                 .as_ref()
                 .is_some_and(|document| document.file_state != "available"),
         }))
-    }
-
-    #[cfg(test)]
-    fn register_prepared_import(
-        &mut self,
-        input: &SourceDocumentImport<'_>,
-        source: PreparedSource,
-        restore_deleted_document_id: Option<&str>,
-    ) -> StoreResult<SourceDocumentImportOutcome> {
-        if matches!(input.mime_type, "image/png" | "image/jpeg") {
-            validate_image_container(source.plaintext(), input.mime_type)?;
-        }
-        let capture = match self.source_capture_plan(input, &source, restore_deleted_document_id)? {
-            SourceCapturePlan::Capture(capture) => capture,
-            SourceCapturePlan::RestoreConfirmationRequired(outcome) => return Ok(outcome),
-        };
-        let stored = capture.store_prepared(&source)?;
-        match self.persist_captured_import(input, &stored, restore_deleted_document_id) {
-            Ok(outcome)
-                if outcome.status != SourceDocumentImportStatus::RestoreConfirmationRequired =>
-            {
-                Ok(outcome)
-            }
-            Ok(outcome) => Ok(outcome),
-            Err(error) => Err(error),
-        }
     }
 
     pub(crate) fn deleted_source_hashes(&self) -> StoreResult<BTreeSet<String>> {
@@ -687,8 +657,7 @@ impl ManualImportStore {
         Ok(())
     }
 
-    pub(crate) fn queued_parse_document_jobs(&mut self) -> StoreResult<Vec<ParseDocumentJob>> {
-        self.recover_expired_parse_document_jobs()?;
+    pub(crate) fn queued_parse_document_jobs(&self) -> StoreResult<Vec<ParseDocumentJob>> {
         let mut statement = self.connection.prepare(
             "SELECT id, related_source_document_id, input_json FROM jobs \
              WHERE job_type = ?1 AND status = 'queued' ORDER BY created_at, id",
@@ -798,8 +767,7 @@ impl ManualImportStore {
         Ok(())
     }
 
-    pub(crate) fn queued_reconcile_document_ids(&mut self) -> StoreResult<Vec<String>> {
-        self.recover_expired_review_jobs()?;
+    pub(crate) fn queued_reconcile_document_ids(&self) -> StoreResult<Vec<String>> {
         let mut statement = self.connection.prepare(
             "SELECT related_source_document_id FROM jobs \
              WHERE job_type = ?1 AND status = 'queued' \
@@ -980,15 +948,26 @@ impl ManualImportStore {
             .files
             .verifies(&self.master_key, locator, &document.file_sha256)?
         {
-            mark_missing(&mut self.connection, &document, &document.file_sha256)?;
+            let transaction = self.connection.transaction()?;
+            mark_missing(&transaction, &document, &document.file_sha256)?;
+            transaction.commit()?;
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 "source document file is unavailable",
             )
             .into());
         }
-        persist_source_deletion(&mut self.connection, &document, audit_id)?;
+        // Remove the encrypted file before the receipt transaction commits.
+        // The row can only say `deleted` once the bytes are actually gone: a
+        // failed unlink leaves the database untouched, so the document stays
+        // available and the user can retry, instead of stranding a locator-free
+        // ciphertext blob that only the next store open would garbage collect.
+        // The reverse crash window is self-healing: if the commit fails after
+        // the unlink, `reconcile_files` marks the document `missing` on the
+        // next open, which is the truthful state — the bytes are gone and the
+        // user asked for them to be gone.
         self.files.remove(locator)?;
+        persist_source_deletion(&mut self.connection, &document, audit_id)?;
         Ok(())
     }
 
@@ -1016,19 +995,39 @@ impl ManualImportStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    pub(crate) fn source_document_parse_status(
+    pub(crate) fn source_document_parse_statuses(
         &self,
-        document_id: &str,
-    ) -> StoreResult<Option<(String, Option<String>)>> {
-        self.connection
-            .query_row(
-                "SELECT status, blocked_reason FROM jobs WHERE related_source_document_id = ?1 \
-                 AND job_type = ?2 ORDER BY created_at DESC, id DESC LIMIT 1",
-                params![document_id, PARSE_DOCUMENT_JOB_TYPE],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-            .map_err(Into::into)
+        document_ids: &[String],
+    ) -> StoreResult<HashMap<String, (String, Option<String>)>> {
+        if document_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let placeholders = vec!["?"; document_ids.len()].join(", ");
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT related_source_document_id, status, blocked_reason FROM ( \
+               SELECT related_source_document_id, status, blocked_reason, \
+                      ROW_NUMBER() OVER ( \
+                        PARTITION BY related_source_document_id \
+                        ORDER BY created_at DESC, id DESC \
+                      ) AS rank \
+               FROM jobs \
+               WHERE related_source_document_id IN ({placeholders}) \
+                 AND job_type = ? \
+             ) WHERE rank = 1",
+        ))?;
+        let mut parameters = document_ids.iter().map(String::as_str).collect::<Vec<_>>();
+        parameters.push(PARSE_DOCUMENT_JOB_TYPE);
+        let mut statuses = HashMap::new();
+        for row in statement.query_map(rusqlite::params_from_iter(parameters), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?),
+            ))
+        })? {
+            let (document_id, status) = row?;
+            statuses.insert(document_id, status);
+        }
+        Ok(statuses)
     }
 
     pub(crate) fn list_review_items(&self) -> StoreResult<Vec<ReviewItemSummary>> {
@@ -1036,12 +1035,13 @@ impl ManualImportStore {
             "SELECT review_items.id, external_records.id, external_records.version, \
                     review_items.reason_code, external_records.amount_value, \
                     external_records.currency, external_records.event_type, \
-                    external_records.posted_on, COALESCE(accounts.display_name, 'Unassigned') \
+                    external_records.posted_on, COALESCE(accounts.display_name, 'Unassigned'), \
+                    external_records.status = 'committed' \
              FROM review_items \
              JOIN external_records ON external_records.id = review_items.external_record_id \
              LEFT JOIN accounts ON accounts.id = external_records.account_id \
              WHERE review_items.status = 'open' \
-               AND external_records.status IN ('staged', 'review') \
+               AND external_records.status IN ('staged', 'review', 'committed') \
                AND (accounts.status IS NULL OR accounts.status <> 'dismissed') \
              ORDER BY external_records.posted_on, review_items.id",
         )?;
@@ -1061,7 +1061,8 @@ impl ManualImportStore {
                         external_records.currency, external_records.event_type, \
                         external_records.posted_on, COALESCE(accounts.display_name, 'Unassigned'), \
                         source_documents.original_filename, \
-                        COALESCE(money_sources.display_name, 'Unassigned') \
+                        COALESCE(money_sources.display_name, 'Unassigned'), \
+                        external_records.status = 'committed' \
                  FROM review_items \
                  JOIN external_records ON external_records.id = review_items.external_record_id \
                  JOIN source_documents ON source_documents.id = external_records.source_document_id \
@@ -1069,7 +1070,7 @@ impl ManualImportStore {
                  LEFT JOIN money_sources ON money_sources.id = source_documents.money_source_id \
                  WHERE review_items.id = ?1 \
                    AND review_items.status = 'open' \
-                   AND external_records.status IN ('staged', 'review')",
+                   AND external_records.status IN ('staged', 'review', 'committed')",
                 [review_item_id],
                 review_item_detail_from_row,
             )
@@ -1085,9 +1086,9 @@ impl ManualImportStore {
              FROM ledger_events \
              WHERE status = 'committed' \
              ORDER BY event_date DESC, created_at DESC, id DESC \
-             LIMIT 50",
+             LIMIT ?1",
         )?;
-        let rows = statement.query_map([], |row| {
+        let rows = statement.query_map([RECENT_ACTIVITY_LIMIT], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -1101,18 +1102,6 @@ impl ManualImportStore {
         for row in rows {
             let (event_id, event_type, event_date, event_class, reverses_event_id, has_no_reversal) =
                 row?;
-            let mut sources = self.connection.prepare(
-                "SELECT DISTINCT COALESCE(money_sources.display_name, 'Unassigned') \
-                 FROM match_edges \
-                 JOIN external_records ON external_records.id = match_edges.external_record_id \
-                 JOIN source_documents ON source_documents.id = external_records.source_document_id \
-                 LEFT JOIN money_sources ON money_sources.id = source_documents.money_source_id \
-                 WHERE match_edges.ledger_event_id = ?1 \
-                 ORDER BY 1",
-            )?;
-            let source_labels = sources
-                .query_map([&event_id], |row| row.get::<_, String>(0))?
-                .collect::<Result<Vec<_>, _>>()?;
             let can_undo = matches!(
                 event_type.as_str(),
                 "same_currency_transfer" | "credit_card_repayment"
@@ -1125,8 +1114,39 @@ impl ManualImportStore {
                 event_id,
                 spending: event_type == "purchase" || event_type == "credit_card_purchase",
                 event_type,
-                source_labels,
+                source_labels: Vec::new(),
             });
+        }
+        drop(statement);
+        // One pass for every listed event's source labels instead of one query
+        // per event.
+        let mut labels = self.connection.prepare(
+            "SELECT DISTINCT match_edges.ledger_event_id, \
+                    COALESCE(money_sources.display_name, 'Unassigned') \
+             FROM match_edges \
+             JOIN external_records ON external_records.id = match_edges.external_record_id \
+             JOIN source_documents ON source_documents.id = external_records.source_document_id \
+             LEFT JOIN money_sources ON money_sources.id = source_documents.money_source_id \
+             WHERE match_edges.ledger_event_id IN ( \
+               SELECT id FROM ledger_events \
+               WHERE status = 'committed' \
+               ORDER BY event_date DESC, created_at DESC, id DESC \
+               LIMIT ?1 \
+             ) \
+             ORDER BY match_edges.ledger_event_id, 2",
+        )?;
+        let mut labels_by_event: HashMap<String, Vec<String>> = HashMap::new();
+        for row in labels.query_map([RECENT_ACTIVITY_LIMIT], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })? {
+            let (event_id, label) = row?;
+            labels_by_event.entry(event_id).or_default().push(label);
+        }
+        drop(labels);
+        for summary in &mut activity {
+            if let Some(labels) = labels_by_event.remove(&summary.event_id) {
+                summary.source_labels = labels;
+            }
         }
         Ok(activity)
     }
@@ -1368,449 +1388,6 @@ impl ManualImportStore {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn apply_trusted_classification(
-        &mut self,
-        input: &TrustedDocumentClassification<'_>,
-    ) -> StoreResult<SourceDocumentRoutingOutcome> {
-        self.apply_trusted_classification_with_parse_job(input, None)
-    }
-
-    pub(crate) fn apply_trusted_classification_for_parse_job(
-        &mut self,
-        input: &TrustedDocumentClassification<'_>,
-        claim: &ParseDocumentClaim,
-    ) -> StoreResult<SourceDocumentRoutingOutcome> {
-        self.apply_trusted_classification_with_parse_job(input, Some(claim))
-    }
-
-    fn apply_trusted_classification_with_parse_job(
-        &mut self,
-        input: &TrustedDocumentClassification<'_>,
-        parse_job: Option<&ParseDocumentClaim>,
-    ) -> StoreResult<SourceDocumentRoutingOutcome> {
-        validate_classification(input)?;
-        let transaction = self.connection.transaction()?;
-        if let Some(claim) = parse_job
-            && !parse_job_claimed(&transaction, claim)?
-        {
-            return Err(io::Error::other("parse job is no longer claimed").into());
-        }
-        let existing_identity = transaction
-            .query_row(
-                "SELECT money_source_id, semantic_document_key \
-                 FROM source_documents WHERE id = ?1",
-                [input.document_id],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<String>>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                    ))
-                },
-            )
-            .optional()?;
-        let Some((assigned_source_id, semantic_document_key)) = existing_identity else {
-            return Err(
-                io::Error::new(io::ErrorKind::NotFound, "source document not found").into(),
-            );
-        };
-
-        let source_ids = if let Some(provider_root_id) = input.provider_root_id {
-            let mut source_statement = transaction.prepare(
-                "SELECT id FROM money_sources \
-                 WHERE provider_key = ?1 AND provider_root_id = ?2 \
-                 ORDER BY id LIMIT 2",
-            )?;
-            source_statement
-                .query_map(params![input.provider_key, provider_root_id], |row| {
-                    row.get::<_, String>(0)
-                })?
-                .collect::<Result<Vec<_>, _>>()?
-        } else {
-            let mut source_statement = transaction.prepare(
-                "SELECT id FROM money_sources \
-                 WHERE provider_key = ?1 AND provider_root_id IS NULL \
-                 ORDER BY id LIMIT 2",
-            )?;
-            source_statement
-                .query_map([input.provider_key], |row| row.get::<_, String>(0))?
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        let money_source_id = match source_ids.as_slice() {
-            [] => {
-                drop(transaction);
-                let candidate_id = new_database_id("source-candidate");
-                let scope = match input.provider_root_id {
-                    Some(root_id) => {
-                        crate::database::intake::MoneySourceCandidateScope::ProviderRootId(root_id)
-                    }
-                    None => crate::database::intake::MoneySourceCandidateScope::ProviderSingleton,
-                };
-                self.attach_money_source_candidate(
-                    &crate::database::intake::MoneySourceCandidateInput {
-                        candidate_id: &candidate_id,
-                        document_id: input.document_id,
-                        provider_key: input.provider_key,
-                        scope,
-                    },
-                )?;
-                return Ok(needs_attention(
-                    input.document_id,
-                    "source_confirmation_required",
-                ));
-            }
-            [money_source_id] => money_source_id,
-            _ => return Ok(needs_attention(input.document_id, "money_source_ambiguous")),
-        };
-        if assigned_source_id
-            .as_deref()
-            .is_some_and(|id| id != money_source_id)
-            || semantic_document_key
-                .as_deref()
-                .is_some_and(|key| key != input.semantic_document_key)
-        {
-            return Ok(needs_attention(
-                input.document_id,
-                "classification_conflict",
-            ));
-        }
-
-        ensure_fiat_currency_instruments(&transaction, input.accounts)?;
-
-        let mut account_ids = Vec::with_capacity(input.accounts.len());
-        for account in input.accounts {
-            let Some(provider_account_id) = account.provider_account_id else {
-                return Ok(needs_attention(input.document_id, "account_mapping_needed"));
-            };
-            let existing = transaction
-                .query_row(
-                    "SELECT id, status FROM accounts \
-                     WHERE money_source_id = ?1 AND provider_key = ?2 \
-                       AND provider_account_id = ?3 AND status <> 'merged'",
-                    params![money_source_id, input.provider_key, provider_account_id],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-                )
-                .optional()?;
-            match existing {
-                Some((_, status)) if status == "archived" => {
-                    return Ok(needs_attention(
-                        input.document_id,
-                        "account_restore_required",
-                    ));
-                }
-                Some((account_id, _)) => account_ids.push(account_id),
-                None => {
-                    transaction.execute(
-                        "INSERT INTO accounts( \
-                           id, money_source_id, provider_key, provider_account_id, account_type, \
-                           display_name, masked_identifier, currency, status \
-                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'candidate')",
-                        params![
-                            account.account_id,
-                            money_source_id,
-                            input.provider_key,
-                            provider_account_id,
-                            account.account_type,
-                            account.display_name,
-                            account.masked_identifier,
-                            account.currency,
-                        ],
-                    )?;
-                    account_ids.push(account.account_id.to_owned());
-                }
-            }
-        }
-
-        transaction.execute(
-            "UPDATE source_documents \
-             SET money_source_id = ?1, semantic_document_key = ?2, \
-                 document_type = ?3, statement_period_from = ?4, statement_period_to = ?5 \
-             WHERE id = ?6",
-            params![
-                money_source_id,
-                input.semantic_document_key,
-                input.document_type,
-                input.statement_period_from,
-                input.statement_period_to,
-                input.document_id,
-            ],
-        )?;
-        transaction.execute(
-            "DELETE FROM source_document_accounts WHERE source_document_id = ?1",
-            [input.document_id],
-        )?;
-        for account_id in &account_ids {
-            transaction.execute(
-                "INSERT INTO source_document_accounts(source_document_id, account_id) \
-                 VALUES (?1, ?2)",
-                params![input.document_id, account_id],
-            )?;
-        }
-        transaction.execute(
-            "INSERT INTO audit_log( \
-               id, entity_type, entity_id, action, actor, reason, policy_version \
-             ) VALUES (?1, 'source_document', ?2, 'trusted_classification_applied', \
-                       'system', 'provider_and_account_verified', 'classification-v1')",
-            params![input.audit_id, input.document_id],
-        )?;
-        transaction.commit()?;
-        Ok(SourceDocumentRoutingOutcome {
-            account_ids,
-            document_id: input.document_id.to_owned(),
-            money_source_id: Some(money_source_id.to_owned()),
-            reason: None,
-            status: SourceDocumentRoutingStatus::Routed,
-        })
-    }
-
-    pub(crate) fn persist_validated_structured_parse_for_claimed_job(
-        &mut self,
-        document_id: &str,
-        input: &ValidatedStructuredParseInput,
-        claim: &ParseDocumentClaim,
-        input_hash: &str,
-        output_hash: &str,
-    ) -> StoreResult<()> {
-        self.persist_validated_structured_parse_with_parse_job(
-            document_id,
-            input,
-            &claim.logical_run_key,
-            input_hash,
-            output_hash,
-            claim,
-        )
-    }
-
-    fn persist_validated_structured_parse_with_parse_job(
-        &mut self,
-        document_id: &str,
-        input: &ValidatedStructuredParseInput,
-        logical_run_key: &str,
-        input_hash: &str,
-        output_hash: &str,
-        parse_job: &ParseDocumentClaim,
-    ) -> StoreResult<()> {
-        validate_structured_parse_input(document_id, input)?;
-        if logical_run_key.is_empty()
-            || input_hash.is_empty()
-            || output_hash.is_empty()
-            || logical_run_key.len() > 256
-            || input_hash.len() > 128
-            || output_hash.len() > 128
-        {
-            return Err(
-                io::Error::new(io::ErrorKind::InvalidInput, "invalid parse run key").into(),
-            );
-        }
-        let transaction = self.connection.transaction()?;
-        if !parse_job_claimed(&transaction, parse_job)? {
-            return Err(io::Error::other("parse job is no longer claimed").into());
-        }
-        let document_exists: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM source_documents WHERE id = ?1)",
-            [document_id],
-            |row| row.get(0),
-        )?;
-        if !document_exists {
-            return Err(
-                io::Error::new(io::ErrorKind::NotFound, "source document not found").into(),
-            );
-        }
-        let existing_run = transaction
-            .query_row(
-                "SELECT profile_json, input_hash, output_hash FROM parse_runs \
-                 WHERE source_document_id = ?1 AND logical_run_key = ?2",
-                params![document_id, logical_run_key],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Option<String>>(2)?,
-                    ))
-                },
-            )
-            .optional()?;
-        if let Some((profile_json, existing_input_hash, existing_output_hash)) = existing_run {
-            if profile_json != input.profile_json
-                || existing_input_hash != input_hash
-                || existing_output_hash.as_deref() != Some(output_hash)
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "logical parse run changed",
-                )
-                .into());
-            }
-            return Ok(());
-        }
-
-        let parse_run_id = new_database_id("parse");
-        transaction.execute(
-            "INSERT INTO parse_runs( \
-               id, source_document_id, normalization_profile_id, logical_run_key, profile_json, \
-               input_hash, output_hash, status \
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'validated')",
-            params![
-                parse_run_id,
-                document_id,
-                input.normalization_profile_id,
-                logical_run_key,
-                input.profile_json,
-                input_hash,
-                output_hash,
-            ],
-        )?;
-        for record in &input.records {
-            let previous = transaction
-                .query_row(
-                    "SELECT id, version FROM external_records \
-                     WHERE stable_record_key = ?1 ORDER BY version DESC LIMIT 1",
-                    [&record.stable_record_key],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
-                )
-                .optional()?;
-            let version = previous.as_ref().map_or(1, |(_, version)| version + 1);
-            if previous.is_some() {
-                transaction.execute(
-                    "UPDATE external_records SET status = 'superseded' \
-                     WHERE stable_record_key = ?1 AND status IN ('staged', 'review', 'removed')",
-                    [&record.stable_record_key],
-                )?;
-                transaction.execute(
-                    "UPDATE review_items SET status = 'resolved' \
-                     WHERE external_record_id IN ( \
-                       SELECT id FROM external_records \
-                       WHERE stable_record_key = ?1 AND status = 'superseded' \
-                     ) AND status = 'open'",
-                    [&record.stable_record_key],
-                )?;
-            }
-            let dismissed: bool = transaction.query_row(
-                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1 AND status = 'dismissed')",
-                [&record.account_id],
-                |row| row.get(0),
-            )?;
-            transaction.execute(
-                "INSERT INTO external_records( \
-                   id, parse_run_id, source_document_id, account_id, stable_record_key, version, \
-                   status, record_type, event_type, posted_on, amount_value, currency, \
-                   account_balance_delta, posting_status, raw_json, validation_json \
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
-                params![
-                    new_database_id("record"),
-                    parse_run_id,
-                    document_id,
-                    record.account_id,
-                    record.stable_record_key,
-                    version,
-                    if dismissed { "removed" } else { "staged" },
-                    record.record_type,
-                    record.event_type,
-                    record.posted_on,
-                    record.amount_value,
-                    record.currency,
-                    record.account_balance_delta,
-                    record.posting_status,
-                    record.raw_json,
-                    record.validation_json,
-                ],
-            )?;
-        }
-        transaction.commit()?;
-        Ok(())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn structured_parse_test_state(
-        &self,
-        document_id: &str,
-    ) -> StoreResult<StructuredParseTestState> {
-        Ok(StructuredParseTestState {
-            parse_runs: self.connection.query_row(
-                "SELECT count(*) FROM parse_runs WHERE source_document_id = ?1",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            records: self.connection.query_row(
-                "SELECT count(*) FROM external_records WHERE source_document_id = ?1",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            staged_records: self.connection.query_row(
-                "SELECT count(*) FROM external_records \
-                 WHERE source_document_id = ?1 AND status = 'staged'",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            balance_snapshots_without_amount: self.connection.query_row(
-                "SELECT count(*) FROM external_records \
-                 WHERE source_document_id = ?1 AND record_type = 'balance' \
-                   AND amount_value IS NULL",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            open_review_items: self.connection.query_row(
-                "SELECT count(*) FROM review_items \
-                 JOIN external_records ON external_records.id = review_items.external_record_id \
-                 WHERE external_records.source_document_id = ?1 \
-                   AND review_items.reason_code = 'normalization_profile_unqualified' \
-                   AND review_items.status = 'open'",
-                [document_id],
-                |row| row.get(0),
-            )?,
-            reconcile_status: self
-                .connection
-                .query_row(
-                    "SELECT status FROM jobs WHERE related_source_document_id = ?1 \
-                     AND job_type = 'reconcile_document'",
-                    [document_id],
-                    |row| row.get(0),
-                )
-                .optional()?,
-            ledger_events: self.connection.query_row(
-                "SELECT count(*) FROM ledger_events",
-                [],
-                |row| row.get(0),
-            )?,
-        })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn structured_parse_posting_status(
-        &self,
-        document_id: &str,
-        stable_record_key: &str,
-    ) -> StoreResult<Option<String>> {
-        self.connection
-            .query_row(
-                "SELECT posting_status FROM external_records \
-                 WHERE source_document_id = ?1 AND stable_record_key = ?2",
-                params![document_id, stable_record_key],
-                |row| row.get(0),
-            )
-            .map_err(Into::into)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn expire_reconcile_lease_for_test(&self, document_id: &str) -> StoreResult<()> {
-        self.connection.execute(
-            "UPDATE jobs SET lease_until = datetime('now', '-1 second') \
-             WHERE related_source_document_id = ?1 AND job_type = 'reconcile_document'",
-            [document_id],
-        )?;
-        Ok(())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn expire_parse_document_lease_for_test(&self, job_id: &str) -> StoreResult<()> {
-        self.connection.execute(
-            "UPDATE jobs SET lease_until = datetime('now', '-1 second') \
-             WHERE id = ?1 AND job_type = 'parse_document'",
-            [job_id],
-        )?;
-        Ok(())
-    }
-
     pub(crate) fn edit_review_record(
         &mut self,
         review_item_id: &str,
@@ -2024,7 +1601,7 @@ impl ManualImportStore {
                    )) \
                ) \
              ORDER BY ABS(julianday(posted_on) - julianday(?4)), posted_on, id \
-             LIMIT 100",
+             LIMIT ?9",
         )?;
         let candidates = statement
             .query_map(
@@ -2037,6 +1614,7 @@ impl ManualImportStore {
                     record.account_id,
                     record.account_type,
                     record.account_balance_delta,
+                    RELATIONSHIP_CANDIDATE_LIMIT,
                 ],
                 core_review_record_from_row,
             )?
@@ -2052,25 +1630,33 @@ impl ManualImportStore {
         &self,
         candidate_ids: &[String],
     ) -> StoreResult<Vec<RelationshipCandidateSummary>> {
+        if candidate_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = vec!["?"; candidate_ids.len()].join(", ");
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT external_records.id, external_records.version, external_records.event_type, \
+                    external_records.posted_on, external_records.amount_value, \
+                    external_records.account_balance_delta, external_records.currency, \
+                    accounts.display_name \
+             FROM external_records \
+             JOIN accounts ON accounts.id = external_records.account_id \
+             WHERE external_records.id IN ({placeholders}) \
+               AND external_records.status IN ('staged', 'review')",
+        ))?;
+        let found = statement
+            .query_map(
+                rusqlite::params_from_iter(candidate_ids.iter()),
+                relationship_candidate_from_row,
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
         let mut candidates = Vec::new();
         for candidate_id in candidate_ids {
-            let candidate = self
-                .connection
-                .query_row(
-                    "SELECT external_records.id, external_records.version, external_records.event_type, \
-                            external_records.posted_on, external_records.amount_value, \
-                            external_records.account_balance_delta, external_records.currency, \
-                            accounts.display_name \
-                     FROM external_records \
-                     JOIN accounts ON accounts.id = external_records.account_id \
-                     WHERE external_records.id = ?1 \
-                       AND external_records.status IN ('staged', 'review')",
-                    [candidate_id],
-                    relationship_candidate_from_row,
-                )
-                .optional()?;
-            if let Some(candidate) = candidate {
-                candidates.push(candidate);
+            if let Some(candidate) = found
+                .iter()
+                .find(|candidate| &candidate.record_id == candidate_id)
+            {
+                candidates.push(candidate.clone());
             }
         }
         Ok(candidates)
@@ -2243,14 +1829,26 @@ impl ManualImportStore {
             .map_err(Into::into)
     }
 
-    pub(crate) fn recover_expired_review_jobs(&mut self) -> StoreResult<()> {
-        self.connection.execute(
+    /// Requeues every job whose lease expired, so a crashed or stalled attempt
+    /// can be retried. The runtime pump calls this once per pass instead of
+    /// letting each queue read mutate the table it is about to read.
+    pub(crate) fn recover_expired_jobs(&mut self) -> StoreResult<()> {
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "UPDATE jobs \
+             SET status = 'queued', lease_owner = NULL, lease_until = NULL, updated_at = CURRENT_TIMESTAMP \
+             WHERE job_type = ?1 AND status = 'running' \
+               AND lease_until IS NOT NULL AND lease_until <= CURRENT_TIMESTAMP",
+            [PARSE_DOCUMENT_JOB_TYPE],
+        )?;
+        transaction.execute(
             "UPDATE jobs \
              SET status = 'queued', lease_owner = NULL, lease_until = NULL, updated_at = CURRENT_TIMESTAMP \
              WHERE job_type IN (?1, ?2) AND status = 'running' \
                AND lease_until IS NOT NULL AND lease_until <= CURRENT_TIMESTAMP",
             params![COMMIT_REVIEW_BATCH_JOB_TYPE, RECONCILE_DOCUMENT_JOB_TYPE],
         )?;
+        transaction.commit()?;
         Ok(())
     }
 
@@ -2262,17 +1860,6 @@ impl ManualImportStore {
              SET status = 'queued', lease_owner = NULL, lease_until = NULL, updated_at = CURRENT_TIMESTAMP \
              WHERE job_type IN (?1, ?2) AND status = 'running'",
             params![COMMIT_REVIEW_BATCH_JOB_TYPE, RECONCILE_DOCUMENT_JOB_TYPE],
-        )?;
-        Ok(())
-    }
-
-    pub(crate) fn recover_expired_parse_document_jobs(&mut self) -> StoreResult<()> {
-        self.connection.execute(
-            "UPDATE jobs \
-             SET status = 'queued', lease_owner = NULL, lease_until = NULL, updated_at = CURRENT_TIMESTAMP \
-             WHERE job_type = ?1 AND status = 'running' \
-               AND lease_until IS NOT NULL AND lease_until <= CURRENT_TIMESTAMP",
-            [PARSE_DOCUMENT_JOB_TYPE],
         )?;
         Ok(())
     }
@@ -2337,101 +1924,6 @@ impl ManualImportStore {
             lease_owner: lease_owner.to_owned(),
             review_item_ids: input.review_item_ids,
         }))
-    }
-
-    pub(crate) fn prepare_commit_review_groups(
-        &self,
-        claimed: &ClaimedReviewBatch,
-    ) -> StoreResult<(Vec<CommitReviewGroup>, Vec<ReviewBatchGroupOutcome>)> {
-        let mut groups = Vec::new();
-        let mut outcomes = Vec::new();
-        let mut seen_relationships = HashSet::new();
-        let selected_review_items = claimed
-            .review_item_ids
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        for review_item_id in &claimed.review_item_ids {
-            let record_id = self.review_item_record_id(review_item_id)?;
-            let Some(record_id) = record_id else {
-                outcomes.push(ReviewBatchGroupOutcome {
-                    reason: Some("stale_review_item".to_owned()),
-                    record_ids: Vec::new(),
-                    status: ReviewBatchGroupStatus::Stale,
-                });
-                continue;
-            };
-            let relationships = self.relationships_for_review_item(review_item_id)?;
-            let accepted = relationships
-                .iter()
-                .filter(|relationship| relationship.status == "accepted")
-                .collect::<Vec<_>>();
-            let committed = relationships
-                .iter()
-                .filter(|relationship| relationship.status == "committed")
-                .collect::<Vec<_>>();
-            if accepted.len() > 1 {
-                outcomes.push(ReviewBatchGroupOutcome {
-                    reason: Some("ambiguous_relationship".to_owned()),
-                    record_ids: vec![record_id],
-                    status: ReviewBatchGroupStatus::StillNeedsReview,
-                });
-                continue;
-            }
-            if let Some(relationship) = committed.first() {
-                if seen_relationships.insert(relationship.id.clone()) {
-                    outcomes.push(ReviewBatchGroupOutcome {
-                        reason: None,
-                        record_ids: relationship.record_ids(),
-                        status: ReviewBatchGroupStatus::AlreadyCommitted,
-                    });
-                }
-                continue;
-            }
-            let Some(relationship) = accepted.first() else {
-                outcomes.push(ReviewBatchGroupOutcome {
-                    reason: Some("relationship_not_confirmed".to_owned()),
-                    record_ids: vec![record_id],
-                    status: ReviewBatchGroupStatus::StillNeedsReview,
-                });
-                continue;
-            };
-            if !selected_review_items.contains(relationship.first_review_item_id.as_str())
-                || !selected_review_items.contains(relationship.second_review_item_id.as_str())
-            {
-                if seen_relationships.insert(relationship.id.clone()) {
-                    outcomes.push(ReviewBatchGroupOutcome {
-                        reason: Some("relationship_not_selected".to_owned()),
-                        record_ids: vec![record_id],
-                        status: ReviewBatchGroupStatus::StillNeedsReview,
-                    });
-                }
-                continue;
-            }
-            if !seen_relationships.insert(relationship.id.clone()) {
-                continue;
-            }
-            let first = self.core_record_by_id(&relationship.first_record_id)?;
-            let second = self.core_record_by_id(&relationship.second_record_id)?;
-            let (Some(first), Some(second)) = (first, second) else {
-                outcomes.push(ReviewBatchGroupOutcome {
-                    reason: Some("stale_relationship".to_owned()),
-                    record_ids: relationship.record_ids(),
-                    status: ReviewBatchGroupStatus::Stale,
-                });
-                continue;
-            };
-            groups.push(CommitReviewGroup {
-                event_type: relationship.event_type.clone(),
-                records: [first, second],
-                relationship_id: relationship.id.clone(),
-                review_item_ids: [
-                    relationship.first_review_item_id.clone(),
-                    relationship.second_review_item_id.clone(),
-                ],
-            });
-        }
-        Ok((groups, outcomes))
     }
 
     pub(crate) fn commit_prepared_review_group(
@@ -2553,6 +2045,24 @@ impl ManualImportStore {
         {
             return Ok(ReviewBatchGroupOutcome {
                 reason: Some("stale_record".to_owned()),
+                record_ids: relationship.record_ids(),
+                status: ReviewBatchGroupStatus::Stale,
+            });
+        }
+        let committed_sibling_exists: bool = transaction.query_row(
+            "SELECT EXISTS( \
+               SELECT 1 FROM external_records committed \
+               JOIN external_records current \
+                 ON current.stable_record_key = committed.stable_record_key \
+               WHERE current.id IN (?1, ?2) \
+                 AND committed.status = 'committed' \
+             )",
+            params![relationship.first_record_id, relationship.second_record_id],
+            |row| row.get(0),
+        )?;
+        if committed_sibling_exists {
+            return Ok(ReviewBatchGroupOutcome {
+                reason: Some("committed_sibling_exists".to_owned()),
                 record_ids: relationship.record_ids(),
                 status: ReviewBatchGroupStatus::Stale,
             });
@@ -2697,6 +2207,7 @@ impl ManualImportStore {
         let mut leg_statement = self.connection.prepare(
             "SELECT account_id, amount_value, currency, instrument_id \
              FROM ledger_legs WHERE ledger_event_id = ?1 \
+               AND amount_value IS NOT NULL AND currency IS NOT NULL \
              ORDER BY id",
         )?;
         let legs = leg_statement
@@ -2727,6 +2238,18 @@ impl ManualImportStore {
         Ok(valid_core_review_event(&event).then_some(event))
     }
 
+    /// Commits a reversal the core prepared from an earlier read of
+    /// [`Self::committed_review_event_for_reversal`].
+    ///
+    /// The prepare is asynchronous (the core sidecar runs outside any store
+    /// lock), so the write never trusts that snapshot: inside this one
+    /// transaction it re-reads the committed event, re-derives the expected
+    /// reversal type and date, re-reads the legs under the same
+    /// `amount_value`/`currency` predicate the snapshot used, and refuses when
+    /// any of them moved or when a reversal already exists. A committed event's
+    /// legs and match edges are immutable by trigger, so those are the only
+    /// facts that can drift — and every one of them is revalidated here before
+    /// the reversal posting is inserted.
     pub(crate) fn persist_review_reversal(
         &mut self,
         original_event_id: &str,
@@ -2918,7 +2441,7 @@ impl ManualImportStore {
         let row = self
             .connection
             .query_row(
-                "SELECT external_records.id, external_records.event_type, external_records.id, \
+                "SELECT external_records.id, external_records.event_type, \
                         external_records.account_id, accounts.account_type, external_records.currency, \
                         external_records.posted_on, external_records.account_balance_delta, instruments.id \
                  FROM review_items \
@@ -2935,128 +2458,19 @@ impl ManualImportStore {
                         row.get::<_, String>(0)?,
                         row.get::<_, Option<String>>(1)?,
                         CoreReviewRecord {
-                            id: row.get(2)?,
-                            account_id: row.get(3)?,
-                            account_type: row.get(4)?,
-                            currency: row.get(5)?,
-                            posted_on: row.get(6)?,
-                            account_balance_delta: row.get(7)?,
-                            instrument_id: row.get(8)?,
+                            id: row.get(0)?,
+                            account_id: row.get(2)?,
+                            account_type: row.get(3)?,
+                            currency: row.get(4)?,
+                            posted_on: row.get(5)?,
+                            account_balance_delta: row.get(6)?,
+                            instrument_id: row.get(7)?,
                         },
                     ))
                 },
             )
             .optional()?;
         Ok(row)
-    }
-
-    fn review_item_record_id(&self, review_item_id: &str) -> StoreResult<Option<String>> {
-        Ok(self
-            .connection
-            .query_row(
-                "SELECT external_record_id FROM review_items WHERE id = ?1",
-                [review_item_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?)
-    }
-
-    fn relationships_for_review_item(
-        &self,
-        review_item_id: &str,
-    ) -> StoreResult<Vec<StoredReviewRelationship>> {
-        let mut statement = self.connection.prepare(
-            "SELECT id, event_type, first_external_record_id, second_external_record_id, \
-                    first_review_item_id, second_review_item_id, allocation_value, unit, status \
-             FROM review_relationships \
-             WHERE first_review_item_id = ?1 OR second_review_item_id = ?1 \
-             ORDER BY created_at, id",
-        )?;
-        let rows = statement.query_map([review_item_id], |row| {
-            Ok(StoredReviewRelationship {
-                id: row.get(0)?,
-                event_type: row.get(1)?,
-                first_record_id: row.get(2)?,
-                second_record_id: row.get(3)?,
-                first_review_item_id: row.get(4)?,
-                second_review_item_id: row.get(5)?,
-                allocation_value: row.get(6)?,
-                unit: row.get(7)?,
-                status: row.get(8)?,
-            })
-        })?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
-    }
-
-    fn core_record_by_id(&self, record_id: &str) -> StoreResult<Option<CoreReviewRecord>> {
-        let row = self
-            .connection
-            .query_row(
-                "SELECT external_records.id, external_records.account_id, accounts.account_type, \
-                        external_records.currency, external_records.posted_on, \
-                        external_records.account_balance_delta, instruments.id \
-                 FROM external_records \
-                 JOIN accounts ON accounts.id = external_records.account_id \
-                 JOIN instruments ON instruments.currency = external_records.currency \
-                    AND instruments.instrument_type = 'fiat_currency' \
-                 WHERE external_records.id = ?1 \
-                   AND external_records.status IN ('staged', 'review')",
-                [record_id],
-                core_review_record_from_row,
-            )
-            .optional()?;
-        Ok(row)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn seed_money_source(
-        &self,
-        id: &str,
-        provider_key: &str,
-        display_name: &str,
-        source_type: &str,
-    ) -> StoreResult<()> {
-        self.connection.execute(
-            "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
-             VALUES (?1, ?2, ?3, ?4)",
-            params![id, provider_key, display_name, source_type],
-        )?;
-        Ok(())
-    }
-
-    fn reconcile_files(&mut self) -> StoreResult<()> {
-        let documents = {
-            let mut statement = self.connection.prepare(
-                "SELECT id, file_sha256, encrypted_locator, file_state \
-                 FROM source_documents \
-                 WHERE encrypted_locator IS NOT NULL",
-            )?;
-            let rows = statement.query_map([], |row| {
-                Ok(ExistingDocument {
-                    document_id: row.get(0)?,
-                    encrypted_locator: row.get(2)?,
-                    file_sha256: row.get(1)?,
-                    file_state: row.get(3)?,
-                })
-            })?;
-            rows.collect::<Result<Vec<_>, _>>()?
-        };
-        let mut referenced = HashSet::new();
-        for document in documents {
-            let Some(locator) = document.encrypted_locator.as_deref() else {
-                continue;
-            };
-            referenced.insert(locator.to_owned());
-            if document.file_state == "available"
-                && !self
-                    .files
-                    .verifies(&self.master_key, locator, &document.file_sha256)?
-            {
-                mark_missing(&mut self.connection, &document, &document.file_sha256)?;
-            }
-        }
-        self.files.remove_unreferenced(&referenced)?;
-        Ok(())
     }
 }
 
@@ -3163,87 +2577,15 @@ fn enqueue_reconcile_document(
     Ok(())
 }
 
-fn validate_structured_parse_input(
-    document_id: &str,
-    input: &ValidatedStructuredParseInput,
-) -> StoreResult<()> {
-    if document_id.is_empty()
-        || input.normalization_profile_id.is_empty()
-        || input.normalization_profile_id.len() > 256
-        || input.profile_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
-        || input.records.is_empty()
-        || input.records.len() > 1_000
-        || !matches!(
-            serde_json::from_str::<Value>(&input.profile_json),
-            Ok(Value::Object(_))
-        )
-    {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid structured parse").into());
-    }
-    let mut stable_keys = HashSet::new();
-    for record in &input.records {
-        let valid_validation = matches!(
-            serde_json::from_str::<Value>(&record.validation_json),
-            Ok(Value::Object(values))
-                if values.get("schemaValid") == Some(&Value::Bool(true))
-                    && values.get("rawGrounded") == Some(&Value::Bool(true))
-                    && values.get("deterministicValidationPassed") == Some(&Value::Bool(true))
-        );
-        if record.account_id.is_empty()
-            || record.stable_record_key.is_empty()
-            || record.stable_record_key.len() > 256
-            || !stable_keys.insert(record.stable_record_key.as_str())
-            || !matches!(
-                record.record_type.as_str(),
-                "transaction" | "balance" | "position" | "trade" | "valuation" | "fee" | "interest"
-            )
-            || record
-                .event_type
-                .as_deref()
-                .is_some_and(|value| value.is_empty() || value.len() > 128)
-            || record
-                .posted_on
-                .as_deref()
-                .is_some_and(|value| !valid_iso_date(value))
-            || record
-                .posting_status
-                .as_deref()
-                .is_some_and(|value| !matches!(value, "provisional" | "posted"))
-            || record
-                .amount_value
-                .as_deref()
-                .is_some_and(|value| value.starts_with('-') || !valid_exact_decimal(value))
-            || record
-                .account_balance_delta
-                .as_deref()
-                .is_some_and(|value| !valid_exact_decimal(value))
-            || record
-                .currency
-                .as_deref()
-                .is_some_and(|value| !valid_currency(value))
-            || record.raw_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
-            || record.validation_json.len() > MAX_PERSISTED_PARSE_JSON_BYTES
-            || !matches!(
-                serde_json::from_str::<Value>(&record.raw_json),
-                Ok(Value::Object(_))
-            )
-            || !valid_validation
-        {
-            return Err(
-                io::Error::new(io::ErrorKind::InvalidInput, "invalid structured record").into(),
-            );
-        }
-    }
-    Ok(())
-}
-
-fn valid_currency(value: &str) -> bool {
-    value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_uppercase())
-}
-
 mod accounts;
 #[cfg(test)]
 mod accounts_tests;
+mod audit;
+#[cfg(test)]
+mod audit_tests;
+#[cfg(test)]
+mod database_test_support;
+mod document_routing;
 mod gmail;
 #[cfg(test)]
 mod gmail_tests;
@@ -3257,7 +2599,13 @@ mod intake_migration_tests;
 pub(crate) mod intake_test_support;
 mod migrations;
 mod parse_jobs;
+#[cfg(test)]
+mod reparse_tests;
 pub(crate) mod restore_decisions;
+mod review_batches;
+mod review_records;
+#[cfg(test)]
+mod review_records_tests;
 mod rows;
 pub(crate) mod tasks;
 pub(crate) mod tasks_reconcile;
@@ -3267,6 +2615,9 @@ mod tasks_test_support;
 mod tests;
 mod validation;
 
+pub(crate) use audit::*;
+#[cfg(test)]
+pub(crate) use database_test_support::StructuredParseTestState;
 pub(crate) use gmail::*;
 use imports::*;
 use migrations::*;
