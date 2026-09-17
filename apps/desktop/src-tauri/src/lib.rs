@@ -1,4 +1,5 @@
 mod database;
+mod diagnostics;
 mod local_inbox;
 #[cfg(test)]
 mod presentation_types;
@@ -18,9 +19,10 @@ use runtime::{
     list_relationship_candidates, list_review_items, list_source_confirmation_prompts,
     list_source_documents, list_statement_password_sources, list_tasks,
     list_unassigned_source_documents, local_inbox_status, lock_vault, on_run_event,
-    on_window_event, park_source_candidate, preview_source_document, remember_vault_on_this_mac,
-    remove_review_record, remove_statement_password, render_source_document_page,
-    reparse_source_document, rescan_local_inbox, restore_dismissed_candidate_account,
+    on_window_event, operational_diagnostics_preview, park_source_candidate,
+    preview_source_document, remember_vault_on_this_mac, remove_review_record,
+    remove_statement_password, render_source_document_page, reparse_source_document,
+    rescan_local_inbox, restore_dismissed_candidate_account, save_operational_diagnostics,
     save_recovery_file, save_source_document_copy, setup_background_window,
     try_saved_statement_password, undo_committed_event, unlock_source_document, unlock_vault,
     unlock_vault_with_keychain, vault_access_status, vault_status,
@@ -90,6 +92,8 @@ pub fn run() {
             try_saved_statement_password,
             unlock_source_document,
             lock_vault,
+            operational_diagnostics_preview,
+            save_operational_diagnostics,
             save_recovery_file,
             save_source_document_copy,
             import_source_document,

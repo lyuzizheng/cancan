@@ -354,7 +354,7 @@ fn stale_parse_claim_cannot_change_a_newer_attempt() {
     );
     assert!(
         store
-            .fail_parse_document_job(&first, "normalizer_failed")
+            .fail_parse_document_job(&first, "normalizer_failed", None)
             .is_err()
     );
     assert!(

@@ -114,8 +114,15 @@ impl VaultRuntime {
         let mut fingerprint = [0_u8; KEY_LEN];
         let include_fingerprint = matches!(status, Some(RecoveryStatus::Configured { .. }));
         if include_fingerprint {
-            let existing = fs::read(self.inner.root.join(RECOVERY_STATUS_FILE_NAME))
-                .map_err(|_| RuntimeError::new("recovery_status_read_failed"))?;
+            let existing =
+                fs::read(self.inner.root.join(RECOVERY_STATUS_FILE_NAME)).map_err(|error| {
+                    runtime_failure(
+                        self,
+                        "recovery_status_read",
+                        "recovery_status_read_failed",
+                        &error,
+                    )
+                })?;
             fingerprint.copy_from_slice(
                 &existing[RECOVERY_STATUS_MAGIC.len()..RECOVERY_STATUS_MAGIC.len() + KEY_LEN],
             );
@@ -131,8 +138,14 @@ impl VaultRuntime {
             bytes.extend_from_slice(&fingerprint);
         }
         bytes.extend_from_slice(&remind_after.to_le_bytes());
-        write_atomic(&self.inner.root.join(RECOVERY_STATUS_FILE_NAME), &bytes)
-            .map_err(|_| RuntimeError::new("recovery_status_write_failed"))
+        write_atomic(&self.inner.root.join(RECOVERY_STATUS_FILE_NAME), &bytes).map_err(|error| {
+            runtime_failure(
+                self,
+                "recovery_status_write",
+                "recovery_status_write_failed",
+                &error,
+            )
+        })
     }
 
     fn read_recovery_status_file(&self) -> Option<RecoveryStatus> {
@@ -161,8 +174,7 @@ impl VaultRuntime {
     }
 
     pub(crate) fn status(&self) -> Result<VaultStatus, RuntimeError> {
-        let store = self.store()?;
-        if store.is_some() {
+        if self.store()?.is_some() {
             return Ok(VaultStatus::Unlocked);
         }
         self.locked_status()
@@ -176,12 +188,22 @@ impl VaultRuntime {
             return Err(RuntimeError::new("invalid_vault"));
         }
         let wrapper = fs::read(self.inner.root.join(KEY_FILE_NAME))
-            .map_err(|_| RuntimeError::new("invalid_vault"))?;
+            .map_err(|error| runtime_failure(self, "locked_status", "invalid_vault", &error))?;
         password_wrapper_profile(&wrapper).map_err(|_| RuntimeError::new("invalid_vault"))?;
         Ok(VaultStatus::Locked)
     }
 
     pub(crate) fn create(&self, password: &[u8]) -> Result<VaultStatus, RuntimeError> {
+        let outcome = self.create_vault(password);
+        if let Err(error) = &outcome {
+            log_released_failure(self, error);
+        }
+        outcome
+    }
+
+    /// [`Self::create`] under the store guard; the guard is what defers the
+    /// failure's log entry to the caller.
+    fn create_vault(&self, password: &[u8]) -> Result<VaultStatus, RuntimeError> {
         if password.is_empty() {
             return Err(RuntimeError::new("password_required"));
         }
@@ -194,10 +216,13 @@ impl VaultRuntime {
             .root
             .parent()
             .ok_or_else(|| RuntimeError::new("vault_create_failed"))?;
-        fs::create_dir_all(parent).map_err(|_| RuntimeError::new("vault_create_failed"))?;
+        let failed = |component: &'static str, error: &io::Error| {
+            guard_held_failure(component, "vault_create_failed", error)
+        };
+        fs::create_dir_all(parent).map_err(|error| failed("create_dir_all", &error))?;
 
         let candidate = parent.join(candidate_name());
-        fs::create_dir(&candidate).map_err(|_| RuntimeError::new("vault_create_failed"))?;
+        fs::create_dir(&candidate).map_err(|error| failed("create_dir", &error))?;
         let result = self.create_candidate(&candidate, parent, password);
         if result.is_err() && candidate.exists() && fs::remove_dir_all(&candidate).is_ok() {
             let _ = sync_directory(parent);
@@ -218,42 +243,58 @@ impl VaultRuntime {
     ) -> Result<ManualImportStore, RuntimeError> {
         let mut master_key = Zeroizing::new([0_u8; KEY_LEN]);
         OsRng.fill_bytes(master_key.as_mut());
+        let failed =
+            |component: &'static str, error: &(dyn std::error::Error + Send + Sync + 'static)| {
+                guard_held_failure(component, "vault_create_failed", error)
+            };
         let wrapper = create_password_wrapper(password, &master_key)
-            .map_err(|_| RuntimeError::new("vault_create_failed"))?;
+            .map_err(|error| failed("create_password_wrapper", &error))?;
 
         let candidate_store = ManualImportStore::open(candidate, Zeroizing::new(*master_key))
-            .map_err(|_| RuntimeError::new("vault_create_failed"))?;
+            .map_err(|error| failed("open_candidate_store", &*error))?;
         drop(candidate_store);
         write_new_synced(&candidate.join(KEY_FILE_NAME), &wrapper)
-            .map_err(|_| RuntimeError::new("vault_create_failed"))?;
-        sync_directory(candidate).map_err(|_| RuntimeError::new("vault_create_failed"))?;
+            .map_err(|error| failed("write_key_file", &error))?;
+        sync_directory(candidate).map_err(|error| failed("sync_candidate", &error))?;
         fs::rename(candidate, &self.inner.root)
-            .map_err(|_| RuntimeError::new("vault_create_failed"))?;
-        if sync_directory(parent).is_err() {
+            .map_err(|error| failed("activate_candidate", &error))?;
+        if let Err(error) = sync_directory(parent) {
             return match self.rollback_activation(candidate, parent) {
-                Ok(()) => Err(RuntimeError::new("vault_create_failed")),
-                Err(()) => Err(RuntimeError::new("invalid_vault")),
+                Ok(()) => Err(failed("sync_activated_vault", &error)),
+                Err(rollback) => Err(guard_held_failure(
+                    "rollback_activation",
+                    "invalid_vault",
+                    &rollback,
+                )),
             };
         }
 
         match ManualImportStore::open_existing(&self.inner.root, master_key) {
             Ok(store) => Ok(store),
-            Err(_) => match self.rollback_activation(candidate, parent) {
-                Ok(()) => Err(RuntimeError::new("vault_create_failed")),
-                Err(()) => Err(RuntimeError::new("invalid_vault")),
+            Err(error) => match self.rollback_activation(candidate, parent) {
+                Ok(()) => Err(failed("reopen_activated_vault", &*error)),
+                Err(rollback) => Err(guard_held_failure(
+                    "rollback_activation",
+                    "invalid_vault",
+                    &rollback,
+                )),
             },
         }
     }
 
-    pub(super) fn rollback_activation(&self, candidate: &Path, parent: &Path) -> Result<(), ()> {
-        fs::rename(&self.inner.root, candidate).map_err(|_| ())?;
-        sync_directory(parent).map_err(|_| ())
+    pub(super) fn rollback_activation(
+        &self,
+        candidate: &Path,
+        parent: &Path,
+    ) -> Result<(), io::Error> {
+        fs::rename(&self.inner.root, candidate)?;
+        sync_directory(parent)
     }
 
     fn finish_unlock(
         &self,
         opened: ManualImportStore,
-        mut store: MutexGuard<'_, Option<ManualImportStore>>,
+        mut store: StoreGuard<'_>,
     ) -> Result<VaultStatus, RuntimeError> {
         self.reconcile_statement_passwords(&opened)?;
         self.reconcile_gmail_accounts_after_unlock(&opened);
@@ -265,6 +306,16 @@ impl VaultRuntime {
     }
 
     pub(crate) fn unlock(&self, password: &[u8]) -> Result<VaultStatus, RuntimeError> {
+        let outcome = self.unlock_vault(password);
+        if let Err(error) = &outcome {
+            log_released_failure(self, error);
+        }
+        outcome
+    }
+
+    /// [`Self::unlock`] under the store guard; the guard is what defers the
+    /// failure's log entry to the caller.
+    fn unlock_vault(&self, password: &[u8]) -> Result<VaultStatus, RuntimeError> {
         if password.is_empty() {
             return Err(RuntimeError::new("password_required"));
         }
@@ -281,40 +332,72 @@ impl VaultRuntime {
                     Err(RuntimeError::new("vault_not_created"))
                 };
             }
-            Err(_) => return Err(RuntimeError::new("invalid_vault")),
+            Err(error) => {
+                return Err(guard_held_failure(
+                    "unlock_read_key",
+                    "invalid_vault",
+                    &error,
+                ));
+            }
         };
         password_wrapper_profile(&wrapper).map_err(|_| RuntimeError::new("invalid_vault"))?;
         let master_key = open_password_wrapper(&wrapper, password)
             .map_err(|_| RuntimeError::new("invalid_credentials"))?;
         let opened = ManualImportStore::open_existing(&self.inner.root, master_key)
-            .map_err(|_| RuntimeError::new("invalid_vault"))?;
+            .map_err(|error| guard_held_failure("open_existing", "invalid_vault", &*error))?;
         self.finish_unlock(opened, store)
     }
 
     pub(crate) fn unlock_with_keychain(&self) -> Result<VaultStatus, RuntimeError> {
+        let outcome = self.unlock_vault_with_keychain();
+        if let Err(error) = &outcome {
+            log_released_failure(self, error);
+        }
+        outcome
+    }
+
+    /// [`Self::unlock_with_keychain`] under the store guard; the guard is what
+    /// defers the failure's log entry to the caller.
+    fn unlock_vault_with_keychain(&self) -> Result<VaultStatus, RuntimeError> {
         // Load the key before acquiring the store guard: the Touch ID-protected
         // read shows a system prompt that can stay up until the user responds,
         // and holding the store mutex across it would block status queries and
         // background intake jobs for the entire prompt.
-        let Some(master_key) = self
-            .load_remembered_master_key()
-            .map_err(|_| RuntimeError::new("remembered_unlock_failed"))?
+        let Some(master_key) = self.load_remembered_master_key().map_err(|error| {
+            runtime_failure(
+                self,
+                "load_remembered_key",
+                "remembered_unlock_failed",
+                &error,
+            )
+        })?
         else {
             return Err(RuntimeError::new("remembered_unlock_unavailable"));
         };
+        if self.locked_status()? != VaultStatus::Locked {
+            return Err(RuntimeError::new("vault_not_created"));
+        }
         let store = self.store()?;
         if store.is_some() {
             return Ok(VaultStatus::Unlocked);
         }
-        if self.locked_status()? != VaultStatus::Locked {
-            return Err(RuntimeError::new("vault_not_created"));
-        }
-        let opened = ManualImportStore::open_existing(&self.inner.root, master_key)
-            .map_err(|_| RuntimeError::new("remembered_unlock_failed"))?;
+        let opened =
+            ManualImportStore::open_existing(&self.inner.root, master_key).map_err(|error| {
+                guard_held_failure("open_existing", "remembered_unlock_failed", &*error)
+            })?;
         self.finish_unlock(opened, store)
     }
 
     pub(crate) fn remember_on_this_mac(&self) -> Result<(), RuntimeError> {
+        let outcome = self.remember_key_in_keychain();
+        if let Err(error) = &outcome {
+            log_released_failure(self, error);
+        }
+        outcome
+    }
+
+    /// [`Self::remember_on_this_mac`] under the store guard.
+    fn remember_key_in_keychain(&self) -> Result<(), RuntimeError> {
         let store = self.store()?;
         let store = store
             .as_ref()
@@ -322,18 +405,26 @@ impl VaultRuntime {
         self.inner
             .remembered_keys
             .save(store.master_key())
-            .map_err(|_| RuntimeError::new("remember_failed"))
+            .map_err(|error| guard_held_failure("remembered_key_save", "remember_failed", &error))
     }
 
     pub(crate) fn forget_this_mac(&self) -> Result<(), RuntimeError> {
         self.require_unlocked()?;
-        self.inner
-            .remembered_keys
-            .delete()
-            .map_err(|_| RuntimeError::new("forget_failed"))
+        self.inner.remembered_keys.delete().map_err(|error| {
+            runtime_failure(self, "remembered_key_delete", "forget_failed", &error)
+        })
     }
 
     pub(crate) fn save_recovery_file(&self, destination: &Path) -> Result<(), RuntimeError> {
+        let outcome = self.write_recovery_file(destination);
+        if let Err(error) = &outcome {
+            log_released_failure(self, error);
+        }
+        outcome
+    }
+
+    /// [`Self::save_recovery_file`] under the store guard.
+    fn write_recovery_file(&self, destination: &Path) -> Result<(), RuntimeError> {
         let store = self.store()?;
         let store = store
             .as_ref()
@@ -345,26 +436,30 @@ impl VaultRuntime {
             .parent()
             .ok_or_else(|| RuntimeError::new("recovery_save_failed"))?
             .canonicalize()
-            .map_err(|_| RuntimeError::new("recovery_save_failed"))?;
-        let vault_root = self
-            .inner
-            .root
-            .canonicalize()
-            .map_err(|_| RuntimeError::new("invalid_vault"))?;
+            .map_err(|error| {
+                guard_held_failure("recovery_destination", "recovery_save_failed", &error)
+            })?;
+        let vault_root =
+            self.inner.root.canonicalize().map_err(|error| {
+                guard_held_failure("recovery_vault_root", "invalid_vault", &error)
+            })?;
         if destination_parent.starts_with(&vault_root) {
             return Err(RuntimeError::new("recovery_location_invalid"));
         }
 
-        let recovery_file = create_recovery_file(store.master_key())
-            .map_err(|_| RuntimeError::new("recovery_create_failed"))?;
-        write_atomic(destination, &recovery_file)
-            .map_err(|_| RuntimeError::new("recovery_save_failed"))?;
+        let recovery_file = create_recovery_file(store.master_key()).map_err(|error| {
+            guard_held_failure("create_recovery_file", "recovery_create_failed", &error)
+        })?;
+        write_atomic(destination, &recovery_file).map_err(|error| {
+            guard_held_failure("write_recovery_file", "recovery_save_failed", &error)
+        })?;
 
         let mut status = Vec::with_capacity(RECOVERY_STATUS_MAGIC.len() + KEY_LEN);
         status.extend_from_slice(RECOVERY_STATUS_MAGIC);
         status.extend_from_slice(&recovery_file_fingerprint(&recovery_file));
-        write_atomic(&self.inner.root.join(RECOVERY_STATUS_FILE_NAME), &status)
-            .map_err(|_| RuntimeError::new("recovery_status_failed"))
+        write_atomic(&self.inner.root.join(RECOVERY_STATUS_FILE_NAME), &status).map_err(|error| {
+            guard_held_failure("write_recovery_status", "recovery_status_failed", &error)
+        })
     }
 
     /// Locks the Vault without telling the renderer. Production callers use

@@ -53,14 +53,23 @@ impl VaultRuntime {
         };
         let tombstoned_hashes = {
             let store = self.store()?;
-            store
+            let store = store
                 .as_ref()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
-                .deleted_source_hashes()
-                .map_err(|_| RuntimeError::new("local_inbox_scan_failed"))?
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            store.deleted_source_hashes().map_store_error(
+                store,
+                "deleted_source_hashes",
+                "local_inbox_scan_failed",
+            )?
         };
-        let entries =
-            fs::read_dir(inbox).map_err(|_| RuntimeError::new("local_inbox_scan_failed"))?;
+        let entries = fs::read_dir(inbox).map_err(|error| {
+            runtime_failure(
+                self,
+                "local_inbox_read_dir",
+                "local_inbox_scan_failed",
+                &error,
+            )
+        })?;
         let mut summary = LocalInboxScanSummary::default();
         let preflight = SystemNativePreflight;
         let mut observed_candidates = Vec::new();
@@ -143,15 +152,16 @@ impl VaultRuntime {
             .collect::<Vec<_>>();
         {
             let mut store = self.store()?;
-            store
+            let store = store
                 .as_mut()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            store
                 .create_intake_batch(&IntakeBatchInput {
                     id: &batch_id,
                     acquisition_channel: IntakeAcquisitionChannel::LocalInbox,
                     items: &items,
                 })
-                .map_err(|_| RuntimeError::new("local_inbox_scan_failed"))?;
+                .map_store_error(store, "create_intake_batch", "local_inbox_scan_failed")?;
         }
         let mut first_error = None;
         for candidate in candidates {
@@ -227,11 +237,16 @@ impl VaultRuntime {
         if first_error.is_some() {
             let recovery = {
                 let mut store = self.store()?;
-                store
+                let store = store
                     .as_mut()
-                    .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                    .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+                store
                     .recover_pending_local_inbox_items(&batch_id)
-                    .map_err(|_| RuntimeError::new("intake_recovery_failed"))
+                    .map_store_error(
+                        store,
+                        "recover_pending_local_inbox_items",
+                        "intake_recovery_failed",
+                    )
             };
             if let Err(error) = recovery {
                 first_error.get_or_insert(error);
@@ -258,11 +273,16 @@ impl VaultRuntime {
     ) -> Result<bool, RuntimeError> {
         let entry_key = local_inbox_entry_key(path)?;
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .local_inbox_entry_is_current(&entry_key, snapshot)
-            .map_err(|_| RuntimeError::new("local_inbox_scan_failed"))
+            .map_store_error(
+                store,
+                "local_inbox_entry_is_current",
+                "local_inbox_scan_failed",
+            )
     }
 
     fn record_local_inbox_entry_observation(
@@ -276,11 +296,16 @@ impl VaultRuntime {
             return Err(RuntimeError::new("local_inbox_observation_failed"));
         }
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .record_local_inbox_entry_observation(&entry_key, snapshot)
-            .map_err(|_| RuntimeError::new("local_inbox_scan_failed"))
+            .map_store_error(
+                store,
+                "record_local_inbox_entry_observation",
+                "local_inbox_scan_failed",
+            )
     }
 
     fn finalize_local_inbox_suppressed(
@@ -298,7 +323,11 @@ impl VaultRuntime {
         }
         store
             .finalize_intake_batch_item(item_id, IntakeItemFinalization::Suppressed { code })
-            .map_err(|_| RuntimeError::new("intake_finalization_failed"))
+            .map_store_error(
+                store,
+                "finalize_intake_batch_item",
+                "intake_finalization_failed",
+            )
     }
 
     pub(super) fn register_local_inbox_capture(
@@ -307,7 +336,8 @@ impl VaultRuntime {
         captured_bytes: Zeroizing<Vec<u8>>,
         intake_item_id: &str,
     ) -> Result<SourceDocumentImportOutcome, RuntimeError> {
-        let (original_filename, mime_type) = source_document_filename_metadata(source_path)?;
+        let (original_filename, mime_type) =
+            super::documents_intake::source_document_filename_metadata(source_path)?;
         let document_id = random_identifier("document");
         let audit_id = random_identifier("audit");
         let input = SourceDocumentImport {
@@ -322,37 +352,53 @@ impl VaultRuntime {
             source_path,
         };
         let session_generation = self.inner.vault_session_generation.load(Ordering::SeqCst);
-        let source = ManualImportStore::prepare_source_bytes(mime_type, captured_bytes)
-            .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?;
+        let source = ManualImportStore::prepare_source_bytes(mime_type, captured_bytes).map_err(
+            |error| {
+                runtime_failure(
+                    self,
+                    "prepare_source_bytes",
+                    "local_inbox_import_failed",
+                    &*error,
+                )
+            },
+        )?;
         if self.inner.vault_session_generation.load(Ordering::SeqCst) != session_generation {
             return Err(RuntimeError::new("vault_locked"));
         }
         let plan = {
             let mut store = self.store()?;
-            store
+            let store = store
                 .as_mut()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            store
                 .intake_source_capture_plan(&input, &source, intake_item_id, true)
-                .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?
+                .map_store_error(
+                    store,
+                    "intake_source_capture_plan",
+                    "local_inbox_import_failed",
+                )?
         };
         let capture = match plan {
             SourceCapturePlan::Capture(capture) => capture,
             SourceCapturePlan::RestoreConfirmationRequired(outcome) => return Ok(outcome),
         };
-        let stored = capture
-            .store_prepared(&source)
-            .map_err(|_| RuntimeError::new("local_inbox_import_failed"))?;
+        let stored = capture.store_prepared(&source).map_err(|error| {
+            runtime_failure(self, "store_prepared", "local_inbox_import_failed", &*error)
+        })?;
         if self.inner.vault_session_generation.load(Ordering::SeqCst) != session_generation {
             return Err(RuntimeError::new("vault_locked"));
         }
-        let result = {
-            let mut store = self.store()?;
-            store
-                .as_mut()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
-                .persist_captured_intake_import(&input, &stored, intake_item_id)
-        };
-        result.map_err(|_| RuntimeError::new("local_inbox_import_failed"))
+        let mut store = self.store()?;
+        let store = store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
+            .persist_captured_intake_import(&input, &stored, intake_item_id)
+            .map_store_error(
+                store,
+                "persist_captured_intake_import",
+                "local_inbox_import_failed",
+            )
     }
 }
 

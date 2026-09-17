@@ -488,7 +488,7 @@ pub(crate) fn bounded_safe_input_label(value: &str) -> String {
     }
 }
 
-fn is_control_or_bidi(value: char) -> bool {
+pub(crate) fn is_control_or_bidi(value: char) -> bool {
     value.is_control()
         || matches!(
             value,

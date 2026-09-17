@@ -105,7 +105,7 @@ impl VaultRuntime {
             .ok_or_else(|| RuntimeError::new("vault_locked"))?;
         let raw = store
             .derive_task_rows(filter == TaskFilter::Full)
-            .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
+            .map_store_error(store, "derive_task_rows", "list_tasks_failed")?;
         let rows: Vec<TaskRow> = raw.into_iter().map(raw_task_to_row).collect();
 
         // A document can surface in more than one derivation (e.g. an active
@@ -144,9 +144,11 @@ impl VaultRuntime {
                     .map_err(|_| RuntimeError::new("clock_error"))?
                     .as_secs();
                 if remind > now {
-                    let timestamp = store
-                        .format_unix_timestamp(remind)
-                        .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
+                    let timestamp = store.format_unix_timestamp(remind).map_store_error(
+                        store,
+                        "format_unix_timestamp",
+                        "list_tasks_failed",
+                    )?;
                     Some((
                         TaskGroup::Parked,
                         TaskConsequence::SetupReminderPostponed,
@@ -154,9 +156,11 @@ impl VaultRuntime {
                         timestamp,
                     ))
                 } else {
-                    let timestamp = store
-                        .current_timestamp()
-                        .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
+                    let timestamp = store.current_timestamp().map_store_error(
+                        store,
+                        "current_timestamp",
+                        "list_tasks_failed",
+                    )?;
                     Some((
                         TaskGroup::NeedsAction,
                         TaskConsequence::SaveRecoveryFile,
@@ -166,9 +170,11 @@ impl VaultRuntime {
                 }
             }
             None if !self.recovery_configured() => {
-                let timestamp = store
-                    .current_timestamp()
-                    .map_err(|_| RuntimeError::new("list_tasks_failed"))?;
+                let timestamp = store.current_timestamp().map_store_error(
+                    store,
+                    "current_timestamp",
+                    "list_tasks_failed",
+                )?;
                 Some((
                     TaskGroup::NeedsAction,
                     TaskConsequence::SaveRecoveryFile,
@@ -237,12 +243,15 @@ impl VaultRuntime {
     /// pipeline pump pass and when the Vault opens, so completion stays
     /// monotonic and restart-reconciled.
     pub(crate) fn seal_completed_intake_batches(&self) -> Result<(), RuntimeError> {
-        let mut store_guard = self.store()?;
-        store_guard
+        let mut store = self.store()?;
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .reconcile_sealed_batches()
-            .map_err(|_| RuntimeError::new("seal_batches_failed"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.reconcile_sealed_batches().map_store_error(
+            store,
+            "reconcile_sealed_batches",
+            "seal_batches_failed",
+        )
     }
 }
 

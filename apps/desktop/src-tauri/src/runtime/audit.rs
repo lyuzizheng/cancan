@@ -5,11 +5,14 @@ impl VaultRuntime {
         &self,
     ) -> Result<Vec<DuplicateCommittedVersionAuditRow>, RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .audit_duplicate_committed_versions()
-            .map_err(|_| RuntimeError::new("audit_unavailable"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.audit_duplicate_committed_versions().map_store_error(
+            store,
+            "audit_duplicate_committed_versions",
+            "audit_unavailable",
+        )
     }
 }
 

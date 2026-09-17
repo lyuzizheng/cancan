@@ -1,4 +1,5 @@
 use crate::{
+    diagnostics::{JobFailureDetail, OperationalLogEntry, OperationalLogLevel},
     local_inbox::FileSnapshot,
     vault::{FileVault, PreparedSource, StoredFile},
     viewer::validate_image_container,
@@ -505,6 +506,8 @@ impl ManualImportStore {
         store.recover_interrupted_parse_document_jobs()?;
         store.recover_interrupted_review_jobs()?;
         store.reconcile_sealed_batches()?;
+        // Spec 0015 retention: the operational log never outlives its window.
+        store.purge_expired_operational_logs()?;
         Ok(store)
     }
 
@@ -849,76 +852,6 @@ impl ManualImportStore {
         }
         transaction.commit()?;
         Ok(())
-    }
-
-    pub(crate) fn fail_reconcile_document(
-        &mut self,
-        document_id: &str,
-        reason: &'static str,
-    ) -> StoreResult<()> {
-        self.connection.execute(
-            "UPDATE jobs SET status = 'failed', error_json = ?1, blocked_reason = ?2, \
-                     lease_owner = NULL, lease_until = NULL, finished_at = CURRENT_TIMESTAMP, \
-                     updated_at = CURRENT_TIMESTAMP \
-             WHERE related_source_document_id = ?3 AND job_type = ?4 \
-               AND status = 'running' AND lease_owner = 'reconcile-document'",
-            params![
-                serde_json::json!({ "errorCode": reason }).to_string(),
-                reason,
-                document_id,
-                RECONCILE_DOCUMENT_JOB_TYPE,
-            ],
-        )?;
-        Ok(())
-    }
-
-    pub(crate) fn block_parse_document_job(
-        &mut self,
-        claim: &ParseDocumentClaim,
-        reason: &'static str,
-    ) -> StoreResult<()> {
-        let changed = self.connection.execute(
-            "UPDATE jobs SET status = 'blocked', blocked_reason = ?1, lease_owner = NULL, \
-                     lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-             WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
-               AND status = 'running' AND lease_owner = ?5",
-            params![
-                reason,
-                claim.job_id,
-                claim.document_id,
-                PARSE_DOCUMENT_JOB_TYPE,
-                claim.claim_token,
-            ],
-        )?;
-        parse_job_update(changed)
-    }
-
-    pub(crate) fn fail_parse_document_job(
-        &mut self,
-        claim: &ParseDocumentClaim,
-        reason: &'static str,
-    ) -> StoreResult<()> {
-        let changed = self.connection.execute(
-            "UPDATE jobs SET \
-                 status = CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END, \
-                 result_json = NULL, \
-                 error_json = CASE WHEN attempts < max_attempts THEN NULL ELSE ?1 END, \
-                 blocked_reason = CASE WHEN attempts < max_attempts THEN NULL ELSE ?2 END, \
-                 lease_owner = NULL, lease_until = NULL, \
-                 finished_at = CASE WHEN attempts < max_attempts THEN NULL ELSE CURRENT_TIMESTAMP END, \
-                 updated_at = CURRENT_TIMESTAMP \
-             WHERE id = ?3 AND related_source_document_id = ?4 AND job_type = ?5 \
-               AND status = 'running' AND lease_owner = ?6",
-            params![
-                serde_json::json!({ "errorCode": reason }).to_string(),
-                reason,
-                claim.job_id,
-                claim.document_id,
-                PARSE_DOCUMENT_JOB_TYPE,
-                claim.claim_token,
-            ],
-        )?;
-        parse_job_update(changed)
     }
 
     pub fn delete_source_document(&mut self, document_id: &str, audit_id: &str) -> StoreResult<()> {
@@ -2364,44 +2297,6 @@ impl ManualImportStore {
         }))
     }
 
-    pub(crate) fn fail_review_batch(
-        &mut self,
-        claimed: &ClaimedReviewBatch,
-        error_code: &str,
-    ) -> StoreResult<ReviewJobSummary> {
-        if error_code.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "review error code is required",
-            )
-            .into());
-        }
-        let error_json = serde_json::to_string(&serde_json::json!({ "errorCode": error_code }))?;
-        let changed = self.connection.execute(
-            "UPDATE jobs SET status = 'failed', error_json = ?1, lease_owner = NULL, \
-                     lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-             WHERE id = ?2 AND job_type = ?3 AND status = 'running' AND lease_owner = ?4",
-            params![
-                error_json,
-                claimed.job_id,
-                COMMIT_REVIEW_BATCH_JOB_TYPE,
-                claimed.lease_owner
-            ],
-        )?;
-        if changed != 1 {
-            return Err(
-                io::Error::new(io::ErrorKind::InvalidData, "review job lease changed").into(),
-            );
-        }
-        self.review_job(&claimed.job_id)?.ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "failed review job was not persisted",
-            )
-            .into()
-        })
-    }
-
     pub(crate) fn finish_review_batch(
         &mut self,
         claimed: &ClaimedReviewBatch,
@@ -2597,7 +2492,11 @@ pub(crate) mod intake;
 mod intake_migration_tests;
 #[cfg(test)]
 pub(crate) mod intake_test_support;
+mod job_failures;
 mod migrations;
+mod operational_logs;
+#[cfg(test)]
+mod operational_logs_tests;
 mod parse_jobs;
 #[cfg(test)]
 mod reparse_tests;

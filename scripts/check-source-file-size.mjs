@@ -16,7 +16,7 @@ const EXEMPTIONS = new Map([
   ["apps/desktop/src-tauri/src/database/mod.rs", 2656],
   ["apps/desktop/src-tauri/src/runtime/documents.rs", 939],
   ["apps/desktop/src-tauri/src/runtime/review.rs", 908],
-  ["apps/desktop/src-tauri/src/runtime/tests.rs", 3587],
+  ["apps/desktop/src-tauri/src/runtime/tests.rs", 3491],
   ["apps/desktop/src-tauri/src/source_observations.rs", 950],
   ["apps/desktop/src-tauri/src/vault.rs", 900],
   ["apps/desktop/src-tauri/src/viewer.rs", 1000],

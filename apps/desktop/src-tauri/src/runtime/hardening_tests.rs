@@ -1,6 +1,6 @@
 #[cfg(target_os = "macos")]
 use super::test_support::statement_password_runtime;
-use super::tests::{
+use super::test_support::{
     MemoryLocalInboxBookmarkStore, MemoryRememberedKeyStore, MemoryStatementPasswordStore,
 };
 #[cfg(target_os = "macos")]

@@ -1,14 +1,16 @@
 use super::*;
+use crate::diagnostics::JobFailureDetail;
 use sha2::{Digest, Sha256};
 
 impl VaultRuntime {
     pub(crate) fn list_review_items(&self) -> Result<Vec<ReviewItemSummary>, RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .list_review_items()
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(store, "list_review_items", "review_unavailable")
     }
 
     pub(crate) fn review_item_detail(
@@ -19,29 +21,36 @@ impl VaultRuntime {
             return Err(RuntimeError::new("invalid_review_request"));
         }
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .review_item_detail(review_item_id)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.review_item_detail(review_item_id).map_store_error(
+            store,
+            "review_item_detail",
+            "review_unavailable",
+        )
     }
 
     pub(crate) fn list_recent_activity(&self) -> Result<Vec<RecentActivitySummary>, RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .list_recent_activity()
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store.list_recent_activity().map_store_error(
+            store,
+            "list_recent_activity",
+            "review_unavailable",
+        )
     }
 
     pub(crate) fn money_overview(&self) -> Result<MoneyOverview, RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .money_overview()
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(store, "money_overview", "review_unavailable")
     }
 
     pub(super) fn relationship_candidate_input(
@@ -53,11 +62,12 @@ impl VaultRuntime {
             return Err(RuntimeError::new("invalid_review_request"));
         }
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .relationship_candidate_input(review_item_id, expected_record_version)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(store, "relationship_candidate_input", "review_unavailable")
     }
 
     pub(super) fn relationship_candidate_summaries(
@@ -65,11 +75,16 @@ impl VaultRuntime {
         candidate_ids: &[String],
     ) -> Result<Vec<RelationshipCandidateSummary>, RuntimeError> {
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .relationship_candidate_summaries(candidate_ids)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(
+                store,
+                "relationship_candidate_summaries",
+                "review_unavailable",
+            )
     }
 
     pub(super) fn edit_review_record(
@@ -81,9 +96,10 @@ impl VaultRuntime {
         account_balance_delta: Option<&str>,
     ) -> Result<ReviewMutationOutcome, RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .edit_review_record(
                 review_item_id,
                 expected_record_version,
@@ -91,7 +107,7 @@ impl VaultRuntime {
                 amount_value,
                 account_balance_delta,
             )
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(store, "edit_review_record", "review_unavailable")
     }
 
     pub(super) fn remove_review_record(
@@ -100,11 +116,12 @@ impl VaultRuntime {
         expected_record_version: i64,
     ) -> Result<ReviewMutationOutcome, RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .remove_review_record(review_item_id, expected_record_version)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(store, "remove_review_record", "review_unavailable")
     }
 
     pub(super) fn accept_review_relationship(
@@ -116,9 +133,10 @@ impl VaultRuntime {
         event: &CorePreparedReviewEvent,
     ) -> Result<ReviewMutationOutcome, RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .accept_review_relationship(
                 review_item_id,
                 expected_record_version,
@@ -126,107 +144,7 @@ impl VaultRuntime {
                 expected_candidate_version,
                 event,
             )
-            .map_err(|_| RuntimeError::new("review_unavailable"))
-    }
-
-    pub(super) fn enqueue_commit_review_batch(
-        &self,
-        review_item_ids: &[String],
-    ) -> Result<ReviewJobSummary, RuntimeError> {
-        let mut store = self.store()?;
-        store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .enqueue_commit_review_batch(review_item_ids)
-            .map_err(|_| RuntimeError::new("invalid_review_request"))
-    }
-
-    pub(super) fn review_job(
-        &self,
-        job_id: &str,
-    ) -> Result<Option<ReviewJobSummary>, RuntimeError> {
-        if job_id.is_empty() {
-            return Err(RuntimeError::new("invalid_review_request"));
-        }
-        let store = self.store()?;
-        store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .review_job(job_id)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
-    }
-
-    pub(super) fn queued_review_job_ids(&self) -> Result<Vec<String>, RuntimeError> {
-        let store = self.store()?;
-        store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .queued_review_job_ids()
-            .map_err(|_| RuntimeError::new("review_unavailable"))
-    }
-
-    pub(super) fn claim_review_batch(
-        &self,
-        job_id: &str,
-        lease_owner: &str,
-    ) -> Result<Option<ClaimedReviewBatch>, RuntimeError> {
-        let mut store = self.store()?;
-        store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .claim_review_batch(job_id, lease_owner)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
-    }
-
-    pub(super) fn prepare_commit_review_groups(
-        &self,
-        claimed: &ClaimedReviewBatch,
-    ) -> Result<(Vec<CommitReviewGroup>, Vec<ReviewBatchGroupOutcome>), RuntimeError> {
-        let store = self.store()?;
-        store
-            .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .prepare_commit_review_groups(claimed)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
-    }
-
-    pub(super) fn commit_prepared_review_group(
-        &self,
-        claimed: &ClaimedReviewBatch,
-        group: &CommitReviewGroup,
-        event: &CorePreparedReviewEvent,
-    ) -> Result<ReviewBatchGroupOutcome, RuntimeError> {
-        let mut store = self.store()?;
-        store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .commit_prepared_review_group(claimed, group, event)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
-    }
-
-    pub(super) fn finish_review_batch(
-        &self,
-        claimed: &ClaimedReviewBatch,
-        outcomes: &[ReviewBatchGroupOutcome],
-    ) -> Result<ReviewJobSummary, RuntimeError> {
-        let mut store = self.store()?;
-        store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .finish_review_batch(claimed, outcomes)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
-    }
-
-    pub(super) fn fail_review_batch(
-        &self,
-        claimed: &ClaimedReviewBatch,
-    ) -> Result<ReviewJobSummary, RuntimeError> {
-        let mut store = self.store()?;
-        store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
-            .fail_review_batch(claimed, "review_core_failed")
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(store, "accept_review_relationship", "review_unavailable")
     }
 
     pub(super) fn committed_review_event_for_reversal(
@@ -237,11 +155,16 @@ impl VaultRuntime {
             return Err(RuntimeError::new("invalid_review_request"));
         }
         let store = self.store()?;
-        store
+        let store = store
             .as_ref()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .committed_review_event_for_reversal(event_id)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(
+                store,
+                "committed_review_event_for_reversal",
+                "review_unavailable",
+            )
     }
 
     pub(super) fn persist_review_reversal(
@@ -250,11 +173,12 @@ impl VaultRuntime {
         reversal: &CorePreparedReversalEvent,
     ) -> Result<Option<UndoOutcome>, RuntimeError> {
         let mut store = self.store()?;
-        store
+        let store = store
             .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
             .persist_review_reversal(original_event_id, reversal)
-            .map_err(|_| RuntimeError::new("review_unavailable"))
+            .map_store_error(store, "persist_review_reversal", "review_unavailable")
     }
 
     #[cfg(test)]
@@ -271,13 +195,13 @@ impl VaultRuntime {
                 .ok_or_else(|| RuntimeError::new("vault_locked"))?;
             let job = store
                 .queued_parse_document_jobs()
-                .map_err(|_| RuntimeError::new("classification_failed"))?
+                .map_store_error(store, "queued_parse_document_jobs", "classification_failed")?
                 .into_iter()
                 .find(|job| job.document_id == document_id)
                 .ok_or_else(|| RuntimeError::new("classification_failed"))?;
             store
                 .start_parse_document_job(&job)
-                .map_err(|_| RuntimeError::new("classification_failed"))?
+                .map_store_error(store, "start_parse_document_job", "classification_failed")?
                 .ok_or_else(|| RuntimeError::new("classification_failed"))?
         };
         self.apply_normalizer_result_with_job(document_id, &claim, extraction_bundle, None, result)
@@ -429,9 +353,10 @@ impl VaultRuntime {
         // classified document that has no parse record.
         let outcome = {
             let mut store = self.store()?;
-            store
+            let store = store
                 .as_mut()
-                .ok_or_else(|| RuntimeError::new("vault_locked"))?
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            store
                 .apply_classification_and_parse_for_claimed_job(
                     &classification,
                     parse_job,
@@ -441,7 +366,11 @@ impl VaultRuntime {
                         validated_structured_parse_input(&proposal, &profile, &outcome.account_ids)
                     },
                 )
-                .map_err(|_| RuntimeError::new("classification_failed"))?
+                .map_store_error(
+                    store,
+                    "apply_classification_and_parse_for_claimed_job",
+                    "classification_failed",
+                )?
         };
         self.finish_normalizer_outcome_with_job(parse_job, vault_session_generation, outcome)
     }
@@ -479,7 +408,7 @@ fn finish_parse_job(
 ) -> Result<(), RuntimeError> {
     store
         .finish_parse_document_job(parse_job, outcome)
-        .map_err(|_| RuntimeError::new("classification_failed"))
+        .map_store_error(store, "finish_parse_document_job", "classification_failed")
 }
 
 pub(super) fn review_conflict(reason: &'static str) -> ReviewMutationOutcome {
@@ -808,10 +737,11 @@ pub(super) async fn process_review_batch_job(
         let result = match result {
             Ok(result) => result,
             Err(error) => {
+                let detail = error.detail_or_code(Some("review_core"));
                 let failure_runtime = runtime.clone();
                 let failure_claimed = claimed.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || {
-                    failure_runtime.fail_review_batch(&failure_claimed)
+                    failure_runtime.fail_review_batch(&failure_claimed, Some(&detail))
                 })
                 .await;
                 return Err(error.into());
@@ -848,10 +778,14 @@ pub(super) async fn process_review_batch_job(
                 event: ReviewCoreReadyEvent::Reversal(_),
             }
             | ReviewCoreResult::Candidates { .. } => {
+                let detail = JobFailureDetail::from_message(
+                    Some("review_core"),
+                    "review core returned a result the batch cannot apply",
+                );
                 let failure_runtime = runtime.clone();
                 let failure_claimed = claimed.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || {
-                    failure_runtime.fail_review_batch(&failure_claimed)
+                    failure_runtime.fail_review_batch(&failure_claimed, Some(&detail))
                 })
                 .await;
                 return Err(VaultCommandError::new("review_core_failed"));

@@ -61,11 +61,19 @@ impl VaultRuntime {
                 &mailbox_address,
                 &format!("gmail-refresh-token:{digest}"),
             )
-            .map_err(|_| RuntimeError::new("gmail_connection_save_failed"))?;
-        self.save_verified_gmail_refresh_token(&state.secret_storage_key, refresh_token)?;
+            .map_store_error(
+                store,
+                "begin_gmail_account_save",
+                "gmail_connection_save_failed",
+            )?;
+        self.save_verified_gmail_refresh_token(store, &state.secret_storage_key, refresh_token)?;
         store
             .mark_gmail_account_connected(&state.id)
-            .map_err(|_| RuntimeError::new("gmail_connection_save_failed"))
+            .map_store_error(
+                store,
+                "mark_gmail_account_connected",
+                "gmail_connection_save_failed",
+            )
     }
 
     pub(crate) fn disconnect_gmail_mailbox(
@@ -80,7 +88,11 @@ impl VaultRuntime {
         self.reconcile_gmail_account(store, &mailbox_address)?;
         let state = store
             .gmail_account_state(&mailbox_address)
-            .map_err(|_| RuntimeError::new("gmail_connection_state_invalid"))?;
+            .map_store_error(
+                store,
+                "gmail_account_state",
+                "gmail_connection_state_invalid",
+            )?;
         let Some(state) = state else {
             return Ok(());
         };
@@ -89,14 +101,29 @@ impl VaultRuntime {
             GmailAccountStatus::Connected => {
                 store
                     .begin_gmail_account_delete(&state.id)
-                    .map_err(|_| RuntimeError::new("gmail_connection_remove_failed"))?;
+                    .map_store_error(
+                        store,
+                        "begin_gmail_account_delete",
+                        "gmail_connection_remove_failed",
+                    )?;
                 self.inner
                     .gmail_refresh_tokens
                     .delete(&state.secret_storage_key)
-                    .map_err(|_| RuntimeError::new("gmail_connection_remove_failed"))?;
+                    .map_err(|error| {
+                        store_failure(
+                            store,
+                            "gmail_refresh_token_delete",
+                            "gmail_connection_remove_failed",
+                            &error,
+                        )
+                    })?;
                 store
                     .mark_gmail_account_disconnected(&state.id, "pending_delete")
-                    .map_err(|_| RuntimeError::new("gmail_connection_remove_failed"))
+                    .map_store_error(
+                        store,
+                        "mark_gmail_account_disconnected",
+                        "gmail_connection_remove_failed",
+                    )
             }
             GmailAccountStatus::PendingDelete | GmailAccountStatus::PendingSave => {
                 Err(RuntimeError::new("gmail_connection_state_invalid"))
@@ -118,9 +145,11 @@ impl VaultRuntime {
         store: &ManualImportStore,
         mailbox_address: &str,
     ) -> Result<(), RuntimeError> {
-        let state = store
-            .gmail_account_state(mailbox_address)
-            .map_err(|_| RuntimeError::new("gmail_connection_state_invalid"))?;
+        let state = store.gmail_account_state(mailbox_address).map_store_error(
+            store,
+            "gmail_account_state",
+            "gmail_connection_state_invalid",
+        )?;
         match state {
             Some(state) => self.reconcile_gmail_account_state(store, &state),
             None => Ok(()),
@@ -142,26 +171,43 @@ impl VaultRuntime {
         self.inner
             .gmail_refresh_tokens
             .delete(&state.secret_storage_key)
-            .map_err(|_| RuntimeError::new(error_code))?;
+            .map_err(|error| {
+                store_failure(store, "gmail_refresh_token_delete", error_code, &error)
+            })?;
         store
             .mark_gmail_account_disconnected(&state.id, expected_status)
-            .map_err(|_| RuntimeError::new(error_code))
+            .map_store_error(store, "mark_gmail_account_disconnected", error_code)
     }
 
     fn save_verified_gmail_refresh_token(
         &self,
+        store: &ManualImportStore,
         secret_ref: &str,
         refresh_token: &[u8],
     ) -> Result<(), RuntimeError> {
         self.inner
             .gmail_refresh_tokens
             .save(secret_ref, refresh_token)
-            .map_err(|_| RuntimeError::new("gmail_connection_save_failed"))?;
+            .map_err(|error| {
+                store_failure(
+                    store,
+                    "gmail_refresh_token_save",
+                    "gmail_connection_save_failed",
+                    &error,
+                )
+            })?;
         let saved = self
             .inner
             .gmail_refresh_tokens
             .load(secret_ref)
-            .map_err(|_| RuntimeError::new("gmail_connection_save_failed"))?;
+            .map_err(|error| {
+                store_failure(
+                    store,
+                    "gmail_refresh_token_load",
+                    "gmail_connection_save_failed",
+                    &error,
+                )
+            })?;
         if saved.as_ref().map(|secret| secret.as_slice()) != Some(refresh_token) {
             return Err(RuntimeError::new("gmail_connection_save_failed"));
         }

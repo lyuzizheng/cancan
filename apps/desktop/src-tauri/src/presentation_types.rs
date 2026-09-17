@@ -34,6 +34,9 @@ fn generated_presentation_types() -> String {
         crate::runtime::SourceDocumentSummary::decl(&config),
         crate::runtime::StatementPasswordSourceSummary::decl(&config),
         crate::viewer::RenderedDocumentPage::decl(&config),
+        // Operational diagnostics.
+        crate::diagnostics::OperationalDiagnosticsCategory::decl(&config),
+        crate::diagnostics::OperationalDiagnosticsPreview::decl(&config),
         // Tasks.
         crate::runtime::TaskConsequence::decl(&config),
         crate::runtime::TaskDestination::decl(&config),
@@ -76,7 +79,16 @@ fn generated_presentation_types() -> String {
         crate::database::UndoOutcome::decl(&config),
         crate::database::UndoStatus::decl(&config),
     ]
-    .map(|declaration| format!("export {declaration}"));
+    .map(|declaration| {
+        // ts_rs wraps long object types with a trailing space at the break;
+        // the checked-in file carries no trailing whitespace.
+        let declaration = declaration
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("export {declaration}")
+    });
     format!(
         "// This file is generated from Rust wire types. Do not edit.\n\n{}\n",
         declarations.join("\n\n")
