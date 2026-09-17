@@ -13,6 +13,7 @@ import type {
   MoneyOverview,
   MoneySourceCandidateState,
   MoneySourceSummary,
+  OperationalDiagnosticsPreview,
   RecentActivitySummary,
   RelationshipCandidateSummary,
   ReviewItemDetail,
@@ -128,6 +129,21 @@ export const inboxEnabled: LocalInboxStatus = {
   enabled: true,
   inboxLabel: "Inbox",
   lastScan: null,
+};
+
+export const diagnosticsPreview: OperationalDiagnosticsPreview = {
+  appVersion: "0.1.0",
+  components: [{ count: 2, label: "runtime.documents" }],
+  entryCount: 2,
+  errorCodes: [{ count: 1, label: "import_failed" }],
+  exportLimit: 5000,
+  newestEntryAt: "2026-09-17T08:00:00Z",
+  oldestEntryAt: "2026-09-16T08:00:00Z",
+  retentionDays: 30,
+  sampleLines: [
+    "2026-09-16T08:00:00Z ERROR component=runtime.documents code=import_failed",
+    "2026-09-17T08:00:00Z INFO component=runtime.inbox",
+  ],
 };
 
 export const sourceConfirmationPrompt: SourceConfirmationPrompt = {
@@ -267,6 +283,9 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     localInboxStatus: vi.fn(async (): Promise<LocalInboxStatus> => inboxDisabled),
     lockVault: vi.fn(async (): Promise<VaultStatus> => "locked"),
     onVaultLocked: vi.fn(async () => () => undefined),
+    operationalDiagnosticsPreview: vi.fn(
+      async (): Promise<OperationalDiagnosticsPreview> => diagnosticsPreview,
+    ),
     parkSourceCandidate: vi.fn(
       async (): Promise<MoneySourceCandidateState> => ({
         candidateId: "candidate-1",
@@ -311,6 +330,7 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
     saveSourceDocumentCopy: vi.fn(async (): Promise<boolean> => false),
+    saveOperationalDiagnostics: vi.fn(async (): Promise<boolean> => true),
     trySavedStatementPassword: vi.fn(
       async (): Promise<SavedStatementPasswordResult> => "invalid",
     ),
@@ -351,14 +371,14 @@ export async function settle() {
   await Promise.resolve();
 }
 
-export async function mount(api: VaultApi, view?: "sources" | "review") {
+export async function mount(api: VaultApi, view?: "sources" | "review" | "settings") {
   await act(async () => {
     root.render(<App api={api} />);
     await settle();
   });
   if (view !== undefined) {
     await act(async () => {
-      navItem(view === "sources" ? "Sources" : "Review").click();
+      navItem(view === "sources" ? "Sources" : view === "review" ? "Review" : "Settings").click();
       await settle();
     });
   }

@@ -19,8 +19,10 @@ import { FocusedSourceConfirmationDialog } from "./source-confirmation";
 import { SourcesView } from "./sources-view";
 import { createTaskDestinationActions } from "./task-destination-actions";
 import { TasksView } from "./tasks-view";
+import { SettingsView } from "./settings-view";
 import { useAttention } from "./use-attention";
 import { useCommandCenter } from "./use-command-center";
+import { useDiagnostics } from "./use-diagnostics";
 import { useEvidenceOverlays } from "./use-evidence-overlays";
 import { useInbox } from "./use-inbox";
 import { useReviewQueue } from "./use-review-queue";
@@ -52,6 +54,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const documents = useVaultDocuments({ api, session });
   const review = useReviewQueue({ api, session, wiring });
   const inbox = useInbox({ api, session, wiring });
+  const diagnostics = useDiagnostics({ api, session });
   const attention = useAttention({
     api,
     loadDocuments: documents.loadDocuments,
@@ -75,6 +78,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       inbox.reset();
       attention.reset();
       overlays.reset();
+      diagnostics.reset();
       commandCenter.reset();
     },
   };
@@ -242,6 +246,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onStartEdit={review.startEdit}
             onToggleSelect={review.toggleSelection}
             selectedIds={review.selectedReviewIds}
+          />
+        ) : null}
+        {unlocked && activeView === "settings" ? (
+          <SettingsView
+            diagnostics={diagnostics}
+            notice={notice}
+            onLock={requestLock}
+            onRefresh={requestRefresh}
           />
         ) : null}
 

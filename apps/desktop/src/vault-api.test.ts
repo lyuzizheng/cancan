@@ -271,5 +271,11 @@ describe("Vault API", () => {
     expect(
       commandErrorMessage({ code: "invalid_source_confirmation_request" }),
     ).toBe("That money source confirmation isn’t valid.");
+    expect(commandErrorMessage({ code: "diagnostics_unavailable" })).toBe(
+      "CanCan couldn’t read the operational log. Try again.",
+    );
+    expect(commandErrorMessage({ code: "diagnostics_export_failed" })).toBe(
+      "CanCan couldn’t write the diagnostics file to that location.",
+    );
   });
 });

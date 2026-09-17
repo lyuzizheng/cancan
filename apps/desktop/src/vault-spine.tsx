@@ -10,7 +10,7 @@ import type { VaultStatus } from "./command-contracts";
 
 export type VaultScreenStatus = VaultStatus | "loading";
 
-export type AppView = "overview" | "sources" | "review" | "tasks";
+export type AppView = "overview" | "sources" | "review" | "tasks" | "settings";
 
 export interface VaultSpineProps {
   activeView: AppView;
@@ -85,7 +85,12 @@ export function VaultSpine(props: VaultSpineProps) {
             onNavigate={() => props.onNavigate("review")}
           />
           <UpcomingEntry icon="money-flow" label="Money Flow" />
-          <UpcomingEntry icon="settings" label="Settings" />
+          <NavEntry
+            active={props.activeView === "settings"}
+            icon="settings"
+            label="Settings"
+            onNavigate={() => props.onNavigate("settings")}
+          />
         </ul>
       </nav>
 
