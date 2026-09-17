@@ -59,6 +59,6 @@ When changing a decision:
 ```text
 1. Update the canonical spec.
 2. Update docs/agent/current-state.md if current implementation direction changes.
-3. Update docs/agent/progress-log.md.
+3. Add a dated entry to docs/agent/progress-log.md only when the change alters a product decision, implementation scope, or architecture assumption; otherwise the PR body is the record.
 4. Remove or rewrite conflicting temp notes.
 ```

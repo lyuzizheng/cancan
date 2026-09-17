@@ -135,7 +135,7 @@ Before adding a doc:
 2. Update the existing spec if the topic already exists.
 3. Add a new numbered spec only when the topic is genuinely new.
 4. Update specs/README.md and agent/current-state.md if the topic changes implementation direction.
-5. Record the change in agent/progress-log.md.
+5. Add a dated entry to agent/progress-log.md only when the change alters a product decision, implementation scope, or architecture assumption; otherwise the PR body is the record.
 6. Run `.agents/scripts/agent-preflight.sh`.
 7. Run the independent semantic gate for docs or harness changes.
 ```
