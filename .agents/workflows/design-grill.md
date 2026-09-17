@@ -18,7 +18,7 @@ Use this to continue product/design alignment.
 6. Record accepted decisions in `alignment-progress.md`.
 7. Move stable implementation guidance into the canonical spec.
 8. Remove or rewrite stale temp notes.
-9. Update `docs/agent/progress-log.md`.
+9. Add a dated entry to `docs/agent/progress-log.md` only when the change alters a product decision, implementation scope, or architecture assumption; otherwise the PR body is the record.
 10. Run the deterministic and independent semantic gates.
 
 ## Question Quality Bar
