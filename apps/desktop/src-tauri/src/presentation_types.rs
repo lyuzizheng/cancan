@@ -37,6 +37,9 @@ fn generated_presentation_types() -> String {
         // Operational diagnostics.
         crate::diagnostics::OperationalDiagnosticsCategory::decl(&config),
         crate::diagnostics::OperationalDiagnosticsPreview::decl(&config),
+        // Background intake notifications.
+        crate::runtime::IntakeNotificationPermission::decl(&config),
+        crate::runtime::IntakeNotificationSettings::decl(&config),
         // Tasks.
         crate::runtime::TaskConsequence::decl(&config),
         crate::runtime::TaskDestination::decl(&config),

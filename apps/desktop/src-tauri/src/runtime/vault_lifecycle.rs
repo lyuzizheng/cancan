@@ -9,11 +9,13 @@ enum RecoveryStatus {
 
 impl VaultRuntime {
     pub(crate) fn new(root: PathBuf) -> Self {
-        Self::with_secret_stores(
+        Self::with_all_secret_stores(
             root,
             Arc::new(KeychainRememberedKeyStore::production()),
             Arc::new(KeychainStatementPasswordStore::production()),
             Arc::new(KeychainLocalInboxBookmarkStore::production()),
+            Arc::new(KeychainGmailRefreshTokenStore::production()),
+            system_intake_notification_delivery(),
         )
     }
 
@@ -30,6 +32,7 @@ impl VaultRuntime {
         )
     }
 
+    #[cfg(test)]
     pub(super) fn with_secret_stores(
         root: PathBuf,
         remembered_keys: Arc<dyn RememberedKeyStore>,
@@ -42,6 +45,7 @@ impl VaultRuntime {
             statement_passwords,
             local_inbox_bookmarks,
             Arc::new(KeychainGmailRefreshTokenStore::production()),
+            system_intake_notification_delivery(),
         )
     }
 
@@ -51,11 +55,15 @@ impl VaultRuntime {
         statement_passwords: Arc<dyn StatementPasswordStore>,
         local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
         gmail_refresh_tokens: Arc<dyn GmailRefreshTokenStore>,
+        intake_notifications: Arc<dyn IntakeNotificationDelivery>,
     ) -> Self {
+        let intake_notifications_enabled = read_intake_notification_status(&root);
         let runtime = Self {
             inner: Arc::new(RuntimeInner {
                 document_passwords: Mutex::new(HashMap::new()),
                 gmail_refresh_tokens,
+                intake_notifications,
+                intake_notifications_enabled: AtomicBool::new(intake_notifications_enabled),
                 local_inbox_access: Mutex::new(None),
                 local_inbox_bookmark_cache: Mutex::new(LocalInboxBookmarkCache::Unloaded),
                 local_inbox_bookmarks,
@@ -64,6 +72,7 @@ impl VaultRuntime {
                 local_inbox_watcher: Mutex::new(None),
                 local_inbox_needs_attention: AtomicBool::new(false),
                 local_inbox_needs_reauthorization: AtomicBool::new(false),
+                pending_intake_route: Mutex::new(None),
                 remembered_keys,
                 root,
                 source_document_cache: Mutex::new(None),
@@ -573,7 +582,7 @@ where
         .map_err(VaultCommandError::from)?;
     resume_review_jobs_after_unlock(&app, runtime.clone()).await;
     resume_parse_document_jobs_after_unlock(&app, runtime.clone()).await;
-    resume_document_reconciliations_after_unlock(runtime.clone()).await;
+    resume_document_reconciliations_after_unlock(&app, runtime.clone()).await;
     resume_local_inbox_after_unlock(&app, runtime).await;
     Ok(status)
 }

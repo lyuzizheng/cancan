@@ -243,22 +243,38 @@ impl VaultRuntime {
     /// transaction. It runs wherever intake actually advances — after each
     /// pipeline pump pass and when the Vault opens, so completion stays
     /// monotonic and restart-reconciled.
-    pub(crate) fn seal_completed_intake_batches(&self) -> Result<(), RuntimeError> {
-        let mut store = self.store()?;
-        let store = store
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-        store.reconcile_sealed_batches().map_store_error(
-            store,
-            "reconcile_sealed_batches",
-            "seal_batches_failed",
-        )
+    ///
+    /// `window_visible` is the caller's answer to "is a CanCan window on screen
+    /// right now". A visible window already shows the batch, so a meaningful
+    /// batch completes as `suppressed` instead of leaving a notification that
+    /// would arrive for a result the user just watched land. When the batch is
+    /// eligible, the notifications it owes are delivered before returning.
+    pub(crate) fn seal_completed_intake_batches(
+        &self,
+        window_visible: bool,
+    ) -> Result<(), RuntimeError> {
+        let eligible = !window_visible && self.intake_notification_eligible();
+        {
+            let mut store = self.store()?;
+            let store = store
+                .as_mut()
+                .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+            store.reconcile_sealed_batches(eligible).map_store_error(
+                store,
+                "reconcile_sealed_batches",
+                "seal_batches_failed",
+            )?;
+        }
+        if eligible {
+            self.deliver_pending_intake_notifications()?;
+        }
+        Ok(())
     }
 }
 
 /// Lower value = more urgent. NeedsAction beats InProgress beats
 /// RecentlyCompleted beats Parked.
-fn task_row_urgency(row: &TaskRow) -> u8 {
+pub(super) fn task_row_urgency(row: &TaskRow) -> u8 {
     match row.group {
         TaskGroup::NeedsAction => 0,
         TaskGroup::InProgress => 1,
@@ -267,7 +283,7 @@ fn task_row_urgency(row: &TaskRow) -> u8 {
     }
 }
 
-fn raw_task_to_row(raw: RawTask) -> TaskRow {
+pub(super) fn raw_task_to_row(raw: RawTask) -> TaskRow {
     let (row_key, group, consequence, destination) = match raw.kind {
         RawTaskKind::Processing { document_id } => (
             format!("task:document:{document_id}"),

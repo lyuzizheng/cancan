@@ -563,11 +563,12 @@ pub(super) async fn process_queued_local_inbox_parses(
             }
         }
     }
-    process_queued_document_reconciliations(runtime).await?;
+    process_queued_document_reconciliations(app, runtime).await?;
     Ok(())
 }
 
 pub(super) async fn process_queued_document_reconciliations(
+    app: &AppHandle,
     runtime: VaultRuntime,
 ) -> Result<(), VaultCommandError> {
     let document_ids = {
@@ -613,10 +614,15 @@ pub(super) async fn process_queued_document_reconciliations(
     }
     // The pipeline just advanced, so this is the write side of the Tasks
     // projection: batches whose items reached a terminal state complete here.
-    // The Tasks read command itself stays a pure read.
-    tauri::async_runtime::spawn_blocking(move || runtime.seal_completed_intake_batches())
-        .await
-        .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
+    // The Tasks read command itself stays a pure read. A visible window has
+    // already shown this pass's results, so it completes them without a
+    // notification; a closed one lets the batch stay deliverable.
+    let window_visible = main_window_is_visible(app);
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.seal_completed_intake_batches(window_visible)
+    })
+    .await
+    .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
     Ok(())
 }
 
@@ -641,8 +647,11 @@ pub(super) async fn resume_parse_document_jobs_after_unlock(
     schedule_queued_local_inbox_parses(app.clone(), runtime);
 }
 
-pub(super) async fn resume_document_reconciliations_after_unlock(runtime: VaultRuntime) {
-    let _ = process_queued_document_reconciliations(runtime).await;
+pub(super) async fn resume_document_reconciliations_after_unlock(
+    app: &AppHandle,
+    runtime: VaultRuntime,
+) {
+    let _ = process_queued_document_reconciliations(app, runtime).await;
 }
 
 #[tauri::command]

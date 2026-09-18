@@ -453,6 +453,8 @@ pub(crate) struct VaultRuntime {
 struct RuntimeInner {
     document_passwords: Mutex<DocumentPasswordSessions>,
     gmail_refresh_tokens: Arc<dyn GmailRefreshTokenStore>,
+    intake_notifications: Arc<dyn IntakeNotificationDelivery>,
+    intake_notifications_enabled: AtomicBool,
     local_inbox_access: Mutex<Option<AuthorizedRoot>>,
     local_inbox_bookmark_cache: Mutex<LocalInboxBookmarkCache>,
     local_inbox_bookmarks: Arc<dyn LocalInboxBookmarkStore>,
@@ -461,6 +463,9 @@ struct RuntimeInner {
     local_inbox_watcher: Mutex<Option<notify::RecommendedWatcher>>,
     local_inbox_needs_attention: AtomicBool,
     local_inbox_needs_reauthorization: AtomicBool,
+    /// The batch a notification click asked to open, until the renderer pulls
+    /// it. Set from the click (any thread), taken on the command thread.
+    pending_intake_route: Mutex<Option<String>>,
     remembered_keys: Arc<dyn RememberedKeyStore>,
     root: PathBuf,
     source_document_cache: Mutex<Option<CachedSourceDocument>>,
@@ -526,6 +531,11 @@ mod keyring;
 #[cfg(test)]
 mod keyring_tests;
 mod lifecycle;
+mod notifications;
+#[cfg(target_os = "macos")]
+mod notifications_macos;
+#[cfg(test)]
+mod notifications_tests;
 #[cfg(test)]
 mod remembered_key_tests;
 mod review;
@@ -557,6 +567,7 @@ pub(crate) use error::*;
 pub(crate) use inbox::*;
 use keyring::*;
 pub(crate) use lifecycle::*;
+pub(crate) use notifications::*;
 pub(crate) use review::*;
 pub(crate) use review_records::*;
 use sidecar::*;

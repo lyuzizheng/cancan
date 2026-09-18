@@ -1,5 +1,5 @@
 import { AppShell, LedgerColumn, LedgerRegion } from "@cancan/ui";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   AccountConfirmationPrompt,
@@ -26,6 +26,7 @@ import { useCommandCenter } from "./use-command-center";
 import { useDiagnostics } from "./use-diagnostics";
 import { useEvidenceOverlays } from "./use-evidence-overlays";
 import { useInbox } from "./use-inbox";
+import { useIntakeNotifications } from "./use-intake-notifications";
 import { useReviewQueue } from "./use-review-queue";
 import { useVaultDocuments } from "./use-vault-documents";
 import { useVaultSession } from "./use-vault-session";
@@ -56,6 +57,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const review = useReviewQueue({ api, session, wiring });
   const inbox = useInbox({ api, session, wiring });
   const diagnostics = useDiagnostics({ api, session });
+  const notifications = useIntakeNotifications({ api, session });
   const attention = useAttention({
     api,
     loadDocuments: documents.loadDocuments,
@@ -80,6 +82,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
       attention.reset();
       overlays.reset();
       diagnostics.reset();
+      notifications.reset();
       commandCenter.reset();
     },
   };
@@ -147,6 +150,31 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     || overlays.unlockingDocument !== null || attention.focusedCandidateId !== null
     || documents.confirmingDelete !== null;
   const unlocked = status === "unlocked";
+  const { setTasksFilter } = commandCenter;
+  const { takeRoute } = notifications;
+
+  // A menu-bar or notification click asked for this window; it left the batch's
+  // Tasks row behind for the renderer to open. The route is pulled once the
+  // session can answer and is consumed host-side, so a stale rebuild cannot
+  // replay it. Landing on the row's group shows the row in the full route
+  // instead of an empty filter.
+  useEffect(() => {
+    if (!unlocked) {
+      return;
+    }
+    let active = true;
+    void takeRoute().then((row) => {
+      if (!active || row === null) {
+        return;
+      }
+      setTasksFilter(row.group);
+      navigate("tasks");
+    });
+    return () => {
+      active = false;
+    };
+  }, [navigate, setTasksFilter, takeRoute, unlocked]);
+
   const existingSources = useMemo(
     () => documents.sourceDocuments.map((entry) => entry.source),
     [documents.sourceDocuments],
@@ -263,6 +291,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         {unlocked && activeView === "settings" ? (
           <SettingsView
             diagnostics={diagnostics}
+            notifications={notifications}
             notice={notice}
             onLock={requestLock}
             onRefresh={requestRefresh}

@@ -32,6 +32,8 @@ export type {
   ConfirmSourceCandidateRequest,
   DecideCandidateAccountsRequest,
   DuplicateCommittedVersionAuditRow,
+  IntakeNotificationPermission,
+  IntakeNotificationSettings,
   LocalInboxAccessState,
   LocalInboxScanSummary,
   LocalInboxStatus,
@@ -121,6 +123,8 @@ export type ParkSourceCandidateArgs = {
 export type ListSourceDocumentsArgs = { moneySourceId: string };
 
 export type ListTasksArgs = { filter: TaskFilter };
+
+export type SetIntakeNotificationsEnabledArgs = { enabled: boolean };
 
 export type ReviewItemIdArgs = { reviewItemId: string };
 

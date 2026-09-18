@@ -515,7 +515,11 @@ impl ManualImportStore {
         store.recover_expired_jobs()?;
         store.recover_interrupted_parse_document_jobs()?;
         store.recover_interrupted_review_jobs()?;
-        store.reconcile_sealed_batches()?;
+        // Opening the Vault means the user is in the app watching it come up,
+        // so a batch that completed while CanCan was not running completes as
+        // suppressed: there is no earlier moment it could have been delivered,
+        // and notifying now would announce a result the user is looking at.
+        store.reconcile_sealed_batches(false)?;
         // Spec 0015 retention: the operational log never outlives its window.
         // Best-effort, like every other log write: a Vault whose log table is
         // unreadable still opens, because a diagnostic is not worth locking the

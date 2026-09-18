@@ -11,30 +11,41 @@ import type {
   OperationalDiagnosticsPreview,
 } from "./command-contracts";
 import { Feedback, type Notice } from "./feedback";
+import type { IntakeNotifications } from "./use-intake-notifications";
 import type { Diagnostics } from "./use-diagnostics";
 
 export interface SettingsViewProps {
   diagnostics: Diagnostics;
+  notifications: IntakeNotifications;
   onLock: () => void;
   notice: Notice | null;
   onRefresh: () => void;
 }
 
 /**
- * Settings route — today it owns the operational-log export. The preview the
- * host returns is the export's own redacted content, so the panel renders
- * `sampleLines` verbatim and never re-processes them.
+ * Settings route — today it owns the operational-log export and the opt-in
+ * background intake notifications. The preview the host returns is the export's
+ * own redacted content, so the panel renders `sampleLines` verbatim and never
+ * re-processes them.
  */
 export function SettingsView(props: SettingsViewProps) {
-  const { diagnostics } = props;
+  const { diagnostics, notifications } = props;
   const preview = diagnostics.preview;
+  const denied = notifications.settings?.enabled === true
+    && notifications.settings.permission === "denied";
 
   return (
     <>
       <LedgerHeader
         actions={(
           <>
-            <Button onClick={props.onRefresh} variant="quiet">
+            <Button
+              onClick={() => {
+                props.onRefresh();
+                notifications.load();
+              }}
+              variant="quiet"
+            >
               Refresh
             </Button>
             <Button onClick={props.onLock} variant="quiet">
@@ -48,6 +59,61 @@ export function SettingsView(props: SettingsViewProps) {
 
       <div className="grid gap-10 pt-6">
         {props.notice ? <Feedback {...props.notice} /> : null}
+
+        <section aria-label="Background intake notifications">
+          <SectionHeader
+            tone={denied ? "attention" : "healthy"}
+            title="Background intake notifications"
+          />
+          <div className="mt-2 border-t border-ledger-rule">
+            <p className="pt-3 text-sm text-ledger-text-muted">
+              With the window closed, CanCan can post one short notification
+              after a batch of new files finishes — how many it processed and
+              how many need your attention. The banner holds nothing else: no
+              file names, no amounts, no accounts. Off by default, and turning
+              it on is the only moment CanCan asks macOS for permission.
+            </p>
+
+            <label className="mt-3 flex w-fit cursor-pointer items-center gap-2 text-sm text-ledger-ink">
+              <input
+                checked={notifications.settings?.enabled === true}
+                className="size-3.5 accent-accent-go-deep"
+                disabled={notifications.busy || notifications.settings === null}
+                onChange={(event) => notifications.setEnabled(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Background intake notifications</span>
+            </label>
+
+            {denied ? (
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <p className="text-sm text-ledger-text-muted">
+                  Notifications blocked by macOS. Background intake still runs
+                  and nothing is posted until you allow notifications for CanCan.
+                </p>
+                <Button
+                  disabled={notifications.busy}
+                  onClick={notifications.openSystemSettings}
+                  size="sm"
+                  variant="quiet"
+                >
+                  Open System Settings
+                </Button>
+              </div>
+            ) : null}
+
+            {notifications.error !== null ? (
+              <div className="pt-3">
+                <Feedback
+                  action={notifications.busy ? undefined : notifications.retry}
+                  body={notifications.error}
+                  title="Background intake notifications"
+                  tone="attention"
+                />
+              </div>
+            ) : null}
+          </div>
+        </section>
 
         <section aria-label="Operational log">
           <SectionHeader

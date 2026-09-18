@@ -137,3 +137,102 @@ impl LocalInboxBookmarkStore for MemoryLocalInboxBookmarkStore {
         Ok(())
     }
 }
+
+/// Records what would reach the user's Notification Center, so the
+/// delivery-eligibility rules are asserted without touching the system
+/// notification center.
+pub(super) struct RecordingIntakeNotificationDelivery {
+    permission: Mutex<IntakeNotificationPermission>,
+    permission_requests: std::sync::atomic::AtomicUsize,
+    failed_deliveries: std::sync::atomic::AtomicUsize,
+    delivered: Mutex<Vec<(String, String, String)>>,
+}
+
+impl RecordingIntakeNotificationDelivery {
+    pub(super) fn new(permission: IntakeNotificationPermission) -> Self {
+        Self {
+            permission: Mutex::new(permission),
+            permission_requests: std::sync::atomic::AtomicUsize::new(0),
+            failed_deliveries: std::sync::atomic::AtomicUsize::new(0),
+            delivered: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Refuses the next `count` deliveries, the way a notification center that
+    /// cannot accept the request would.
+    pub(super) fn fail_next_deliveries(&self, count: usize) {
+        self.failed_deliveries
+            .store(count, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(super) fn permission_requests(&self) -> usize {
+        self.permission_requests
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// The delivered `(identifier, title, body)` of every accepted request.
+    pub(super) fn delivered(&self) -> Vec<(String, String, String)> {
+        self.delivered
+            .lock()
+            .expect("delivery recorder lock")
+            .clone()
+    }
+}
+
+impl IntakeNotificationDelivery for RecordingIntakeNotificationDelivery {
+    fn permission(&self) -> IntakeNotificationPermission {
+        *self.permission.lock().expect("permission lock")
+    }
+
+    fn request_permission(&self) -> IntakeNotificationPermission {
+        self.permission_requests
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let mut permission = self.permission.lock().expect("permission lock");
+        if *permission == IntakeNotificationPermission::NotDetermined {
+            // The system asks the user once; the recorder answers the way an
+            // accepted prompt would.
+            *permission = IntakeNotificationPermission::Authorized;
+        }
+        *permission
+    }
+
+    fn deliver(&self, notification: &IntakeNotification) -> Result<(), RuntimeError> {
+        if self
+            .failed_deliveries
+            .fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |remaining| remaining.checked_sub(1),
+            )
+            .is_ok()
+        {
+            return Err(RuntimeError::new("intake_notification_test_refused"));
+        }
+        self.delivered
+            .lock()
+            .expect("delivery recorder lock")
+            .push((
+                notification.identifier.clone(),
+                notification.title.clone(),
+                notification.body.clone(),
+            ));
+        Ok(())
+    }
+}
+
+/// A Vault whose notification delivery is a recorder instead of the system.
+/// The Vault itself is left uncreated, so a test can either create it or open
+/// an existing one.
+pub(super) fn notification_runtime(
+    root: &Path,
+    delivery: Arc<RecordingIntakeNotificationDelivery>,
+) -> VaultRuntime {
+    VaultRuntime::with_all_secret_stores(
+        root.to_path_buf(),
+        Arc::new(MemoryRememberedKeyStore::default()),
+        Arc::new(MemoryStatementPasswordStore::default()),
+        Arc::new(MemoryLocalInboxBookmarkStore::default()),
+        Arc::new(KeychainGmailRefreshTokenStore::production()),
+        delivery,
+    )
+}

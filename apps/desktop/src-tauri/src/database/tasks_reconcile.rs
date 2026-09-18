@@ -1,8 +1,29 @@
 use super::tasks::DownstreamState;
 use super::*;
 
+/// One completed batch whose redacted notification has not been delivered yet.
+pub(crate) struct PendingIntakeNotification {
+    pub(crate) batch_id: String,
+    /// Items that reached a user-visible outcome, split by what the user owes.
+    /// Items that ended silently (a discovery retry, a parked rejection, a
+    /// declined restore) are in neither count: they own no Tasks row either.
+    pub(crate) ready: usize,
+    pub(crate) needs_action: usize,
+}
+
 impl ManualImportStore {
-    pub(crate) fn reconcile_sealed_batches(&mut self) -> StoreResult<()> {
+    /// Completes sealed batches and decides their notification state.
+    ///
+    /// `notification_eligible` is the host's answer to "would a system
+    /// notification be delivered right now" — the opt-in toggle is on, macOS
+    /// authorized it, and no CanCan window is visible. A completed batch that
+    /// is user-meaningful but not eligible is `suppressed`: nothing will ever
+    /// be delivered for it, so the monotonic state machine can retire it
+    /// instead of leaving a stale `pending` row for a later burst.
+    pub(crate) fn reconcile_sealed_batches(
+        &mut self,
+        notification_eligible: bool,
+    ) -> StoreResult<()> {
         let batch_ids: Vec<String> = self
             .connection
             .prepare("SELECT id FROM intake_batches WHERE completed_at IS NULL")?
@@ -24,77 +45,12 @@ impl ManualImportStore {
                 continue;
             }
 
-            let mut statement = transaction.prepare(
-                "SELECT i.capture_outcome, i.source_document_id, i.rejection_kind, \
-                        i.rejection_parked_at, b.acquisition_channel, i.id, \
-                        sd.id, sd.money_source_id, sd.money_source_candidate_id, \
-                        sd.attention_parked_reason, \
-                        EXISTS(SELECT 1 FROM jobs \
-                               WHERE related_source_document_id = sd.id \
-                                 AND job_type IN ('parse_document', 'reconcile_document') \
-                                 AND status IN ('queued', 'running')), \
-                        (SELECT status FROM money_source_candidates \
-                          WHERE id = sd.money_source_candidate_id), \
-                        (SELECT blocked_reason FROM jobs \
-                          WHERE related_source_document_id = sd.id \
-                            AND job_type = 'parse_document' \
-                          ORDER BY created_at DESC, rowid DESC LIMIT 1), \
-                        EXISTS(SELECT 1 FROM review_items ri \
-                               JOIN external_records er ON er.id = ri.external_record_id \
-                               WHERE er.source_document_id = sd.id \
-                                 AND ri.status = 'open' \
-                                 AND er.status IN ('staged', 'review')), \
-                        EXISTS(SELECT 1 FROM source_documents ready \
-                               WHERE ready.id = sd.id \
-                                 AND ready.file_state = 'available' \
-                                 AND ready.money_source_id IS NOT NULL \
-                                 AND ready.money_source_candidate_id IS NULL \
-                                 AND ready.attention_parked_reason IS NULL \
-                                 AND EXISTS(SELECT 1 FROM jobs \
-                                            WHERE related_source_document_id = ready.id \
-                                              AND job_type = 'reconcile_document' \
-                                              AND status = 'succeeded') \
-                                 AND NOT EXISTS(SELECT 1 FROM jobs \
-                                                WHERE related_source_document_id = ready.id \
-                                                  AND job_type IN ('parse_document', 'reconcile_document') \
-                                                  AND status != 'succeeded') \
-                                 AND NOT EXISTS(SELECT 1 FROM review_items ri \
-                                                JOIN external_records er ON er.id = ri.external_record_id \
-                                                WHERE er.source_document_id = ready.id \
-                                                  AND ri.status = 'open' \
-                                                  AND er.status IN ('staged', 'review'))) \
-                 FROM intake_batch_items i \
-                 JOIN intake_batches b ON b.id = i.intake_batch_id \
-                 LEFT JOIN source_documents sd ON sd.id = i.source_document_id \
-                 WHERE i.intake_batch_id = ?1",
-            )?;
-            let items = statement
-                .query_map([&batch_id], |row| {
-                    Ok(BatchItem {
-                        capture_outcome: row.get(0)?,
-                        source_document_id: row.get(1)?,
-                        rejection_kind: row.get(2)?,
-                        rejection_parked_at: row.get(3)?,
-                        acquisition_channel: row.get(4)?,
-                        item_id: row.get(5)?,
-                        document_row_id: row.get(6)?,
-                        money_source_id: row.get(7)?,
-                        money_source_candidate_id: row.get(8)?,
-                        attention_parked_reason: row.get(9)?,
-                        active_pipeline: row.get(10)?,
-                        candidate_status: row.get(11)?,
-                        latest_parse_blocked: row.get(12)?,
-                        has_open_review: row.get(13)?,
-                        document_is_ready: row.get(14)?,
-                    })
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
-            drop(statement);
+            let items = load_batch_items(&transaction, &batch_id)?;
 
             let mut all_terminal = true;
             let mut any_user_meaningful = false;
 
-            for item in items {
+            for item in &items {
                 if item.capture_outcome == "pending" {
                     all_terminal = false;
                     break;
@@ -140,7 +96,7 @@ impl ManualImportStore {
             }
 
             if all_terminal {
-                let notification_state = if any_user_meaningful {
+                let notification_state = if any_user_meaningful && notification_eligible {
                     "pending"
                 } else {
                     "suppressed"
@@ -160,6 +116,165 @@ impl ManualImportStore {
         Ok(())
     }
 
+    /// Completed batches whose redacted notification is still owed, in
+    /// completion order.
+    pub(crate) fn pending_intake_notifications(
+        &self,
+    ) -> StoreResult<Vec<PendingIntakeNotification>> {
+        let batch_ids: Vec<String> = self
+            .connection
+            .prepare(
+                "SELECT id FROM intake_batches \
+                 WHERE completed_at IS NOT NULL AND notification_state = 'pending' \
+                 ORDER BY completed_at, id",
+            )?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let declined_restore_item_ids = self.restore_declined_item_ids()?;
+        let mut pending = Vec::with_capacity(batch_ids.len());
+        for batch_id in batch_ids {
+            let items = load_batch_items(&self.connection, &batch_id)?;
+            let (ready, needs_action) = notification_counts(&items, &declined_restore_item_ids);
+            pending.push(PendingIntakeNotification {
+                batch_id,
+                ready,
+                needs_action,
+            });
+        }
+        Ok(pending)
+    }
+
+    /// Retires one delivered batch notification. The database only allows
+    /// `pending` to become `emitted`, so a repeat call cannot duplicate it.
+    pub(crate) fn mark_intake_notification_emitted(&mut self, batch_id: &str) -> StoreResult<()> {
+        self.connection.execute(
+            "UPDATE intake_batches \
+             SET notification_state = 'emitted', \
+                 notification_emitted_at = CURRENT_TIMESTAMP \
+             WHERE id = ?1 AND notification_state = 'pending'",
+            [batch_id],
+        )?;
+        Ok(())
+    }
+}
+
+/// What one batch's items owe the user, counted for the redacted summary.
+fn notification_counts(
+    items: &[BatchItem],
+    declined_restore_item_ids: &HashSet<String>,
+) -> (usize, usize) {
+    let mut ready = 0;
+    let mut needs_action = 0;
+    for item in items {
+        match item.capture_outcome.as_str() {
+            "captured" => match item.downstream_state() {
+                DownstreamState::Ready => ready += 1,
+                DownstreamState::Actionable => needs_action += 1,
+                // Parked statement password or kept-unassigned evidence: the
+                // user already parked it, and it owes nothing on this receipt.
+                DownstreamState::Other => {}
+            },
+            "restore_confirmation_required" => {
+                if declined_restore_item_ids.contains(&item.item_id) {
+                    ready += 1;
+                } else {
+                    needs_action += 1;
+                }
+            }
+            "already_present" | "rejected" => {
+                let parked_rejection =
+                    item.acquisition_channel == "local_inbox" && item.rejection_parked_at.is_some();
+                if item.capture_outcome == "already_present"
+                    || item.rejection_kind.as_deref() == Some("visible_receipt")
+                {
+                    ready += 1;
+                } else if !parked_rejection {
+                    needs_action += 1;
+                }
+            }
+            // A restart-suppressed item retries later without a user-visible
+            // outcome, so it contributes to neither count.
+            _ => {}
+        }
+    }
+    (ready, needs_action)
+}
+
+/// One batch's items plus their documents' terminal state, read in one
+/// statement. Used by batch completion and by notification summaries so the
+/// two never disagree about what an item's outcome means.
+fn load_batch_items(connection: &Connection, batch_id: &str) -> StoreResult<Vec<BatchItem>> {
+    let mut statement = connection.prepare(
+                "SELECT i.capture_outcome, i.source_document_id, i.rejection_kind, \
+                        i.rejection_parked_at, b.acquisition_channel, i.id, \
+                        sd.id, sd.money_source_id, sd.money_source_candidate_id, \
+                        sd.attention_parked_reason, \
+                        EXISTS(SELECT 1 FROM jobs \
+                               WHERE related_source_document_id = sd.id \
+                                 AND job_type IN ('parse_document', 'reconcile_document') \
+                                 AND status IN ('queued', 'running')), \
+                        (SELECT status FROM money_source_candidates \
+                          WHERE id = sd.money_source_candidate_id), \
+                        (SELECT blocked_reason FROM jobs \
+                          WHERE related_source_document_id = sd.id \
+                            AND job_type = 'parse_document' \
+                          ORDER BY created_at DESC, rowid DESC LIMIT 1), \
+                        EXISTS(SELECT 1 FROM review_items ri \
+                               JOIN external_records er ON er.id = ri.external_record_id \
+                               WHERE er.source_document_id = sd.id \
+                                 AND ri.status = 'open' \
+                                 AND er.status IN ('staged', 'review')), \
+                        EXISTS(SELECT 1 FROM source_documents ready \
+                               WHERE ready.id = sd.id \
+                                 AND ready.file_state = 'available' \
+                                 AND ready.money_source_id IS NOT NULL \
+                                 AND ready.money_source_candidate_id IS NULL \
+                                 AND ready.attention_parked_reason IS NULL \
+                                 AND EXISTS(SELECT 1 FROM jobs \
+                                            WHERE related_source_document_id = ready.id \
+                                              AND job_type = 'reconcile_document' \
+                                              AND status = 'succeeded') \
+                                 AND NOT EXISTS(SELECT 1 FROM jobs \
+                                                WHERE related_source_document_id = ready.id \
+                                                  AND job_type IN ('parse_document', 'reconcile_document') \
+                                                  AND status != 'succeeded') \
+                                 AND NOT EXISTS(SELECT 1 FROM review_items ri \
+                                                JOIN external_records er ON er.id = ri.external_record_id \
+                                                WHERE er.source_document_id = ready.id \
+                                                  AND ri.status = 'open' \
+                                                  AND er.status IN ('staged', 'review'))) \
+                 FROM intake_batch_items i \
+                 JOIN intake_batches b ON b.id = i.intake_batch_id \
+                 LEFT JOIN source_documents sd ON sd.id = i.source_document_id \
+                 WHERE i.intake_batch_id = ?1",
+            )?;
+    let items = statement
+        .query_map([batch_id], |row| {
+            Ok(BatchItem {
+                capture_outcome: row.get(0)?,
+                source_document_id: row.get(1)?,
+                rejection_kind: row.get(2)?,
+                rejection_parked_at: row.get(3)?,
+                acquisition_channel: row.get(4)?,
+                item_id: row.get(5)?,
+                document_row_id: row.get(6)?,
+                money_source_id: row.get(7)?,
+                money_source_candidate_id: row.get(8)?,
+                attention_parked_reason: row.get(9)?,
+                active_pipeline: row.get(10)?,
+                candidate_status: row.get(11)?,
+                latest_parse_blocked: row.get(12)?,
+                has_open_review: row.get(13)?,
+                document_is_ready: row.get(14)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    Ok(items)
+}
+
+impl ManualImportStore {
     pub(crate) fn reconcile_files(&mut self) -> StoreResult<()> {
         let documents = {
             let mut statement = self.connection.prepare(
