@@ -75,6 +75,14 @@ impl SidecarExchange {
     }
 }
 
+/// How a sidecar process stopped, for the record a failed run leaves.
+pub(super) fn exit_reason(code: Option<i32>) -> String {
+    match code {
+        Some(code) => format!("exited with status {code}"),
+        None => "was terminated by a signal".to_owned(),
+    }
+}
+
 /// The last non-empty line a sidecar wrote to stderr, bounded so a runaway log
 /// cannot dominate the record.
 ///

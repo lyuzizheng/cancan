@@ -4,6 +4,21 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-09-18
+
+### Completed
+
+- Closed the BRAWUKA-356 findings that PR #148's review left in the operational-log boundary. `redact` now covers two shapes that used to travel verbatim: a dot-separated opaque token of three or more base64url segments with at least one long mixed segment (a JWT) becomes `<token>`, and a national-ID-style identifier — one letter, seven to nine digits, one letter, as in `S1234567A` — becomes `<id>`. The thresholds match `is_opaque_identifier`'s, and dotted version and host text (`1.2.3`, `docs.example.com`) stays readable, so the export does not become useless in the name of safety.
+- `reconcile_job_failure_context` now reads under the same claim as the update it feeds: `status = 'running' AND lease_owner = RECONCILE_DOCUMENT_LEASE_OWNER`, ordered by `created_at DESC, id DESC`. A superseded run of the same document can no longer contribute its attempt count and related ids to a newer failure's `error_json`. The lease owner is one constant (`RECONCILE_DOCUMENT_LEASE_OWNER`) used by the claim, the completion, and the failure writer, so the three can no longer drift apart.
+- `purge_expired_operational_logs` is best-effort on Vault open: a log table that cannot be read reports to stderr and the Vault still opens. Retention is a diagnostic; it is not a reason to lock the user out of their evidence.
+- The Gmail authorization flow (spec 0003, test-only until onboarding wires the command) no longer drops the reason for a failed step. Every failure exit — loopback bind/non-blocking/local-addr, sidecar resolve and spawn, host writes, the callback read and its request parsing, message read/parse/oversize, unexpected protocol messages, and the connector's own reported code — attaches a `JobFailureDetail`: real error objects keep their class (`io`/transport, `retryable` for timeouts and broken pipes), protocol violations carry an observed reason, and the `matches!` rejections that used to collapse to a bare code now say what was out of order. The boundary that owns the run writes exactly one entry under `gmail.authorization` through the new `log_boundary_failure`, which `log_released_failure` now shares, so a guard-holding scope and a plain flow log through one code path. `exit_reason` moved from `runtime/sidecar.rs` to `runtime/sidecar_failure.rs` so both sidecar protocols phrase an early exit identically. Renderer-visible codes, the claim SQL, and the protocol itself are unchanged.
+- Four regression tests, each verified to fail against the pre-fix code: dotted-token and NRIC redaction with the version/host negative cases; the reconcile context picks the running job while the superseded row keeps its own `error_json`; a Vault whose `operational_logs` table is gone still opens and serves the financial tables; and a failed authorization step leaves exactly one redacted `gmail.authorization` entry (kind `io`, the real message). `loopback_wait_is_bounded` now also pins that the timeout reason and its retryability travel with the static code.
+- Gates: `cargo test --locked` (245 passed, 1 ignored), `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `pnpm check:file-size`, `pnpm verify:fast` (typecheck, 372 unit tests, build:web, website build+check), `.agents/scripts/agent-preflight.sh` — pass. `pnpm verify`'s native half still stops at `build:sidecar` in this environment (the local Node build has SEA disabled), so the Rust gates ran directly with `--locked` against placeholder `binaries/` entries.
+
+### Next
+
+- BRAWUKA-357 stays behind this PR's merge: it works the same 0015 error model, and running it concurrently would edit the `operational_logs` and job-failure paths this change just touched.
+
 ## 2026-09-17
 
 ### Completed

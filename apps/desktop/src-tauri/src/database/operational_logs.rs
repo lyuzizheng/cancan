@@ -123,6 +123,11 @@ impl ManualImportStore {
 
     /// The job context behind a failure, keyed by the document and job type the
     /// reconcile writer updates.
+    ///
+    /// The read carries the same claim filter as the update it feeds — the job
+    /// is running under [`RECONCILE_DOCUMENT_LEASE_OWNER`] — so a superseded run
+    /// of the same document cannot contribute its attempt count and related ids
+    /// to a newer failure's `error_json`.
     pub(super) fn reconcile_job_failure_context(
         &self,
         document_id: &str,
@@ -132,9 +137,15 @@ impl ManualImportStore {
             .query_row(
                 &format!(
                     "SELECT {JOB_FAILURE_COLUMNS} FROM jobs \
-                     WHERE related_source_document_id = ?1 AND job_type = ?2"
+                     WHERE related_source_document_id = ?1 AND job_type = ?2 \
+                       AND status = 'running' AND lease_owner = ?3 \
+                     ORDER BY created_at DESC, id DESC LIMIT 1"
                 ),
-                params![document_id, RECONCILE_DOCUMENT_JOB_TYPE],
+                params![
+                    document_id,
+                    RECONCILE_DOCUMENT_JOB_TYPE,
+                    RECONCILE_DOCUMENT_LEASE_OWNER
+                ],
                 job_failure_context_from_row,
             )
             .optional()?)

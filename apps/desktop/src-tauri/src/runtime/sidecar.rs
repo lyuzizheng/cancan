@@ -217,14 +217,6 @@ async fn run_sidecar_exchange<T: DeserializeOwned>(
     }
 }
 
-/// How a sidecar process stopped, for the record a failed run leaves.
-fn exit_reason(code: Option<i32>) -> String {
-    match code {
-        Some(code) => format!("exited with status {code}"),
-        None => "was terminated by a signal".to_owned(),
-    }
-}
-
 pub(super) fn is_unique_requested_relationship_candidate(
     candidates: &[CoreCandidate],
     candidate_record_id: &str,

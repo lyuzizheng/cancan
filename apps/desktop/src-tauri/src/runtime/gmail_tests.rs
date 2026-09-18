@@ -1,3 +1,4 @@
+use super::gmail_connector::{GMAIL_AUTHORIZATION_COMPONENT, gmail_transport_failure};
 use super::test_support::{
     MemoryLocalInboxBookmarkStore, MemoryRememberedKeyStore, MemoryStatementPasswordStore,
     poisoned_keychain_lock,
@@ -338,5 +339,47 @@ fn production_gmail_refresh_token_store_replaces_and_removes_secret() {
             .load(&secret_ref)
             .expect("load deleted Gmail refresh token")
             .is_none()
+    );
+}
+
+#[test]
+fn a_failed_authorization_step_records_one_redacted_entry() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let tokens = Arc::new(MemoryGmailRefreshTokenStore::default());
+    let runtime = gmail_runtime(&parent.path().join("vault"), tokens);
+
+    // A real transport error: before this channel existed the reason was
+    // dropped and the log only ever saw the static code.
+    let error = gmail_transport_failure(
+        "gmail_authorization_unavailable",
+        &io::Error::new(
+            io::ErrorKind::AddrInUse,
+            "the loopback port was already in use",
+        ),
+    );
+    assert_eq!(error.code(), "gmail_authorization_unavailable");
+    log_boundary_failure(&runtime, GMAIL_AUTHORIZATION_COMPONENT, &error);
+
+    let preview = runtime
+        .operational_diagnostics_preview()
+        .expect("preview recorded failures");
+    assert_eq!(preview.entry_count, 1, "one failed run leaves one entry");
+    assert!(
+        preview
+            .components
+            .iter()
+            .any(|category| category.label == "gmail.authorization"),
+        "{:?}",
+        preview.components
+    );
+    let lines = preview.sample_lines.join("\n");
+    assert!(
+        lines.contains("code=gmail_authorization_unavailable"),
+        "{lines}"
+    );
+    assert!(lines.contains("kind=io"), "{lines}");
+    assert!(
+        lines.contains("the loopback port was already in use"),
+        "{lines}"
     );
 }
