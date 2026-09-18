@@ -385,7 +385,7 @@ fn open_read_only(path: &Path) -> Result<fs::File, ()> {
         .map_err(|_| ())
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))

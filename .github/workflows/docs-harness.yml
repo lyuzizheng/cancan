@@ -8,6 +8,7 @@ on:
       - .agents/**
       - .codex/**
       - scripts/**
+      - resources/**
       - .node-version
       - rust-toolchain.toml
       - spikes/desktop-feasibility/package.json
@@ -22,6 +23,7 @@ on:
       - .agents/**
       - .codex/**
       - scripts/**
+      - resources/**
       - .node-version
       - rust-toolchain.toml
       - spikes/desktop-feasibility/package.json

@@ -1,0 +1,8 @@
+{
+  "artifact": "save-to-cancan-inbox.shortcut",
+  "destinationPath": "/Cancan/Inbox/",
+  "name": "Save to CanCan Inbox",
+  "receiptText": "Saved to CanCan Inbox. CanCan will process it on your Mac.",
+  "sha256": "b7e5e019e00a573900625802c7e12836e23dad920a191bb4f47e49be21092173",
+  "version": 1
+}
