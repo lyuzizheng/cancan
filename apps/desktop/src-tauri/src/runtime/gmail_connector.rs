@@ -525,6 +525,12 @@ fn read_loopback_request(
     listener_address: SocketAddr,
     read_timeout: StdDuration,
 ) -> Result<Zeroizing<String>, RuntimeError> {
+    // The listener is non-blocking, so `accept` can win the race against the
+    // client's first bytes: a fresh stream then reads `WouldBlock`. Blocking
+    // `read` under the per-connection timeout is the wait.
+    stream
+        .set_nonblocking(false)
+        .map_err(|error| gmail_transport_failure("gmail_authorization_failed", &error))?;
     stream
         .set_read_timeout(Some(read_timeout))
         .map_err(|error| gmail_transport_failure("gmail_authorization_failed", &error))?;
@@ -604,12 +610,58 @@ mod tests {
             .set_read_timeout(Some(StdDuration::from_secs(10)))
             .expect("set loopback client read timeout");
         stream
-            .write_all(b"GET /?code=synthetic-code&state=synthetic-state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            .write_all(b"GET /?code=synthetic-code&state=synthetic-state HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
             .expect("write callback");
-        let mut response = String::new();
-        stream.read_to_string(&mut response).expect("read response");
+        // Read the framed response (headers + the 70-byte body) instead of
+        // `read_to_string` to EOF: the handler closes right after `write_all`,
+        // which surfaces as RST (ECONNRESET) instead of FIN on macOS once the
+        // bytes are delivered. `Connection: close` + `Content-Length` carries
+        // the status, headers, and full body from production; any extra
+        // pipelined bytes would fail the exact-body assertion below rather
+        // than silently pass.
+        let mut response = Vec::with_capacity(256);
+        let mut chunk = [0_u8; 512];
+        let mut header_end = None;
+        while header_end.is_none() {
+            let read = stream.read(&mut chunk).expect("read response headers");
+            assert_ne!(read, 0, "loopback closed before response headers arrived");
+            response.extend_from_slice(&chunk[..read]);
+            assert!(
+                response.len() <= GMAIL_LOOPBACK_REQUEST_MAX_BYTES,
+                "loopback response headers exceeded bound"
+            );
+            header_end = response
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .map(|position| position + 4);
+        }
+        let header_end = header_end.expect("response headers carry a terminator");
+        let header = String::from_utf8(response[..header_end].to_vec())
+            .expect("loopback response headers are UTF-8");
+        assert!(header.starts_with("HTTP/1.1 200 OK\r\n"));
+        let content_length: usize = header
+            .lines()
+            .find_map(|line| {
+                line.strip_prefix("Content-Length: ")
+                    .or_else(|| line.strip_prefix("content-length: "))
+                    .and_then(|value| value.trim().parse().ok())
+            })
+            .expect("loopback response carries Content-Length");
+        while response.len() - header_end < content_length {
+            let read = stream.read(&mut chunk).expect("read response body");
+            assert_ne!(read, 0, "loopback closed before response body arrived");
+            response.extend_from_slice(&chunk[..read]);
+            assert!(
+                response.len() - header_end <= content_length,
+                "loopback response body exceeded Content-Length"
+            );
+        }
+        let body = std::str::from_utf8(&response[header_end..]).expect("response body is UTF-8");
+        assert_eq!(
+            body,
+            "<!doctype html><title>CanCan</title>You may close this browser window."
+        );
 
-        assert!(response.starts_with("HTTP/1.1 200 OK"));
         assert_eq!(
             callback
                 .join()
