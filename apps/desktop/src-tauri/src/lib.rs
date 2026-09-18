@@ -1,3 +1,4 @@
+mod content_fingerprint;
 mod database;
 mod diagnostics;
 mod local_inbox;

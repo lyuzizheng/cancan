@@ -105,6 +105,7 @@ One row represents one exact imported byte sequence or canonical envelope and st
 file_sha256
 canonical_content_fingerprint nullable until complete local extraction
 canonical_content_fingerprint_version nullable with the fingerprint
+canonical_content_match_document_id nullable; set when equal canonical content was matched to existing evidence
 evidence_kind: file | email_message
 original filename when present, MIME type, and byte size
 encrypted Vault locator while the current file exists
@@ -123,7 +124,7 @@ An email without an attachment is not inserted directly as a ledger record. The 
 
 `deleted` means the user intentionally deleted the current encrypted Vault file. `missing` means the file should exist but storage cannot find or verify it. In both states, the `source_documents` row remains so external records, parse runs, review history, ledger navigation, and audit history do not break. A nullable locator or equivalent state projection must not erase the exact hash or evidence relationships.
 
-Different byte sequences with the same canonical content or semantic statement identity remain separate `source_documents` rows. Equal content may reuse existing statement records without AI normalization; a changed statement revision is grouped by the semantic document key and versioned through normal parsing. An explicit user import of an exact hash reuses the existing row and may offer to restore a deleted or missing current artifact instead of creating a duplicate row. Automatic folder/Gmail discovery treats a deleted tombstone as suppression and must not restore it; Gmail's mailbox/message mapping continues to point at that tombstone across envelope-version changes.
+Different byte sequences with the same canonical content or semantic statement identity remain separate `source_documents` rows. Equal content may reuse existing statement records without AI normalization; a changed statement revision is grouped by the semantic document key and versioned through normal parsing. The reused-record case is recorded durably: a matched artifact points at the document whose records it reuses through `canonical_content_match_document_id`, and that pointer - not the parse job's result payload - is the source of truth for the match. A self-referencing foreign key whose delete action clears the column keeps the link from outliving the evidence it joins: deleting the matched document's row clears the artifact's pointer, and deleting the artifact's row takes its own pointer with it. The matched document keeps its own records while the artifact keeps its own bytes, locator, and provenance. An explicit user import of an exact hash reuses the existing row and may offer to restore a deleted or missing current artifact instead of creating a duplicate row. Automatic folder/Gmail discovery treats a deleted tombstone as suppression and must not restore it; Gmail's mailbox/message mapping continues to point at that tombstone across envelope-version changes.
 
 ## Intake receipt and batch identity
 

@@ -67,7 +67,7 @@ fn upgrades_a_populated_v10_vault_through_the_production_registry() {
             row.get(0)
         })
         .expect("read schema version");
-    assert_eq!(schema_version, 14);
+    assert_eq!(schema_version, 15);
     assert_eq!(
         connection
             .query_row(
@@ -97,6 +97,128 @@ fn upgrades_a_populated_v10_vault_through_the_production_registry() {
             )
             .expect("read preserved Gmail identity"),
         "connected"
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("check upgraded foreign keys"),
+        0
+    );
+}
+
+#[test]
+fn upgrades_a_populated_v14_vault_with_content_fingerprint_columns() {
+    let (_root, mut connection) = open_connection();
+    apply_migration_set(&mut connection, &MIGRATIONS[..14]).expect("apply v14 schema");
+    connection
+        .execute(
+            "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
+             VALUES ('source-existing', 'dbs', 'Existing DBS', 'bank')",
+            [],
+        )
+        .expect("seed Money Source");
+    insert_missing_document(&connection, "document-existing", 'a');
+    connection
+        .execute(
+            "INSERT INTO jobs( \
+               id, job_type, status, input_json, related_source_document_id, finished_at \
+             ) VALUES ( \
+               'job-existing', 'parse_document', 'succeeded', \
+               '{\"documentId\":\"document-existing\",\"logicalRunKey\":\"job-existing\"}', \
+               'document-existing', CURRENT_TIMESTAMP \
+             )",
+            [],
+        )
+        .expect("seed parse job");
+    connection
+        .execute(
+            "INSERT INTO parse_runs( \
+               id, source_document_id, normalization_profile_id, logical_run_key, \
+               profile_json, input_hash, status \
+             ) VALUES ( \
+               'run-existing', 'document-existing', 'statement-v1', 'job-existing', \
+               '{}', 'input-hash', 'succeeded' \
+             )",
+            [],
+        )
+        .expect("seed parse run");
+    connection
+        .execute(
+            "INSERT INTO external_records( \
+               id, parse_run_id, source_document_id, stable_record_key, version, status, \
+               record_type, raw_json, validation_json \
+             ) VALUES ( \
+               'record-existing', 'run-existing', 'document-existing', 'dbs:cash:2026-07:1', \
+               1, 'staged', 'transaction', '{}', '{}' \
+             )",
+            [],
+        )
+        .expect("seed reusable record");
+
+    apply_migrations(&mut connection).expect("apply production migrations");
+
+    let schema_version: i64 = connection
+        .query_row("SELECT max(version) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })
+        .expect("read schema version");
+    assert_eq!(schema_version, 15);
+    let (fingerprint, fingerprint_version, match_document_id): (
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    ) = connection
+        .query_row(
+            "SELECT canonical_content_fingerprint, canonical_content_fingerprint_version, \
+                    canonical_content_match_document_id \
+             FROM source_documents WHERE id = 'document-existing'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("read upgraded content fingerprint columns");
+    assert_eq!(fingerprint, None);
+    assert_eq!(fingerprint_version, None);
+    assert_eq!(match_document_id, None);
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM external_records WHERE id = 'record-existing'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read preserved parse history"),
+        1
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE source_documents SET canonical_content_fingerprint = ?1 \
+                 WHERE id = 'document-existing'",
+                [format!("a{}", "0".repeat(63))],
+            )
+            .is_err(),
+        "a stored digest requires the algorithm version it was produced with"
+    );
+    connection
+        .execute(
+            "UPDATE source_documents \
+                SET canonical_content_fingerprint = ?1, canonical_content_fingerprint_version = 1 \
+              WHERE id = 'document-existing'",
+            [format!("a{}", "0".repeat(63))],
+        )
+        .expect("store a fingerprint on an upgraded Vault");
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT canonical_content_fingerprint_version FROM source_documents \
+                 WHERE id = 'document-existing'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read stored fingerprint version"),
+        1
     );
     assert_eq!(
         connection

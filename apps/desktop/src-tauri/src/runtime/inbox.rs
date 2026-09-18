@@ -190,6 +190,31 @@ impl VaultRuntime {
         }))
     }
 
+    /// Records the canonical content of one claimed parse and reports whether
+    /// the artifact is additional evidence of an already-parsed statement.
+    ///
+    /// The write is transactionally complete on its own: a match links the
+    /// artifact and finishes the claimed job in the same transaction, so the
+    /// caller must not run the normalizer after a match.
+    pub(super) fn record_canonical_content(
+        &self,
+        attempt: &ParseDocumentAttempt,
+        fingerprint: &ContentFingerprint,
+    ) -> Result<CanonicalContentDecision, RuntimeError> {
+        self.require_vault_session(attempt.vault_session_generation)?;
+        let mut store = self.store()?;
+        let store = store
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        store
+            .record_canonical_content_for_claimed_job(&attempt.claim, fingerprint)
+            .map_store_error(
+                store,
+                "record_canonical_content_for_claimed_job",
+                "classification_failed",
+            )
+    }
+
     pub(super) fn block_local_inbox_parse(
         &self,
         attempt: &ParseDocumentAttempt,
@@ -395,6 +420,48 @@ pub(super) fn schedule_queued_local_inbox_parses(app: AppHandle, runtime: VaultR
     });
 }
 
+/// Records the artifact's canonical content and settles the claimed job when a
+/// prior successful parse already holds that content.
+///
+/// Returns `true` when the caller must not parse this artifact any further:
+/// either a prior successful parse already supplied the statement's identity
+/// and records, or the content write itself failed and the job was blocked.
+/// Returns `false` only for content the Vault has never successfully parsed —
+/// including extraction that produced no usable text and therefore cannot
+/// prove equality — which continues through the normalizer.
+pub(super) async fn settle_canonical_content(
+    runtime: &VaultRuntime,
+    attempt: &ParseDocumentAttempt,
+    extraction: &ExtractedDocument,
+) -> Result<bool, VaultCommandError> {
+    let Some(fingerprint) = canonical_content_fingerprint(&extraction.bundle) else {
+        return Ok(false);
+    };
+    let decision = {
+        let runtime = runtime.clone();
+        let attempt = attempt.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            runtime.record_canonical_content(&attempt, &fingerprint)
+        })
+        .await
+        .map_err(|_| VaultCommandError::new("runtime_unavailable"))?
+    };
+    match decision {
+        Ok(CanonicalContentDecision::Matched { .. }) => Ok(true),
+        Ok(CanonicalContentDecision::Parsed) => Ok(false),
+        Err(_) => {
+            let runtime = runtime.clone();
+            let attempt = attempt.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                runtime.block_local_inbox_parse(&attempt, "classification_failed")
+            })
+            .await
+            .map_err(|_| VaultCommandError::new("runtime_unavailable"))??;
+            Ok(true)
+        }
+    }
+}
+
 pub(super) async fn process_queued_local_inbox_parses(
     app: &AppHandle,
     runtime: VaultRuntime,
@@ -459,6 +526,9 @@ pub(super) async fn process_queued_local_inbox_parses(
                     continue;
                 }
             };
+            if settle_canonical_content(&runtime, &attempt, &input).await? {
+                continue;
+            }
             let result = match run_normalizer_sidecar(app, &job.document_id, &input.bundle).await {
                 Ok(result) => result,
                 Err(error) => {

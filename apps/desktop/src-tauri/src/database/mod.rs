@@ -26,6 +26,8 @@ pub(crate) use accounts::{
 pub(crate) use accounts::{
     AccountConfirmationOutcome, AccountConfirmationPrompt, CandidateAccountDecisionInput,
 };
+pub(crate) use content_fingerprint::CanonicalContentDecision;
+
 const KEY_LEN: usize = 32;
 pub(crate) const DATABASE_FILE_NAME: &str = "finance.sqlite";
 const DATABASE_KEY_CONTEXT: &[u8] = b"cancan:database:v1";
@@ -394,6 +396,10 @@ pub(crate) struct StatementPasswordSource {
 pub enum SourceDocumentRoutingStatus {
     Routed,
     NeedsAttention,
+    /// A prior successful parse already holds this artifact's canonical
+    /// content, so the document reuses that statement's identity and records
+    /// instead of producing its own.
+    SameContent,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -736,45 +742,7 @@ impl ManualImportStore {
         outcome: &SourceDocumentRoutingOutcome,
     ) -> StoreResult<()> {
         let transaction = self.connection.transaction()?;
-        match outcome.status {
-            SourceDocumentRoutingStatus::Routed => {
-                let changed = transaction.execute(
-                    "UPDATE jobs SET status = 'succeeded', result_json = ?1, lease_owner = NULL, \
-                         lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-                     WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
-                       AND status = 'running' AND lease_owner = ?5",
-                    params![
-                        serde_json::json!({ "nextJobType": RECONCILE_DOCUMENT_JOB_TYPE }).to_string(),
-                        claim.job_id,
-                        claim.document_id,
-                        PARSE_DOCUMENT_JOB_TYPE,
-                        claim.claim_token,
-                    ],
-                )?;
-                if changed != 1 {
-                    return Err(io::Error::other("parse job is no longer claimed").into());
-                }
-                enqueue_reconcile_document(&transaction, &claim.document_id)?;
-            }
-            SourceDocumentRoutingStatus::NeedsAttention => {
-                let changed = transaction.execute(
-                    "UPDATE jobs SET status = 'blocked', blocked_reason = ?1, lease_owner = NULL, \
-                         lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-                     WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
-                       AND status = 'running' AND lease_owner = ?5",
-                    params![
-                        outcome.reason.unwrap_or("classification_uncertain"),
-                        claim.job_id,
-                        claim.document_id,
-                        PARSE_DOCUMENT_JOB_TYPE,
-                        claim.claim_token,
-                    ],
-                )?;
-                if changed != 1 {
-                    return Err(io::Error::other("parse job is no longer claimed").into());
-                }
-            }
-        }
+        finish_parse_document_job_in_transaction(&transaction, claim, outcome)?;
         transaction.commit()?;
         Ok(())
     }
@@ -2410,6 +2378,74 @@ fn parse_job_update(changed: usize) -> StoreResult<()> {
     Ok(())
 }
 
+/// Terminal routing of one claimed parse job inside the caller's transaction.
+///
+/// `SameContent` is the reuse outcome: the artifact is additional evidence
+/// under an already-classified statement, so the job reports the reuse and
+/// enqueues no reconciliation — the statement's records already exist and
+/// nothing may be regenerated for a duplicate.
+pub(super) fn finish_parse_document_job_in_transaction(
+    transaction: &Transaction<'_>,
+    claim: &ParseDocumentClaim,
+    outcome: &SourceDocumentRoutingOutcome,
+) -> StoreResult<()> {
+    match outcome.status {
+        SourceDocumentRoutingStatus::Routed => {
+            complete_running_parse_job(
+                transaction,
+                claim,
+                &serde_json::json!({ "nextJobType": RECONCILE_DOCUMENT_JOB_TYPE }).to_string(),
+            )?;
+            enqueue_reconcile_document(transaction, &claim.document_id)?;
+        }
+        SourceDocumentRoutingStatus::SameContent => {
+            complete_running_parse_job(
+                transaction,
+                claim,
+                &serde_json::json!({ "status": "same_content" }).to_string(),
+            )?;
+        }
+        SourceDocumentRoutingStatus::NeedsAttention => {
+            let changed = transaction.execute(
+                "UPDATE jobs SET status = 'blocked', blocked_reason = ?1, lease_owner = NULL, \
+                     lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
+                 WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
+                   AND status = 'running' AND lease_owner = ?5",
+                params![
+                    outcome.reason.unwrap_or("classification_uncertain"),
+                    claim.job_id,
+                    claim.document_id,
+                    PARSE_DOCUMENT_JOB_TYPE,
+                    claim.claim_token,
+                ],
+            )?;
+            parse_job_update(changed)?;
+        }
+    }
+    Ok(())
+}
+
+fn complete_running_parse_job(
+    transaction: &Transaction<'_>,
+    claim: &ParseDocumentClaim,
+    result_json: &str,
+) -> StoreResult<()> {
+    let changed = transaction.execute(
+        "UPDATE jobs SET status = 'succeeded', result_json = ?1, lease_owner = NULL, \
+             lease_until = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
+         WHERE id = ?2 AND related_source_document_id = ?3 AND job_type = ?4 \
+           AND status = 'running' AND lease_owner = ?5",
+        params![
+            result_json,
+            claim.job_id,
+            claim.document_id,
+            PARSE_DOCUMENT_JOB_TYPE,
+            claim.claim_token,
+        ],
+    )?;
+    parse_job_update(changed)
+}
+
 fn enqueue_parse_document(
     transaction: &Transaction<'_>,
     document_id: &str,
@@ -2489,6 +2525,7 @@ mod accounts_tests;
 mod audit;
 #[cfg(test)]
 mod audit_tests;
+mod content_fingerprint;
 #[cfg(test)]
 mod database_test_support;
 mod document_routing;

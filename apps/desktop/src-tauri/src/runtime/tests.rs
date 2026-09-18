@@ -2713,7 +2713,7 @@ fn rejects_empty_statement_id_despite_matching_sidecar_key() {
     );
 }
 
-fn structured_parse_test_state(
+pub(super) fn structured_parse_test_state(
     runtime: &VaultRuntime,
     document_id: &str,
 ) -> crate::database::StructuredParseTestState {
@@ -2747,7 +2747,7 @@ fn expire_reconcile_lease_for_test(runtime: &VaultRuntime, document_id: &str) {
         .expect("expire reconcile lease");
 }
 
-fn synthetic_normalizer_result() -> NormalizerResult {
+pub(super) fn synthetic_normalizer_result() -> NormalizerResult {
     NormalizerResult::Classified {
         profile: Box::new(synthetic_normalization_profile()),
         semantic_document_key: "synthetic-bank:transfer-2026-07".to_owned(),
@@ -3294,7 +3294,7 @@ fn synthetic_normalizer_record(
     }
 }
 
-fn synthetic_statement_csv() -> String {
+pub(super) fn synthetic_statement_csv() -> String {
     [
         "balance,2026-06-30,checking-001,1000.00,SGD,CANCAN_SYNTHETIC_STATEMENT_V1",
         "2026-07-01,Transfer to savings,250.00,SGD,750.00,provider=synthetic-bank",

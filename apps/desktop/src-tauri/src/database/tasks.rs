@@ -47,6 +47,9 @@ pub(crate) enum RawTaskKind {
     AlreadyInCancan {
         intake_item_id: String,
     },
+    SameStatementContent {
+        intake_item_id: String,
+    },
     SourceFileRestored {
         intake_item_id: String,
     },
@@ -422,6 +425,37 @@ impl ManualImportStore {
                         title: row.get(1)?,
                         timestamp: row.get(2)?,
                         kind: RawTaskKind::AlreadyInCancan {
+                            intake_item_id: row.get(0)?,
+                        },
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+
+        // Same-statement receipts: the artifact matched the canonical content of a
+        // statement the Vault already parsed successfully, so its parse job
+        // succeeded as a reuse and never reconciled or produced records of its
+        // own. The durable link (`canonical_content_match_document_id`) is the
+        // source of truth, never the job's result payload.
+        let mut statement = self.connection.prepare(
+            "SELECT i.id, i.safe_input_label, MAX(j.finished_at) \
+             FROM intake_batch_items i \
+             JOIN source_documents sd ON sd.id = i.source_document_id \
+             JOIN jobs j ON j.related_source_document_id = sd.id \
+             WHERE i.capture_outcome = 'captured' \
+               AND sd.canonical_content_match_document_id IS NOT NULL \
+               AND j.job_type = 'parse_document' \
+               AND j.status = 'succeeded' \
+               AND datetime(j.finished_at) >= datetime('now', ?1) \
+             GROUP BY i.id, i.safe_input_label",
+        )?;
+        rows.extend(
+            statement
+                .query_map([RECENTLY_COMPLETED_RETENTION], |row| {
+                    Ok(RawTask {
+                        title: row.get(1)?,
+                        timestamp: row.get(2)?,
+                        kind: RawTaskKind::SameStatementContent {
                             intake_item_id: row.get(0)?,
                         },
                     })

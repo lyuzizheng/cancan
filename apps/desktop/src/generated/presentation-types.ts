@@ -40,7 +40,7 @@ entryCount: number,
  */
 exportLimit: number, oldestEntryAt: string | null, newestEntryAt: string | null, components: Array<OperationalDiagnosticsCategory>, errorCodes: Array<OperationalDiagnosticsCategory>, sampleLines: Array<string>, };
 
-export type TaskConsequence = "processing" | "password_needed" | "new_source_detected" | "needs_review" | "restore_source_file" | "inbox_file_could_not_be_added" | "import_interrupted" | "needs_attention" | "file_not_added" | "already_in_cancan" | "source_file_restored" | "source_file_left_deleted" | "ready" | "source_unassigned" | "password_parked" | "inbox_file_parked" | "save_recovery_file" | "setup_reminder_postponed";
+export type TaskConsequence = "processing" | "password_needed" | "new_source_detected" | "needs_review" | "restore_source_file" | "inbox_file_could_not_be_added" | "import_interrupted" | "needs_attention" | "file_not_added" | "already_in_cancan" | "same_statement_content" | "source_file_restored" | "source_file_left_deleted" | "ready" | "source_unassigned" | "password_parked" | "inbox_file_parked" | "save_recovery_file" | "setup_reminder_postponed";
 
 export type TaskDestination = { "kind": "document", documentId: string, } | { "kind": "password", documentId: string, moneySourceId: string, } | { "kind": "source_confirmation", moneySourceCandidateId: string, } | { "kind": "review_group", documentId: string, } | { "kind": "receipt", intakeItemId: string, } | { "kind": "inbox_issue", intakeItemId: string, } | { "kind": "recovery_setup" };
 
