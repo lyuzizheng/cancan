@@ -2,7 +2,9 @@
  * Dev-only visual inspection harness. Renders the Command Center views with
  * deterministic fixtures, selected via `?state=` (overview, overview-empty,
  * tasks, tasks-parked, source-confirm, review, review-empty, review-detail,
- * review-committed, review-job, sources, sources-inbox-disabled, sources-inbox-enabled,
+ * review-committed, review-job, sources, source-detail, source-detail-empty,
+ * source-create, source-rename, source-remove-password,
+ * sources-inbox-disabled, sources-inbox-enabled,
  * sources-inbox-reauth, document-viewer, document-preview, document-unlock,
  * delete-confirm, vault-gate-loading, vault-gate-create,
  * vault-gate-locked, primitives, primitives-dialog).
@@ -17,7 +19,6 @@ import "./app.css";
 import { PrimitivesGallery } from "./preview-gallery";
 
 import type {
-  AccountConfirmationPrompt,
   LocalInboxStatus,
   MoneyOverview,
   MoneySourceSummary,
@@ -26,7 +27,6 @@ import type {
   ReviewItemDetail,
   ReviewItemSummary,
   SourceConfirmationPrompt,
-  SourceDocumentSummary,
   Tasks,
 } from "./command-contracts";
 import {
@@ -38,7 +38,13 @@ import {
 import { OverviewView } from "./overview";
 import { ReviewView, type ReviewDetailState, type ReviewJobPanelState } from "./review";
 import { FocusedSourceConfirmationDialog } from "./source-confirmation";
-import { SourcesView } from "./sources-view";
+import {
+  dbsDocuments,
+  previewMoneySources,
+  renderSourcesView,
+  SourceDialogPreview,
+  sourceDialogStates,
+} from "./preview-sources";
 import { TasksView } from "./tasks-view";
 import { VaultGate } from "./vault-gate";
 import { VaultSpine, type AppView } from "./vault-spine";
@@ -303,84 +309,6 @@ const inboxReauth: LocalInboxStatus = {
   lastScan: null,
 };
 
-const previewMoneySources: MoneySourceSummary[] = [
-  {
-    displayName: "DBS",
-    moneySourceId: "source-dbs",
-    providerKey: "dbs",
-    sourceType: "bank",
-  },
-  {
-    displayName: "Wise",
-    moneySourceId: "source-wise",
-    providerKey: "wise",
-    sourceType: "wallet",
-  },
-];
-
-const dbsDocuments: SourceDocumentSummary[] = [
-  {
-    attentionReason: null,
-    byteSize: 248_000,
-    documentId: "document-1",
-    documentStatus: "ready",
-    fileState: "available",
-    mimeType: "application/pdf",
-    originalFilename: "June statement.pdf",
-    receivedAt: "2026-07-19T09:12:00Z",
-  },
-  {
-    attentionReason: "password_required",
-    byteSize: 196_000,
-    documentId: "document-2",
-    documentStatus: "needs_attention",
-    fileState: "available",
-    mimeType: "application/pdf",
-    originalFilename: "May statement.pdf",
-    receivedAt: "2026-05-18T08:03:00Z",
-  },
-  {
-    attentionReason: null,
-    byteSize: 84_000,
-    documentId: "document-3",
-    documentStatus: "file_deleted",
-    fileState: "deleted",
-    mimeType: "text/csv",
-    originalFilename: "wise-export.csv",
-    receivedAt: "2026-05-02T17:20:00Z",
-  },
-];
-
-const unassignedEvidence: SourceDocumentSummary[] = [
-  {
-    attentionReason: null,
-    byteSize: 312_000,
-    documentId: "document-9",
-    documentStatus: "processing",
-    fileState: "available",
-    mimeType: "image/png",
-    originalFilename: "phone-receipt.png",
-    receivedAt: "2026-07-21T10:40:00Z",
-  },
-];
-
-const accountPrompts: AccountConfirmationPrompt[] = [
-  {
-    candidateAccounts: [
-      {
-        accountId: "account-dbs",
-        accountType: "deposit_account",
-        currency: "SGD",
-        displayName: "DBS Multiplier Account",
-        maskedIdentifier: "•••• 1234",
-      },
-    ],
-    dismissedAccounts: [],
-    displayName: "DBS",
-    moneySourceId: "source-dbs",
-    proposalVersion: "proposal-version-1",
-  },
-];
 
 const noop = () => undefined;
 
@@ -391,58 +319,6 @@ const documentModalStates = new Set([
   "document-viewer",
 ]);
 
-function renderSourcesView(inbox: LocalInboxStatus) {
-  return (
-    <SourcesView
-      accountPrompts={accountPrompts}
-      attentionBusyKey={null}
-      busy={false}
-      existingSources={previewMoneySources}
-      importing={false}
-      inbox={inbox}
-      inboxError={null}
-      inboxBusy={false}
-      inboxConfirmingDisable={false}
-      loadingDocuments={false}
-      normalizingDocumentId={null}
-      notice={null}
-      onConfirmSourceCandidate={noop}
-      onDecideAccounts={noop}
-      onImport={noop}
-      onInboxCancelDisable={noop}
-      onInboxChoose={noop}
-      onInboxConfirmDisable={noop}
-      onInboxRequestDisable={noop}
-      onInboxRescan={noop}
-      onInboxRetry={noop}
-      onKeepSourceCandidateUnassigned={noop}
-      onLock={noop}
-      onNormalize={noop}
-      onOpenUnlock={noop}
-      onRefresh={noop}
-      onRememberedChange={noop}
-      onRequestDelete={noop}
-      onRestoreAccount={noop}
-      onSelectMoneySource={noop}
-      onSaveRecoveryFile={noop}
-      onSaveSourceCopy={noop}
-      onView={noop}
-      onViewPromptDocument={noop}
-      recoveryConfigured={false}
-      rememberedOnThisMac
-      savingCopyDocumentId={null}
-      savingRecoveryFile={false}
-      selectedMoneySourceId="source-dbs"
-      sourceDocuments={[
-        { documents: dbsDocuments, source: previewMoneySources[0]! },
-        { documents: null, source: previewMoneySources[1]! },
-      ]}
-      sourcePrompts={sourcePrompts}
-      unassignedDocuments={unassignedEvidence}
-      updatingRemembered={false}
-    />
-  );
-}
 
 /**
  * Interactive post-password Touch ID offer walkthrough. The real `App` runs
@@ -568,10 +444,15 @@ function Preview() {
       : state === "sources-inbox-reauth"
         ? inboxReauth
         : inboxDisabled;
-    content = renderSourcesView(status);
-  } else if (state === "sources" || documentModalStates.has(state)) {
+    content = renderSourcesView(status, "none", sourcePrompts);
+  } else if (state === "sources" || state === "source-detail" || state === "source-detail-empty"
+    || sourceDialogStates[state] === true || documentModalStates.has(state)) {
     activeView = "sources";
-    content = renderSourcesView(inboxEnabled);
+    content = renderSourcesView(
+      inboxEnabled,
+      state === "sources" ? "none" : state === "source-detail-empty" ? "empty" : "ready",
+      sourcePrompts,
+    );
   } else if (state === "vault-gate-loading" || state === "vault-gate-create" || state === "vault-gate-locked") {
     content = state === "vault-gate-loading" ? (
       <VaultGate busy title="Checking your Vault" body="Confirming the local Vault state before showing evidence." />
@@ -630,7 +511,7 @@ function Preview() {
     );
   }
 
-  const modalPreview = state === "source-confirm" || documentModalStates.has(state);
+  const modalPreview = state === "source-confirm" || sourceDialogStates[state] === true || documentModalStates.has(state);
   return (
     <AppShell>
       <VaultSpine
@@ -718,6 +599,9 @@ function Preview() {
           onCancel={noop}
           onConfirm={noop}
         />
+      ) : null}
+      {sourceDialogStates[state] === true ? (
+        <SourceDialogPreview state={state} />
       ) : null}
     </AppShell>
   );

@@ -47,6 +47,8 @@ const baseProps: SourcesViewProps = {
   normalizingDocumentId: null,
   notice: null,
   onConfirmSourceCandidate: () => undefined,
+  onClearMoneySourceSelection: () => undefined,
+  onCreateMoneySource: () => undefined,
   onDecideAccounts: () => undefined,
   onImport: () => undefined,
   onInboxCancelDisable: () => undefined,
@@ -59,6 +61,8 @@ const baseProps: SourcesViewProps = {
   onLock: () => undefined,
   onNormalize: () => undefined,
   onOpenUnlock: () => undefined,
+  onOpenEditMoneySource: () => undefined,
+  onOpenRemoveSourcePassword: () => undefined,
   onRefresh: () => undefined,
   onRememberedChange: () => undefined,
   onRequestDelete: () => undefined,
@@ -149,7 +153,14 @@ describe("SourcesView", () => {
   it("shows routed documents under their safe Money Source display name", () => {
     const markup = render({
       sourceDocuments: [{
-        documents: [{ ...document, documentId: "routed-document" }],
+        detail: {
+          actions: { canEnterStatementPassword: false, hasSavedStatementPassword: false },
+          displayName: source.displayName,
+          documents: [{ ...document, documentId: "routed-document" }],
+          moneySourceId: source.moneySourceId,
+          providerKey: source.providerKey,
+          sourceType: source.sourceType,
+        },
         source,
       }],
       selectedMoneySourceId: source.moneySourceId,
