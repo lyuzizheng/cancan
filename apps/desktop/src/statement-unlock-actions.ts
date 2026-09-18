@@ -38,18 +38,16 @@ export function createStatementUnlockActions(
     unlockRequestId,
   } = deps;
 
-  const trySavedStatementPassword = async (
+  const trySavedStatementPasswords = async (
     documentId: string,
-    moneySourceId: string,
     requestId: number,
-  ) => {
-    setUnlockingDocument((current) => current?.documentId === documentId
-      ? { ...current, busy: true, error: null, savedPasswordStatus: null }
-      : current);
+  ): Promise<
+    { kind: "stopped" } | { kind: "status"; savedPasswordStatus: "invalid" | "unavailable" | null }
+  > => {
     try {
-      const result = await api.trySavedStatementPassword(documentId, moneySourceId);
+      const result = await api.trySavedStatementPasswords(documentId);
       if (unlockRequestId.current !== requestId) {
-        return;
+        return { kind: "stopped" };
       }
       if (result === "unlocked") {
         setUnlockingDocument(null);
@@ -59,17 +57,18 @@ export function createStatementUnlockActions(
           title: "Statement unlocked",
         });
         await loadDocuments();
-        return;
+        return { kind: "stopped" };
       }
-      setUnlockingDocument((current) => current?.documentId === documentId
-        ? { ...current, busy: false, savedPasswordStatus: result }
-        : current);
+      return { kind: "status", savedPasswordStatus: result };
     } catch (nextError) {
-      if (unlockRequestId.current === requestId) {
-        setUnlockingDocument((current) => current?.documentId === documentId
-          ? { ...current, busy: false, error: commandErrorMessage(nextError) }
-          : current);
+      if (unlockRequestId.current !== requestId) {
+        return { kind: "stopped" };
       }
+      // The host pass reports its own failure; manual entry stays available.
+      setUnlockingDocument((current) => current?.documentId === documentId
+        ? { ...current, error: commandErrorMessage(nextError) }
+        : current);
+      return { kind: "status", savedPasswordStatus: null };
     }
   };
 
@@ -88,9 +87,6 @@ export function createStatementUnlockActions(
       savedPasswordStatus: null,
       selectedMoneySourceId: moneySourceId,
     });
-    if (current.sources?.find((source) => source.moneySourceId === moneySourceId)?.hasSavedPassword) {
-      void trySavedStatementPassword(current.documentId, moneySourceId, requestId);
-    }
   };
 
   const loadUnlockSources = (documentId: string, documentTitle: string) => {
@@ -106,25 +102,45 @@ export function createStatementUnlockActions(
       selectedMoneySourceId: "",
       sources: null,
     });
-    void api.listStatementPasswordSources().then((sources) => {
+    void (async () => {
+      let sources;
+      try {
+        sources = await api.listStatementPasswordSources();
+      } catch (nextError) {
+        if (unlockRequestId.current === requestId) {
+          setUnlockingDocument((current) => current?.documentId === documentId
+            ? { ...current, busy: false, error: commandErrorMessage(nextError), sources: [] }
+            : current);
+        }
+        return;
+      }
       if (unlockRequestId.current !== requestId) {
         return;
       }
       const onlySource = sources.length === 1 ? sources[0] : undefined;
-      const selectedMoneySourceId = onlySource?.moneySourceId ?? "";
+      const hasSavedPassword = sources.some((source) => source.hasSavedPassword);
       setUnlockingDocument((current) => current?.documentId === documentId
-        ? { ...current, busy: false, selectedMoneySourceId, sources }
+        ? {
+          ...current,
+          busy: hasSavedPassword,
+          savedPasswordStatus: null,
+          selectedMoneySourceId: onlySource?.moneySourceId ?? "",
+          sources,
+        }
         : current);
-      if (onlySource?.hasSavedPassword) {
-        void trySavedStatementPassword(documentId, selectedMoneySourceId, requestId);
+      if (!hasSavedPassword) {
+        return;
       }
-    }).catch((nextError) => {
-      if (unlockRequestId.current === requestId) {
-        setUnlockingDocument((current) => current?.documentId === documentId
-          ? { ...current, busy: false, error: commandErrorMessage(nextError), sources: [] }
-          : current);
+      // The host owns the bounded pass: it tries each distinct saved password
+      // once, so this surface only reports that none of them unlocked.
+      const outcome = await trySavedStatementPasswords(documentId, requestId);
+      if (outcome.kind === "stopped" || unlockRequestId.current !== requestId) {
+        return;
       }
-    });
+      setUnlockingDocument((current) => current?.documentId === documentId
+        ? { ...current, busy: false, savedPasswordStatus: outcome.savedPasswordStatus }
+        : current);
+    })();
   };
 
   const openDocumentUnlock = (document: SourceDocumentSummary) => {

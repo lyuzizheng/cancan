@@ -91,10 +91,7 @@ export type DocumentStatementPasswordArgs = {
   updateSavedPassword: boolean;
 };
 
-export type TrySavedStatementPasswordArgs = {
-  documentId: string;
-  moneySourceId: string;
-};
+export type TrySavedStatementPasswordArgs = { documentId: string };
 
 export type RemoveStatementPasswordArgs = { moneySourceId: string };
 

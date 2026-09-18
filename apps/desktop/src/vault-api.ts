@@ -148,9 +148,8 @@ export interface VaultApi {
   saveOperationalDiagnostics(): Promise<boolean>;
   saveRecoveryFile(): Promise<boolean>;
   saveSourceDocumentCopy(documentId: string): Promise<boolean>;
-  trySavedStatementPassword(
+  trySavedStatementPasswords(
     documentId: string,
-    moneySourceId: string,
   ): Promise<SavedStatementPasswordResult>;
   unlockSourceDocument(
     documentId: string,
@@ -305,13 +304,10 @@ export function createVaultApi(
       const args: ListTasksArgs = { filter };
       return call<Tasks, ListTasksArgs>("list_tasks", args);
     },
-    trySavedStatementPassword: (documentId, moneySourceId) => {
-      const args: TrySavedStatementPasswordArgs = {
-        documentId,
-        moneySourceId,
-      };
+    trySavedStatementPasswords: (documentId) => {
+      const args: TrySavedStatementPasswordArgs = { documentId };
       return call<SavedStatementPasswordResult, TrySavedStatementPasswordArgs>(
-        "try_saved_statement_password",
+        "try_saved_statement_passwords",
         args,
       );
     },

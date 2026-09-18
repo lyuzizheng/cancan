@@ -1,5 +1,7 @@
 #[cfg(target_os = "macos")]
 use super::test_support::statement_password_runtime;
+#[cfg(target_os = "macos")]
+use super::test_support::statement_password_state;
 use super::test_support::{
     MemoryLocalInboxBookmarkStore, MemoryRememberedKeyStore, MemoryStatementPasswordStore,
 };
@@ -290,6 +292,143 @@ fn unlocking_a_password_blocked_parse_requeues_the_same_logical_run() {
         SourceDocumentStatus::Processing
     );
     assert!(runtime.normalization_input(&imported.document_id).is_ok());
+}
+
+/// The pre-classification statement-password pass belongs to the host: it
+/// walks every distinct saved password once, reports only an outcome, and a
+/// success keeps every secret under the Money Source that stored it.
+#[cfg(target_os = "macos")]
+#[test]
+fn tries_each_distinct_saved_statement_password_once() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let statement_passwords = Arc::new(MemoryStatementPasswordStore::default());
+    let runtime =
+        statement_password_runtime(&parent.path().join("vault"), statement_passwords.clone());
+    runtime
+        .seed_money_source("source-card", "dbs-card", "DBS Card", "credit_card")
+        .expect("seed card source");
+    runtime
+        .seed_money_source("source-hsbc", "hsbc", "HSBC", "bank")
+        .expect("seed second bank source");
+    let source = parent.path().join("protected-statement.pdf");
+    fs::write(&source, protected_text_pdf()).expect("write protected PDF fixture");
+    let imported = runtime
+        .import_selected_document(&source)
+        .expect("import protected statement");
+
+    // Two sources store the same wrong secret and the walk runs by source id,
+    // so the pass must repeat no attempt and continue past the wrong ones.
+    runtime
+        .save_statement_password("source-dbs", b"wrong-password")
+        .expect("save shared wrong password");
+    runtime
+        .save_statement_password("source-card", b"wrong-password")
+        .expect("save duplicate wrong password");
+    runtime
+        .save_statement_password("source-hsbc", b"statement-password")
+        .expect("save matching password");
+
+    let attempts_before = runtime.recorded_statement_password_attempts();
+    assert_eq!(
+        runtime
+            .try_saved_statement_passwords(&imported.document_id)
+            .expect("run the host bounded pass"),
+        SavedStatementPasswordResult::Unlocked
+    );
+    assert_eq!(
+        runtime.recorded_statement_password_attempts() - attempts_before,
+        2,
+        "one attempt per distinct saved password"
+    );
+
+    let bundle = runtime
+        .normalization_input(&imported.document_id)
+        .expect("extract with the password the pass unlocked");
+    assert!(bundle.observations[0].text.contains("transfer-2026-07"));
+    assert_eq!(
+        statement_passwords
+            .load("money-source:source-card")
+            .expect("load untouched card secret")
+            .expect("card secret")
+            .as_slice(),
+        b"wrong-password"
+    );
+    assert_eq!(
+        statement_password_state(&runtime)
+            .expect("keep the source reference")
+            .status,
+        StatementPasswordStatus::Saved
+    );
+}
+
+/// The pass reports the outcome only, and never probes a saved secret when the
+/// request, the document, or the Vault cannot support one.
+#[cfg(target_os = "macos")]
+#[test]
+fn fails_closed_without_a_probeable_saved_statement_password() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let statement_passwords = Arc::new(MemoryStatementPasswordStore::default());
+    let runtime =
+        statement_password_runtime(&parent.path().join("vault"), statement_passwords.clone());
+    let source = parent.path().join("protected-statement.pdf");
+    fs::write(&source, protected_text_pdf()).expect("write protected PDF fixture");
+    let imported = runtime
+        .import_selected_document(&source)
+        .expect("import protected statement");
+
+    assert_eq!(
+        runtime
+            .try_saved_statement_passwords(&imported.document_id)
+            .expect("report a Vault without saved passwords"),
+        SavedStatementPasswordResult::Unavailable
+    );
+
+    // Exhaustion: the one saved secret is tried once and the caller is asked
+    // for the password instead of the pass repeating itself.
+    runtime
+        .save_statement_password("source-dbs", b"wrong-password")
+        .expect("save wrong password");
+    assert_eq!(
+        runtime
+            .try_saved_statement_passwords(&imported.document_id)
+            .expect("report an exhausted pass"),
+        SavedStatementPasswordResult::Invalid
+    );
+    assert_eq!(runtime.recorded_statement_password_attempts(), 1);
+
+    let csv = parent.path().join("statement.csv");
+    fs::write(&csv, "date,amount\n2026-07-01,10.00\n").expect("write CSV fixture");
+    let csv_document = runtime
+        .import_selected_document(&csv)
+        .expect("import CSV document");
+    let attempts = runtime.recorded_statement_password_attempts();
+    assert_eq!(
+        runtime
+            .try_saved_statement_passwords(&csv_document.document_id)
+            .expect_err("reject a document that cannot hold a statement password")
+            .code(),
+        "viewer_unsupported"
+    );
+    assert_eq!(
+        runtime
+            .try_saved_statement_passwords("")
+            .expect_err("reject an empty request")
+            .code(),
+        "invalid_document_request"
+    );
+    runtime.test_support_lock().expect("lock Vault");
+    assert_eq!(
+        runtime
+            .try_saved_statement_passwords(&imported.document_id)
+            .expect_err("reject a locked Vault")
+            .code(),
+        "vault_locked"
+    );
+    assert_eq!(
+        runtime.recorded_statement_password_attempts(),
+        attempts,
+        "a refused pass never probes a saved password"
+    );
 }
 
 #[test]

@@ -25,7 +25,7 @@ use runtime::{
     remove_statement_password, render_source_document_page, reparse_source_document,
     rescan_local_inbox, restore_dismissed_candidate_account, save_operational_diagnostics,
     save_recovery_file, save_source_document_copy, setup_background_window,
-    try_saved_statement_password, undo_committed_event, unlock_source_document, unlock_vault,
+    try_saved_statement_passwords, undo_committed_event, unlock_source_document, unlock_vault,
     unlock_vault_with_keychain, vault_access_status, vault_status,
 };
 use std::{
@@ -90,7 +90,7 @@ pub fn run() {
             remove_statement_password,
             list_statement_password_sources,
             list_tasks,
-            try_saved_statement_password,
+            try_saved_statement_passwords,
             unlock_source_document,
             lock_vault,
             operational_diagnostics_preview,

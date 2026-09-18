@@ -331,7 +331,7 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
     saveSourceDocumentCopy: vi.fn(async (): Promise<boolean> => false),
     saveOperationalDiagnostics: vi.fn(async (): Promise<boolean> => true),
-    trySavedStatementPassword: vi.fn(
+    trySavedStatementPasswords: vi.fn(
       async (): Promise<SavedStatementPasswordResult> => "invalid",
     ),
     undoCommittedEvent: vi.fn(async (): Promise<UndoOutcome> => ({

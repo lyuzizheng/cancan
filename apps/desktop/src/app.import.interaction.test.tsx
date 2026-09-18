@@ -18,6 +18,7 @@ import {
   bodyDialog,
   button,
   buttons,
+  chooseDialogSelectOption,
   click,
   clickDialogButton,
   container,
@@ -386,7 +387,7 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain("Evidence restored");
   });
 
-  it("tries a source-scoped saved password before offering use-once or verified replacement", async () => {
+  it("tries the saved statement passwords before offering use-once or verified replacement", async () => {
     let unlocked = false;
     const protectedDocument = sourceDocument({
       attentionReason: "password_required",
@@ -414,7 +415,7 @@ describe("App manual import orchestration", () => {
       listUnassignedSourceDocuments: vi.fn(async () => [
         unlocked ? sourceDocument() : protectedDocument,
       ]),
-      trySavedStatementPassword: vi.fn(async () => "invalid" as const),
+      trySavedStatementPasswords: vi.fn(async () => "invalid" as const),
       unlockSourceDocument,
     });
 
@@ -424,10 +425,7 @@ describe("App manual import orchestration", () => {
     expect(container.textContent).toContain("Delete source file");
     await click("Unlock");
 
-    expect(api.trySavedStatementPassword).toHaveBeenCalledWith(
-      "document-1",
-      "source-dbs",
-    );
+    expect(api.trySavedStatementPasswords).toHaveBeenCalledWith("document-1");
     expect(bodyDialog().textContent).toContain(
       "The saved password did not work.",
     );
@@ -466,6 +464,38 @@ describe("App manual import orchestration", () => {
     expect(api.reparseSourceDocument).toHaveBeenCalledWith("document-1");
   });
 
+  it("runs one host-owned saved-password pass for every saved source", async () => {
+    const api = createApi({
+      listStatementPasswordSources: vi.fn(async () => [
+        { displayName: "DBS", hasSavedPassword: true, moneySourceId: "source-dbs" },
+        { displayName: "Wise", hasSavedPassword: true, moneySourceId: "source-wise" },
+      ]),
+      listUnassignedSourceDocuments: vi.fn(async () => [
+        sourceDocument({
+          attentionReason: "password_required",
+          documentStatus: "needs_attention",
+        }),
+      ]),
+      trySavedStatementPasswords: vi.fn(async () => "invalid" as const),
+    });
+
+    await mount(api, "sources");
+    await click("Unlock");
+
+    // The host tries each distinct saved password itself: the renderer sends
+    // the document only and never selects the attempted secret.
+    expect(api.trySavedStatementPasswords).toHaveBeenCalledTimes(1);
+    expect(api.trySavedStatementPasswords).toHaveBeenCalledWith("document-1");
+    expect(bodyDialog().textContent).toContain("The saved password did not work.");
+
+    // Choosing a Money Source decides where a manual password is saved, not
+    // which saved secret the host is allowed to try.
+    await chooseDialogSelectOption("Money Source for this statement", "Wise");
+    expect(api.trySavedStatementPasswords).toHaveBeenCalledTimes(1);
+    expect(dialogButton("Money Source for this statement").textContent).toContain("Wise");
+    expect(dialogInput("#statement-password").disabled).toBe(false);
+  });
+
   it("reports a saved-password unlock as routeable for the Vault session", async () => {
     let unlocked = false;
     const api = createApi({
@@ -480,7 +510,7 @@ describe("App manual import orchestration", () => {
           documentStatus: unlocked ? "ready" : "needs_attention",
         }),
       ]),
-      trySavedStatementPassword: vi.fn(async () => {
+      trySavedStatementPasswords: vi.fn(async () => {
         unlocked = true;
         return "unlocked" as const;
       }),
@@ -542,7 +572,7 @@ describe("App manual import orchestration", () => {
           documentStatus: "needs_attention",
         }),
       ]),
-      trySavedStatementPassword: vi.fn(async () => "unavailable" as const),
+      trySavedStatementPasswords: vi.fn(async () => "unavailable" as const),
     });
 
     await mount(api, "sources");
@@ -605,12 +635,12 @@ describe("App manual import orchestration", () => {
         notifyLocked = handler;
         return () => undefined;
       }),
-      trySavedStatementPassword: vi.fn(() => savedPassword.promise),
+      trySavedStatementPasswords: vi.fn(() => savedPassword.promise),
     });
 
     await mount(api, "sources");
     await click("Unlock");
-    expect(api.trySavedStatementPassword).toHaveBeenCalledTimes(1);
+    expect(api.trySavedStatementPasswords).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       notifyLocked?.();

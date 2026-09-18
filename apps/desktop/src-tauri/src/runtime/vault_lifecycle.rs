@@ -68,6 +68,8 @@ impl VaultRuntime {
                 root,
                 source_document_cache: Mutex::new(None),
                 statement_passwords,
+                #[cfg(test)]
+                statement_password_attempts: std::sync::atomic::AtomicUsize::new(0),
                 store: Mutex::new(None),
                 vault_session_generation: AtomicU64::new(0),
                 #[cfg(test)]

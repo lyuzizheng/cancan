@@ -191,7 +191,7 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         .expect("reopen saved-password Vault");
     assert_eq!(
         runtime
-            .try_saved_statement_password(&outcome.document_id, "source-dbs")
+            .try_saved_statement_passwords(&outcome.document_id)
             .expect("try saved password"),
         SavedStatementPasswordResult::Unlocked
     );
@@ -208,7 +208,7 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         .expect("remove device-local saved password");
     assert_eq!(
         runtime
-            .try_saved_statement_password(&outcome.document_id, "source-dbs")
+            .try_saved_statement_passwords(&outcome.document_id)
             .expect("report unavailable saved password"),
         SavedStatementPasswordResult::Unavailable
     );
@@ -223,7 +223,7 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         .expect("save invalid password fixture");
     assert_eq!(
         runtime
-            .try_saved_statement_password(&outcome.document_id, "source-dbs")
+            .try_saved_statement_passwords(&outcome.document_id)
             .expect("report invalid saved password"),
         SavedStatementPasswordResult::Invalid
     );

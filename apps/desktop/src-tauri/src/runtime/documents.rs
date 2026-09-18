@@ -295,55 +295,87 @@ impl VaultRuntime {
             })
     }
 
-    pub(crate) fn try_saved_statement_password(
+    /// Host-owned bounded pass over the Vault's distinct saved statement
+    /// passwords.
+    ///
+    /// This is the pass for a protected statement whose Money Source is not
+    /// yet known: the renderer neither selects the attempted secret nor learns
+    /// which Money Source, if any, holds the one that worked. Each distinct
+    /// saved password is probed at most once and only the outcome is reported.
+    /// A successful password decrypts this document's bytes for the current
+    /// Vault session and keeps the Keychain entry it came from — it never
+    /// assigns, moves, or infers the document's Money Source.
+    pub(crate) fn try_saved_statement_passwords(
         &self,
         document_id: &str,
-        money_source_id: &str,
     ) -> Result<SavedStatementPasswordResult, RuntimeError> {
-        if document_id.is_empty() || money_source_id.is_empty() {
+        if document_id.is_empty() {
             return Err(RuntimeError::new("invalid_document_request"));
         }
-        let secret_storage_key = {
+        let candidates = {
             let store = self.store()?;
             let store = store
                 .as_ref()
                 .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-            ensure_statement_password_source(store, money_source_id)?;
             self.reconcile_statement_passwords(store)?;
-            let Some(state) = store
-                .statement_password_state(money_source_id)
-                .map_store_error(store, "statement_password_state", "invalid_source_request")?
-            else {
-                return Ok(SavedStatementPasswordResult::Unavailable);
-            };
-            if state.status != StatementPasswordStatus::Saved {
-                return Err(RuntimeError::new("statement_password_state_invalid"));
-            }
-            state.secret_storage_key
+            store.saved_statement_password_states().map_store_error(
+                store,
+                "saved_statement_password_states",
+                "list_sources_failed",
+            )?
         };
-        let Some(password) = self
-            .inner
-            .statement_passwords
-            .load(&secret_storage_key)
-            .map_err(|error| {
-                runtime_failure(
-                    self,
-                    "statement_password_load",
-                    "statement_password_load_failed",
-                    &error,
-                )
-            })?
-        else {
+        if candidates.is_empty() {
             return Ok(SavedStatementPasswordResult::Unavailable);
-        };
-        let input = self.read_source_document(document_id)?;
-        if !statement_password_unlocks(&input, &password)? {
-            return Ok(SavedStatementPasswordResult::Invalid);
         }
-        self.document_passwords()?
-            .insert(document_id.to_owned(), password);
-        self.resume_password_blocked_parse_document_job(document_id)?;
-        Ok(SavedStatementPasswordResult::Unlocked)
+        // A malformed request fails closed before any saved secret is loaded.
+        let input = self.read_source_document(document_id)?;
+        if input.mime_type != "application/pdf" {
+            return Err(RuntimeError::new("viewer_unsupported"));
+        }
+        let mut attempted: Vec<Zeroizing<Vec<u8>>> = Vec::with_capacity(candidates.len());
+        let mut any_loaded = false;
+        for state in candidates {
+            let Some(password) = self
+                .inner
+                .statement_passwords
+                .load(&state.secret_storage_key)
+                .map_err(|error| {
+                    runtime_failure(
+                        self,
+                        "statement_password_load",
+                        "statement_password_load_failed",
+                        &error,
+                    )
+                })?
+            else {
+                continue;
+            };
+            any_loaded = true;
+            // Distinct secrets only: a password another source already
+            // contributed to this attempt is never probed twice.
+            if attempted
+                .iter()
+                .any(|prior| prior.as_slice() == password.as_slice())
+            {
+                continue;
+            }
+            #[cfg(test)]
+            self.inner
+                .statement_password_attempts
+                .fetch_add(1, Ordering::SeqCst);
+            if statement_password_unlocks(&input, &password)? {
+                self.document_passwords()?
+                    .insert(document_id.to_owned(), password);
+                self.resume_password_blocked_parse_document_job(document_id)?;
+                return Ok(SavedStatementPasswordResult::Unlocked);
+            }
+            attempted.push(password);
+        }
+        Ok(if any_loaded {
+            SavedStatementPasswordResult::Invalid
+        } else {
+            SavedStatementPasswordResult::Unavailable
+        })
     }
 
     pub(crate) fn unlock_source_document(
@@ -620,18 +652,15 @@ pub(crate) async fn list_statement_password_sources(
 }
 
 #[tauri::command]
-pub(crate) async fn try_saved_statement_password(
+pub(crate) async fn try_saved_statement_passwords(
     document_id: String,
-    money_source_id: String,
     app: AppHandle,
     runtime: State<'_, VaultRuntime>,
 ) -> Result<SavedStatementPasswordResult, VaultCommandError> {
     let runtime = runtime.inner().clone();
     let try_runtime = runtime.clone();
-    let result = run_runtime_task(move || {
-        try_runtime.try_saved_statement_password(&document_id, &money_source_id)
-    })
-    .await?;
+    let result =
+        run_runtime_task(move || try_runtime.try_saved_statement_passwords(&document_id)).await?;
     if result == SavedStatementPasswordResult::Unlocked {
         schedule_queued_local_inbox_parses(app, runtime);
     }
