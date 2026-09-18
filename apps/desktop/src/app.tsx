@@ -19,6 +19,7 @@ import { FocusedSourceConfirmationDialog } from "./source-confirmation";
 import { SourcesView } from "./sources-view";
 import { createTaskDestinationActions } from "./task-destination-actions";
 import { TasksView } from "./tasks-view";
+import { TouchIdOffer } from "./touch-id-offer";
 import { SettingsView } from "./settings-view";
 import { useAttention } from "./use-attention";
 import { useCommandCenter } from "./use-command-center";
@@ -103,6 +104,9 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   const reloadFinance = useCallback(() => {
     void loadFinanceData();
   }, [loadFinanceData]);
+  const acceptTouchIdOffer = useCallback(() => {
+    void documents.updateRemembered(true);
+  }, [documents.updateRemembered]);
 
   const openSources = useCallback(() => navigate("sources"), [navigate]);
   const openTasks = useCallback(() => navigate("tasks"), [navigate]);
@@ -174,6 +178,14 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         <LedgerColumn>
         {session.error ? (
           <Feedback tone="error" title="Something needs your attention" body={session.error} action={requestRefresh} />
+        ) : null}
+
+        {unlocked && session.touchIdOffer && session.rememberedOnThisMac === false ? (
+          <TouchIdOffer
+            busy={documents.updatingRemembered}
+            onAccept={acceptTouchIdOffer}
+            onDismiss={session.dismissTouchIdOffer}
+          />
         ) : null}
 
         {status === "loading" ? (

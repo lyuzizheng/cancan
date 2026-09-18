@@ -244,3 +244,97 @@ describe("App vault-locked event and viewer race orchestration", () => {
     expect(container.textContent).not.toContain("invalid_credentials");
   });
 });
+
+describe("App post-password Touch ID offer", () => {
+  it("offers Touch ID after a password unlock while remembered unlock is off", async () => {
+    const api = createApi({
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
+        rememberedOnThisMac: false,
+        status: "locked",
+      })),
+    });
+
+    await mount(api);
+    await enterPassword("vault-password");
+    await click("Unlock Vault");
+
+    expect(api.unlockVault).toHaveBeenCalledWith("vault-password");
+    expect(container.textContent).toContain("Use Touch ID next time");
+    expect(container.textContent).toContain("Turn on Touch ID");
+    expect(container.textContent).toContain("Not now");
+  });
+
+  it("enables Touch ID from the offer through the existing host action", async () => {
+    const api = createApi({
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
+        rememberedOnThisMac: false,
+        status: "locked",
+      })),
+    });
+
+    await mount(api);
+    await enterPassword("vault-password");
+    await click("Unlock Vault");
+    await click("Turn on Touch ID");
+
+    expect(api.rememberVaultOnThisMac).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("Use Touch ID next time");
+    expect(container.textContent).toContain("Touch ID unlock enabled");
+  });
+
+  it("dismisses the offer without enabling Touch ID", async () => {
+    const api = createApi({
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
+        rememberedOnThisMac: false,
+        status: "locked",
+      })),
+    });
+
+    await mount(api);
+    await enterPassword("vault-password");
+    await click("Unlock Vault");
+    await click("Not now");
+
+    expect(api.rememberVaultOnThisMac).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("Use Touch ID next time");
+  });
+
+  it("does not offer Touch ID when it is already remembered or unavailable", async () => {
+    for (const rememberedOnThisMac of [true, null] as const) {
+      const api = createApi({
+        vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+          recoveryConfigured: false,
+          rememberedOnThisMac,
+          status: "locked",
+        })),
+      });
+
+      await mount(api);
+      await enterPassword("vault-password");
+      await click("Unlock Vault");
+
+      expect(container.textContent).not.toContain("Use Touch ID next time");
+      expect(api.rememberVaultOnThisMac).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not offer Touch ID after creating a Vault", async () => {
+    const api = createApi({
+      vaultAccessStatus: vi.fn(async (): Promise<VaultAccessStatus> => ({
+        recoveryConfigured: false,
+        rememberedOnThisMac: false,
+        status: "not_created",
+      })),
+    });
+
+    await mount(api);
+    await enterPassword("vault-password");
+    await click("Create Vault");
+
+    expect(api.createVault).toHaveBeenCalledWith("vault-password");
+    expect(container.textContent).not.toContain("Use Touch ID next time");
+  });
+});

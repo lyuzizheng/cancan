@@ -77,6 +77,7 @@ export function useVaultDocuments({
     runGuarded,
     sessionId: currentSessionId,
     setError,
+    dismissTouchIdOffer,
     setNotice,
     setRememberedOnThisMac,
     setRecoveryConfigured,
@@ -214,6 +215,8 @@ export function useVaultDocuments({
         await api.forgetVaultOnThisMac();
       }
       setRememberedOnThisMac(remembered);
+      // Any successful Touch ID toggle resolves the post-password offer.
+      dismissTouchIdOffer();
       setNotice(
         remembered
           ? {
@@ -228,7 +231,7 @@ export function useVaultDocuments({
             },
       );
     }, { busy: true, onSettled: () => setUpdatingRemembered(false) });
-  }, [api, runGuarded, setNotice, setRememberedOnThisMac]);
+  }, [api, dismissTouchIdOffer, runGuarded, setNotice, setRememberedOnThisMac]);
 
   const importDocument = useCallback(() => {
     setImporting(true);

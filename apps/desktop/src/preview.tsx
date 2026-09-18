@@ -42,6 +42,8 @@ import { SourcesView } from "./sources-view";
 import { TasksView } from "./tasks-view";
 import { VaultGate } from "./vault-gate";
 import { VaultSpine, type AppView } from "./vault-spine";
+import { App } from "./app";
+import { createVaultApi, type TauriInvoke } from "./vault-api";
 
 // Dev-only rendered page fixture (generated statement-page PNG, base64).
 import statementPagePng from "./preview-statement-page.b64?raw";
@@ -431,6 +433,61 @@ function renderSourcesView(inbox: LocalInboxStatus) {
   );
 }
 
+/**
+ * Interactive post-password Touch ID offer walkthrough. The real `App` runs
+ * against a fake invoke so the gate, unlock, offer, accept, and dismiss all
+ * behave like the desktop shell without a Tauri host.
+ * `?state=touch-id-offer` starts locked with remembered unlock off;
+ * `-remembered` and `-unavailable` cover the no-offer variants.
+ */
+function offerPreviewApi(remembered: boolean | null) {
+  let vaultStatus: "locked" | "unlocked" = "locked";
+  let rememberedOnThisMac = remembered;
+  const respond = (command: string): unknown => {
+    switch (command) {
+      case "vault_access_status":
+        return {
+          recoveryConfigured: true,
+          rememberedOnThisMac,
+          status: vaultStatus,
+        };
+      case "vault_status":
+        return vaultStatus;
+      case "unlock_vault":
+      case "unlock_vault_with_keychain":
+        vaultStatus = "unlocked";
+        return vaultStatus;
+      case "lock_vault":
+        vaultStatus = "locked";
+        return vaultStatus;
+      case "remember_vault_on_this_mac":
+        rememberedOnThisMac = true;
+        return undefined;
+      case "forget_vault_on_this_mac":
+        rememberedOnThisMac = false;
+        return undefined;
+      case "local_inbox_status":
+        return inboxDisabled;
+      case "list_review_items":
+        return reviewItems;
+      case "get_money_overview":
+        return moneyOverview;
+      case "list_recent_activity":
+        return recentActivity;
+      case "list_tasks":
+        return commandCenterTasks;
+      case "list_money_sources":
+        return previewMoneySources;
+      default:
+        return [];
+    }
+  };
+  return createVaultApi(
+    ((command: string) => Promise.resolve(respond(command))) as TauriInvoke,
+    async () => () => undefined,
+  );
+}
+
 function navigate(view: AppView) {
   const state = view === "sources" ? "sources-inbox-enabled" : view;
   window.location.search = `?state=${state}`;
@@ -442,6 +499,15 @@ function Preview() {
 
   if (state === "primitives" || state === "primitives-dialog") {
     return <PrimitivesGallery dialogOpen={state === "primitives-dialog"} />;
+  }
+
+  if (state.startsWith("touch-id-offer")) {
+    const remembered = state === "touch-id-offer-remembered"
+      ? true
+      : state === "touch-id-offer-unavailable"
+        ? null
+        : false;
+    return <App api={offerPreviewApi(remembered)} />;
   }
 
   let content = null;
