@@ -465,6 +465,8 @@ struct RuntimeInner {
     root: PathBuf,
     source_document_cache: Mutex<Option<CachedSourceDocument>>,
     statement_passwords: Arc<dyn StatementPasswordStore>,
+    #[cfg(test)]
+    statement_password_attempts: std::sync::atomic::AtomicUsize,
     store: Mutex<Option<ManualImportStore>>,
     vault_session_generation: AtomicU64,
     #[cfg(test)]
@@ -691,6 +693,16 @@ impl VaultRuntime {
         if let Ok(mut hooks) = self.inner.intake_test_hooks.lock() {
             hooks.local_inbox_scan_barrier = None;
         }
+    }
+
+    /// The bounded pass probes at most one attempt per distinct saved
+    /// password. No production surface can observe that bound, so tests count
+    /// attempts directly instead of inferring them from an outcome.
+    #[cfg(test)]
+    pub(super) fn recorded_statement_password_attempts(&self) -> usize {
+        self.inner
+            .statement_password_attempts
+            .load(Ordering::SeqCst)
     }
 
     pub(super) fn document_passwords(

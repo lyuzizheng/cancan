@@ -77,7 +77,7 @@ describe("Vault API", () => {
     await api.rememberVaultOnThisMac();
     await api.forgetVaultOnThisMac();
     await api.listStatementPasswordSources();
-    await api.trySavedStatementPassword("document-1", "source-dbs");
+    await api.trySavedStatementPasswords("document-1");
     await api.unlockSourceDocument(
       "document-1",
       "source-dbs",
@@ -170,8 +170,8 @@ describe("Vault API", () => {
       ["forget_vault_on_this_mac", undefined],
       ["list_statement_password_sources", undefined],
       [
-        "try_saved_statement_password",
-        { documentId: "document-1", moneySourceId: "source-dbs" },
+        "try_saved_statement_passwords",
+        { documentId: "document-1" },
       ],
       [
         "unlock_source_document",

@@ -1239,6 +1239,20 @@ impl ManualImportStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Every saved statement-password reference in a stable order, so the
+    /// host's bounded pre-classification pass walks a fixed list and consults
+    /// each stored secret at most once per attempt.
+    pub(crate) fn saved_statement_password_states(
+        &self,
+    ) -> StoreResult<Vec<StatementPasswordState>> {
+        let mut statement = self.connection.prepare(
+            "SELECT money_source_id, secret_storage_key, status \
+             FROM statement_secret_refs WHERE status = 'saved' ORDER BY money_source_id",
+        )?;
+        let rows = statement.query_map([], statement_password_state_from_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     pub(crate) fn pending_statement_password_states(
         &self,
     ) -> StoreResult<Vec<StatementPasswordState>> {
