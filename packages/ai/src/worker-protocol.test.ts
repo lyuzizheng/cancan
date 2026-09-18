@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { parseWorkerCommand, runCoreCommand } from "./worker-protocol";
+import {
+  parseWorkerCommand,
+  runCoreCommand,
+  workerErrorIsRetryable,
+  workerErrorMessage,
+} from "./worker-protocol";
 
 const rustNormalizerCommandFixture: unknown = JSON.parse(
   readFileSync(
@@ -359,6 +364,32 @@ describe("normalizer worker protocol", () => {
         eventType: "same_currency_transfer_reversal",
         eventDate: "2026-07-04",
       },
+    });
+  });
+});
+
+describe("normalizer worker error codes", () => {
+  it("marks the spec 0015 deterministic rejections non-retryable", () => {
+    for (const code of [
+      "normalizer_budget_exhausted",
+      "structured_proposal_invalid",
+      "evidence_grounding_failed",
+    ] as const) {
+      expect(workerErrorIsRetryable(code)).toBe(false);
+      expect(workerErrorMessage(code)).toEqual({ type: "error", code, retryable: false });
+    }
+  });
+
+  it("keeps transient failures retryable", () => {
+    expect(workerErrorMessage("command_failed")).toEqual({
+      type: "error",
+      code: "command_failed",
+      retryable: true,
+    });
+    expect(workerErrorMessage("invalid_command")).toEqual({
+      type: "error",
+      code: "invalid_command",
+      retryable: false,
     });
   });
 });

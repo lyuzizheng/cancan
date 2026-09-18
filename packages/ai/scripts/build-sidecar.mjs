@@ -139,6 +139,7 @@ if (
   messages[0]?.environmentCleared !== true ||
   messages[1]?.type !== "error" ||
   messages[1]?.code !== "invalid_command" ||
+  messages[1]?.retryable !== false ||
   messages[2]?.type !== "result" ||
   messages[2]?.requestId !== "build-smoke" ||
   messages[2]?.result?.status !== "classified" ||

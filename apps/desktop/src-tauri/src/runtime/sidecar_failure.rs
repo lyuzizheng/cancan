@@ -17,6 +17,13 @@ enum SidecarFailure {
     Protocol(String),
     /// Transport trouble, a timeout, or an exit: a later attempt can succeed.
     Transient(String),
+    /// A code the sidecar reported on the wire. The wire's retryability
+    /// decides the retry, not the transport that carried it.
+    Reported {
+        reason: String,
+        retryable: bool,
+        reported_code: Option<&'static str>,
+    },
 }
 
 impl SidecarFailure {
@@ -26,6 +33,16 @@ impl SidecarFailure {
             Self::Transient(reason) => {
                 JobFailureDetail::from_transient_message(Some(provider), reason)
             }
+            Self::Reported {
+                reason,
+                retryable,
+                reported_code,
+            } => JobFailureDetail::from_reported_code(
+                Some(provider),
+                reason,
+                *retryable,
+                *reported_code,
+            ),
         }
     }
 }
@@ -46,6 +63,27 @@ impl SidecarExchange {
     /// Ends the run on a protocol violation.
     pub(super) fn protocol(self, child: CommandChild, reason: impl fmt::Display) -> RuntimeError {
         self.failure(child, SidecarFailure::Protocol(reason.to_string()))
+    }
+
+    /// Ends the run on a code the sidecar reported on the wire. The label is
+    /// the component name the exchange already uses (`the normalizer`, `the
+    /// review core`), so the record reads the same from either mode.
+    pub(super) fn reported(
+        self,
+        child: CommandChild,
+        label: &str,
+        code: &str,
+        wire_retryable: Option<bool>,
+    ) -> RuntimeError {
+        let (retryable, reported_code) = reported_code_retryable(code, wire_retryable);
+        self.failure(
+            child,
+            SidecarFailure::Reported {
+                reason: format!("{label} reported {code}"),
+                retryable,
+                reported_code,
+            },
+        )
     }
 
     /// Ends the run on transport trouble, a timeout, or an exit.
@@ -72,6 +110,25 @@ impl SidecarExchange {
     fn failure(self, child: CommandChild, failure: SidecarFailure) -> RuntimeError {
         let _ = child.kill();
         deferred_failure(self.code, failure.detail(self.provider))
+    }
+}
+
+/// The retry decision for a code the sidecar reported. Spec 0015: the three
+/// deterministic parser rejections never retry; `command_failed` retries like
+/// any transient failure; a missing or unknown flag falls back to the
+/// pre-wire behavior (protocol reports do not retry). Only allowlisted codes
+/// are kept structurally; anything else rides the redacted message alone.
+fn reported_code_retryable(
+    code: &str,
+    wire_retryable: Option<bool>,
+) -> (bool, Option<&'static str>) {
+    match code {
+        "normalizer_budget_exhausted" => (false, Some("normalizer_budget_exhausted")),
+        "structured_proposal_invalid" => (false, Some("structured_proposal_invalid")),
+        "evidence_grounding_failed" => (false, Some("evidence_grounding_failed")),
+        "invalid_command" => (false, None),
+        "command_failed" => (true, None),
+        _ => (wire_retryable.unwrap_or(false), None),
     }
 }
 
@@ -125,6 +182,51 @@ mod tests {
             transient.message.as_str(),
             "the normalizer exited with status 1"
         );
+        assert_eq!(transient.reported_code, None);
+    }
+
+    #[test]
+    fn a_reported_deterministic_code_never_retries_but_stays_structural() {
+        // Spec 0015: the three deterministic parser rejections fail terminally
+        // so the job engine never spends AI budget retrying them. The retry of
+        // `reported_code_retryable` is a table, not the wire flag, so a lying
+        // or stale worker cannot buy retries for a deterministic rejection.
+        for (code, stored) in [
+            ("normalizer_budget_exhausted", "normalizer_budget_exhausted"),
+            ("structured_proposal_invalid", "structured_proposal_invalid"),
+            ("evidence_grounding_failed", "evidence_grounding_failed"),
+        ] {
+            for wire in [None, Some(true), Some(false)] {
+                let (retryable, reported) = reported_code_retryable(code, wire);
+                assert!(!retryable, "{code} with wire {wire:?} must not retry");
+                assert_eq!(reported, Some(stored));
+                let detail = SidecarFailure::Reported {
+                    reason: format!("the normalizer reported {code}"),
+                    retryable,
+                    reported_code: reported,
+                }
+                .detail("normalizer");
+                assert!(!detail.retryable);
+                assert_eq!(detail.reported_code, Some(stored));
+            }
+        }
+    }
+
+    #[test]
+    fn a_reported_transient_code_retries_and_unknown_codes_stay_unstructural() {
+        let (retryable, reported) = reported_code_retryable("command_failed", None);
+        assert!(retryable);
+        assert_eq!(reported, None);
+
+        let (retryable, reported) = reported_code_retryable("some_future_code", Some(true));
+        assert!(retryable);
+        assert_eq!(reported, None);
+
+        // Pre-wire behavior for protocol reports is preserved: an unknown code
+        // without a wire flag does not retry.
+        let (retryable, reported) = reported_code_retryable("some_future_code", None);
+        assert!(!retryable);
+        assert_eq!(reported, None);
     }
 
     #[test]

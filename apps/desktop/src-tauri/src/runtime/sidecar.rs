@@ -21,6 +21,8 @@ enum SidecarMessage<T> {
     },
     Error {
         code: String,
+        #[serde(default)]
+        retryable: Option<bool>,
     },
 }
 
@@ -145,8 +147,8 @@ async fn run_sidecar_exchange<T: DeserializeOwned>(
                         request_id: response_id,
                         result,
                     } if ready && response_id == request_id => break result,
-                    SidecarMessage::Error { code } => {
-                        return Err(exchange.protocol(child, format!("{label} reported {code}")));
+                    SidecarMessage::Error { code, retryable } => {
+                        return Err(exchange.reported(child, label, &code, retryable));
                     }
                     SidecarMessage::Ready { .. } | SidecarMessage::Result { .. } => {
                         return Err(exchange.protocol(

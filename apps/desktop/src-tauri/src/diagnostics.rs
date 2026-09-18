@@ -258,6 +258,11 @@ pub(crate) struct JobFailureDetail {
     /// The component that reported the failure when it is not the local store,
     /// for example the document normalizer sidecar.
     pub(crate) provider: Option<&'static str>,
+    /// The wire code the sidecar reported, when it matched the spec 0015
+    /// allowlist. Only allowlisted codes are kept structurally so an unknown
+    /// sidecar string can never smuggle an unbounded identifier into
+    /// `error_json`; the redacted message still names what was reported.
+    pub(crate) reported_code: Option<&'static str>,
 }
 
 impl JobFailureDetail {
@@ -268,6 +273,7 @@ impl JobFailureDetail {
             cause: None,
             retryable: false,
             provider,
+            reported_code: None,
         }
     }
 
@@ -285,6 +291,7 @@ impl JobFailureDetail {
             cause: redacted_source(error),
             retryable: error_is_retryable(error),
             provider,
+            reported_code: None,
         }
     }
 
@@ -298,6 +305,7 @@ impl JobFailureDetail {
             cause: None,
             retryable: false,
             provider,
+            reported_code: None,
         }
     }
 
@@ -307,6 +315,25 @@ impl JobFailureDetail {
         Self {
             retryable: true,
             ..Self::from_message(provider, message)
+        }
+    }
+
+    /// The technical layer of a code the sidecar reported on the wire. Known
+    /// spec 0015 codes carry the table's retryability; an unknown code keeps
+    /// the caller's classification and no structural code.
+    pub(crate) fn from_reported_code(
+        provider: Option<&'static str>,
+        message: &str,
+        retryable: bool,
+        reported_code: Option<&'static str>,
+    ) -> Self {
+        Self {
+            error_kind: "observed",
+            message: RedactedText::from_text(message),
+            cause: None,
+            retryable,
+            provider,
+            reported_code,
         }
     }
 }
