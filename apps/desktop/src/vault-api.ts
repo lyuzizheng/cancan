@@ -9,12 +9,15 @@ import type {
   CloseSourceDocumentViewArgs,
   ConfirmSourceCandidateArgs,
   ConfirmedMoneySourceCandidate,
+  CreateMoneySourceArgs,
   DecideCandidateAccountsArgs,
   EditReviewRecordArgs,
   EnqueueCommitReviewBatchArgs,
-  GetReviewJobArgs,
   DeleteSourceDocumentArgs,
   DuplicateCommittedVersionAuditRow,
+  EditMoneySourceArgs,
+  GetMoneySourceDetailArgs,
+  GetReviewJobArgs,
   IntakeNotificationSettings,
   ListSourceDocumentsArgs,
   ListTasksArgs,
@@ -24,6 +27,7 @@ import type {
   LocalInboxStatus,
   MoneyOverview,
   MoneySourceCandidateState,
+  MoneySourceDetail,
   MoneySourceSummary,
   OperationalDiagnosticsPreview,
   ParkSourceCandidateArgs,
@@ -50,6 +54,7 @@ import type {
   RestoreDismissedCandidateAccountArgs,
   SetIntakeNotificationsEnabledArgs,
   StatementPasswordSourceSummary,
+  SupportedMoneySourceProviderSummary,
   TrySavedStatementPasswordArgs,
   UndoCommittedEventArgs,
   UndoOutcome,
@@ -102,6 +107,18 @@ export interface VaultApi {
     expectedVersion: number,
   ): Promise<MoneySourceCandidateState>;
   createVault(password: string): Promise<VaultStatus>;
+  createMoneySource(
+    providerKey: string,
+    displayName: string | null,
+  ): Promise<MoneySourceSummary>;
+  editMoneySource(
+    moneySourceId: string,
+    displayName: string,
+  ): Promise<MoneySourceSummary>;
+  getMoneySourceDetail(moneySourceId: string): Promise<MoneySourceDetail>;
+  listSupportedMoneySourceProviders(): Promise<
+    SupportedMoneySourceProviderSummary[]
+  >;
   chooseLocalInboxRoot(): Promise<LocalInboxStatus | null>;
   closeSourceDocumentView(documentId: string): Promise<void>;
   deleteSourceDocument(documentId: string): Promise<boolean>;
@@ -391,6 +408,35 @@ export function createVaultApi(
     intakeNotificationSettings: () =>
       call<IntakeNotificationSettings>("intake_notification_settings"),
     listMoneySources: () => call<MoneySourceSummary[]>("list_money_sources"),
+    createMoneySource: (providerKey, displayName) => {
+      const args: CreateMoneySourceArgs = {
+        request: { displayName, providerKey },
+      };
+      return call<MoneySourceSummary, CreateMoneySourceArgs>(
+        "create_money_source",
+        args,
+      );
+    },
+    editMoneySource: (moneySourceId, displayName) => {
+      const args: EditMoneySourceArgs = {
+        request: { displayName, moneySourceId },
+      };
+      return call<MoneySourceSummary, EditMoneySourceArgs>(
+        "edit_money_source",
+        args,
+      );
+    },
+    getMoneySourceDetail: (moneySourceId) => {
+      const args: GetMoneySourceDetailArgs = { moneySourceId };
+      return call<MoneySourceDetail, GetMoneySourceDetailArgs>(
+        "get_money_source_detail",
+        args,
+      );
+    },
+    listSupportedMoneySourceProviders: () =>
+      call<SupportedMoneySourceProviderSummary[]>(
+        "list_supported_money_source_providers",
+      ),
     listAccountConfirmationPrompts: () =>
       call<AccountConfirmationPrompt[]>("list_account_confirmation_prompts"),
     listSourceConfirmationPrompts: () =>
@@ -568,6 +614,18 @@ export function commandErrorMessage(error: unknown): string {
       return "That review change isn’t valid.";
     case "invalid_source_request":
       return "That money source request isn’t valid.";
+    case "unsupported_source_provider":
+      return "That provider isn’t supported yet.";
+    case "source_provider_already_configured":
+      return "That provider already has a Money Source. Open it from Sources instead.";
+    case "source_not_found":
+      return "That Money Source is no longer available. Refresh Sources.";
+    case "create_source_failed":
+      return "CanCan couldn’t create that Money Source. Try again.";
+    case "edit_source_failed":
+      return "CanCan couldn’t rename that Money Source. Try again.";
+    case "source_detail_failed":
+      return "Couldn’t load that Money Source. Try again.";
     case "statement_password_state_invalid":
       return "The saved statement password no longer matches. Enter it again.";
     case "runtime_unavailable":

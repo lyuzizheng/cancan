@@ -16,6 +16,7 @@ import { Feedback } from "./feedback";
 import { OverviewView } from "./overview";
 import { ReviewView } from "./review";
 import { FocusedSourceConfirmationDialog } from "./source-confirmation";
+import { SourceDialog } from "./source-dialogs";
 import { SourcesView } from "./sources-view";
 import { createTaskDestinationActions } from "./task-destination-actions";
 import { TasksView } from "./tasks-view";
@@ -148,7 +149,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
 
   const modalOpen = overlays.viewer !== null || overlays.preview !== null
     || overlays.unlockingDocument !== null || attention.focusedCandidateId !== null
-    || documents.confirmingDelete !== null;
+    || documents.confirmingDelete !== null || documents.sourceDialog !== null;
   const unlocked = status === "unlocked";
   const { setTasksFilter } = commandCenter;
   const { routeRequest, takeRoute } = notifications;
@@ -316,6 +317,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             normalizingDocumentId={documents.normalizingDocumentId}
             notice={notice}
             onConfirmSourceCandidate={attention.confirmSourceCandidate}
+            onClearMoneySourceSelection={documents.clearMoneySourceSelection}
+            onCreateMoneySource={documents.openCreateMoneySource}
             onDecideAccounts={attention.decideAccounts}
             onImport={documents.importDocument}
             onInboxCancelDisable={inbox.cancelDisable}
@@ -325,6 +328,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
             onInboxRescan={inbox.rescan}
             onInboxRetry={reloadFinance}
             onKeepSourceCandidateUnassigned={attention.parkSourceCandidate}
+            onOpenEditMoneySource={documents.openEditMoneySource}
+            onOpenRemoveSourcePassword={documents.openRemoveSourcePassword}
             onLock={requestLock}
             onNormalize={documents.normalizeDocument}
             onOpenUnlock={overlays.openDocumentUnlock}
@@ -393,6 +398,18 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
               documents.deleteDocument(documents.confirmingDelete.documentId);
             }
           }}
+        />
+      ) : null}
+      {unlocked && documents.sourceDialog ? (
+        <SourceDialog
+          onClose={documents.closeSourceDialog}
+          onCreate={() => void documents.createMoneySource()}
+          onDisplayNameChange={documents.setSourceDialogDisplayName}
+          onProviderChange={documents.setSourceDialogProviderKey}
+          onRemovePassword={() => void documents.removeSourceStatementPassword()}
+          onRename={() => void documents.editMoneySource()}
+          onRetryProviders={documents.retrySourceProviders}
+          state={documents.sourceDialog}
         />
       ) : null}
       {unlocked ? (

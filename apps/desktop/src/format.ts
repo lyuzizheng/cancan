@@ -151,6 +151,11 @@ export function accountTypeLabel(accountType: string): string {
   return words.length === 0 ? "Account" : `${words[0]!.toUpperCase()}${words.slice(1)}`;
 }
 
+/** Human label for a Money Source type (`bank` -> `Bank`, `credit_card` -> `Credit card`). */
+export function sourceTypeLabel(sourceType: string): string {
+  return sourceType.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+}
+
 // Presentation for trusted classifier provider keys. The key arrives from the
 // host classification path, never from a filename or renderer guess.
 const PROVIDER_PRESENTATION: Record<string, { displayName: string; sourceType: string }> = {

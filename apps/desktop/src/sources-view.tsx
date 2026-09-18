@@ -15,6 +15,7 @@ import type {
   AccountConfirmationPrompt,
   CandidateAccountDecisionInput,
   LocalInboxStatus,
+  MoneySourceDetail,
   MoneySourceSummary,
   SourceConfirmationPrompt,
   SourceDocumentSummary,
@@ -23,10 +24,13 @@ import { AccountConfirmationCard } from "./attention";
 import { EvidenceDocumentGroups } from "./evidence-documents";
 import { Feedback, type Notice } from "./feedback";
 import { InboxPanel } from "./inbox";
+import { sourceTypeLabel } from "./format";
+import { SourceDetailView } from "./source-detail-view";
 import { SourceConfirmationCardList } from "./source-confirmation";
 
 export interface MoneySourceDocuments {
-  documents: SourceDocumentSummary[] | null;
+  /** The source-detail projection; `null` until the source is opened. */
+  detail: MoneySourceDetail | null;
   source: MoneySourceSummary;
 }
 
@@ -43,6 +47,8 @@ export interface SourcesViewProps {
   loadingDocuments: boolean;
   normalizingDocumentId: string | null;
   notice: Notice | null;
+  onClearMoneySourceSelection: () => void;
+  onCreateMoneySource: () => void;
   onConfirmSourceCandidate: (
     prompt: SourceConfirmationPrompt,
     displayName: string,
@@ -60,6 +66,8 @@ export interface SourcesViewProps {
   onInboxRescan: () => void;
   onInboxRetry: () => void;
   onKeepSourceCandidateUnassigned: (prompt: SourceConfirmationPrompt) => void;
+  onOpenEditMoneySource: (source: MoneySourceSummary) => void;
+  onOpenRemoveSourcePassword: (source: MoneySourceSummary) => void;
   onLock: () => void;
   onNormalize: (documentId: string) => void;
   onOpenUnlock: (document: SourceDocumentSummary) => void;
@@ -93,6 +101,25 @@ export const SourcesView = memo(function SourcesView(props: SourcesViewProps) {
       (count, prompt) => count + prompt.candidateAccounts.length,
       0,
     );
+  const selectedEntry = props.selectedMoneySourceId === null
+    ? undefined
+    : props.sourceDocuments.find(
+      (entry) => entry.source.moneySourceId === props.selectedMoneySourceId,
+    );
+  // A selected source owns the whole surface: the detail view replaces the
+  // intake list until the user goes back (0017 — evidence lives under each
+  // Money Source detail view).
+  if (selectedEntry !== undefined) {
+    return (
+      <SourceDetailView
+        detail={selectedEntry.detail}
+        loading={props.loadingDocuments}
+        notice={props.notice}
+        props={props}
+        source={selectedEntry.source}
+      />
+    );
+  }
   return (
     <>
       <LedgerHeader
@@ -165,6 +192,16 @@ export const SourcesView = memo(function SourcesView(props: SourcesViewProps) {
 
         <section aria-label="Money Sources">
           <SectionHeader
+            action={
+              <Button
+                disabled={props.busy || props.normalizingDocumentId !== null}
+                onClick={props.onCreateMoneySource}
+                size="sm"
+                variant="quiet"
+              >
+                Add source
+              </Button>
+            }
             count={props.sourceDocuments.length > 0 ? props.sourceDocuments.length : undefined}
             countUnit="source"
             title="Money Sources"
@@ -180,54 +217,37 @@ export const SourcesView = memo(function SourcesView(props: SourcesViewProps) {
           {!props.loadingDocuments && props.sourceDocuments.length === 0 ? (
             <div className="mt-2 border-t border-ledger-rule">
               <EmptyState
-                body="Money Sources appear here once evidence is confirmed to a bank, card, or wallet."
+                body="Add a source for a supported provider, or confirm evidence to a bank, card, or wallet."
                 icon="sources"
                 title="No Money Sources yet"
               />
             </div>
           ) : null}
           <div className="mt-2">
-            {props.sourceDocuments.map(({ documents, source }) => {
-              const selected = props.selectedMoneySourceId === source.moneySourceId;
-              return (
-                <section
-                  aria-label={source.displayName}
-                  className="border-t border-ledger-rule py-3"
-                  key={source.moneySourceId}
-                >
-                  <div className="flex items-center gap-3">
-                    <MonogramTile className="shrink-0" name={source.displayName} />
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-md font-medium text-ledger-ink">{source.displayName}</h3>
-                      <p className="mt-0.5 text-xs text-ledger-text-muted">{sourceTypeLabel(source.sourceType)}</p>
-                    </div>
-                    <Button
-                      aria-expanded={selected}
-                      aria-label={`View documents for ${source.displayName}`}
-                      disabled={props.loadingDocuments}
-                      onClick={() => props.onSelectMoneySource(source.moneySourceId)}
-                      size="sm"
-                      variant="quiet"
-                    >
-                      {selected && documents !== null
-                        ? "Refresh documents"
-                        : "View documents"}
-                    </Button>
+            {props.sourceDocuments.map(({ source }) => (
+              <section
+                aria-label={source.displayName}
+                className="border-t border-ledger-rule py-3"
+                key={source.moneySourceId}
+              >
+                <div className="flex items-center gap-3">
+                  <MonogramTile className="shrink-0" name={source.displayName} />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-md font-medium text-ledger-ink">{source.displayName}</h3>
+                    <p className="mt-0.5 text-xs text-ledger-text-muted">{sourceTypeLabel(source.sourceType)}</p>
                   </div>
-                  {selected && documents === null && props.loadingDocuments ? (
-                    <p className="py-3 text-sm text-ledger-text-muted" role="status">Loading documents…</p>
-                  ) : null}
-                  {selected && documents?.length === 0 ? (
-                    <p className="py-3 text-sm text-ledger-text-muted">
-                      No {source.displayName} documents yet. Add a file or set up CanCan Inbox.
-                    </p>
-                  ) : null}
-                  {selected && documents && documents.length > 0 ? (
-                    <EvidenceDocumentGroups documents={documents} props={props} />
-                  ) : null}
-                </section>
-              );
-            })}
+                  <Button
+                    aria-label={`Open ${source.displayName}`}
+                    disabled={props.loadingDocuments}
+                    onClick={() => props.onSelectMoneySource(source.moneySourceId)}
+                    size="sm"
+                    variant="quiet"
+                  >
+                    Open
+                  </Button>
+                </div>
+              </section>
+            ))}
           </div>
         </section>
 
@@ -283,8 +303,3 @@ export const SourcesView = memo(function SourcesView(props: SourcesViewProps) {
     </>
   );
 });
-
-
-function sourceTypeLabel(sourceType: string) {
-  return sourceType.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
-}

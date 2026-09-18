@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   MoneySourceSummary,
+  MoneySourceDetail,
   RenderedDocumentPage,
   SavedStatementPasswordResult,
   SourceDocumentImportOutcome,
@@ -71,33 +72,38 @@ describe("App manual import orchestration", () => {
     expect(button("Add file").disabled).toBe(false);
   });
 
-  it("loads routed documents only for the selected Money Source", async () => {
-    const listSourceDocuments = vi.fn(async (moneySourceId: string) => (
-      moneySourceId === moneySource.moneySourceId ? [availableDocument] : []
-    ));
+  it("loads the source detail only for the opened Money Source", async () => {
+    const getMoneySourceDetail = vi.fn(async (moneySourceId: string) => ({
+      actions: { canEnterStatementPassword: false, hasSavedStatementPassword: false },
+      displayName: moneySourceId === moneySource.moneySourceId ? moneySource.displayName : otherMoneySource.displayName,
+      documents: moneySourceId === moneySource.moneySourceId ? [availableDocument] : [],
+      moneySourceId,
+      providerKey: moneySourceId === moneySource.moneySourceId ? moneySource.providerKey : otherMoneySource.providerKey,
+      sourceType: "bank",
+    }));
     const api = createApi({
+      getMoneySourceDetail,
       listMoneySources: vi.fn(async () => [moneySource, otherMoneySource]),
-      listSourceDocuments,
     });
 
     await mount(api, "sources");
 
     expect(container.textContent).toContain(moneySource.displayName);
     expect(container.textContent).toContain(otherMoneySource.displayName);
-    expect(listSourceDocuments).not.toHaveBeenCalled();
+    expect(getMoneySourceDetail).not.toHaveBeenCalled();
 
-    const selectSource = container.querySelector<HTMLButtonElement>(
-      `[aria-label="View documents for ${moneySource.displayName}"]`,
+    const openSource = container.querySelector<HTMLButtonElement>(
+      `[aria-label="Open ${moneySource.displayName}"]`,
     );
-    expect(selectSource).not.toBeNull();
+    expect(openSource).not.toBeNull();
     await act(async () => {
-      selectSource!.click();
+      openSource!.click();
       await settle();
     });
 
-    expect(listSourceDocuments).toHaveBeenCalledTimes(1);
-    expect(listSourceDocuments).toHaveBeenCalledWith(moneySource.moneySourceId);
-    expect(listSourceDocuments).not.toHaveBeenCalledWith(
+    expect(getMoneySourceDetail).toHaveBeenCalledTimes(1);
+    expect(getMoneySourceDetail).toHaveBeenCalledWith(moneySource.moneySourceId);
+    expect(getMoneySourceDetail).not.toHaveBeenCalledWith(
       otherMoneySource.moneySourceId,
     );
     expect(container.textContent).toContain(availableDocument.originalFilename);
@@ -105,17 +111,24 @@ describe("App manual import orchestration", () => {
 
   it("queues a parser re-run for ready routed evidence and guards processing evidence", async () => {
     const api = createApi({
+      getMoneySourceDetail: vi.fn(async (moneySourceId: string) => ({
+        actions: { canEnterStatementPassword: false, hasSavedStatementPassword: false },
+        displayName: moneySource.displayName,
+        documents: [
+          sourceDocument({ documentId: "routed" }),
+          sourceDocument({ documentId: "processing", documentStatus: "processing" }),
+        ],
+        moneySourceId,
+        providerKey: moneySource.providerKey,
+        sourceType: "bank",
+      })),
       listMoneySources: vi.fn(async () => [moneySource]),
-      listSourceDocuments: vi.fn(async () => [
-        sourceDocument({ documentId: "routed" }),
-        sourceDocument({ documentId: "processing", documentStatus: "processing" }),
-      ]),
     });
 
     await mount(api, "sources");
     await act(async () => {
       container.querySelector<HTMLButtonElement>(
-        `[aria-label="View documents for ${moneySource.displayName}"]`,
+        `[aria-label="Open ${moneySource.displayName}"]`,
       )!.click();
       await settle();
     });
@@ -127,41 +140,47 @@ describe("App manual import orchestration", () => {
 
   it("does not leave a failed Money Source selection in a loading state", async () => {
     const api = createApi({
-      listMoneySources: vi.fn(async () => [moneySource]),
-      listSourceDocuments: vi.fn(async () => {
-        throw new Error("source documents unavailable");
+      getMoneySourceDetail: vi.fn(async () => {
+        throw new Error("source detail unavailable");
       }),
+      listMoneySources: vi.fn(async () => [moneySource]),
     });
 
     await mount(api, "sources");
-    const selectSource = container.querySelector<HTMLButtonElement>(
-      `[aria-label="View documents for ${moneySource.displayName}"]`,
+    const openSource = container.querySelector<HTMLButtonElement>(
+      `[aria-label="Open ${moneySource.displayName}"]`,
     );
-    expect(selectSource).not.toBeNull();
+    expect(openSource).not.toBeNull();
     await act(async () => {
-      selectSource!.click();
+      openSource!.click();
       await settle();
     });
 
     expect(container.textContent).toContain("Something needs your attention");
     expect(container.textContent).not.toContain("Loading documents…");
-    expect(selectSource!.disabled).toBe(false);
   });
 
   it("clears a failed Money Source selection error when another selection succeeds", async () => {
-    const listSourceDocuments = vi
-      .fn<(moneySourceId: string) => Promise<SourceDocumentSummary[]>>()
-      .mockRejectedValueOnce(new Error("source documents unavailable"))
-      .mockResolvedValueOnce([availableDocument]);
+    const getMoneySourceDetail = vi
+      .fn<(moneySourceId: string) => Promise<MoneySourceDetail>>()
+      .mockRejectedValueOnce(new Error("source detail unavailable"))
+      .mockResolvedValueOnce({
+        actions: { canEnterStatementPassword: false, hasSavedStatementPassword: false },
+        displayName: otherMoneySource.displayName,
+        documents: [availableDocument],
+        moneySourceId: otherMoneySource.moneySourceId,
+        providerKey: otherMoneySource.providerKey,
+        sourceType: "bank",
+      });
     const api = createApi({
+      getMoneySourceDetail,
       listMoneySources: vi.fn(async () => [moneySource, otherMoneySource]),
-      listSourceDocuments,
     });
 
     await mount(api, "sources");
     await act(async () => {
       container.querySelector<HTMLButtonElement>(
-        `[aria-label="View documents for ${moneySource.displayName}"]`,
+        `[aria-label="Open ${moneySource.displayName}"]`,
       )!.click();
       await settle();
     });
@@ -169,7 +188,13 @@ describe("App manual import orchestration", () => {
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>(
-        `[aria-label="View documents for ${otherMoneySource.displayName}"]`,
+        `[aria-label="Back to all Money Sources"]`,
+      )!.click();
+      await settle();
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        `[aria-label="Open ${otherMoneySource.displayName}"]`,
       )!.click();
       await settle();
     });

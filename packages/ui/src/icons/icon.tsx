@@ -20,6 +20,7 @@ export type IconName =
   | "assistant"
   | "check"
   | "chevron-down"
+  | "chevron-left"
   | "chevron-right"
   | "x"
   | "lock"
@@ -73,6 +74,7 @@ const shapes: Record<IconName, ReactNode> = {
   ),
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   "chevron-down": <path d="M7 10l5 5 5-5" />,
+  "chevron-left": <path d="M14 7l-5 5 5 5" />,
   "chevron-right": <path d="M10 7l5 5-5 5" />,
   x: <path d="M7 7l10 10M17 7L7 17" />,
   lock: (

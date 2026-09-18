@@ -53,7 +53,7 @@ export function createTaskDestinationActions(
 
   const findDocumentById = (documentId: string): SourceDocumentSummary | undefined =>
     sourceDocuments
-      .flatMap((entry) => entry.documents ?? [])
+    .flatMap((entry) => entry.detail?.documents ?? [])
       .concat(unassignedDocuments)
       .find((document) => document.documentId === documentId);
 
@@ -88,7 +88,7 @@ export function createTaskDestinationActions(
     switch (destination.kind) {
       case "document": {
         const owner = sourceDocuments.find((entry) =>
-          (entry.documents ?? []).some((doc) => doc.documentId === destination.documentId));
+          (entry.detail?.documents ?? []).some((doc) => doc.documentId === destination.documentId));
         navigate("sources");
         if (owner !== undefined && selectedMoneySourceIdRef.current !== owner.source.moneySourceId) {
           selectMoneySource(owner.source.moneySourceId);

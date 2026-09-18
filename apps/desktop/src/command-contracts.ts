@@ -16,7 +16,9 @@
 
 import type {
   ConfirmSourceCandidateRequest,
+  CreateMoneySourceRequest,
   DecideCandidateAccountsRequest,
+  EditMoneySourceRequest,
   ParkSourceCandidateRequest,
   TaskFilter,
 } from "./generated/presentation-types";
@@ -30,8 +32,10 @@ export type {
   CandidateAccountDecisionInput,
   ConfirmedMoneySourceCandidate,
   ConfirmSourceCandidateRequest,
+  CreateMoneySourceRequest,
   DecideCandidateAccountsRequest,
   DuplicateCommittedVersionAuditRow,
+  EditMoneySourceRequest,
   IntakeNotificationPermission,
   IntakeNotificationSettings,
   LocalInboxAccessState,
@@ -41,6 +45,8 @@ export type {
   MoneyOverviewAmount,
   MoneySourceCandidateState,
   MoneySourceCandidateStatus,
+  MoneySourceDetail,
+  MoneySourceDetailActions,
   MoneySourceSummary,
   ParkSourceCandidateRequest,
   RecentActivitySummary,
@@ -66,6 +72,7 @@ export type {
   OperationalDiagnosticsCategory,
   OperationalDiagnosticsPreview,
   StatementPasswordSourceSummary,
+  SupportedMoneySourceProviderSummary,
   TaskConsequence,
   TaskDestination,
   TaskFilter,
@@ -121,6 +128,15 @@ export type ParkSourceCandidateArgs = {
 };
 
 export type ListSourceDocumentsArgs = { moneySourceId: string };
+export type CreateMoneySourceArgs = {
+  request: CreateMoneySourceRequest;
+};
+
+export type EditMoneySourceArgs = {
+  request: EditMoneySourceRequest;
+};
+
+export type GetMoneySourceDetailArgs = { moneySourceId: string };
 
 export type ListTasksArgs = { filter: TaskFilter };
 
