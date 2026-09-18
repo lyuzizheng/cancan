@@ -16,7 +16,12 @@ export type SourceDocumentImportOutcome = { documentId: string, status: SourceDo
 
 export type SourceDocumentImportStatus = "imported" | "already_present" | "restored" | "restore_confirmation_required";
 
-export type MoneySourceSummary = { displayName: string, moneySourceId: string, sourceType: string, };
+export type MoneySourceSummary = { displayName: string, moneySourceId: string,
+/**
+ * The provider this source is bound to. A user can rename the source, so
+ * the name is never the identity; provider-branded surfaces read this.
+ */
+providerKey: string, sourceType: string, };
 
 export type SourceDocumentPreview = { lineCount: number, previewLines: number, previewText: string, truncated: boolean, };
 
@@ -103,6 +108,42 @@ export type SourceConfirmationScopeKind = "provider_singleton" | "provider_root_
 export type ConfirmSourceCandidateRequest = { candidateId: string, displayName: string, expectedVersion: number, sourceType: string, };
 
 export type ParkSourceCandidateRequest = { candidateId: string, expectedVersion: number, };
+
+export type CreateMoneySourceRequest = {
+/**
+ * The user's label for the source. Absent means the supported provider's
+ * own product name.
+ */
+displayName: string | null, providerKey: string, };
+
+export type EditMoneySourceRequest = { displayName: string, moneySourceId: string, };
+
+export type MoneySourceDetail = { actions: MoneySourceDetailActions, displayName: string, documents: Array<SourceDocumentSummary>, moneySourceId: string,
+/**
+ * The provider this source is bound to, so the detail surface can render
+ * provider-specific modules without trusting a user-editable name.
+ */
+providerKey: string, sourceType: string, };
+
+export type MoneySourceDetailActions = {
+/**
+ * At least one document waits on a statement password only the user can
+ * supply, so the source offers its password surface for entry.
+ */
+canEnterStatementPassword: boolean,
+/**
+ * A statement password is stored for this source, so its password surface
+ * offers update/remove instead of save.
+ */
+hasSavedStatementPassword: boolean, };
+
+export type SupportedMoneySourceProviderSummary = {
+/**
+ * The source already configured for this provider, when one exists.
+ * Nullable rather than a flag, so the picker can open that source instead
+ * of only rendering the provider as taken.
+ */
+configuredMoneySourceId: string | null, displayName: string, providerKey: string, sourceType: string, };
 
 export type DuplicateCommittedVersionAuditRow = { stableRecordKey: string, externalRecordId: string, sourceDocumentId: string, version: number, versionRank: number, recordEventType: string | null, postedOn: string | null, amountValue: string | null, currency: string | null, ledgerEventId: string | null, ledgerEventType: string | null, ledgerEventDate: string | null, ledgerEventStatus: string | null, ledgerEventIsReversal: boolean, ledgerEventHasReversal: boolean, allocationValue: string | null, matchUnit: string | null, matchReviewStatus: string | null, reversalSafe: boolean, };
 

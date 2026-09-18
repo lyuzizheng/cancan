@@ -1823,6 +1823,7 @@ fn applies_verified_mock_normalizer_routing_without_renderer_identity_input() {
         vec![MoneySourceSummary {
             display_name: "Synthetic Bank".to_owned(),
             money_source_id: "source-synthetic".to_owned(),
+            provider_key: "synthetic-bank".to_owned(),
             source_type: "bank".to_owned(),
         }]
     );

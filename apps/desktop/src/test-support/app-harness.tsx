@@ -68,11 +68,13 @@ export const availableDocument = sourceDocument();
 export const moneySource: MoneySourceSummary = {
   displayName: "Synthetic Bank",
   moneySourceId: "money-source-1",
+  providerKey: "synthetic-bank",
   sourceType: "bank",
 };
 export const otherMoneySource: MoneySourceSummary = {
   displayName: "Another Bank",
   moneySourceId: "money-source-2",
+  providerKey: "another-bank",
   sourceType: "bank",
 };
 

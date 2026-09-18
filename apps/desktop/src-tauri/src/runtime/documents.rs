@@ -160,6 +160,7 @@ impl VaultRuntime {
                     .map(|source| MoneySourceSummary {
                         display_name: source.display_name,
                         money_source_id: source.money_source_id,
+                        provider_key: source.provider_key,
                         source_type: source.source_type,
                     })
                     .collect()
@@ -242,7 +243,7 @@ impl VaultRuntime {
         Self::source_document_summaries(store, documents)
     }
 
-    fn source_document_summaries(
+    pub(super) fn source_document_summaries(
         store: &ManualImportStore,
         documents: Vec<SourceDocumentView>,
     ) -> Result<Vec<SourceDocumentSummary>, RuntimeError> {

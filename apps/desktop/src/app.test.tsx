@@ -29,6 +29,7 @@ const document: SourceDocumentSummary = {
 const source: MoneySourceSummary = {
   displayName: "Synthetic Bank",
   moneySourceId: "source-synthetic",
+  providerKey: "synthetic-bank",
   sourceType: "bank",
 };
 

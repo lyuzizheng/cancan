@@ -256,6 +256,7 @@ const existingSources: MoneySourceSummary[] = [
   {
     displayName: "Wise",
     moneySourceId: "source-wise",
+    providerKey: "wise",
     sourceType: "wallet",
   },
 ];
@@ -303,8 +304,18 @@ const inboxReauth: LocalInboxStatus = {
 };
 
 const previewMoneySources: MoneySourceSummary[] = [
-  { displayName: "DBS", moneySourceId: "source-dbs", sourceType: "bank" },
-  { displayName: "Wise", moneySourceId: "source-wise", sourceType: "wallet" },
+  {
+    displayName: "DBS",
+    moneySourceId: "source-dbs",
+    providerKey: "dbs",
+    sourceType: "bank",
+  },
+  {
+    displayName: "Wise",
+    moneySourceId: "source-wise",
+    providerKey: "wise",
+    sourceType: "wallet",
+  },
 ];
 
 const dbsDocuments: SourceDocumentSummary[] = [

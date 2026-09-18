@@ -68,6 +68,12 @@ fn generated_presentation_types() -> String {
         crate::database::intake::SourceConfirmationScopeKind::decl(&config),
         crate::runtime::ConfirmSourceCandidateRequest::decl(&config),
         crate::runtime::ParkSourceCandidateRequest::decl(&config),
+        // Money source configuration and detail.
+        crate::runtime::CreateMoneySourceRequest::decl(&config),
+        crate::runtime::EditMoneySourceRequest::decl(&config),
+        crate::runtime::MoneySourceDetail::decl(&config),
+        crate::runtime::MoneySourceDetailActions::decl(&config),
+        crate::runtime::SupportedMoneySourceProviderSummary::decl(&config),
         // Review queue and ledger evidence.
         crate::database::DuplicateCommittedVersionAuditRow::decl(&config),
         crate::database::MoneyOverview::decl(&config),
