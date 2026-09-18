@@ -37,6 +37,8 @@ export interface VaultSession {
   readonly recoveryConfigured: boolean;
   readonly rememberedOnThisMac: boolean | null;
   readonly status: VaultScreenStatus;
+  /** True after a password unlock while Touch ID is off; the offer is dismissible. */
+  readonly touchIdOffer: boolean;
   isCurrent(sessionId: number): boolean;
   unlockWithKeychain(): void;
   lockVault(): Promise<boolean | undefined>;
@@ -51,6 +53,8 @@ export interface VaultSession {
   setPassword(password: string): void;
   setRecoveryConfigured(configured: boolean): void;
   setRememberedOnThisMac(remembered: boolean | null): void;
+  /** Dismisses the post-password Touch ID offer without enabling it. */
+  dismissTouchIdOffer(): void;
   /** Closes the session for a gate screen and returns the new session epoch. */
   showGate(nextStatus: VaultScreenStatus): number;
   unlock(): void;
@@ -74,6 +78,7 @@ export function useVaultSession({
   const [rememberedOnThisMac, setRememberedOnThisMac] = useState<boolean | null>(
     false,
   );
+  const [touchIdOffer, setTouchIdOffer] = useState(false);
   const [recoveryConfigured, setRecoveryConfigured] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,10 +145,13 @@ export function useVaultSession({
     setError(null);
     setNotice(null);
     setPassword("");
+    setTouchIdOffer(false);
     wiring.current.resetSession();
     setBusy(false);
     return nextSessionId;
   }, [wiring]);
+
+  const dismissTouchIdOffer = useCallback(() => setTouchIdOffer(false), []);
 
   const loadAllData = useCallback(() => Promise.all([
     wiring.current.loadDocuments(),
@@ -277,9 +285,19 @@ export function useVaultSession({
           : await api.unlockVault(password);
       if (sessionId.current === startedAt) {
         await finalizeUnlock(nextStatus);
+        // A password unlock while Touch ID is off earns one dismissible
+        // re-enable offer (spec 0009); `null` means the Keychain read failed,
+        // so there is nothing reliable to offer.
+        if (
+          status === "locked"
+          && nextStatus === "unlocked"
+          && rememberedOnThisMac === false
+        ) {
+          setTouchIdOffer(true);
+        }
       }
     }, startedAt);
-  }, [api, finalizeUnlock, password, run, status]);
+  }, [api, finalizeUnlock, password, rememberedOnThisMac, run, status]);
 
   const unlockWithKeychain = useCallback(() => {
     const startedAt = sessionId.current;
@@ -325,6 +343,8 @@ export function useVaultSession({
     setPassword,
     setRecoveryConfigured,
     setRememberedOnThisMac,
+    dismissTouchIdOffer,
+    touchIdOffer,
     showGate,
     status,
     unlock: submitPassword,
