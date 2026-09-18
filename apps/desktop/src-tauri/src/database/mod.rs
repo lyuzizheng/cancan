@@ -36,6 +36,10 @@ const COMMIT_REVIEW_BATCH_JOB_TYPE: &str = "commit_review_batch";
 const PARSE_DOCUMENT_JOB_TYPE: &str = "parse_document";
 const PARSE_DOCUMENT_LEASE_SECONDS: i64 = 300;
 const RECONCILE_DOCUMENT_JOB_TYPE: &str = "reconcile_document";
+/// The claim owner a running reconcile job carries. The claim, the completion,
+/// and the failure writer all filter on it, so a superseded run cannot be
+/// mistaken for the current one.
+const RECONCILE_DOCUMENT_LEASE_OWNER: &str = "reconcile-document";
 const RECONCILE_DOCUMENT_LEASE_SECONDS: i64 = 300;
 const COMMIT_REVIEW_BATCH_LEASE_SECONDS: i64 = 300;
 const MAX_SUPPORTED_RELATIONSHIP_WINDOW_DAYS: i64 = 7;
@@ -507,7 +511,12 @@ impl ManualImportStore {
         store.recover_interrupted_review_jobs()?;
         store.reconcile_sealed_batches()?;
         // Spec 0015 retention: the operational log never outlives its window.
-        store.purge_expired_operational_logs()?;
+        // Best-effort, like every other log write: a Vault whose log table is
+        // unreadable still opens, because a diagnostic is not worth locking the
+        // user out of their evidence.
+        if let Err(error) = store.purge_expired_operational_logs() {
+            eprintln!("operational log retention failed: {error}");
+        }
         Ok(store)
     }
 
@@ -784,14 +793,15 @@ impl ManualImportStore {
         let changed = self.connection.execute(
             "UPDATE jobs \
              SET status = 'running', attempts = attempts + 1, \
-                 lease_owner = 'reconcile-document', \
+                 lease_owner = ?3, \
                  lease_until = datetime('now', ?2), \
                  started_at = COALESCE(started_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP \
-             WHERE related_source_document_id = ?1 AND job_type = ?3 \
+             WHERE related_source_document_id = ?1 AND job_type = ?4 \
                AND status = 'queued' AND attempts < max_attempts",
             params![
                 document_id,
                 format!("+{RECONCILE_DOCUMENT_LEASE_SECONDS} seconds"),
+                RECONCILE_DOCUMENT_LEASE_OWNER,
                 RECONCILE_DOCUMENT_JOB_TYPE
             ],
         )?;
@@ -836,7 +846,7 @@ impl ManualImportStore {
                      lease_owner = NULL, lease_until = NULL, finished_at = CURRENT_TIMESTAMP, \
                      updated_at = CURRENT_TIMESTAMP \
              WHERE related_source_document_id = ?2 AND job_type = ?3 \
-               AND status = 'running' AND lease_owner = 'reconcile-document'",
+               AND status = 'running' AND lease_owner = ?4",
             params![
                 serde_json::json!({
                     "reviewItemsCreated": review_items_created,
@@ -845,6 +855,7 @@ impl ManualImportStore {
                 .to_string(),
                 document_id,
                 RECONCILE_DOCUMENT_JOB_TYPE,
+                RECONCILE_DOCUMENT_LEASE_OWNER,
             ],
         )?;
         if changed != 1 {

@@ -222,6 +222,29 @@ fn redaction_removes_paths_filenames_addresses_account_numbers_and_amounts() {
 }
 
 #[test]
+fn redaction_removes_dot_separated_tokens_and_national_id_style_identifiers() {
+    // A JWT: three base64url segments whose long ones mix letters with digits.
+    let jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.\
+               eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.\
+               SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+    let redacted = redact(&format!(
+        "authorization failed for S1234567A with token {jwt} after 3 attempts"
+    ));
+
+    for secret in [jwt, "S1234567A"] {
+        assert!(!redacted.contains(secret), "{redacted}");
+    }
+    assert!(redacted.contains("<token>"), "{redacted}");
+    assert!(redacted.contains("<id>"), "{redacted}");
+
+    // Dotted version and host text stays readable: over-redaction would make
+    // the export useless without protecting anything.
+    let versioned = redact("connector protocol 1.2.3 on docs.example.com");
+    assert!(versioned.contains("1.2.3"), "{versioned}");
+    assert!(versioned.contains("docs.example.com"), "{versioned}");
+}
+
+#[test]
 fn reopening_the_vault_keeps_entries_inside_the_retention_window() {
     // Retention runs on every open: reopening the encrypted Vault twice must
     // leave the retained entries in place and stay idempotent.
@@ -322,5 +345,135 @@ fn a_failure_reported_from_the_real_error_keeps_the_reason_and_retryability() {
     assert_eq!(
         detail, "the normalizer produced no result before it timed out",
         "the log keeps the reported reason, not the static code"
+    );
+}
+#[test]
+fn failed_reconcile_keeps_the_context_of_the_running_job_not_a_superseded_one() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let source_path = root.path().join("statement.pdf");
+    fs::write(&source_path, b"%PDF reconcile context").expect("write fixture");
+    let mut store = open_store(root.path());
+    store
+        .register_import(
+            &import_source(
+                &source_path,
+                "document-reconcile-context",
+                "audit-reconcile-context",
+            ),
+            None,
+        )
+        .expect("import source");
+    // A superseded run of the same document is still in the table and wins
+    // every scan order an unfiltered read could pick — it is inserted first,
+    // its id sorts first, and `failed` sorts before `running` in the claim
+    // index — so the context read must filter, not hope.
+    store
+        .connection
+        .execute(
+            "INSERT INTO jobs( \
+               id, job_type, status, input_json, error_json, related_source_document_id, \
+               attempts, max_attempts, created_at \
+             ) VALUES ( \
+               'job-reconcile-old', 'reconcile_document', 'failed', '{}', \
+               '{\"errorCode\":\"provider_unavailable\"}', \
+               'document-reconcile-context', 1, 3, datetime('now', '-1 hour') \
+             )",
+            [],
+        )
+        .expect("seed superseded reconcile job");
+    store
+        .connection
+        .execute(
+            "INSERT INTO jobs( \
+               id, job_type, status, input_json, related_source_document_id, \
+               related_money_source_id, lease_owner, lease_until, attempts, max_attempts \
+             ) VALUES ( \
+               'job-reconcile-running', 'reconcile_document', 'running', '{}', \
+               'document-reconcile-context', 'source-dbs', 'reconcile-document', \
+               datetime('now', '+5 minutes'), 2, 3 \
+             )",
+            [],
+        )
+        .expect("seed running reconcile job");
+
+    store
+        .fail_reconcile_document(
+            "document-reconcile-context",
+            "provider_unavailable",
+            Some(&JobFailureDetail::from_code(
+                Some("provider"),
+                "provider_unavailable",
+            )),
+        )
+        .expect("record reconcile failure");
+
+    let error_json: String = store
+        .connection
+        .query_row(
+            "SELECT error_json FROM jobs WHERE id = 'job-reconcile-running'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read the failed job error_json");
+    let error_json: serde_json::Value =
+        serde_json::from_str(&error_json).expect("error_json is an object");
+    assert_eq!(error_json["errorCode"], "provider_unavailable");
+    assert_eq!(error_json["technical"]["attempt"], 2);
+    assert_eq!(error_json["technical"]["maxAttempts"], 3);
+    assert_eq!(error_json["technical"]["jobType"], "reconcile_document");
+    assert_eq!(
+        error_json["technical"]["related"]["moneySourceId"],
+        "source-dbs"
+    );
+    assert_eq!(
+        error_json["technical"]["related"]["sourceDocumentId"],
+        "document-reconcile-context"
+    );
+
+    // The superseded run keeps its own failure, and the log entry belongs to
+    // the job the failure was recorded against.
+    let superseded: Option<String> = store
+        .connection
+        .query_row(
+            "SELECT error_json FROM jobs WHERE id = 'job-reconcile-old'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read the superseded job");
+    assert_eq!(
+        superseded.as_deref(),
+        Some("{\"errorCode\":\"provider_unavailable\"}")
+    );
+    let (attempt, job_status): (i64, String) = store
+        .connection
+        .query_row(
+            "SELECT attempt, job_status FROM operational_logs \
+             WHERE component = 'job.reconcile_document' ORDER BY id DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read the reconcile failure entry");
+    assert_eq!(attempt, 2);
+    assert_eq!(job_status, "running");
+}
+
+#[test]
+fn a_vault_whose_operational_log_is_unreadable_still_opens() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    {
+        let store = open_store(root.path());
+        store
+            .connection
+            .execute("DROP TABLE operational_logs", [])
+            .expect("corrupt the log table");
+    }
+
+    // Retention is best-effort: the log is not worth locking the user out of
+    // their evidence, so the Vault opens and still serves the financial tables.
+    let reopened = ManualImportStore::open_existing(root.path(), Zeroizing::new(KEY))
+        .expect("a broken operational log must not block the Vault");
+    assert_eq!(
+        reopened.list_money_sources().expect("read sources").len(),
+        1
     );
 }

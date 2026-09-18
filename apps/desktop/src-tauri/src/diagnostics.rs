@@ -464,8 +464,8 @@ fn render_row(row: &OperationalLogRow) -> String {
 ///   messages (for example serde's `invalid type: integer "12"`) can embed
 ///   values;
 /// * any token that looks like a path or URL, a mailbox address, a document
-///   name, a credential or content hash, a bare account number, or a monetary
-///   amount becomes a placeholder;
+///   name, a credential or content hash, a national-ID-style identifier, a bare
+///   account number, or a monetary amount becomes a placeholder;
 /// * the result is truncated to [`MAX_REDACTED_CHARS`].
 pub(crate) fn redact(raw: &str) -> String {
     let collapsed = raw
@@ -509,8 +509,11 @@ fn redact_token(token: &str) -> Cow<'_, str> {
     if is_document_name(core) {
         return Cow::Borrowed("<file>");
     }
-    if is_opaque_identifier(core) {
+    if is_opaque_identifier(core) || is_dot_separated_token(core) {
         return Cow::Borrowed("<token>");
+    }
+    if is_national_id(core) {
+        return Cow::Borrowed("<id>");
     }
     if is_bare_number(core) {
         return Cow::Borrowed("<number>");
@@ -568,6 +571,54 @@ fn is_opaque_identifier(core: &str) -> bool {
         }
     }
     has_digit && has_letter
+}
+
+/// A dot-separated opaque token, for example a JWT: at least three non-empty
+/// segments drawn from the base64 alphabet, one of them long and mixing letters
+/// with digits.
+///
+/// The overall length bar and the mixed long segment are what keep version and
+/// host text such as `1.2.3` or `docs.example.com` readable, while a signed
+/// token — whose every segment is an encoded value — is replaced whole.
+fn is_dot_separated_token(core: &str) -> bool {
+    if core.len() < 24 {
+        return false;
+    }
+    let mut segments = 0_u32;
+    let mut has_encoded_segment = false;
+    for segment in core.split('.') {
+        if segment.is_empty() {
+            return false;
+        }
+        segments += 1;
+        let mut has_digit = false;
+        let mut has_letter = false;
+        for byte in segment.bytes() {
+            match byte {
+                b'0'..=b'9' => has_digit = true,
+                b'a'..=b'z' | b'A'..=b'Z' => has_letter = true,
+                b'_' | b'-' | b'+' | b'=' => {}
+                _ => return false,
+            }
+        }
+        has_encoded_segment |= has_digit && has_letter && segment.len() >= 16;
+    }
+    segments >= 3 && has_encoded_segment
+}
+
+/// A national-ID-style identifier: one letter, seven to nine digits, one
+/// letter, as in a Singapore NRIC/FIN (`S1234567A`).
+///
+/// The shape is too short for [`is_opaque_identifier`] and too lettered for
+/// [`is_bare_number`], so without this rule the identifier travels verbatim.
+fn is_national_id(core: &str) -> bool {
+    let bytes = core.as_bytes();
+    if !(9..=11).contains(&bytes.len()) {
+        return false;
+    }
+    bytes[0].is_ascii_alphabetic()
+        && bytes[bytes.len() - 1].is_ascii_alphabetic()
+        && bytes[1..bytes.len() - 1].iter().all(u8::is_ascii_digit)
 }
 
 /// An account, card, or reference number: digits with separators only.

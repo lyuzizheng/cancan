@@ -42,8 +42,14 @@ impl ManualImportStore {
                      lease_owner = NULL, lease_until = NULL, finished_at = CURRENT_TIMESTAMP, \
                      updated_at = CURRENT_TIMESTAMP \
              WHERE related_source_document_id = ?3 AND job_type = ?4 \
-               AND status = 'running' AND lease_owner = 'reconcile-document'",
-            params![error_json, reason, document_id, RECONCILE_DOCUMENT_JOB_TYPE],
+               AND status = 'running' AND lease_owner = ?5",
+            params![
+                error_json,
+                reason,
+                document_id,
+                RECONCILE_DOCUMENT_JOB_TYPE,
+                RECONCILE_DOCUMENT_LEASE_OWNER
+            ],
         )?;
         if changed == 1
             && let Some(context) = context

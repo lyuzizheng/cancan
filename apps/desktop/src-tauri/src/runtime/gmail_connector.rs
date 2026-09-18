@@ -12,7 +12,9 @@
 // `cancan-gmail-connector` external binary ships only through `pnpm build:sidecar`.
 
 use super::*;
+use crate::diagnostics::JobFailureDetail;
 use std::{
+    fmt,
     io::Read,
     net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     thread,
@@ -27,6 +29,53 @@ const GMAIL_LOOPBACK_MAX_AUTHORIZATION_URL_BYTES: usize = 16 * 1024;
 const GMAIL_LOOPBACK_REQUEST_INITIAL_CAPACITY_BYTES: usize = 1024;
 const GMAIL_LOOPBACK_REQUEST_CHUNK_BYTES: usize = 512;
 const GMAIL_LOOPBACK_REQUEST_MAX_BYTES: usize = 8192;
+/// The provider every authorization failure records on its technical layer, so
+/// a report can tell the connector's protocol from the host's own steps.
+const GMAIL_CONNECTOR_PROVIDER: &str = "gmail-connector";
+/// The component the flow's single durable failure entry is written under, at
+/// the boundary that owns the run.
+pub(super) const GMAIL_AUTHORIZATION_COMPONENT: &str = "gmail.authorization";
+
+/// The failure layer of a step whose error object is still in scope: the real
+/// error travels with the static code instead of being dropped here.
+///
+/// Nothing is logged where the failure happens — the authorization boundary
+/// records one entry per failed run, so a failure that is observed, retried,
+/// and reported leaves exactly one.
+pub(super) fn gmail_transport_failure(
+    code: &'static str,
+    error: &(dyn std::error::Error + Send + Sync + 'static),
+) -> RuntimeError {
+    deferred_failure(
+        code,
+        JobFailureDetail::from_error(Some(GMAIL_CONNECTOR_PROVIDER), error),
+    )
+}
+
+/// A protocol violation: the same exchange would fail the same way again.
+pub(super) fn gmail_protocol_failure(
+    code: &'static str,
+    reason: impl fmt::Display,
+) -> RuntimeError {
+    deferred_failure(
+        code,
+        JobFailureDetail::from_message(Some(GMAIL_CONNECTOR_PROVIDER), &reason.to_string()),
+    )
+}
+
+/// Transport trouble or a timeout: a later attempt can still succeed.
+pub(super) fn gmail_transient_failure(
+    code: &'static str,
+    reason: impl fmt::Display,
+) -> RuntimeError {
+    deferred_failure(
+        code,
+        JobFailureDetail::from_transient_message(
+            Some(GMAIL_CONNECTOR_PROVIDER),
+            &reason.to_string(),
+        ),
+    )
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,13 +148,13 @@ struct GmailLoopbackListener {
 impl GmailLoopbackListener {
     fn bind() -> Result<Self, RuntimeError> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .map_err(|_| RuntimeError::new("gmail_authorization_unavailable"))?;
+            .map_err(|error| gmail_transport_failure("gmail_authorization_unavailable", &error))?;
         listener
             .set_nonblocking(true)
-            .map_err(|_| RuntimeError::new("gmail_authorization_unavailable"))?;
+            .map_err(|error| gmail_transport_failure("gmail_authorization_unavailable", &error))?;
         let port = listener
             .local_addr()
-            .map_err(|_| RuntimeError::new("gmail_authorization_unavailable"))?
+            .map_err(|error| gmail_transport_failure("gmail_authorization_unavailable", &error))?
             .port();
         Ok(Self {
             listener: Some(listener),
@@ -118,9 +167,12 @@ impl GmailLoopbackListener {
     }
 
     fn take(&mut self) -> Result<TcpListener, RuntimeError> {
-        self.listener
-            .take()
-            .ok_or_else(|| RuntimeError::new("gmail_authorization_failed"))
+        self.listener.take().ok_or_else(|| {
+            gmail_protocol_failure(
+                "gmail_authorization_failed",
+                "the loopback listener was already consumed",
+            )
+        })
     }
 }
 
@@ -134,11 +186,11 @@ pub(super) async fn run_gmail_connector_sidecar(
     let sidecar = app
         .shell()
         .sidecar("cancan-gmail-connector")
-        .map_err(|_| RuntimeError::new("gmail_authorization_unavailable"))?
+        .map_err(|error| gmail_transport_failure("gmail_authorization_unavailable", &error))?
         .env_clear();
     let (mut events, mut child) = sidecar
         .spawn()
-        .map_err(|_| RuntimeError::new("gmail_authorization_unavailable"))?;
+        .map_err(|error| gmail_transport_failure("gmail_authorization_unavailable", &error))?;
     let deadline = Instant::now() + GMAIL_AUTHORIZATION_TIMEOUT;
 
     let protocol_result: Result<String, RuntimeError> = async {
@@ -151,7 +203,10 @@ pub(super) async fn run_gmail_connector_sidecar(
                 environment_cleared: true,
             } if runtime == "gmail-oauth-v1"
         ) {
-            return Err(RuntimeError::new("gmail_authorization_unavailable"));
+            return Err(gmail_protocol_failure(
+                "gmail_authorization_unavailable",
+                "the connector opened with an unexpected greeting",
+            ));
         }
         write_gmail_connector_command(
             &mut child,
@@ -171,7 +226,10 @@ pub(super) async fn run_gmail_connector_sidecar(
                 request_id: ref response_id
             } if response_id == &request_id
         ) {
-            return Err(RuntimeError::new("gmail_authorization_failed"));
+            return Err(gmail_protocol_failure(
+                "gmail_authorization_failed",
+                "the connector did not wait for the callback it was opened for",
+            ));
         }
         let listener = loopback.take()?;
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -179,7 +237,12 @@ pub(super) async fn run_gmail_connector_sidecar(
             wait_for_loopback_callback(listener, remaining)
         })
         .await
-        .map_err(|_| RuntimeError::new("gmail_authorization_failed"))??;
+        .map_err(|error| {
+            gmail_transient_failure(
+                "gmail_authorization_failed",
+                format!("the callback reader did not finish: {error}"),
+            )
+        })??;
         write_gmail_connector_command(
             &mut child,
             &GmailConnectorHostResponse {
@@ -196,7 +259,10 @@ pub(super) async fn run_gmail_connector_sidecar(
                 request_id: ref response_id
             } if response_id == &request_id
         ) {
-            return Err(RuntimeError::new("gmail_authorization_failed"));
+            return Err(gmail_protocol_failure(
+                "gmail_authorization_failed",
+                "the connector did not close the callback listener it was opened for",
+            ));
         }
         loopback.close();
         write_gmail_connector_response(&mut child, &request_id, "closed")?;
@@ -212,9 +278,17 @@ pub(super) async fn run_gmail_connector_sidecar(
                 mailbox_address
             }
             GmailConnectorMessage::Error { code } => {
-                return Err(RuntimeError::new(gmail_connector_error_code(&code)));
+                return Err(gmail_protocol_failure(
+                    gmail_connector_error_code(&code),
+                    format!("the connector reported {code}"),
+                ));
             }
-            _ => return Err(RuntimeError::new("gmail_authorization_failed")),
+            _ => {
+                return Err(gmail_protocol_failure(
+                    "gmail_authorization_failed",
+                    "the connector did not deliver a mailbox to persist",
+                ));
+            }
         };
         Ok(persisted_mailbox)
     }
@@ -223,6 +297,7 @@ pub(super) async fn run_gmail_connector_sidecar(
         Ok(mailbox) => mailbox,
         Err(error) => {
             let _ = child.kill();
+            log_boundary_failure(runtime, GMAIL_AUTHORIZATION_COMPONENT, &error);
             return Err(error);
         }
     };
@@ -269,10 +344,16 @@ async fn expect_open_external_url(
         request_id: response_id,
     } = message
     else {
-        return Err(RuntimeError::new("gmail_authorization_failed"));
+        return Err(gmail_protocol_failure(
+            "gmail_authorization_failed",
+            "the connector did not present an authorization URL to open",
+        ));
     };
     if response_id != request_id || !valid_google_authorization_url(&authorization_url) {
-        return Err(RuntimeError::new("gmail_authorization_failed"));
+        return Err(gmail_protocol_failure(
+            "gmail_authorization_failed",
+            "the connector presented an authorization URL that is not the Google endpoint",
+        ));
     }
     #[allow(
         deprecated,
@@ -280,7 +361,7 @@ async fn expect_open_external_url(
     )]
     app.shell()
         .open(authorization_url.as_str(), None)
-        .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
+        .map_err(|error| gmail_transport_failure("gmail_authorization_failed", &error))?;
     write_gmail_connector_response(child, request_id, "opened")
 }
 
@@ -290,19 +371,46 @@ async fn next_gmail_connector_message(
 ) -> Result<GmailConnectorMessage, RuntimeError> {
     let event = match timeout_at(deadline, events.recv()).await {
         Ok(Some(event)) => event,
-        Ok(None) | Err(_) => return Err(RuntimeError::new("gmail_authorization_failed")),
+        Ok(None) | Err(_) => {
+            return Err(gmail_transient_failure(
+                "gmail_authorization_failed",
+                "the connector did not answer before the authorization window closed",
+            ));
+        }
     };
     match event {
         CommandEvent::Stdout(bytes) if bytes.len() <= GMAIL_CONNECTOR_MAX_MESSAGE_BYTES => {
             let bytes = Zeroizing::new(bytes);
-            serde_json::from_slice(&bytes)
-                .map_err(|_| RuntimeError::new("gmail_authorization_failed"))
+            serde_json::from_slice(&bytes).map_err(|error| {
+                gmail_protocol_failure(
+                    "gmail_authorization_failed",
+                    format!("the connector message was not valid JSON: {error}"),
+                )
+            })
         }
-        CommandEvent::Terminated(_)
-        | CommandEvent::Stderr(_)
-        | CommandEvent::Error(_)
-        | CommandEvent::Stdout(_) => Err(RuntimeError::new("gmail_authorization_failed")),
-        _ => Err(RuntimeError::new("gmail_authorization_failed")),
+        CommandEvent::Stdout(bytes) => Err(gmail_protocol_failure(
+            "gmail_authorization_failed",
+            format!(
+                "the connector message exceeded its bound ({} bytes)",
+                bytes.len()
+            ),
+        )),
+        CommandEvent::Terminated(payload) => Err(gmail_transient_failure(
+            "gmail_authorization_failed",
+            format!("the connector exited early ({})", exit_reason(payload.code)),
+        )),
+        CommandEvent::Stderr(bytes) => Err(gmail_transient_failure(
+            "gmail_authorization_failed",
+            format!("the connector wrote to stderr: {}", stderr_tail(&bytes)),
+        )),
+        CommandEvent::Error(error) => Err(gmail_transient_failure(
+            "gmail_authorization_failed",
+            format!("the connector transport failed: {error}"),
+        )),
+        _ => Err(gmail_protocol_failure(
+            "gmail_authorization_failed",
+            "the connector sent an unexpected event",
+        )),
     }
 }
 
@@ -310,13 +418,16 @@ fn write_gmail_connector_command<T: Serialize>(
     child: &mut CommandChild,
     command: &T,
 ) -> Result<(), RuntimeError> {
-    let mut bytes = Zeroizing::new(
-        serde_json::to_vec(command).map_err(|_| RuntimeError::new("gmail_authorization_failed"))?,
-    );
+    let mut bytes = Zeroizing::new(serde_json::to_vec(command).map_err(|error| {
+        gmail_protocol_failure(
+            "gmail_authorization_failed",
+            format!("the host command did not serialize: {error}"),
+        )
+    })?);
     bytes.push(b'\n');
     child
         .write(&bytes)
-        .map_err(|_| RuntimeError::new("gmail_authorization_failed"))
+        .map_err(|error| gmail_transport_failure("gmail_authorization_failed", &error))
 }
 
 fn write_gmail_connector_response(
@@ -337,7 +448,7 @@ fn write_gmail_connector_response(
 fn write_gmail_connector_shutdown(child: &mut CommandChild) -> Result<(), RuntimeError> {
     child
         .write(b"{\"type\":\"shutdown\"}\n")
-        .map_err(|_| RuntimeError::new("gmail_authorization_failed"))
+        .map_err(|error| gmail_transport_failure("gmail_authorization_failed", &error))
 }
 
 fn gmail_connector_error_code(code: &str) -> &'static str {
@@ -376,13 +487,16 @@ fn wait_for_loopback_callback(
     loop {
         let remaining = deadline.saturating_duration_since(StdInstant::now());
         if remaining.is_zero() {
-            return Err(RuntimeError::new("gmail_authorization_failed"));
+            return Err(gmail_transient_failure(
+                "gmail_authorization_failed",
+                "the callback window closed before the browser returned",
+            ));
         }
         match listener.accept() {
             Ok((mut stream, peer)) if peer.ip().is_loopback() => {
-                let address = listener
-                    .local_addr()
-                    .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
+                let address = listener.local_addr().map_err(|error| {
+                    gmail_transport_failure("gmail_authorization_failed", &error)
+                })?;
                 // A foreign probe, scanner, or half-open connection on the loopback
                 // port must not kill the authorization flow: each connection gets
                 // its own bounded window, and malformed ones are discarded while we
@@ -396,7 +510,12 @@ fn wait_for_loopback_callback(
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 thread::sleep(StdDuration::from_millis(10));
             }
-            Err(_) => return Err(RuntimeError::new("gmail_authorization_failed")),
+            Err(error) => {
+                return Err(gmail_transport_failure(
+                    "gmail_authorization_failed",
+                    &error,
+                ));
+            }
         }
     }
 }
@@ -408,7 +527,7 @@ fn read_loopback_request(
 ) -> Result<Zeroizing<String>, RuntimeError> {
     stream
         .set_read_timeout(Some(read_timeout))
-        .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
+        .map_err(|error| gmail_transport_failure("gmail_authorization_failed", &error))?;
     let mut request = Zeroizing::new(Vec::with_capacity(
         GMAIL_LOOPBACK_REQUEST_INITIAL_CAPACITY_BYTES,
     ));
@@ -416,9 +535,12 @@ fn read_loopback_request(
     loop {
         let read = stream
             .read(&mut chunk[..])
-            .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
+            .map_err(|error| gmail_transport_failure("gmail_authorization_failed", &error))?;
         if read == 0 || request.len() + read > GMAIL_LOOPBACK_REQUEST_MAX_BYTES {
-            return Err(RuntimeError::new("gmail_authorization_failed"));
+            return Err(gmail_protocol_failure(
+                "gmail_authorization_failed",
+                "the callback request was empty or exceeded its bound",
+            ));
         }
         request.extend_from_slice(&chunk[..read]);
         if request.windows(4).any(|window| window == b"\r\n\r\n") {
@@ -430,21 +552,32 @@ fn read_loopback_request(
         .next()
         .and_then(|line| std::str::from_utf8(line).ok())
         .map(str::trim_end)
-        .ok_or_else(|| RuntimeError::new("gmail_authorization_failed"))?;
+        .ok_or_else(|| {
+            gmail_protocol_failure(
+                "gmail_authorization_failed",
+                "the callback request line was not UTF-8",
+            )
+        })?;
     let mut parts = request_line.split(' ');
     let (Some("GET"), Some(target), Some("HTTP/1.1"), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
     else {
-        return Err(RuntimeError::new("gmail_authorization_failed"));
+        return Err(gmail_protocol_failure(
+            "gmail_authorization_failed",
+            "the callback request was not a plain GET",
+        ));
     };
     if !target.starts_with('/') || target.contains(['\r', '\n']) {
-        return Err(RuntimeError::new("gmail_authorization_failed"));
+        return Err(gmail_protocol_failure(
+            "gmail_authorization_failed",
+            "the callback request target was not a local path",
+        ));
     }
     stream
         .write_all(
             b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 70\r\nConnection: close\r\n\r\n<!doctype html><title>CanCan</title>You may close this browser window.",
         )
-        .map_err(|_| RuntimeError::new("gmail_authorization_failed"))?;
+        .map_err(|error| gmail_transport_failure("gmail_authorization_failed", &error))?;
     Ok(Zeroizing::new(format!(
         "http://127.0.0.1:{}{target}",
         listener_address.port()
@@ -497,6 +630,19 @@ mod tests {
         )
         .expect_err("timeout");
         assert_eq!(error.code(), "gmail_authorization_failed");
+        // The timeout is not dropped at the site: the reason travels with the
+        // code to the authorization boundary, which records it.
+        let detail = error
+            .detail()
+            .expect("the timeout reason travels with the static code");
+        assert_eq!(detail.error_kind, "observed");
+        assert_eq!(detail.provider, Some("gmail-connector"));
+        assert!(detail.retryable);
+        assert!(
+            detail.message.as_str().contains("callback window"),
+            "{}",
+            detail.message.as_str()
+        );
         assert!(started.elapsed() < StdDuration::from_secs(1));
     }
 

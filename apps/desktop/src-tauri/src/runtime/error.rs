@@ -170,22 +170,39 @@ pub(super) fn guard_held_failure(
 /// Writes the entry a guard-holding scope could not write.
 ///
 /// The caller must have released the store guard; nothing is logged for a
-/// failure that reports no component or carries no technical layer, or when the
-/// Vault is no longer reachable.
+/// failure that reports no component, or when the Vault is no longer reachable.
 pub(super) fn log_released_failure(runtime: &VaultRuntime, error: &RuntimeError) {
-    let (Some(reporter), Some(detail)) = (error.reporter, error.detail()) else {
+    let Some(reporter) = error.reporter else {
         return;
     };
+    log_boundary_failure(runtime, reporter, error);
+}
+
+/// Writes the one entry for a failure that reached the boundary that owns its
+/// run, for a flow whose failures no job row records — the Gmail authorization
+/// exchange reports every step through it.
+///
+/// The technical layer was attached where the failure happened, so the entry
+/// keeps the real reason instead of the static code alone. Best-effort like
+/// every other log write, and only call it where no store guard is held: the
+/// lock taken here is the same one that guard holds.
+pub(super) fn log_boundary_failure(
+    runtime: &VaultRuntime,
+    component: &'static str,
+    error: &RuntimeError,
+) {
     debug_assert!(
         !store_guard_is_held(),
-        "log_released_failure({reporter}) would deadlock on this thread's store guard"
+        "log_boundary_failure({component}) would deadlock on this thread's store guard"
     );
+    let entry = match error.detail() {
+        Some(detail) => OperationalLogEntry::from_detail(component, error.code, detail),
+        None => OperationalLogEntry::failure_code(component, error.code),
+    };
     if let Ok(store) = runtime.store()
         && let Some(store) = store.as_ref()
     {
-        let _ = store.record_operational_log(&OperationalLogEntry::from_detail(
-            reporter, error.code, detail,
-        ));
+        let _ = store.record_operational_log(&entry);
     }
 }
 
