@@ -7,6 +7,7 @@ import type { TaskRow, Tasks } from "./command-contracts";
 import {
   container,
   createApi,
+  deferred,
   installAppHarness,
   mount,
   settle,
@@ -143,6 +144,51 @@ describe("background intake click-through", () => {
     });
 
     expect(api.takeBackgroundIntakeRoute).toHaveBeenCalledTimes(2);
+    expect(activeRoute()).toContain("Tasks");
+    expect(activeTaskFilter()).toContain("Needs action");
+    expect(container.textContent).toContain("June statement.pdf");
+  });
+
+  it("keeps the row when a second click lands during its pull", async () => {
+    // The host consumes a route once, so the pull that already has it owns it:
+    // a newer pull reads nothing, and dropping the in-flight answer would make
+    // the user click again to open a row the app already took.
+    let clickArrived = () => undefined;
+    const inFlight = deferred<TaskRow | null>();
+    const api = createApi({
+      listTasks: vi.fn(async (): Promise<Tasks> => ({
+        needsActionCount: 1,
+        rows: [passwordRow],
+      })),
+      onBackgroundIntakeRoute: vi.fn(async (handler) => {
+        clickArrived = handler;
+        return () => undefined;
+      }),
+      takeBackgroundIntakeRoute: vi
+        .fn<() => Promise<TaskRow | null>>()
+        .mockResolvedValueOnce(null)
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValue(null),
+    });
+
+    await mount(api);
+
+    await act(async () => {
+      clickArrived();
+      await settle();
+    });
+    // The second click lands while that pull is still in flight.
+    await act(async () => {
+      clickArrived();
+      await settle();
+    });
+    expect(api.takeBackgroundIntakeRoute).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      inFlight.resolve(passwordRow);
+      await settle();
+    });
+
     expect(activeRoute()).toContain("Tasks");
     expect(activeTaskFilter()).toContain("Needs action");
     expect(container.textContent).toContain("June statement.pdf");

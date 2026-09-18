@@ -160,21 +160,22 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
   // instead of an empty filter. A click that arrives while this renderer is
   // already live bumps `routeRequest` and re-runs the same pull here; a click
   // before the renderer exists is covered by the unlock this effect waits for.
+  //
+  // No run may drop the row it pulled: the host consumes a route once, so a
+  // click landing while a pull is in flight would otherwise lose it — the
+  // superseded pull's answer would be discarded and the newer pull would read
+  // nothing, leaving the user to click again.
   useEffect(() => {
     if (!unlocked) {
       return;
     }
-    let active = true;
     void takeRoute().then((row) => {
-      if (!active || row === null) {
+      if (row === null) {
         return;
       }
       setTasksFilter(row.group);
       navigate("tasks");
     });
-    return () => {
-      active = false;
-    };
   }, [navigate, routeRequest, setTasksFilter, takeRoute, unlocked]);
 
   const existingSources = useMemo(
