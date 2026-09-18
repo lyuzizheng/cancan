@@ -9,7 +9,7 @@ use crate::{
     database::{
         AccountConfirmationOutcome, AccountConfirmationPrompt, CandidateAccountDecisionInput,
         CanonicalContentDecision, ClaimedReviewBatch, CommitReviewGroup, CorePreparedReversalEvent,
-        CorePreparedReviewEvent, CoreReviewRecord, DATABASE_FILE_NAME,
+        CorePreparedReviewEvent, CoreReviewRecord, CreateMoneySourceInput, DATABASE_FILE_NAME,
         DuplicateCommittedVersionAuditRow, ManualImportStore, MoneyOverview, ParseDocumentClaim,
         ParseDocumentJob, RecentActivitySummary, RelationshipCandidateSummary,
         ReviewBatchGroupOutcome, ReviewBatchGroupStatus, ReviewItemDetail, ReviewItemSummary,
@@ -547,6 +547,9 @@ mod review_records;
 mod sidecar;
 mod sidecar_failure;
 mod source_confirmation;
+mod sources;
+#[cfg(test)]
+mod sources_tests;
 mod statement_passwords;
 mod tasks;
 #[cfg(test)]
@@ -577,6 +580,7 @@ pub(crate) use review_records::*;
 use sidecar::*;
 use sidecar_failure::*;
 pub(crate) use source_confirmation::*;
+pub(crate) use sources::*;
 pub(crate) use tasks::*;
 pub(crate) use undo::*;
 pub(crate) use vault_lifecycle::*;

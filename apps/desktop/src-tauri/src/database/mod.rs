@@ -2572,6 +2572,9 @@ mod review_records;
 #[cfg(test)]
 mod review_records_tests;
 mod rows;
+mod sources;
+#[cfg(test)]
+mod sources_tests;
 pub(crate) mod tasks;
 pub(crate) mod tasks_reconcile;
 #[cfg(test)]
@@ -2579,6 +2582,7 @@ mod tasks_test_support;
 #[cfg(test)]
 mod tests;
 mod validation;
+pub(crate) use sources::CreateMoneySourceInput;
 
 pub(crate) use audit::*;
 #[cfg(test)]

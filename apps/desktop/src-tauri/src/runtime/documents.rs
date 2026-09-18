@@ -242,7 +242,7 @@ impl VaultRuntime {
         Self::source_document_summaries(store, documents)
     }
 
-    fn source_document_summaries(
+    pub(super) fn source_document_summaries(
         store: &ManualImportStore,
         documents: Vec<SourceDocumentView>,
     ) -> Result<Vec<SourceDocumentSummary>, RuntimeError> {

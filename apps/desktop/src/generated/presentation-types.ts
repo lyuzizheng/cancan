@@ -104,6 +104,29 @@ export type ConfirmSourceCandidateRequest = { candidateId: string, displayName: 
 
 export type ParkSourceCandidateRequest = { candidateId: string, expectedVersion: number, };
 
+export type CreateMoneySourceRequest = {
+/**
+ * The user's label for the source. Absent means the supported provider's
+ * own product name.
+ */
+displayName: string | null, providerKey: string, };
+
+export type EditMoneySourceRequest = { displayName: string, moneySourceId: string, };
+
+export type MoneySourceDetail = { actions: MoneySourceDetailActions, displayName: string, documents: Array<SourceDocumentSummary>, moneySourceId: string, sourceType: string, };
+
+export type MoneySourceDetailActions = {
+/**
+ * At least one document waits on a statement password only the user can
+ * supply, so the source offers its password surface for entry.
+ */
+canEnterStatementPassword: boolean,
+/**
+ * A statement password is stored for this source, so its password surface
+ * offers update/remove instead of save.
+ */
+hasSavedStatementPassword: boolean, };
+
 export type DuplicateCommittedVersionAuditRow = { stableRecordKey: string, externalRecordId: string, sourceDocumentId: string, version: number, versionRank: number, recordEventType: string | null, postedOn: string | null, amountValue: string | null, currency: string | null, ledgerEventId: string | null, ledgerEventType: string | null, ledgerEventDate: string | null, ledgerEventStatus: string | null, ledgerEventIsReversal: boolean, ledgerEventHasReversal: boolean, allocationValue: string | null, matchUnit: string | null, matchReviewStatus: string | null, reversalSafe: boolean, };
 
 export type MoneyOverview = { assets: Array<MoneyOverviewAmount>, liabilities: Array<MoneyOverviewAmount>, };
