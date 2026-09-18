@@ -60,11 +60,13 @@ fn lists_only_safe_money_source_display_fields_in_stable_order() {
             MoneySourceView {
                 display_name: "Alpha Bank".to_owned(),
                 money_source_id: "source-alpha".to_owned(),
+                provider_key: "alpha".to_owned(),
                 source_type: "bank".to_owned(),
             },
             MoneySourceView {
                 display_name: "DBS".to_owned(),
                 money_source_id: "source-dbs".to_owned(),
+                provider_key: "dbs".to_owned(),
                 source_type: "bank".to_owned(),
             },
         ]

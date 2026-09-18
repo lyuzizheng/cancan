@@ -160,6 +160,7 @@ impl VaultRuntime {
                     .map(|source| MoneySourceSummary {
                         display_name: source.display_name,
                         money_source_id: source.money_source_id,
+                        provider_key: source.provider_key,
                         source_type: source.source_type,
                     })
                     .collect()

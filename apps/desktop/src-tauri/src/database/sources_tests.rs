@@ -54,6 +54,7 @@ fn creates_one_provider_singleton_and_audits_it() {
         MoneySourceView {
             display_name: "DBS".to_owned(),
             money_source_id: "source-dbs".to_owned(),
+            provider_key: "dbs".to_owned(),
             source_type: "bank".to_owned(),
         }
     );
@@ -185,6 +186,7 @@ fn renames_only_the_display_name_and_audits_it() {
         MoneySourceView {
             display_name: "DBS Joint".to_owned(),
             money_source_id: "source-dbs".to_owned(),
+            provider_key: "dbs".to_owned(),
             source_type: "bank".to_owned(),
         }
     );
@@ -197,6 +199,19 @@ fn renames_only_the_display_name_and_audits_it() {
         )
         .expect("read identity");
     assert_eq!(identity, ("dbs".to_owned(), String::new()));
+    let rename_reference: String = store
+        .connection
+        .query_row(
+            "SELECT source_ref FROM audit_log \
+             WHERE entity_id = 'source-dbs' AND action = 'money_source_renamed'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read rename source reference");
+    assert_eq!(
+        rename_reference, "DBS -> DBS Joint",
+        "the previous name stays recoverable in the evidence trail"
+    );
     // Both entries land in the same second, so compare as a set: the audit log
     // orders equal timestamps by id and the test must not pin that tie-break.
     let mut actions = audit_actions(&store, "source-dbs");
@@ -268,6 +283,43 @@ fn rejects_malformed_creation_and_rename_input() {
             .expect("Money Source exists")
             .display_name,
         "DBS"
+    );
+}
+
+#[test]
+fn lists_only_provider_singletons_with_their_source_id() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    assert!(
+        store
+            .provider_singletons()
+            .expect("read singletons")
+            .is_empty(),
+        "an unconfigured Vault configures no provider"
+    );
+    store
+        .create_money_source(&create_input(
+            "audit-source-dbs",
+            "source-dbs",
+            "dbs",
+            "DBS",
+        ))
+        .expect("create DBS");
+    // A source claimed for a provider root is not the provider singleton: the
+    // create gate would still accept one for `dbs`, so the picker must not
+    // report the provider as configured.
+    store
+        .connection
+        .execute(
+            "INSERT INTO money_sources(id, provider_key, provider_root_id, display_name, source_type) \
+             VALUES ('source-dbs-root', 'dbs', 'root-1', 'DBS Joint Account', 'bank')",
+            [],
+        )
+        .expect("seed root-scoped source");
+
+    assert_eq!(
+        store.provider_singletons().expect("read singletons"),
+        HashMap::from([("dbs".to_owned(), "source-dbs".to_owned())])
     );
 }
 

@@ -201,6 +201,9 @@ pub(crate) struct SourceDocumentSummary {
 pub(crate) struct MoneySourceSummary {
     display_name: String,
     money_source_id: String,
+    /// The provider this source is bound to. A user can rename the source, so
+    /// the name is never the identity; provider-branded surfaces read this.
+    provider_key: String,
     source_type: String,
 }
 

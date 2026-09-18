@@ -95,6 +95,7 @@ impl VaultRuntime {
         Ok(MoneySourceSummary {
             display_name: created.display_name,
             money_source_id: created.money_source_id,
+            provider_key: created.provider_key,
             source_type: created.source_type,
         })
     }
@@ -129,6 +130,7 @@ impl VaultRuntime {
         Ok(MoneySourceSummary {
             display_name: renamed.display_name,
             money_source_id: renamed.money_source_id,
+            provider_key: renamed.provider_key,
             source_type: renamed.source_type,
         })
     }
@@ -179,8 +181,41 @@ impl VaultRuntime {
             display_name: source.display_name,
             documents,
             money_source_id: source.money_source_id,
+            provider_key: source.provider_key,
             source_type: source.source_type,
         })
+    }
+
+    /// The providers this build lets a user configure, each with the source
+    /// already configured for it.
+    ///
+    /// The picker gets its provider identity and presentation from exactly one
+    /// place - this catalog - instead of a renderer-side table that drifts on
+    /// the next provider. `configured_money_source_id` applies the same
+    /// provider-singleton rule `create_money_source` gates on, so every
+    /// provider the picker offers is one the create command still accepts, and
+    /// a configured provider can be opened directly instead of only grayed out.
+    pub(crate) fn list_supported_money_source_providers(
+        &self,
+    ) -> Result<Vec<SupportedMoneySourceProviderSummary>, RuntimeError> {
+        let store = self.store()?;
+        let store = store
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("vault_locked"))?;
+        let configured = store.provider_singletons().map_store_error(
+            store,
+            "provider_singletons",
+            "list_sources_failed",
+        )?;
+        Ok(SUPPORTED_MONEY_SOURCE_PROVIDERS
+            .iter()
+            .map(|provider| SupportedMoneySourceProviderSummary {
+                configured_money_source_id: configured.get(provider.provider_key).cloned(),
+                display_name: provider.display_name.to_owned(),
+                provider_key: provider.provider_key.to_owned(),
+                source_type: provider.source_type.to_owned(),
+            })
+            .collect())
     }
 }
 
@@ -216,6 +251,9 @@ pub(crate) struct MoneySourceDetail {
     display_name: String,
     documents: Vec<SourceDocumentSummary>,
     money_source_id: String,
+    /// The provider this source is bound to, so the detail surface can render
+    /// provider-specific modules without trusting a user-editable name.
+    provider_key: String,
     source_type: String,
 }
 
@@ -229,6 +267,20 @@ pub(crate) struct MoneySourceDetailActions {
     /// A statement password is stored for this source, so its password surface
     /// offers update/remove instead of save.
     has_saved_statement_password: bool,
+}
+
+/// One provider a user can configure, with the source configured for it.
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct SupportedMoneySourceProviderSummary {
+    /// The source already configured for this provider, when one exists.
+    /// Nullable rather than a flag, so the picker can open that source instead
+    /// of only rendering the provider as taken.
+    configured_money_source_id: Option<String>,
+    display_name: String,
+    provider_key: String,
+    source_type: String,
 }
 
 #[tauri::command]
@@ -262,4 +314,12 @@ pub(crate) async fn get_money_source_detail(
 ) -> Result<MoneySourceDetail, VaultCommandError> {
     let runtime = runtime.inner().clone();
     run_runtime_task(move || runtime.money_source_detail(&money_source_id)).await
+}
+
+#[tauri::command]
+pub(crate) async fn list_supported_money_source_providers(
+    runtime: State<'_, VaultRuntime>,
+) -> Result<Vec<SupportedMoneySourceProviderSummary>, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    run_runtime_task(move || runtime.list_supported_money_source_providers()).await
 }

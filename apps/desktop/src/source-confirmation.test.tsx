@@ -14,6 +14,7 @@ const existingSources: MoneySourceSummary[] = [
   {
     displayName: "Synthetic Bank",
     moneySourceId: "source-synthetic",
+    providerKey: "synthetic-bank",
     sourceType: "bank",
   },
 ];

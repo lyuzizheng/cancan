@@ -367,6 +367,9 @@ pub(crate) struct CommitReviewGroup {
 pub(crate) struct MoneySourceView {
     pub(crate) display_name: String,
     pub(crate) money_source_id: String,
+    /// The provider identity the source is bound to: it is what routing
+    /// matches and what makes a source name a user-editable label.
+    pub(crate) provider_key: String,
     pub(crate) source_type: String,
 }
 
@@ -1122,14 +1125,15 @@ impl ManualImportStore {
 
     pub(crate) fn list_money_sources(&self) -> StoreResult<Vec<MoneySourceView>> {
         let mut statement = self.connection.prepare(
-            "SELECT id, display_name, source_type FROM money_sources \
+            "SELECT id, display_name, provider_key, source_type FROM money_sources \
              ORDER BY display_name, id",
         )?;
         let rows = statement.query_map([], |row| {
             Ok(MoneySourceView {
                 money_source_id: row.get(0)?,
                 display_name: row.get(1)?,
-                source_type: row.get(2)?,
+                provider_key: row.get(2)?,
+                source_type: row.get(3)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)

@@ -78,6 +78,7 @@ fn creates_a_money_source_from_the_supported_provider_catalog() {
         .create_money_source("dbs", None)
         .expect("create Money Source");
     assert_eq!(created.display_name, "DBS");
+    assert_eq!(created.provider_key, "dbs");
     assert_eq!(created.source_type, "bank");
     assert!(!created.money_source_id.is_empty());
     assert_eq!(
@@ -94,6 +95,7 @@ fn creates_a_money_source_from_the_supported_provider_catalog() {
         .create_money_source("hsbc", Some("  HSBC Premier  "))
         .expect("create named Money Source");
     assert_eq!(named.display_name, "HSBC Premier");
+    assert_eq!(named.provider_key, "hsbc");
     assert_eq!(named.source_type, "bank");
 }
 
@@ -214,6 +216,7 @@ fn source_detail_projects_metadata_documents_and_actions() {
             "displayName": "DBS",
             "documents": [],
             "moneySourceId": created.money_source_id,
+            "providerKey": "dbs",
             "sourceType": "bank",
         })
     );
@@ -258,6 +261,7 @@ fn source_detail_projects_metadata_documents_and_actions() {
         "the detail describes the waiting document the same way the document list does"
     );
     assert_eq!(detail["displayName"], "DBS");
+    assert_eq!(detail["providerKey"], "dbs");
     assert_eq!(detail["sourceType"], "bank");
     assert_eq!(detail["moneySourceId"], created.money_source_id);
     assert_eq!(
@@ -280,6 +284,73 @@ fn source_detail_projects_metadata_documents_and_actions() {
             .expect_err("an empty Money Source id must be refused")
             .code(),
         "invalid_source_request"
+    );
+}
+
+/// The picker's one source of truth: the host catalog, with the provider
+/// singleton already configured for each entry.
+#[test]
+fn lists_the_supported_provider_catalog_with_its_configured_source() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let runtime = unlocked_runtime(&parent.path().join("vault"));
+    let catalog = serde_json::to_value(
+        runtime
+            .list_supported_money_source_providers()
+            .expect("read provider catalog"),
+    )
+    .expect("serialize provider catalog");
+    assert_eq!(
+        catalog,
+        serde_json::json!([
+            {
+                "configuredMoneySourceId": null,
+                "displayName": "DBS",
+                "providerKey": "dbs",
+                "sourceType": "bank",
+            },
+            {
+                "configuredMoneySourceId": null,
+                "displayName": "HSBC",
+                "providerKey": "hsbc",
+                "sourceType": "bank",
+            },
+        ])
+    );
+
+    let created = runtime
+        .create_money_source("hsbc", Some("HSBC Premier"))
+        .expect("create Money Source");
+    let catalog = serde_json::to_value(
+        runtime
+            .list_supported_money_source_providers()
+            .expect("read configured provider catalog"),
+    )
+    .expect("serialize configured provider catalog");
+    assert_eq!(
+        catalog
+            .as_array()
+            .expect("catalog array")
+            .iter()
+            .map(|provider| (
+                provider["providerKey"].as_str().expect("provider key"),
+                provider["configuredMoneySourceId"].clone(),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("dbs", serde_json::Value::Null),
+            ("hsbc", serde_json::json!(created.money_source_id)),
+        ],
+        "a configured provider reports the source the picker can open, not a flag"
+    );
+    assert_eq!(
+        catalog
+            .as_array()
+            .expect("catalog array")
+            .iter()
+            .find(|provider| provider["providerKey"] == "hsbc")
+            .expect("HSBC entry")["displayName"],
+        "HSBC",
+        "the catalog names the provider, not the user's label for the source"
     );
 }
 

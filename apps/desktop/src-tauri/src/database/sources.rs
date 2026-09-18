@@ -1,5 +1,6 @@
 use super::{ManualImportStore, MoneySourceView, StoreResult, intake::validate_identifier};
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use std::collections::HashMap;
 use std::io;
 
 /// The audit policy version recorded for a user-authored Money Source change.
@@ -86,6 +87,7 @@ impl ManualImportStore {
         Ok(MoneySourceView {
             display_name: input.display_name.to_owned(),
             money_source_id: input.money_source_id.to_owned(),
+            provider_key: input.provider_key.to_owned(),
             source_type: input.source_type.to_owned(),
         })
     }
@@ -94,7 +96,9 @@ impl ManualImportStore {
     ///
     /// Only `display_name` changes: the identifier, provider identity, and
     /// every evidence/ledger link stay stable, so a rename is one audited
-    /// column update and never a new source row.
+    /// column update and never a new source row. The audit entry carries the
+    /// previous name in `source_ref`, because a label a user has changed is
+    /// otherwise unrecoverable in the evidence trail.
     pub(crate) fn rename_money_source(
         &mut self,
         money_source_id: &str,
@@ -107,14 +111,20 @@ impl ManualImportStore {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let source_type = transaction
+        let current = transaction
             .query_row(
-                "SELECT source_type FROM money_sources WHERE id = ?1",
+                "SELECT provider_key, source_type, display_name FROM money_sources WHERE id = ?1",
                 [money_source_id],
-                |row| row.get::<_, String>(0),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
             )
             .optional()?;
-        let Some(source_type) = source_type else {
+        let Some((provider_key, source_type, previous_name)) = current else {
             return Err(io::Error::new(io::ErrorKind::NotFound, "Money Source not found").into());
         };
         transaction.execute(
@@ -123,15 +133,21 @@ impl ManualImportStore {
         )?;
         transaction.execute(
             "INSERT INTO audit_log( \
-               id, entity_type, entity_id, action, actor, reason, policy_version \
+               id, entity_type, entity_id, action, actor, reason, source_ref, policy_version \
              ) VALUES (?1, 'money_source', ?2, 'money_source_renamed', 'user', \
-                       'user_renamed_source', ?3)",
-            params![audit_id, money_source_id, MONEY_SOURCE_POLICY_VERSION],
+                       'user_renamed_source', ?3, ?4)",
+            params![
+                audit_id,
+                money_source_id,
+                format!("{previous_name} -> {display_name}"),
+                MONEY_SOURCE_POLICY_VERSION,
+            ],
         )?;
         transaction.commit()?;
         Ok(MoneySourceView {
             display_name: display_name.to_owned(),
             money_source_id: money_source_id.to_owned(),
+            provider_key,
             source_type,
         })
     }
@@ -142,18 +158,37 @@ impl ManualImportStore {
     ) -> StoreResult<Option<MoneySourceView>> {
         self.connection
             .query_row(
-                "SELECT id, display_name, source_type FROM money_sources WHERE id = ?1",
+                "SELECT id, display_name, provider_key, source_type FROM money_sources WHERE id = ?1",
                 [money_source_id],
                 |row| {
                     Ok(MoneySourceView {
                         money_source_id: row.get(0)?,
                         display_name: row.get(1)?,
-                        source_type: row.get(2)?,
+                        provider_key: row.get(2)?,
+                        source_type: row.get(3)?,
                     })
                 },
             )
             .optional()
             .map_err(Into::into)
+    }
+
+    /// The provider singleton configured for each provider that has one,
+    /// keyed by provider key.
+    ///
+    /// Provider-scoped identities are the ones `create_money_source` gates on
+    /// and routing matches when a classified document carries no provider
+    /// root, so a root-scoped source is deliberately absent: the picker must
+    /// offer exactly the providers a user can still configure.
+    pub(crate) fn provider_singletons(&self) -> StoreResult<HashMap<String, String>> {
+        let mut statement = self.connection.prepare(
+            "SELECT provider_key, id FROM money_sources \
+             WHERE provider_root_id IS NULL ORDER BY provider_key, id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        Ok(rows.collect::<Result<HashMap<_, _>, _>>()?)
     }
 
     /// Whether this source has a statement password stored as `saved`.

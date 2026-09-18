@@ -73,6 +73,7 @@ fn generated_presentation_types() -> String {
         crate::runtime::EditMoneySourceRequest::decl(&config),
         crate::runtime::MoneySourceDetail::decl(&config),
         crate::runtime::MoneySourceDetailActions::decl(&config),
+        crate::runtime::SupportedMoneySourceProviderSummary::decl(&config),
         // Review queue and ledger evidence.
         crate::database::DuplicateCommittedVersionAuditRow::decl(&config),
         crate::database::MoneyOverview::decl(&config),

@@ -16,7 +16,12 @@ export type SourceDocumentImportOutcome = { documentId: string, status: SourceDo
 
 export type SourceDocumentImportStatus = "imported" | "already_present" | "restored" | "restore_confirmation_required";
 
-export type MoneySourceSummary = { displayName: string, moneySourceId: string, sourceType: string, };
+export type MoneySourceSummary = { displayName: string, moneySourceId: string,
+/**
+ * The provider this source is bound to. A user can rename the source, so
+ * the name is never the identity; provider-branded surfaces read this.
+ */
+providerKey: string, sourceType: string, };
 
 export type SourceDocumentPreview = { lineCount: number, previewLines: number, previewText: string, truncated: boolean, };
 
@@ -113,7 +118,12 @@ displayName: string | null, providerKey: string, };
 
 export type EditMoneySourceRequest = { displayName: string, moneySourceId: string, };
 
-export type MoneySourceDetail = { actions: MoneySourceDetailActions, displayName: string, documents: Array<SourceDocumentSummary>, moneySourceId: string, sourceType: string, };
+export type MoneySourceDetail = { actions: MoneySourceDetailActions, displayName: string, documents: Array<SourceDocumentSummary>, moneySourceId: string,
+/**
+ * The provider this source is bound to, so the detail surface can render
+ * provider-specific modules without trusting a user-editable name.
+ */
+providerKey: string, sourceType: string, };
 
 export type MoneySourceDetailActions = {
 /**
@@ -126,6 +136,14 @@ canEnterStatementPassword: boolean,
  * offers update/remove instead of save.
  */
 hasSavedStatementPassword: boolean, };
+
+export type SupportedMoneySourceProviderSummary = {
+/**
+ * The source already configured for this provider, when one exists.
+ * Nullable rather than a flag, so the picker can open that source instead
+ * of only rendering the provider as taken.
+ */
+configuredMoneySourceId: string | null, displayName: string, providerKey: string, sourceType: string, };
 
 export type DuplicateCommittedVersionAuditRow = { stableRecordKey: string, externalRecordId: string, sourceDocumentId: string, version: number, versionRank: number, recordEventType: string | null, postedOn: string | null, amountValue: string | null, currency: string | null, ledgerEventId: string | null, ledgerEventType: string | null, ledgerEventDate: string | null, ledgerEventStatus: string | null, ledgerEventIsReversal: boolean, ledgerEventHasReversal: boolean, allocationValue: string | null, matchUnit: string | null, matchReviewStatus: string | null, reversalSafe: boolean, };
 
