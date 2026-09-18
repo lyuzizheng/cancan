@@ -94,6 +94,61 @@ impl ManualImportStore {
         Ok(rows)
     }
 
+    /// The Tasks rows one intake batch owns, in derivation order. Used by the
+    /// notification click-through, which lands on the row the batch produced
+    /// instead of the Tasks list as a whole.
+    pub(crate) fn derive_batch_task_rows(&self, batch_id: &str) -> StoreResult<Vec<RawTask>> {
+        let intake_item_ids = self.batch_intake_item_ids(batch_id)?;
+        let document_ids = self.batch_source_document_ids(batch_id)?;
+        let mut candidate_ids = HashSet::new();
+        for document_id in &document_ids {
+            if let Some(candidate_id) = self.source_document_candidate_id(document_id)? {
+                candidate_ids.insert(candidate_id);
+            }
+        }
+        Ok(self
+            .derive_task_rows(true)?
+            .into_iter()
+            .filter(|row| {
+                batch_task_belongs(&row.kind, &intake_item_ids, &document_ids, &candidate_ids)
+            })
+            .collect())
+    }
+
+    fn batch_intake_item_ids(&self, batch_id: &str) -> StoreResult<HashSet<String>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT id FROM intake_batch_items WHERE intake_batch_id = ?1")?;
+        let rows = statement
+            .query_map([batch_id], |row| row.get(0))?
+            .collect::<Result<HashSet<_>, _>>()?;
+        Ok(rows)
+    }
+
+    fn batch_source_document_ids(&self, batch_id: &str) -> StoreResult<HashSet<String>> {
+        let mut statement = self.connection.prepare(
+            "SELECT source_document_id FROM intake_batch_items \
+             WHERE intake_batch_id = ?1 AND source_document_id IS NOT NULL",
+        )?;
+        let rows = statement
+            .query_map([batch_id], |row| row.get(0))?
+            .collect::<Result<HashSet<_>, _>>()?;
+        Ok(rows)
+    }
+
+    fn source_document_candidate_id(&self, document_id: &str) -> StoreResult<Option<String>> {
+        let candidate_id = self
+            .connection
+            .query_row(
+                "SELECT money_source_candidate_id FROM source_documents WHERE id = ?1",
+                [document_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(candidate_id)
+    }
+
     fn derive_processing_tasks(&self) -> StoreResult<Vec<RawTask>> {
         let mut statement = self.connection.prepare(
             "SELECT sd.id, sd.original_filename, MAX(j.updated_at) \
@@ -677,5 +732,39 @@ impl ManualImportStore {
             |row| row.get(0),
         )?;
         Ok(timestamp)
+    }
+}
+
+/// Whether one derived row is owned by the batch the notification click named.
+///
+/// The row kinds key on exactly one of the three identities a batch item owns:
+/// the item itself (intake outcomes), its source document (pipeline and review
+/// outcomes), or the money source candidate the document raised.
+fn batch_task_belongs(
+    kind: &RawTaskKind,
+    intake_item_ids: &HashSet<String>,
+    document_ids: &HashSet<String>,
+    candidate_ids: &HashSet<String>,
+) -> bool {
+    match kind {
+        RawTaskKind::Processing { document_id }
+        | RawTaskKind::NeedsReview { document_id }
+        | RawTaskKind::NeedsAttention { document_id }
+        | RawTaskKind::PasswordNeeded { document_id, .. }
+        | RawTaskKind::PasswordParked { document_id, .. } => document_ids.contains(document_id),
+        RawTaskKind::NewSource { candidate_id }
+        | RawTaskKind::SourceUnassigned { candidate_id } => candidate_ids.contains(candidate_id),
+        RawTaskKind::RestoreSourceFile { intake_item_id, .. }
+        | RawTaskKind::InboxFileCouldNotBeAdded { intake_item_id }
+        | RawTaskKind::ImportInterrupted { intake_item_id }
+        | RawTaskKind::FileNotAdded { intake_item_id }
+        | RawTaskKind::AlreadyInCancan { intake_item_id }
+        | RawTaskKind::SameStatementContent { intake_item_id }
+        | RawTaskKind::SourceFileRestored { intake_item_id }
+        | RawTaskKind::SourceFileLeftDeleted { intake_item_id }
+        | RawTaskKind::Ready { intake_item_id }
+        | RawTaskKind::InboxFileParked { intake_item_id } => {
+            intake_item_ids.contains(intake_item_id)
+        }
     }
 }

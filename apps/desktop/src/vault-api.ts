@@ -15,9 +15,11 @@ import type {
   GetReviewJobArgs,
   DeleteSourceDocumentArgs,
   DuplicateCommittedVersionAuditRow,
+  IntakeNotificationSettings,
   ListSourceDocumentsArgs,
   ListTasksArgs,
   TaskFilter,
+  TaskRow,
   LocalInboxScanSummary,
   LocalInboxStatus,
   MoneyOverview,
@@ -46,6 +48,7 @@ import type {
   Tasks,
   DocumentStatementPasswordArgs,
   RestoreDismissedCandidateAccountArgs,
+  SetIntakeNotificationsEnabledArgs,
   StatementPasswordSourceSummary,
   TrySavedStatementPasswordArgs,
   UndoCommittedEventArgs,
@@ -114,6 +117,7 @@ export interface VaultApi {
   getReviewDetail(reviewItemId: string): Promise<ReviewItemDetail | null>;
   getReviewJob(jobId: string): Promise<ReviewJobSummary | null>;
   importSourceDocument(): Promise<SourceDocumentImportOutcome | null>;
+  intakeNotificationSettings(): Promise<IntakeNotificationSettings>;
   listMoneySources(): Promise<MoneySourceSummary[]>;
   listAccountConfirmationPrompts(): Promise<AccountConfirmationPrompt[]>;
   listSourceConfirmationPrompts(): Promise<SourceConfirmationPrompt[]>;
@@ -130,6 +134,13 @@ export interface VaultApi {
   lockVault(): Promise<VaultStatus>;
   localInboxStatus(): Promise<LocalInboxStatus>;
   onVaultLocked(handler: () => void): Promise<() => void>;
+  /**
+   * A menu-bar or notification click reopened this renderer. An already-live
+   * window has no unlock to pull the pending Tasks route on, so the click
+   * announces itself and the renderer re-runs that pull.
+   */
+  onBackgroundIntakeRoute(handler: () => void): Promise<() => void>;
+  openNotificationSettings(): Promise<void>;
   operationalDiagnosticsPreview(): Promise<OperationalDiagnosticsPreview>;
   previewSourceDocument(documentId: string): Promise<SourceDocumentPreview>;
   reparseSourceDocument(documentId: string): Promise<void>;
@@ -148,6 +159,10 @@ export interface VaultApi {
   saveOperationalDiagnostics(): Promise<boolean>;
   saveRecoveryFile(): Promise<boolean>;
   saveSourceDocumentCopy(documentId: string): Promise<boolean>;
+  setIntakeNotificationsEnabled(
+    enabled: boolean,
+  ): Promise<IntakeNotificationSettings>;
+  takeBackgroundIntakeRoute(): Promise<TaskRow | null>;
   trySavedStatementPasswords(
     documentId: string,
   ): Promise<SavedStatementPasswordResult>;
@@ -348,6 +363,15 @@ export function createVaultApi(
         args,
       );
     },
+    setIntakeNotificationsEnabled: (enabled) => {
+      const args: SetIntakeNotificationsEnabledArgs = { enabled };
+      return call<
+        IntakeNotificationSettings,
+        SetIntakeNotificationsEnabledArgs
+      >("set_intake_notifications_enabled", args);
+    },
+    takeBackgroundIntakeRoute: () =>
+      call<TaskRow | null>("take_background_intake_route"),
     deleteSourceDocument: (documentId) => {
       const args: DeleteSourceDocumentArgs = { documentId };
       return call<boolean, DeleteSourceDocumentArgs>(
@@ -364,6 +388,8 @@ export function createVaultApi(
     },
     importSourceDocument: () =>
       call<SourceDocumentImportOutcome | null>("import_source_document"),
+    intakeNotificationSettings: () =>
+      call<IntakeNotificationSettings>("intake_notification_settings"),
     listMoneySources: () => call<MoneySourceSummary[]>("list_money_sources"),
     listAccountConfirmationPrompts: () =>
       call<AccountConfirmationPrompt[]>("list_account_confirmation_prompts"),
@@ -401,7 +427,10 @@ export function createVaultApi(
     },
     listUnassignedSourceDocuments: () =>
       call<SourceDocumentSummary[]>("list_unassigned_source_documents"),
+    onBackgroundIntakeRoute: (handler) =>
+      subscribe("background-intake-route", handler),
     onVaultLocked: (handler) => subscribe("vault-locked", handler),
+    openNotificationSettings: () => call<void>("open_notification_settings"),
     previewSourceDocument: (documentId) => {
       const args: PreviewSourceDocumentArgs = { documentId };
       return call<SourceDocumentPreview, PreviewSourceDocumentArgs>(
@@ -515,6 +544,14 @@ export function commandErrorMessage(error: unknown): string {
       return "That money source confirmation isn’t valid.";
     case "list_tasks_failed":
       return "Couldn’t load your tasks. Try again.";
+    case "tasks_read_failed":
+      return "Couldn’t read your tasks. Try again.";
+    case "tasks_write_failed":
+      return "CanCan couldn’t update your tasks. Try again.";
+    case "intake_notification_setting_failed":
+      return "CanCan couldn’t save that notification setting.";
+    case "system_settings_unavailable":
+      return "CanCan couldn’t open System Settings. Open Notifications for CanCan yourself.";
     case "list_documents_failed":
       return "Couldn’t load your documents. Try again.";
     case "list_sources_failed":

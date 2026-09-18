@@ -478,6 +478,12 @@ function offerPreviewApi(remembered: boolean | null) {
         return commandCenterTasks;
       case "list_money_sources":
         return previewMoneySources;
+      case "intake_notification_settings":
+        return { enabled: false, permission: "not_determined" };
+      // The offer walkthrough is not a notification click, so its window has
+      // no route waiting for it.
+      case "take_background_intake_route":
+        return null;
       default:
         return [];
     }

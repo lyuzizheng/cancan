@@ -10,21 +10,24 @@ mod source_observations;
 mod vault;
 mod viewer;
 
+#[cfg(target_os = "macos")]
+use runtime::setup_background_intake_menu_bar;
 use runtime::{
     VaultRuntime, accept_review_relationship, acknowledge_review_item,
     audit_duplicate_committed_versions, choose_local_inbox_root, close_source_document_view,
     confirm_source_candidate, create_vault, decide_candidate_accounts, delete_source_document,
     disable_local_inbox, edit_review_record, enqueue_commit_review_batch, forget_vault_on_this_mac,
     get_money_overview, get_review_detail, get_review_job, import_source_document,
-    list_account_confirmation_prompts, list_money_sources, list_recent_activity,
-    list_relationship_candidates, list_review_items, list_source_confirmation_prompts,
-    list_source_documents, list_statement_password_sources, list_tasks,
-    list_unassigned_source_documents, local_inbox_status, lock_vault, on_run_event,
-    on_window_event, operational_diagnostics_preview, park_source_candidate,
-    preview_source_document, remember_vault_on_this_mac, remove_review_record,
-    remove_statement_password, render_source_document_page, reparse_source_document,
-    rescan_local_inbox, restore_dismissed_candidate_account, save_operational_diagnostics,
-    save_recovery_file, save_source_document_copy, setup_background_window,
+    install_intake_notifications, intake_notification_settings, list_account_confirmation_prompts,
+    list_money_sources, list_recent_activity, list_relationship_candidates, list_review_items,
+    list_source_confirmation_prompts, list_source_documents, list_statement_password_sources,
+    list_tasks, list_unassigned_source_documents, local_inbox_status, lock_vault, on_run_event,
+    on_window_event, open_notification_settings, operational_diagnostics_preview,
+    park_source_candidate, preview_source_document, remember_vault_on_this_mac,
+    remove_review_record, remove_statement_password, render_source_document_page,
+    reparse_source_document, rescan_local_inbox, restore_dismissed_candidate_account,
+    save_operational_diagnostics, save_recovery_file, save_source_document_copy,
+    set_intake_notifications_enabled, setup_background_window, take_background_intake_route,
     try_saved_statement_passwords, undo_committed_event, unlock_source_document, unlock_vault,
     unlock_vault_with_keychain, vault_access_status, vault_status,
 };
@@ -72,6 +75,10 @@ pub fn run() {
             app.manage(ownership);
             app.manage(VaultRuntime::new(app_data_dir.join("vault")));
             setup_background_window(app)?;
+            #[cfg(target_os = "macos")]
+            setup_background_intake_menu_bar(app.handle())?;
+            let runtime = app.state::<VaultRuntime>().inner().clone();
+            install_intake_notifications(app.handle(), &runtime);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -90,6 +97,10 @@ pub fn run() {
             remove_statement_password,
             list_statement_password_sources,
             list_tasks,
+            intake_notification_settings,
+            set_intake_notifications_enabled,
+            open_notification_settings,
+            take_background_intake_route,
             try_saved_statement_passwords,
             unlock_source_document,
             lock_vault,

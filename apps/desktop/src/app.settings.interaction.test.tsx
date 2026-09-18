@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 
+import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { IntakeNotificationSettings } from "./command-contracts";
 import {
   button,
   click,
@@ -10,9 +12,96 @@ import {
   diagnosticsPreview,
   installAppHarness,
   mount,
+  settle,
 } from "./test-support/app-harness";
 
 installAppHarness();
+
+describe("App settings background intake notifications", () => {
+  function notificationToggle(): HTMLInputElement {
+    const labels = [...container.querySelectorAll("label")].filter((element) =>
+      element.textContent?.includes("Background intake notifications")
+    );
+    expect(labels).toHaveLength(1);
+    const input = labels[0]!.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    );
+    expect(input).not.toBeNull();
+    return input!;
+  }
+
+  async function toggleNotifications() {
+    await act(async () => {
+      notificationToggle().click();
+      await settle();
+    });
+  }
+
+  it("starts off, asks the host once, and shows the opted-in state", async () => {
+    const api = createApi();
+    await mount(api, "settings");
+
+    expect(api.intakeNotificationSettings).toHaveBeenCalledTimes(1);
+    expect(notificationToggle().checked).toBe(false);
+    expect(api.setIntakeNotificationsEnabled).not.toHaveBeenCalled();
+
+    await toggleNotifications();
+
+    expect(api.setIntakeNotificationsEnabled).toHaveBeenCalledWith(true);
+    expect(notificationToggle().checked).toBe(true);
+    expect(container.textContent).not.toContain("Notifications blocked by macOS");
+  });
+
+  it("keeps the switch on when macOS refuses permission, and points at the pane", async () => {
+    const api = createApi({
+      setIntakeNotificationsEnabled: vi.fn(async (): Promise<IntakeNotificationSettings> => ({
+        enabled: true,
+        permission: "denied",
+      })),
+    });
+    await mount(api, "settings");
+    await toggleNotifications();
+
+    // The user's intent stands; the guidance names the system setting instead of
+    // reporting a failure, because nothing failed.
+    expect(notificationToggle().checked).toBe(true);
+    expect(container.textContent).toContain("Notifications blocked by macOS");
+
+    await click("Open System Settings");
+
+    expect(api.openNotificationSettings).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("Try again");
+  });
+
+  it("reports a rejected write and re-applies the toggle on retry", async () => {
+    const api = createApi({
+      setIntakeNotificationsEnabled: vi
+        .fn()
+        .mockRejectedValueOnce({ code: "intake_notification_setting_failed" })
+        // Faithful to the host: the answer mirrors the requested state, so a
+        // retry that re-applied the wrong intent would leave the switch off.
+        .mockImplementation(
+          async (enabled: boolean): Promise<IntakeNotificationSettings> => ({
+            enabled,
+            permission: enabled ? "authorized" : "not_determined",
+          }),
+        ),
+    });
+    await mount(api, "settings");
+    await toggleNotifications();
+
+    expect(container.textContent).toContain(
+      "CanCan couldn’t save that notification setting.",
+    );
+    expect(notificationToggle().checked).toBe(false);
+
+    await click("Try again");
+
+    expect(api.setIntakeNotificationsEnabled).toHaveBeenCalledTimes(2);
+    expect(notificationToggle().checked).toBe(true);
+    expect(container.textContent).not.toContain("couldn’t save");
+  });
+});
 
 describe("App settings diagnostics export", () => {
   it("previews the export content before saving it", async () => {

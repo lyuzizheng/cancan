@@ -63,6 +63,7 @@ fn gmail_runtime(
         Arc::new(MemoryStatementPasswordStore::default()),
         Arc::new(MemoryLocalInboxBookmarkStore::default()),
         gmail_refresh_tokens,
+        system_intake_notification_delivery(),
     );
     runtime
         .create(b"synthetic-vault-password")

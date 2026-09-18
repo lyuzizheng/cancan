@@ -8,6 +8,7 @@ import type {
   AccountConfirmationOutcome,
   AccountConfirmationPrompt,
   ConfirmedMoneySourceCandidate,
+  IntakeNotificationSettings,
   LocalInboxScanSummary,
   LocalInboxStatus,
   MoneyOverview,
@@ -26,6 +27,7 @@ import type {
   SourceConfirmationPrompt,
   SourceDocumentPreview,
   SourceDocumentSummary,
+  TaskRow,
   Tasks,
   UndoOutcome,
   VaultAccessStatus,
@@ -266,6 +268,12 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     importSourceDocument: vi.fn(
       async (): Promise<SourceDocumentImportOutcome | null> => null,
     ),
+    intakeNotificationSettings: vi.fn(
+      async (): Promise<IntakeNotificationSettings> => ({
+        enabled: false,
+        permission: "not_determined",
+      }),
+    ),
     listAccountConfirmationPrompts: vi.fn(async () => []),
     listSourceConfirmationPrompts: vi.fn(async () => []),
     listMoneySources: vi.fn(async (): Promise<MoneySourceSummary[]> => []),
@@ -282,7 +290,9 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     localInboxStatus: vi.fn(async (): Promise<LocalInboxStatus> => inboxDisabled),
     lockVault: vi.fn(async (): Promise<VaultStatus> => "locked"),
+    onBackgroundIntakeRoute: vi.fn(async () => () => undefined),
     onVaultLocked: vi.fn(async () => () => undefined),
+    openNotificationSettings: vi.fn(async (): Promise<void> => undefined),
     operationalDiagnosticsPreview: vi.fn(
       async (): Promise<OperationalDiagnosticsPreview> => diagnosticsPreview,
     ),
@@ -330,6 +340,13 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     saveRecoveryFile: vi.fn(async (): Promise<boolean> => false),
     saveSourceDocumentCopy: vi.fn(async (): Promise<boolean> => false),
+    setIntakeNotificationsEnabled: vi.fn(
+      async (enabled: boolean): Promise<IntakeNotificationSettings> => ({
+        enabled,
+        permission: enabled ? "authorized" : "not_determined",
+      }),
+    ),
+    takeBackgroundIntakeRoute: vi.fn(async (): Promise<TaskRow | null> => null),
     saveOperationalDiagnostics: vi.fn(async (): Promise<boolean> => true),
     trySavedStatementPasswords: vi.fn(
       async (): Promise<SavedStatementPasswordResult> => "invalid",

@@ -201,9 +201,16 @@ fn reconcile_sealed_batches_completes_actionable_and_suppresses_non_actionable()
     drop(store_guard);
 
     // The write half of the Tasks projection completes every sealed batch; the
-    // read command itself stays pure.
+    // read command itself stays pure. This asserts the store's own contract, so
+    // it hands the store an eligible pass directly; what the host makes
+    // eligible (the toggle, the permission, a visible window) is covered by
+    // `notifications_tests`.
     runtime
-        .seal_completed_intake_batches()
+        .store()
+        .expect("open store")
+        .as_mut()
+        .expect("unlocked store")
+        .reconcile_sealed_batches(true)
         .expect("seal completed batches");
     let tasks = runtime
         .list_tasks(TaskFilter::CommandCenter)
@@ -393,7 +400,7 @@ fn parked_local_inbox_rejection_is_suppressed_not_pending() {
     );
 
     runtime
-        .seal_completed_intake_batches()
+        .seal_completed_intake_batches(true)
         .expect("seal completed batches");
 
     let mut store_guard = runtime.store().expect("open store");
