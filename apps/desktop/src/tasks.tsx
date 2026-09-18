@@ -55,6 +55,7 @@ const consequenceLabels: Record<TaskConsequence, string> = {
   processing: "Processing",
   ready: "Ready",
   restore_source_file: "Restore source file?",
+  same_statement_content: "Same statement content",
   save_recovery_file: "Recovery setup",
   setup_reminder_postponed: "Reminder postponed",
   source_file_left_deleted: "Source file left deleted",

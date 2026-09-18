@@ -15,7 +15,7 @@ const PDF_ENGINE: &str = "pdfkit";
 const PDF_ENGINE_VERSION: &str = "macos-page-string-v2";
 const DEFAULT_OCR_ROW_Y_OVERLAP_THRESHOLD: f64 = 0.5;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SourceObservationKind {
     NativeText,

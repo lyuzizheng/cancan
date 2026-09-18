@@ -34,6 +34,7 @@ pub(crate) enum TaskConsequence {
     NeedsAttention,
     FileNotAdded,
     AlreadyInCancan,
+    SameStatementContent,
     SourceFileRestored,
     SourceFileLeftDeleted,
     Ready,
@@ -337,6 +338,12 @@ fn raw_task_to_row(raw: RawTask) -> TaskRow {
             format!("task:receipt:{intake_item_id}"),
             TaskGroup::RecentlyCompleted,
             TaskConsequence::AlreadyInCancan,
+            TaskDestination::Receipt { intake_item_id },
+        ),
+        RawTaskKind::SameStatementContent { intake_item_id } => (
+            format!("task:receipt:{intake_item_id}"),
+            TaskGroup::RecentlyCompleted,
+            TaskConsequence::SameStatementContent,
             TaskDestination::Receipt { intake_item_id },
         ),
         RawTaskKind::SourceFileRestored { intake_item_id } => (
