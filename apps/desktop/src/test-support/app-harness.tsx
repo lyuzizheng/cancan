@@ -290,6 +290,7 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     ),
     localInboxStatus: vi.fn(async (): Promise<LocalInboxStatus> => inboxDisabled),
     lockVault: vi.fn(async (): Promise<VaultStatus> => "locked"),
+    onBackgroundIntakeRoute: vi.fn(async () => () => undefined),
     onVaultLocked: vi.fn(async () => () => undefined),
     openNotificationSettings: vi.fn(async (): Promise<void> => undefined),
     operationalDiagnosticsPreview: vi.fn(

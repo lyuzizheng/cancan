@@ -151,13 +151,15 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     || documents.confirmingDelete !== null;
   const unlocked = status === "unlocked";
   const { setTasksFilter } = commandCenter;
-  const { takeRoute } = notifications;
+  const { routeRequest, takeRoute } = notifications;
 
   // A menu-bar or notification click asked for this window; it left the batch's
   // Tasks row behind for the renderer to open. The route is pulled once the
   // session can answer and is consumed host-side, so a stale rebuild cannot
   // replay it. Landing on the row's group shows the row in the full route
-  // instead of an empty filter.
+  // instead of an empty filter. A click that arrives while this renderer is
+  // already live bumps `routeRequest` and re-runs the same pull here; a click
+  // before the renderer exists is covered by the unlock this effect waits for.
   useEffect(() => {
     if (!unlocked) {
       return;
@@ -173,7 +175,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
     return () => {
       active = false;
     };
-  }, [navigate, setTasksFilter, takeRoute, unlocked]);
+  }, [navigate, routeRequest, setTasksFilter, takeRoute, unlocked]);
 
   const existingSources = useMemo(
     () => documents.sourceDocuments.map((entry) => entry.source),

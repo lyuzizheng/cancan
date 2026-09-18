@@ -49,7 +49,7 @@ describe("App settings background intake notifications", () => {
 
     expect(api.setIntakeNotificationsEnabled).toHaveBeenCalledWith(true);
     expect(notificationToggle().checked).toBe(true);
-    expect(container.textContent).not.toContain("isn’t allowing notifications");
+    expect(container.textContent).not.toContain("Notifications blocked by macOS");
   });
 
   it("keeps the switch on when macOS refuses permission, and points at the pane", async () => {
@@ -78,7 +78,14 @@ describe("App settings background intake notifications", () => {
       setIntakeNotificationsEnabled: vi
         .fn()
         .mockRejectedValueOnce({ code: "intake_notification_setting_failed" })
-        .mockResolvedValue({ enabled: true, permission: "authorized" }),
+        // Faithful to the host: the answer mirrors the requested state, so a
+        // retry that re-applied the wrong intent would leave the switch off.
+        .mockImplementation(
+          async (enabled: boolean): Promise<IntakeNotificationSettings> => ({
+            enabled,
+            permission: enabled ? "authorized" : "not_determined",
+          }),
+        ),
     });
     await mount(api, "settings");
     await toggleNotifications();

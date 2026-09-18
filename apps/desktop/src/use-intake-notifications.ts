@@ -13,6 +13,12 @@ export interface IntakeNotifications {
   openSystemSettings(): void;
   /** Drops every session-scoped state; the gate's reset half. */
   reset(): void;
+  /**
+   * Bumped by every host click that reopened this renderer, so the window that
+   * is already on screen pulls the pending route instead of waiting for an
+   * unlock that will not come.
+   */
+  readonly routeRequest: number;
   /** Re-runs the command that produced `error`. */
   retry(): void;
   /** The user's toggle. Off is the absence of the status file, not a read failure. */
@@ -45,6 +51,7 @@ export function useIntakeNotifications({
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [routeRequest, setRouteRequest] = useState(0);
   // The read runs from an effect on unlock, so `load` must keep one identity
   // for the whole session: a `busy` state in its dependencies would re-trigger
   // the effect that called it. Re-entry is refused on the ref instead.
@@ -150,6 +157,35 @@ export function useIntakeNotifications({
     retrying.current();
   }, []);
 
+  // A click that finds this renderer already live (the window was never
+  // destroyed, or the menu-bar item opened it first) has no unlock to pull the
+  // route on, so the host's click event re-runs that pull.
+  useEffect(() => {
+    let active = true;
+    let removeListener: (() => void) | undefined;
+    void api
+      .onBackgroundIntakeRoute(() => {
+        if (active) {
+          setRouteRequest((request) => request + 1);
+        }
+      })
+      .then((remove) => {
+        if (active) {
+          removeListener = remove;
+        } else {
+          remove();
+        }
+      })
+      .catch(() => {
+        // The mount pull remains the fail-closed fallback.
+      });
+
+    return () => {
+      active = false;
+      removeListener?.();
+    };
+  }, [api]);
+
   // The setting lives outside the Vault's schema, so it is only readable once a
   // session can answer; the mount after every unlock refreshes it.
   useEffect(() => {
@@ -165,6 +201,7 @@ export function useIntakeNotifications({
     openSystemSettings,
     reset,
     retry,
+    routeRequest,
     setEnabled,
     settings,
     takeRoute,

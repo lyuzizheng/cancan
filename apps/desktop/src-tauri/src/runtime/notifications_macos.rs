@@ -20,6 +20,7 @@ use objc2_user_notifications::{
 use std::ptr::NonNull;
 use std::sync::OnceLock;
 use std::sync::mpsc::{RecvTimeoutError, channel};
+use tauri::Emitter;
 
 /// Long enough for the system to answer a permission or delivery callback, and
 /// short enough that a wedged notification center cannot stall a pipeline pass.
@@ -33,7 +34,9 @@ impl IntakeNotificationDelivery for MacIntakeNotificationDelivery {
     }
 
     fn request_permission(&self) -> IntakeNotificationPermission {
-        let center = user_notification_center();
+        let Some(center) = user_notification_center() else {
+            return IntakeNotificationPermission::NotDetermined;
+        };
         let (sender, receiver) = channel();
         let handler = block2::StackBlock::new(move |_granted: Bool, _error: *mut NSError| {
             let _ = sender.send(());
@@ -51,7 +54,9 @@ impl IntakeNotificationDelivery for MacIntakeNotificationDelivery {
     }
 
     fn deliver(&self, notification: &IntakeNotification) -> Result<(), RuntimeError> {
-        let center = user_notification_center();
+        let Some(center) = user_notification_center() else {
+            return Err(RuntimeError::new("intake_notifications_unavailable"));
+        };
         let content = UNMutableNotificationContent::new();
         content.setTitle(&NSString::from_str(&notification.title));
         content.setBody(&NSString::from_str(&notification.body));
@@ -82,7 +87,9 @@ pub(super) fn install(app: &AppHandle, runtime: &VaultRuntime) {
     if INTAKE_NOTIFICATION_CLICK_HANDLER.get().is_some() {
         return;
     }
-    let center = user_notification_center();
+    let Some(center) = user_notification_center() else {
+        return;
+    };
     let handler = IntakeNotificationClickHandler::new(app.clone(), runtime.clone());
     center.setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(&*handler)));
     if INTAKE_NOTIFICATION_CLICK_HANDLER
@@ -93,12 +100,17 @@ pub(super) fn install(app: &AppHandle, runtime: &VaultRuntime) {
     }
 }
 
-/// The notification center can only be used from a bundled application; an
-/// unbundled development binary answers "not determined" instead of throwing.
-/// Delivery is impossible there, so a batch keeps its pending state and the
-/// next pass retries once the real app is running.
-fn user_notification_center() -> Retained<UNUserNotificationCenter> {
-    UNUserNotificationCenter::currentNotificationCenter()
+/// `+[UNUserNotificationCenter currentNotificationCenter]` aborts the process
+/// with an `NSInternalInconsistencyException` (`bundleProxyForCurrentProcess is
+/// nil`) when `mainBundle` is not an app bundle, which is exactly what
+/// `tauri dev`, a plain `cargo run`, and the test binary are. Every use goes
+/// through this helper, so an unbundled process answers "not available"
+/// instead of crashing at launch.
+fn user_notification_center() -> Option<Retained<UNUserNotificationCenter>> {
+    if !is_bundled() {
+        return None;
+    }
+    Some(UNUserNotificationCenter::currentNotificationCenter())
 }
 
 fn is_bundled() -> bool {
@@ -106,10 +118,9 @@ fn is_bundled() -> bool {
 }
 
 fn current_permission() -> IntakeNotificationPermission {
-    if !is_bundled() {
+    let Some(center) = user_notification_center() else {
         return IntakeNotificationPermission::NotDetermined;
-    }
-    let center = user_notification_center();
+    };
     let (sender, receiver) = channel();
     let handler = block2::StackBlock::new(move |settings: NonNull<UNNotificationSettings>| {
         // SAFETY: the center owns the settings object for the duration of the
@@ -165,6 +176,11 @@ define_class!(
                 if let Err(error) = show_or_create_main_window(&reopened_app) {
                     eprintln!("intake notification reopen failed: {error}");
                 }
+                // A renderer that is already live never sees an unlock to pull
+                // the route on, so the click announces itself and that window
+                // re-runs the pull; a renderer being rebuilt still pulls on the
+                // unlock that follows.
+                let _ = reopened_app.emit("background-intake-route", ());
             });
             if let Err(error) = opened {
                 eprintln!("intake notification reopen dispatch failed: {error}");

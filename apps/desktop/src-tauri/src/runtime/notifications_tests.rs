@@ -34,6 +34,31 @@ fn batch_states(runtime: &VaultRuntime) -> Vec<(String, Option<String>, String)>
         .expect("batch states")
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn an_unbundled_process_answers_instead_of_aborting() {
+    // A test binary, like `tauri dev` and a plain `cargo run`, has no app
+    // bundle. `+[UNUserNotificationCenter currentNotificationCenter]` aborts
+    // such a process with an NSInternalInconsistencyException, so every entry
+    // point has to answer before touching the center: the permission reads as
+    // undetermined, and delivery fails into the pending retry path.
+    let delivery = crate::runtime::notifications_macos::MacIntakeNotificationDelivery;
+    assert_eq!(
+        delivery.permission(),
+        IntakeNotificationPermission::NotDetermined
+    );
+    assert_eq!(
+        delivery.request_permission(),
+        IntakeNotificationPermission::NotDetermined
+    );
+    let notification = IntakeNotification {
+        identifier: "intake-batch:unbundled".to_string(),
+        title: "CanCan".to_string(),
+        body: "body".to_string(),
+    };
+    assert!(delivery.deliver(&notification).is_err());
+}
+
 #[test]
 fn the_two_shapes_the_spec_names_and_their_plurals() {
     assert_eq!(

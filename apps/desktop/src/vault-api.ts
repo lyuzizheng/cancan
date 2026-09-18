@@ -134,6 +134,12 @@ export interface VaultApi {
   lockVault(): Promise<VaultStatus>;
   localInboxStatus(): Promise<LocalInboxStatus>;
   onVaultLocked(handler: () => void): Promise<() => void>;
+  /**
+   * A menu-bar or notification click reopened this renderer. An already-live
+   * window has no unlock to pull the pending Tasks route on, so the click
+   * announces itself and the renderer re-runs that pull.
+   */
+  onBackgroundIntakeRoute(handler: () => void): Promise<() => void>;
   openNotificationSettings(): Promise<void>;
   operationalDiagnosticsPreview(): Promise<OperationalDiagnosticsPreview>;
   previewSourceDocument(documentId: string): Promise<SourceDocumentPreview>;
@@ -421,6 +427,8 @@ export function createVaultApi(
     },
     listUnassignedSourceDocuments: () =>
       call<SourceDocumentSummary[]>("list_unassigned_source_documents"),
+    onBackgroundIntakeRoute: (handler) =>
+      subscribe("background-intake-route", handler),
     onVaultLocked: (handler) => subscribe("vault-locked", handler),
     openNotificationSettings: () => call<void>("open_notification_settings"),
     previewSourceDocument: (documentId) => {
