@@ -261,6 +261,7 @@ impl JobFailureContext {
                 "maxAttempts": self.max_attempts,
                 "retryable": detail.retryable,
                 "provider": detail.provider,
+                "reportedCode": detail.reported_code,
                 "related": {
                     "sourceDocumentId": self.related_source_document_id,
                     "moneySourceId": self.related_money_source_id,

@@ -99,18 +99,25 @@ impl ManualImportStore {
             }
             _ => serde_json::json!({ "errorCode": reason }).to_string(),
         };
+        // Spec 0015: a deterministic sidecar rejection (budget exhausted, an
+        // invalid structured proposal, ungrounded evidence) repeats on every
+        // attempt, so it fails terminally instead of consuming retries and AI
+        // budget. Transient failures keep the existing attempts accounting.
+        let terminal =
+            detail.is_some_and(|detail| !detail.retryable && detail.reported_code.is_some());
         let changed = self.connection.execute(
             "UPDATE jobs SET \
-                 status = CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END, \
+                 status = CASE WHEN ?1 OR attempts >= max_attempts THEN 'failed' ELSE 'queued' END, \
                  result_json = NULL, \
-                 error_json = CASE WHEN attempts < max_attempts THEN NULL ELSE ?1 END, \
-                 blocked_reason = CASE WHEN attempts < max_attempts THEN NULL ELSE ?2 END, \
+                 error_json = CASE WHEN ?1 OR attempts >= max_attempts THEN ?2 ELSE NULL END, \
+                 blocked_reason = CASE WHEN ?1 OR attempts >= max_attempts THEN ?3 ELSE NULL END, \
                  lease_owner = NULL, lease_until = NULL, \
-                 finished_at = CASE WHEN attempts < max_attempts THEN NULL ELSE CURRENT_TIMESTAMP END, \
+                 finished_at = CASE WHEN ?1 OR attempts >= max_attempts THEN CURRENT_TIMESTAMP ELSE NULL END, \
                  updated_at = CURRENT_TIMESTAMP \
-             WHERE id = ?3 AND related_source_document_id = ?4 AND job_type = ?5 \
-               AND status = 'running' AND lease_owner = ?6",
+             WHERE id = ?4 AND related_source_document_id = ?5 AND job_type = ?6 \
+               AND status = 'running' AND lease_owner = ?7",
             params![
+                terminal,
                 error_json,
                 reason,
                 claim.job_id,
@@ -123,10 +130,10 @@ impl ManualImportStore {
         if let Some(context) = context {
             // An attempt that still has retries left only requeues the job; the
             // same SQL decides that, so the level mirrors it.
-            let level = if context.attempt < context.max_attempts {
-                OperationalLogLevel::Warning
-            } else {
+            let level = if terminal || context.attempt >= context.max_attempts {
                 OperationalLogLevel::Error
+            } else {
+                OperationalLogLevel::Warning
             };
             let _ = self.record_operational_log(
                 &context

@@ -458,6 +458,132 @@ fn failed_reconcile_keeps_the_context_of_the_running_job_not_a_superseded_one() 
 }
 
 #[test]
+fn a_deterministic_wire_rejection_fails_terminally_on_the_first_attempt() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let source_path = root.path().join("statement.pdf");
+    fs::write(&source_path, b"%PDF deterministic sidecar rejection").expect("write fixture");
+    let mut store = open_store(root.path());
+    store
+        .register_import(
+            &import_source(
+                &source_path,
+                "document-deterministic",
+                "audit-deterministic",
+            ),
+            None,
+        )
+        .expect("import source");
+    let job = store
+        .queued_parse_document_jobs()
+        .expect("read queued parse job")
+        .pop()
+        .expect("queued parse job");
+    let claim = store
+        .start_parse_document_job(&job)
+        .expect("start parse job")
+        .expect("claim parse job");
+    let detail = JobFailureDetail::from_reported_code(
+        Some("normalizer"),
+        "the normalizer reported evidence_grounding_failed",
+        false,
+        Some("evidence_grounding_failed"),
+    );
+    store
+        .fail_parse_document_job(&claim, "normalizer_failed", Some(&detail))
+        .expect("record deterministic failure");
+
+    let state: (String, i64, String, String) = store
+        .connection
+        .query_row(
+            "SELECT status, attempts, error_json, blocked_reason FROM jobs \
+             WHERE id = ?1",
+            [&job.job_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("read terminal parse state");
+    assert_eq!(state.0, "failed");
+    assert_eq!(
+        state.1, 1,
+        "a deterministic rejection must not consume retries"
+    );
+    assert_eq!(state.3, "normalizer_failed");
+    let error_json: serde_json::Value =
+        serde_json::from_str(&state.2).expect("error_json is an object");
+    assert_eq!(error_json["errorCode"], "normalizer_failed");
+    assert_eq!(
+        error_json["technical"]["reportedCode"],
+        "evidence_grounding_failed"
+    );
+    assert_eq!(error_json["technical"]["retryable"], false);
+    assert_eq!(error_json["technical"]["attempt"], 1);
+
+    let (level, error_code): (String, String) = store
+        .connection
+        .query_row(
+            "SELECT level, error_code FROM operational_logs \
+             WHERE component = 'job.parse_document' ORDER BY id DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read the job entry");
+    assert_eq!(
+        level, "error",
+        "a terminal first attempt logs at error, not warning"
+    );
+    assert_eq!(error_code, "normalizer_failed");
+
+    assert!(
+        store
+            .queued_parse_document_jobs()
+            .expect("read queue after terminal failure")
+            .is_empty(),
+        "a deterministic rejection must not requeue"
+    );
+}
+
+#[test]
+fn a_transient_wire_code_keeps_the_attempt_retry() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let source_path = root.path().join("statement.pdf");
+    fs::write(&source_path, b"%PDF transient wire failure").expect("write fixture");
+    let mut store = open_store(root.path());
+    store
+        .register_import(
+            &import_source(&source_path, "document-transient", "audit-transient"),
+            None,
+        )
+        .expect("import source");
+    let job = store
+        .queued_parse_document_jobs()
+        .expect("read queued parse job")
+        .pop()
+        .expect("queued parse job");
+    let claim = store
+        .start_parse_document_job(&job)
+        .expect("start parse job")
+        .expect("claim parse job");
+    let detail = JobFailureDetail::from_reported_code(
+        Some("normalizer"),
+        "the normalizer reported command_failed",
+        true,
+        None,
+    );
+    store
+        .fail_parse_document_job(&claim, "normalizer_failed", Some(&detail))
+        .expect("record transient failure");
+
+    let state: (String, i64) = store
+        .connection
+        .query_row(
+            "SELECT status, attempts FROM jobs WHERE id = ?1",
+            [&job.job_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read requeued parse state");
+    assert_eq!(state, ("queued".to_owned(), 1));
+}
+
+#[test]
 fn a_vault_whose_operational_log_is_unreadable_still_opens() {
     let root = tempfile::tempdir().expect("temporary Vault");
     {

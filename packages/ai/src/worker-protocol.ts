@@ -55,6 +55,40 @@ export type CoreCommandResult =
 
 export type WorkerCommand = NormalizeCommand | CoreCommand | { type: "shutdown" };
 
+/**
+ * Spec 0015 parser error codes on the worker wire protocol. The three
+ * deterministic rejections stay distinguishable from transient
+ * provider/network failures so the job engine never spends money retrying
+ * them. Exhaustive on purpose: a new code must declare its retryability here
+ * before it compiles.
+ */
+export type WorkerErrorCode =
+  | "invalid_command"
+  | "command_failed"
+  | "normalizer_budget_exhausted"
+  | "structured_proposal_invalid"
+  | "evidence_grounding_failed";
+
+const WORKER_ERROR_RETRYABLE: Record<WorkerErrorCode, boolean> = {
+  invalid_command: false,
+  command_failed: true,
+  normalizer_budget_exhausted: false,
+  structured_proposal_invalid: false,
+  evidence_grounding_failed: false,
+};
+
+export function workerErrorIsRetryable(code: WorkerErrorCode): boolean {
+  return WORKER_ERROR_RETRYABLE[code];
+}
+
+export function workerErrorMessage(code: WorkerErrorCode): {
+  type: "error";
+  code: WorkerErrorCode;
+  retryable: boolean;
+} {
+  return { type: "error", code, retryable: workerErrorIsRetryable(code) };
+}
+
 const REVIEW_EVENT_TYPES = new Set<ReviewEventType>([
   "credit_card_repayment",
   "same_currency_transfer",
