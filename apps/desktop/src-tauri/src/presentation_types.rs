@@ -40,6 +40,10 @@ fn generated_presentation_types() -> String {
         // Background intake notifications.
         crate::runtime::IntakeNotificationPermission::decl(&config),
         crate::runtime::IntakeNotificationSettings::decl(&config),
+        // Phone capture.
+        crate::phone_shortcut::PhoneShortcutInboxCheck::decl(&config),
+        crate::phone_shortcut::PhoneShortcutInboxCheckState::decl(&config),
+        crate::runtime::PhoneShortcutStatus::decl(&config),
         // Tasks.
         crate::runtime::TaskConsequence::decl(&config),
         crate::runtime::TaskDestination::decl(&config),

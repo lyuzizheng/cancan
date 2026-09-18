@@ -20,37 +20,7 @@ impl VaultRuntime {
             .local_inbox_scan_guard
             .lock()
             .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
-        if !self.activate_local_inbox_from_bookmark()? {
-            let code = if self
-                .inner
-                .local_inbox_needs_reauthorization
-                .load(Ordering::SeqCst)
-            {
-                "local_inbox_reauthorization_required"
-            } else if self
-                .inner
-                .local_inbox_needs_attention
-                .load(Ordering::SeqCst)
-            {
-                "local_inbox_setup_required"
-            } else {
-                "local_inbox_not_configured"
-            };
-            return Err(RuntimeError::new(code));
-        }
-        let inbox = {
-            let access = self
-                .inner
-                .local_inbox_access
-                .lock()
-                .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
-            let root = access
-                .as_ref()
-                .ok_or_else(|| RuntimeError::new("local_inbox_reauthorization_required"))?;
-            let LocalInboxPaths { inbox, .. } = ensure_inbox_paths(root.root())
-                .map_err(|_| RuntimeError::new("local_inbox_setup_failed"))?;
-            inbox
-        };
+        let inbox = self.authorized_local_inbox()?;
         let tombstoned_hashes = {
             let store = self.store()?;
             let store = store

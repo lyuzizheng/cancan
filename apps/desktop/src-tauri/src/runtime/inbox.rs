@@ -304,6 +304,41 @@ impl VaultRuntime {
             .map_store_error(store, "fail_reconcile_document", "reconcile_failed")
     }
 
+    /// Resolves the authorized Inbox this session may read and write, or names
+    /// why it cannot: an Inbox that was never configured, a setup that needs
+    /// attention, or a bookmark the user has to authorize again.
+    pub(super) fn authorized_local_inbox(&self) -> Result<PathBuf, RuntimeError> {
+        if !self.activate_local_inbox_from_bookmark()? {
+            let code = if self
+                .inner
+                .local_inbox_needs_reauthorization
+                .load(Ordering::SeqCst)
+            {
+                "local_inbox_reauthorization_required"
+            } else if self
+                .inner
+                .local_inbox_needs_attention
+                .load(Ordering::SeqCst)
+            {
+                "local_inbox_setup_required"
+            } else {
+                "local_inbox_not_configured"
+            };
+            return Err(RuntimeError::new(code));
+        }
+        let access = self
+            .inner
+            .local_inbox_access
+            .lock()
+            .map_err(|_| RuntimeError::new("local_inbox_unavailable"))?;
+        let root = access
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new("local_inbox_reauthorization_required"))?;
+        let LocalInboxPaths { inbox, .. } = ensure_inbox_paths(root.root())
+            .map_err(|_| RuntimeError::new("local_inbox_setup_failed"))?;
+        Ok(inbox)
+    }
+
     pub(super) fn activate_local_inbox_from_bookmark(&self) -> Result<bool, RuntimeError> {
         if self
             .inner

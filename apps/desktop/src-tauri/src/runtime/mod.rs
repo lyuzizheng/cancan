@@ -536,6 +536,9 @@ mod notifications;
 mod notifications_macos;
 #[cfg(test)]
 mod notifications_tests;
+mod phone_shortcut;
+#[cfg(test)]
+mod phone_shortcut_tests;
 #[cfg(test)]
 mod remembered_key_tests;
 mod review;
@@ -568,6 +571,7 @@ pub(crate) use inbox::*;
 use keyring::*;
 pub(crate) use lifecycle::*;
 pub(crate) use notifications::*;
+pub(crate) use phone_shortcut::*;
 pub(crate) use review::*;
 pub(crate) use review_records::*;
 use sidecar::*;

@@ -79,6 +79,28 @@ The Shortcut does not ask for Money Source or account, does not inspect PDF cont
 
 Setup includes one safe synthetic test file or equivalent non-sensitive test action. Success proves only that the file reached `Inbox`; it does not claim that the Mac parsed a real statement. iCloud Shortcuts sync may make the installed Shortcut available on the user's other Apple devices, but CanCan must still show device-local install/test state truthfully rather than claiming every phone is configured.
 
+#### Phase 1 Shortcut artifact and host contract
+
+The Shortcut is versioned in the repository: `resources/shortcuts/` holds the artifact in Apple's pre-signing plist format, its manifest, and the install and real-device test path; `scripts/shortcuts/build-save-to-cancan-inbox.py` is its only writer, and `.agents/scripts/check-shortcut-artifact.sh` fails when either committed file drifts from it. The desktop host embeds both and installs that artifact.
+
+The Share sheet's Save File action writes inside the Shortcuts container, so the accepted destination is `/Cancan/Inbox/` — `iCloud Drive ▸ Shortcuts ▸ Cancan ▸ Inbox` — and setup authorizes `iCloud Drive ▸ Shortcuts ▸ Cancan` as the CanCan root whose `Inbox` and `Backups` children CanCan owns. Confirming that landing folder on real hardware stays open until the owner's device runs the walkthrough; an observed different path replaces the generator constant and the documents that state it.
+
+```text
+phone_shortcut_status      the artifact version this build installs and the last
+                           destination check; needs neither the Vault nor an
+                           unlocked Inbox
+install_phone_shortcut     writes the embedded artifact into the app's data
+                           directory, signs it with the local Shortcuts CLI, and
+                           hands it to Shortcuts; an artifact that could not be
+                           signed is opened unsigned
+test_phone_shortcut_inbox  the synthetic test action: under the Inbox scan guard,
+                           create `CanCan Inbox check.txt` in the authorized
+                           Inbox, read it back byte for byte, and remove it; an
+                           existing file of that name is reported, never touched
+```
+
+The check's outcome is device-local state recorded beside the Vault per artifact version: a record written for another version reads back as `never_checked`, so a new artifact never inherits a pass proven with an older one. The check adds no capture path and no parser input, never changes a source file, and a capture that follows it takes the same shared pipeline as every other channel.
+
 ### Future macOS Finder Share intake
 
 Phase 2 adds a native macOS `Share > CanCan` entry for supported files selected in Finder. This is a convenience intake adapter over the same host-owned Add/capture contract, not a new evidence pipeline, parser, source type, or capability registry.

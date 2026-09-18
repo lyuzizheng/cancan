@@ -26,6 +26,7 @@ required=(
   ".agents/scripts/check-docs-consistency.sh"
   ".agents/scripts/check-implementation-slices.sh"
   ".agents/scripts/check-links.sh"
+  ".agents/scripts/check-shortcut-artifact.sh"
   ".agents/scripts/check-spec-index.sh"
   ".agents/scripts/context-for-slice.sh"
   ".agents/scripts/docs-review-packet.sh"
@@ -83,6 +84,7 @@ done
 .agents/scripts/check-ci-workflow.sh
 .agents/scripts/check-spec-index.sh
 .agents/scripts/check-links.sh
+.agents/scripts/check-shortcut-artifact.sh
 .agents/scripts/check-implementation-slices.sh
 .agents/scripts/check-docs-consistency.sh
 .agents/scripts/check-agent-skills.sh
