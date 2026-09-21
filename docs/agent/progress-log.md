@@ -4,6 +4,20 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-09-21
+
+### Completed
+
+- Closed the BRAWUKA-552 findings from the weekly architecture audit. `fail_reconcile_document` now mirrors the parse path instead of failing unconditionally: the terminal decision comes from the retryability the runtime already classified onto the failure detail, so a transient reconcile failure (an `io` timeout/interrupt, a SQLite `busy`/`locked` code) requeues the job with `error_json`, `blocked_reason`, and `finished_at` cleared, the attempt that spends `max_attempts` fails it, and the operational-log level follows the same decision — warning while retries remain, error on the terminal attempt. `reported_code` plays no part because no sidecar reports a reconcile failure, so this path is classified by the store's own retry policy alone.
+- All three `retry_limit_reached` transitions now write the two layers spec 0015 requires. `job_failures.rs` owns one writer (`fail_exhausted_jobs`) behind `start_parse_document_job`, `start_reconcile_document`, and `claim_review_batch`: it re-reads the refused rows under the same predicate the claim ran on, sets `error_json` from the shared `JobFailureContext` plus `blocked_reason`, and records one redacted `job.<type>` entry. A refused claim used to flip the row to `failed` and leave neither, so the dead letter was invisible in diagnostics. The review claim now reads and refuses outside its claim transaction (SQLite cannot nest one), while the claim UPDATE keeps its own.
+- `commit_prepared_review_group` re-verifies the transfer/repayment amount relation itself instead of trusting the proposal. `review_legs_balance` compares sign and magnitude with trailing zeros stripped (`250.0` and `250.00` are one magnitude, no float involved), requires non-zero sides, opposite signs for `same_currency_transfer`, and both decreases for `credit_card_repayment`; a group that fails stays in Review as `relationship_amounts_unbalanced` (renderer label "its two amounts don’t balance") and writes no ledger row. `packages/core/src/review-events.ts` stays the proposal-side checker, so the invariant no longer has a single trusted implementation.
+- Six Rust tests, five of them verified to fail against the pre-fix code: a transient reconcile failure requeues the job and the pump sees the document again, with one warning entry carrying the real message; each of the three refusal sites asserts the two-layer `error_json` (`errorCode`, `technical.{errorCode,jobType,attempt,maxAttempts,retryable}`) and its `retry_limit_reached` entry; an unbalanced transfer (same sign, and unequal magnitude where only zero-stripping would differ) is refused with no `ledger_events` row; and the positive control — a balanced pair whose two statements wrote different scales, `250.0` against `-250.00` — still commits one event with two legs.
+- Gates: `cargo test --all --locked` (319 passed, 1 ignored, was 313), `pnpm verify` (file size, typecheck, unit, sidecar build, presentation types, Rust fmt/clippy/test, Tauri debug build, website build and check), `.agents/scripts/agent-preflight.sh` — pass.
+
+### Next
+
+- BRAWUKA-552 is locally complete and open for review; no owner action is pending from it.
+
 ## 2026-09-18
 
 ### Completed

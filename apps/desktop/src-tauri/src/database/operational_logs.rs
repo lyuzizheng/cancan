@@ -13,7 +13,10 @@ const OPERATIONAL_LOG_EXPORT_LIMIT: u32 = 5_000;
 const OPERATIONAL_LOG_PREVIEW_LABELS: usize = 12;
 /// Redacted lines shown in a preview before the user writes the file.
 const OPERATIONAL_LOG_PREVIEW_LINES: usize = 20;
-const JOB_FAILURE_COLUMNS: &str = "job_type, status, attempts, max_attempts, \
+/// The job row a failure is recorded from. Shared with the failure writers in
+/// `job_failures.rs`, which read the same context for the retry-limit
+/// transition.
+pub(super) const JOB_FAILURE_COLUMNS: &str = "job_type, status, attempts, max_attempts, \
      CASE WHEN started_at IS NULL THEN NULL \
           ELSE CAST((julianday('now') - julianday(started_at)) * 86400000 AS INTEGER) END, \
      related_source_document_id, related_money_source_id, related_review_item_id";
@@ -204,7 +207,7 @@ impl ManualImportStore {
     }
 }
 
-fn job_failure_context_from_row(row: &Row<'_>) -> rusqlite::Result<JobFailureContext> {
+pub(super) fn job_failure_context_from_row(row: &Row<'_>) -> rusqlite::Result<JobFailureContext> {
     Ok(JobFailureContext {
         job_type: row.get(0)?,
         status: row.get(1)?,

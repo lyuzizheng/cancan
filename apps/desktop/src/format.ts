@@ -121,6 +121,7 @@ const BATCH_GROUP_REASON_LABELS: Record<string, string> = {
   ambiguous_relationship: "it has more than one possible link",
   core_preflight_failed: "its details aren’t complete",
   job_lease_changed: "it changed while adding",
+  relationship_amounts_unbalanced: "its two amounts don’t balance",
   relationship_changed: "its link changed while adding",
   relationship_not_confirmed: "its link isn’t confirmed yet",
   relationship_not_selected: "select both linked records before adding",

@@ -734,12 +734,7 @@ impl ManualImportStore {
                 logical_run_key: job.logical_run_key.clone(),
             }));
         }
-        self.connection.execute(
-            "UPDATE jobs SET status = 'failed', blocked_reason = 'retry_limit_reached', \
-                     finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-             WHERE id = ?1 AND job_type = ?2 AND status = 'queued' AND attempts >= max_attempts",
-            params![job.job_id, PARSE_DOCUMENT_JOB_TYPE],
-        )?;
+        self.fail_exhausted_parse_document_job(&job.job_id)?;
         Ok(None)
     }
 
@@ -781,13 +776,7 @@ impl ManualImportStore {
             ],
         )?;
         if changed == 0 {
-            self.connection.execute(
-                "UPDATE jobs SET status = 'failed', blocked_reason = 'retry_limit_reached', \
-                         finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP \
-                 WHERE related_source_document_id = ?1 AND job_type = ?2 \
-                   AND status = 'queued' AND attempts >= max_attempts",
-                params![document_id, RECONCILE_DOCUMENT_JOB_TYPE],
-            )?;
+            self.fail_exhausted_reconcile_document_jobs(document_id)?;
         }
         Ok(changed == 1)
     }
@@ -1808,8 +1797,8 @@ impl ManualImportStore {
                 io::Error::new(io::ErrorKind::InvalidInput, "lease owner is required").into(),
             );
         }
-        let transaction = self.connection.transaction()?;
-        let row = transaction
+        let row = self
+            .connection
             .query_row(
                 "SELECT status, attempts, max_attempts, input_json \
                  FROM jobs WHERE id = ?1 AND job_type = ?2",
@@ -1831,16 +1820,13 @@ impl ManualImportStore {
             return Ok(None);
         }
         if attempts >= max_attempts {
-            transaction.execute(
-                "UPDATE jobs SET status = 'failed', finished_at = CURRENT_TIMESTAMP, \
-                         blocked_reason = 'retry_limit_reached', updated_at = CURRENT_TIMESTAMP \
-                 WHERE id = ?1",
-                [job_id],
-            )?;
-            transaction.commit()?;
+            // The refusal records its own failure on its own transaction, so it
+            // reads the row here instead of inside the claim.
+            self.fail_exhausted_review_batch_job(job_id)?;
             return Ok(None);
         }
         let input: CommitReviewBatchInput = serde_json::from_str(&input_json)?;
+        let transaction = self.connection.transaction()?;
         transaction.execute(
             "UPDATE jobs SET status = 'running', attempts = attempts + 1, \
                      lease_owner = ?1, lease_until = datetime('now', ?2), \
@@ -1881,6 +1867,16 @@ impl ManualImportStore {
         {
             return Ok(ReviewBatchGroupOutcome {
                 reason: Some("core_preflight_failed".to_owned()),
+                record_ids: fallback_record_ids,
+                status: ReviewBatchGroupStatus::StillNeedsReview,
+            });
+        }
+        // The two legs carry the amount relation the store is about to write
+        // into an immutable ledger event, so it is verified here and not taken
+        // on trust from the proposal.
+        if !review_legs_balance(event) {
+            return Ok(ReviewBatchGroupOutcome {
+                reason: Some("relationship_amounts_unbalanced".to_owned()),
                 record_ids: fallback_record_ids,
                 status: ReviewBatchGroupStatus::StillNeedsReview,
             });
@@ -2563,6 +2559,8 @@ mod intake_migration_tests;
 #[cfg(test)]
 pub(crate) mod intake_test_support;
 mod job_failures;
+#[cfg(test)]
+mod job_failures_tests;
 mod migrations;
 mod operational_logs;
 #[cfg(test)]
