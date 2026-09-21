@@ -33,7 +33,7 @@ export const hsbcBankStatementV1: ProviderDocumentPackage = {
     validator: "1.0.0",
   },
   normalizationPrompt:
-    "Extract only posted HSBC SGD bank-statement rows. Preserve the full provider account ID, statement Debit/Credit side, exact two-decimal values, raw row, opening balance, and closing balance. Map only an explicit Debit row labelled DBS CARD PAYMENT as a credit-card repayment. Never infer identity from a masked number.",
+    "Extract only posted HSBC SGD bank-statement rows. Preserve the full provider account ID, statement Debit/Credit side, raw row display amounts exactly as printed (including thousands separators), exact two-decimal values, opening balance, and closing balance. Map only an explicit Debit row labelled DBS CARD PAYMENT as a credit-card repayment. Never infer identity from a masked number.",
   reviewOnly: true,
   fingerprint: {
     requiredAnchors: ["HSBC", "ACCOUNT", "STATEMENT", "WITHDRAWAL", "DEPOSIT", "BALANCE"],

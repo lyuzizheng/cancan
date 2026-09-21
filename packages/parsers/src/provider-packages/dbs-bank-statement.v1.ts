@@ -25,7 +25,7 @@ export const dbsBankStatementV1: ProviderDocumentPackage = {
     validator: "1.0.0",
   },
   normalizationPrompt:
-    "Extract only posted DBS SGD bank-statement rows. Preserve the full provider account ID, statement Debit/Credit side, exact two-decimal values, raw row, opening balance, and closing balance. Never infer identity from a masked number.",
+    "Extract only posted DBS SGD bank-statement rows. Preserve the full provider account ID, statement Debit/Credit side, raw row display amounts exactly as printed (including thousands separators), exact two-decimal values, opening balance, and closing balance. Never infer identity from a masked number.",
   reviewOnly: true,
   fingerprint: {
     requiredAnchors: ["DBS", "Statement of Account", "WITHDRAWAL", "DEPOSIT", "BALANCE"],
