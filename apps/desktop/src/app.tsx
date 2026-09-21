@@ -418,8 +418,8 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
           existingSources={existingSources}
           focusedCandidate={focusedCandidate}
           onClose={() => attention.setFocusedCandidateId(null)}
-          onConfirm={(prompt, displayName, sourceType) =>
-            void attention.confirmSourceCandidate(prompt, displayName, sourceType)}
+          onConfirm={(prompt, displayName, sourceType, targetMoneySourceId) =>
+            void attention.confirmSourceCandidate(prompt, displayName, sourceType, targetMoneySourceId)}
           onKeepUnassigned={(prompt) => void attention.parkSourceCandidate(prompt)}
           onViewDocument={viewPromptDocument}
         />

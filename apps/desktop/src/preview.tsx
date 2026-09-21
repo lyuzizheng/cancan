@@ -260,10 +260,10 @@ const fullTasks: Tasks = {
 
 const existingSources: MoneySourceSummary[] = [
   {
-    displayName: "Wise",
-    moneySourceId: "source-wise",
-    providerKey: "wise",
-    sourceType: "wallet",
+    displayName: "DBS Everyday",
+    moneySourceId: "source-dbs-everyday",
+    providerKey: "dbs",
+    sourceType: "bank",
   },
 ];
 

@@ -17,6 +17,7 @@ export interface Attention {
     prompt: SourceConfirmationPrompt,
     displayName: string,
     sourceType: string,
+    targetMoneySourceId: string | null,
   ): Promise<void>;
   decideAccounts(
     prompt: AccountConfirmationPrompt,

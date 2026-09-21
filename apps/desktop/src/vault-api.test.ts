@@ -105,6 +105,7 @@ describe("Vault API", () => {
       2,
       "DBS Bank",
       "bank_account",
+      "source-dbs",
     );
     await api.parkSourceCandidate("candidate-1", 3);
     await api.listSourceDocuments("source-dbs");
@@ -215,6 +216,7 @@ describe("Vault API", () => {
             displayName: "DBS Bank",
             expectedVersion: 2,
             sourceType: "bank_account",
+            targetMoneySourceId: "source-dbs",
           },
         },
       ],

@@ -54,6 +54,7 @@ fn candidate_transactions_upsert_park_confirm_and_retry_without_duplicate_source
         expected_version: 2,
         proposed_money_source_id: "source-dbs",
         source_type: "bank",
+        target_money_source_id: None,
     };
     assert!(
         store
@@ -187,6 +188,7 @@ fn candidate_identity_preserves_tagged_exact_provider_scope() {
         expected_version: 1,
         proposed_money_source_id: "source-root",
         source_type: "bank",
+        target_money_source_id: None,
     };
     let confirmed_root = store
         .confirm_money_source_candidate(&root_confirmation)
@@ -287,6 +289,7 @@ fn root_confirmation_never_reuses_singleton_source_and_keeps_roots_distinct() {
             expected_version: 1,
             proposed_money_source_id: "source-singleton",
             source_type: "bank",
+            target_money_source_id: None,
         })
         .expect("confirm singleton candidate");
     assert_eq!(confirmed_singleton.money_source_id, "source-singleton");
@@ -301,6 +304,7 @@ fn root_confirmation_never_reuses_singleton_source_and_keeps_roots_distinct() {
             expected_version: 1,
             proposed_money_source_id: "source-root-a",
             source_type: "bank",
+            target_money_source_id: None,
         })
         .expect("confirm root A");
     assert_eq!(
@@ -317,6 +321,7 @@ fn root_confirmation_never_reuses_singleton_source_and_keeps_roots_distinct() {
             expected_version: 1,
             proposed_money_source_id: "source-root-b",
             source_type: "bank",
+            target_money_source_id: None,
         })
         .expect("confirm root B");
     assert_eq!(confirmed_root_b.money_source_id, "source-root-b");
@@ -422,6 +427,7 @@ fn singleton_confirmation_does_not_reuse_root_scoped_source() {
             expected_version: 1,
             proposed_money_source_id: "source-singleton",
             source_type: "bank",
+            target_money_source_id: None,
         })
         .expect("confirm singleton candidate");
 
@@ -511,6 +517,7 @@ fn source_confirmation_prompts_and_confirm_requeue_parse_job() {
             expected_version: prompt.version,
             proposed_money_source_id: "source-dbs",
             source_type: "bank",
+            target_money_source_id: None,
         })
         .expect("confirm source candidate");
     assert_eq!(confirmed.money_source_id, "source-dbs");
@@ -532,4 +539,178 @@ fn source_confirmation_prompts_and_confirm_requeue_parse_job() {
         )
         .expect("count parse jobs");
     assert_eq!(job_count, 1);
+}
+
+#[test]
+fn confirmation_with_target_source_attaches_without_creating_a_duplicate() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    insert_document(&store, "document-first", '1');
+    store
+        .connection
+        .execute(
+            "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
+             VALUES ('source-existing', 'dbs', 'Existing DBS', 'bank')",
+            [],
+        )
+        .expect("seed existing source");
+    store
+        .connection
+        .execute(
+            "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
+             VALUES ('source-other-provider', 'hsbc', 'HSBC', 'bank')",
+            [],
+        )
+        .expect("seed other-provider source");
+    store
+        .attach_money_source_candidate(&MoneySourceCandidateInput {
+            candidate_id: "candidate-first",
+            document_id: "document-first",
+            provider_key: "dbs",
+            scope: MoneySourceCandidateScope::ProviderSingleton,
+        })
+        .expect("attach candidate");
+
+    // A source id that does not exist fails closed and writes nothing.
+    assert!(
+        store
+            .confirm_money_source_candidate(&ConfirmMoneySourceCandidateInput {
+                audit_id: "audit-missing",
+                candidate_id: "candidate-first",
+                display_name: "DBS",
+                expected_version: 1,
+                proposed_money_source_id: "source-new",
+                source_type: "bank",
+                target_money_source_id: Some("source-missing"),
+            })
+            .is_err(),
+        "a missing target source must not create a new row"
+    );
+    // A source bound to another provider is not a valid pick for this
+    // candidate's evidence.
+    assert!(
+        store
+            .confirm_money_source_candidate(&ConfirmMoneySourceCandidateInput {
+                audit_id: "audit-mismatch",
+                candidate_id: "candidate-first",
+                display_name: "DBS",
+                expected_version: 1,
+                proposed_money_source_id: "source-new",
+                source_type: "bank",
+                target_money_source_id: Some("source-other-provider"),
+            })
+            .is_err(),
+        "a target source from another provider must be rejected"
+    );
+    assert_eq!(
+        store
+            .connection
+            .query_row("SELECT count(*) FROM money_sources", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count sources after rejected picks"),
+        2,
+        "rejected picks must not create a Money Source"
+    );
+
+    // The picked source owns the candidate and its waiting evidence; no new
+    // row is created even though the provider singleton slot is taken.
+    let confirmed = store
+        .confirm_money_source_candidate(&ConfirmMoneySourceCandidateInput {
+            audit_id: "audit-confirm",
+            candidate_id: "candidate-first",
+            display_name: "Existing DBS",
+            expected_version: 1,
+            proposed_money_source_id: "source-new",
+            source_type: "bank",
+            target_money_source_id: Some("source-existing"),
+        })
+        .expect("confirm candidate onto the chosen source");
+    assert_eq!(confirmed.money_source_id, "source-existing");
+    assert_eq!(
+        store
+            .connection
+            .query_row("SELECT count(*) FROM money_sources", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count sources after confirm"),
+        2,
+        "choosing an existing source must not create a duplicate"
+    );
+    assert_eq!(
+        store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM source_documents \
+                 WHERE money_source_id = 'source-existing' \
+                   AND money_source_candidate_id IS NULL",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count routed evidence"),
+        1
+    );
+}
+
+#[test]
+fn confirmation_display_name_matches_the_manual_source_rules() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    insert_document(&store, "document-first", '1');
+    store
+        .attach_money_source_candidate(&MoneySourceCandidateInput {
+            candidate_id: "candidate-first",
+            document_id: "document-first",
+            provider_key: "dbs",
+            scope: MoneySourceCandidateScope::ProviderSingleton,
+        })
+        .expect("attach candidate");
+
+    for (display_name, expected_version) in [
+        ("   ", 1),       // whitespace-only: empty after trimming
+        ("DBS\tBank", 1), // control characters are rejected
+        ("DBS", 0),       // invalid version
+    ] {
+        assert!(
+            store
+                .confirm_money_source_candidate(&ConfirmMoneySourceCandidateInput {
+                    audit_id: "audit-invalid",
+                    candidate_id: "candidate-first",
+                    display_name,
+                    expected_version,
+                    proposed_money_source_id: "source-new",
+                    source_type: "bank",
+                    target_money_source_id: None,
+                })
+                .is_err(),
+            "invalid confirmation input must be rejected: {display_name:?}"
+        );
+    }
+
+    // Surrounding whitespace is trimmed before the name is stored, matching
+    // the manual create path.
+    let confirmed = store
+        .confirm_money_source_candidate(&ConfirmMoneySourceCandidateInput {
+            audit_id: "audit-confirm",
+            candidate_id: "candidate-first",
+            display_name: "  DBS  ",
+            expected_version: 1,
+            proposed_money_source_id: "source-new",
+            source_type: "bank",
+            target_money_source_id: None,
+        })
+        .expect("confirm with a padded name");
+    assert_eq!(confirmed.money_source_id, "source-new");
+    assert_eq!(
+        store
+            .connection
+            .query_row(
+                "SELECT display_name FROM money_sources WHERE id = 'source-new'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read stored name"),
+        "DBS",
+        "the stored name is trimmed like the manual create path"
+    );
 }
