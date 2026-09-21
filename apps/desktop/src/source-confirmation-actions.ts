@@ -7,6 +7,7 @@ export interface SourceConfirmationActions {
     prompt: SourceConfirmationPrompt,
     displayName: string,
     sourceType: string,
+    targetMoneySourceId: string | null,
   ): Promise<void>;
   parkSourceCandidate(prompt: SourceConfirmationPrompt): Promise<void>;
 }
@@ -40,11 +41,11 @@ export function createSourceConfirmationActions(
     vaultSessionId,
   } = deps;
   const reload = () => Promise.all([loadFinanceData(), loadDocuments()]).then(() => undefined);
-
   const confirmSourceCandidate: SourceConfirmationActions["confirmSourceCandidate"] = async (
     prompt,
     displayName,
     sourceType,
+    targetMoneySourceId,
   ) => {
     if (attentionBusyKey !== null) {
       return;
@@ -57,6 +58,7 @@ export function createSourceConfirmationActions(
         prompt.version,
         displayName,
         sourceType,
+        targetMoneySourceId,
       );
       if (vaultSessionId.current !== sessionId) {
         return;

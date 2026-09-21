@@ -134,6 +134,9 @@ pub(crate) struct ConfirmMoneySourceCandidateInput<'a> {
     pub(crate) expected_version: i64,
     pub(crate) proposed_money_source_id: &'a str,
     pub(crate) source_type: &'a str,
+    /// The existing Money Source the user picked, when the confirmation chose
+    /// one instead of creating a new source.
+    pub(crate) target_money_source_id: Option<&'a str>,
 }
 
 impl ManualImportStore {
@@ -313,7 +316,14 @@ impl ManualImportStore {
         &mut self,
         input: &ConfirmMoneySourceCandidateInput<'_>,
     ) -> StoreResult<ConfirmedMoneySourceCandidate> {
-        validate_confirmation_input(input)?;
+        // The display name follows the manual create/rename path: surrounding
+        // whitespace is trimmed before validation, so a created source stores
+        // the same name the user would have typed there.
+        let input = ConfirmMoneySourceCandidateInput {
+            display_name: input.display_name.trim(),
+            ..*input
+        };
+        validate_confirmation_input(&input)?;
         let transaction = self.connection.transaction()?;
         let current = read_candidate_by_id(&transaction, input.candidate_id)?;
         if current.status == MoneySourceCandidateStatus::Confirmed {
@@ -342,58 +352,83 @@ impl ManualImportStore {
                 [input.candidate_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )?;
-        let money_source_id = match scope_kind.as_str() {
-            "provider_root_id" => {
-                let mut statement = transaction.prepare(
-                    "SELECT id FROM money_sources \
+        let money_source_id = match input.target_money_source_id {
+            Some(target_money_source_id) => {
+                // The user picked an existing source: attach to that row and
+                // never create a new one. The pick is only honored when the
+                // source exists and belongs to the candidate's provider —
+                // cross-provider routing would mislabel the evidence.
+                let target_provider_key = transaction
+                    .query_row(
+                        "SELECT provider_key FROM money_sources WHERE id = ?1",
+                        [target_money_source_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()?
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::NotFound, "Money Source not found")
+                    })?;
+                if target_provider_key != provider_key {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Money Source belongs to a different provider",
+                    )
+                    .into());
+                }
+                target_money_source_id.to_owned()
+            }
+            None => match scope_kind.as_str() {
+                "provider_root_id" => {
+                    let mut statement = transaction.prepare(
+                        "SELECT id FROM money_sources \
                      WHERE provider_key = ?1 AND provider_root_id = ?2 \
                      ORDER BY id LIMIT 2",
-                )?;
-                let existing_sources = statement
-                    .query_map(params![&provider_key, &scope_value], |row| {
-                        row.get::<_, String>(0)
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?;
-                drop(statement);
-                match existing_sources.as_slice() {
-                    [] => {
-                        transaction.execute(
-                            "INSERT INTO money_sources( \
+                    )?;
+                    let existing_sources = statement
+                        .query_map(params![&provider_key, &scope_value], |row| {
+                            row.get::<_, String>(0)
+                        })?
+                        .collect::<Result<Vec<_>, _>>()?;
+                    drop(statement);
+                    match existing_sources.as_slice() {
+                        [] => {
+                            transaction.execute(
+                                "INSERT INTO money_sources( \
                                id, provider_key, provider_root_id, display_name, source_type \
                              ) VALUES (?1, ?2, ?3, ?4, ?5)",
-                            params![
-                                input.proposed_money_source_id,
-                                &provider_key,
-                                &scope_value,
-                                input.display_name,
-                                input.source_type,
-                            ],
-                        )?;
-                        input.proposed_money_source_id.to_owned()
-                    }
-                    [money_source_id] => money_source_id.clone(),
-                    _ => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Money Source candidate matches multiple configured sources",
-                        )
-                        .into());
+                                params![
+                                    input.proposed_money_source_id,
+                                    &provider_key,
+                                    &scope_value,
+                                    input.display_name,
+                                    input.source_type,
+                                ],
+                            )?;
+                            input.proposed_money_source_id.to_owned()
+                        }
+                        [money_source_id] => money_source_id.clone(),
+                        _ => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "Money Source candidate matches multiple configured sources",
+                            )
+                            .into());
+                        }
                     }
                 }
-            }
-            "provider_singleton" => {
-                let mut statement = transaction.prepare(
-                    "SELECT id FROM money_sources \
+                "provider_singleton" => {
+                    let mut statement = transaction.prepare(
+                        "SELECT id FROM money_sources \
                      WHERE provider_key = ?1 AND provider_root_id IS NULL \
                      ORDER BY id LIMIT 2",
-                )?;
-                let existing_sources = statement
-                    .query_map([&provider_key], |row| row.get::<_, String>(0))?
-                    .collect::<Result<Vec<_>, _>>()?;
-                drop(statement);
-                match existing_sources.as_slice() {
-                    [] => {
-                        transaction.execute(
+                    )?;
+                    let existing_sources = statement
+                        .query_map([&provider_key], |row| row.get::<_, String>(0))?
+                        .collect::<Result<Vec<_>, _>>()?;
+                    drop(statement);
+                    match existing_sources.as_slice() {
+                        [] => {
+                            transaction.execute(
                             "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
                              VALUES (?1, ?2, ?3, ?4)",
                             params![
@@ -403,25 +438,26 @@ impl ManualImportStore {
                                 input.source_type,
                             ],
                         )?;
-                        input.proposed_money_source_id.to_owned()
-                    }
-                    [money_source_id] => money_source_id.clone(),
-                    _ => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Money Source candidate matches multiple configured sources",
-                        )
-                        .into());
+                            input.proposed_money_source_id.to_owned()
+                        }
+                        [money_source_id] => money_source_id.clone(),
+                        _ => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "Money Source candidate matches multiple configured sources",
+                            )
+                            .into());
+                        }
                     }
                 }
-            }
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "unknown Money Source candidate scope",
-                )
-                .into());
-            }
+                _ => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "unknown Money Source candidate scope",
+                    )
+                    .into());
+                }
+            },
         };
         let changed = transaction.execute(
             "UPDATE money_source_candidates \
@@ -563,9 +599,15 @@ fn validate_confirmation_input(input: &ConfirmMoneySourceCandidateInput<'_>) -> 
     validate_identifier(input.audit_id, "audit id")?;
     validate_identifier(input.candidate_id, "Money Source candidate id")?;
     validate_identifier(input.proposed_money_source_id, "Money Source id")?;
+    if let Some(target_money_source_id) = input.target_money_source_id {
+        validate_identifier(target_money_source_id, "Money Source id")?;
+    }
+    // Same rule the manual create/rename path applies to a Money Source name:
+    // non-empty after trimming, bounded, and free of control characters.
     if !(1..i64::MAX).contains(&input.expected_version)
         || input.display_name.is_empty()
         || input.display_name.len() > 256
+        || input.display_name.chars().any(char::is_control)
         || input.source_type.is_empty()
         || input.source_type.len() > 128
     {

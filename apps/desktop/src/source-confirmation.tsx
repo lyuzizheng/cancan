@@ -24,6 +24,7 @@ export interface SourceConfirmationCardListProps {
     prompt: SourceConfirmationPrompt,
     displayName: string,
     sourceType: string,
+    targetMoneySourceId: string | null,
   ) => void;
   onKeepUnassigned: (prompt: SourceConfirmationPrompt) => void;
   onViewDocument?: (prompt: SourceConfirmationPrompt) => void;
@@ -70,8 +71,13 @@ function SourceConfirmationCard({
   prompt: SourceConfirmationPrompt;
 }) {
   const [chooserOpen, setChooserOpen] = useState(false);
+  // Only sources bound to the candidate's provider can own its evidence; the
+  // backend rejects any other pick, so the chooser never offers them.
+  const matchingSources = existingSources.filter(
+    (source) => source.providerKey === prompt.providerKey,
+  );
   const [selectedSourceId, setSelectedSourceId] = useState<string>(
-    () => existingSources[0]?.moneySourceId ?? "",
+    () => matchingSources[0]?.moneySourceId ?? "",
   );
   const displayName = providerDisplayName(prompt.providerKey);
   const parked = prompt.status === "kept_unassigned";
@@ -80,7 +86,7 @@ function SourceConfirmationCard({
   const documentLine = prompt.documentCount === 1
     ? "1 document waiting"
     : `${prompt.documentCount} documents waiting`;
-  const selectedSource = existingSources.find(
+  const selectedSource = matchingSources.find(
     (source) => source.moneySourceId === selectedSourceId,
   );
 
@@ -109,11 +115,12 @@ function SourceConfirmationCard({
                 prompt,
                 displayName,
                 providerSuggestedSourceType(prompt.providerKey),
+                null,
               )}
             >
               {confirming ? "Routing…" : "Create source and continue"}
             </Button>
-            {existingSources.length > 0 ? (
+            {matchingSources.length > 0 ? (
               <Button
                 aria-expanded={chooserOpen}
                 disabled={busy}
@@ -142,14 +149,14 @@ function SourceConfirmationCard({
               </Button>
             ) : null}
           </div>
-          {chooserOpen && existingSources.length > 0 ? (
+          {chooserOpen && matchingSources.length > 0 ? (
             <div className="mt-3 flex items-center gap-2">
               <div className="w-56">
                 <Select
                   ariaLabel={`Existing Money Source for ${displayName}`}
                   disabled={busy}
                   onValueChange={setSelectedSourceId}
-                  options={existingSources.map((source) => ({
+                  options={matchingSources.map((source) => ({
                     label: source.displayName,
                     value: source.moneySourceId,
                   }))}
@@ -160,7 +167,12 @@ function SourceConfirmationCard({
                 disabled={busy || selectedSource === undefined}
                 onClick={() => {
                   if (selectedSource !== undefined) {
-                    onConfirm(prompt, selectedSource.displayName, selectedSource.sourceType);
+                    onConfirm(
+                      prompt,
+                      selectedSource.displayName,
+                      selectedSource.sourceType,
+                      selectedSource.moneySourceId,
+                    );
                   }
                 }}
                 variant="strong"

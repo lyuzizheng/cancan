@@ -101,6 +101,7 @@ export interface VaultApi {
     expectedVersion: number,
     displayName: string,
     sourceType: string,
+    targetMoneySourceId: string | null,
   ): Promise<ConfirmedMoneySourceCandidate>;
   parkSourceCandidate(
     candidateId: string,
@@ -446,9 +447,16 @@ export function createVaultApi(
       expectedVersion,
       displayName,
       sourceType,
+      targetMoneySourceId,
     ) => {
       const args: ConfirmSourceCandidateArgs = {
-        request: { candidateId, displayName, expectedVersion, sourceType },
+        request: {
+          candidateId,
+          displayName,
+          expectedVersion,
+          sourceType,
+          targetMoneySourceId,
+        },
       };
       return call<ConfirmedMoneySourceCandidate, ConfirmSourceCandidateArgs>(
         "confirm_source_candidate",

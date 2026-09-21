@@ -14,7 +14,7 @@ const existingSources: MoneySourceSummary[] = [
   {
     displayName: "Synthetic Bank",
     moneySourceId: "source-synthetic",
-    providerKey: "synthetic-bank",
+    providerKey: "dbs",
     sourceType: "bank",
   },
 ];
@@ -69,6 +69,18 @@ describe("SourceConfirmationCardList", () => {
 
   it("omits the choose-existing action when no Money Sources exist", () => {
     const html = render({ existingSources: [], prompts: [pendingPrompt] });
+
+    expect(html).not.toContain("Choose an existing source");
+    expect(html).toContain("Create source and continue");
+  });
+
+  it("omits the choose-existing action when no source belongs to the provider", () => {
+    const html = render({
+      existingSources: [
+        { ...existingSources[0]!, providerKey: "hsbc" },
+      ],
+      prompts: [pendingPrompt],
+    });
 
     expect(html).not.toContain("Choose an existing source");
     expect(html).toContain("Create source and continue");

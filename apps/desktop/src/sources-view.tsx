@@ -53,6 +53,7 @@ export interface SourcesViewProps {
     prompt: SourceConfirmationPrompt,
     displayName: string,
     sourceType: string,
+    targetMoneySourceId: string | null,
   ) => void;
   onDecideAccounts: (
     prompt: AccountConfirmationPrompt,

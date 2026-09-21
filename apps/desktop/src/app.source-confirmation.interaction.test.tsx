@@ -3,7 +3,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { TaskFilter, TaskRow, Tasks } from "./command-contracts";
+import type { MoneySourceSummary, TaskFilter, TaskRow, Tasks } from "./command-contracts";
 import {
   bodyDialog,
   button,
@@ -85,6 +85,7 @@ describe("App source confirmation", () => {
       1,
       "DBS",
       "bank",
+      null,
     );
     expect(container.textContent).toContain("DBS is ready");
     expect(api.listSourceConfirmationPrompts).toHaveBeenCalledTimes(2);
@@ -111,8 +112,14 @@ describe("App source confirmation", () => {
   });
 
   it("routes evidence to a chosen existing source", async () => {
+    const dbsSource: MoneySourceSummary = {
+      displayName: "DBS Everyday",
+      moneySourceId: "money-source-dbs",
+      providerKey: "dbs",
+      sourceType: "bank",
+    };
     const api = createApi({
-      listMoneySources: vi.fn(async () => [moneySource, otherMoneySource]),
+      listMoneySources: vi.fn(async () => [moneySource, otherMoneySource, dbsSource]),
       listSourceConfirmationPrompts: vi.fn(async () => [sourceConfirmationPrompt]),
       listTasks: tasksWith(sourceConfirmationRow),
     });
@@ -120,9 +127,9 @@ describe("App source confirmation", () => {
 
     await openFocusedDialog();
     await clickDialogButton("Choose an existing source");
-    await chooseDialogSelectOption("Existing Money Source for DBS", "Another Bank");
+    await chooseDialogSelectOption("Existing Money Source for DBS", "DBS Everyday");
 
-    await clickDialogButton("Use Another Bank");
+    await clickDialogButton("Use DBS Everyday");
     await act(async () => {
       await settle();
       await settle();
@@ -131,8 +138,9 @@ describe("App source confirmation", () => {
     expect(api.confirmSourceCandidate).toHaveBeenCalledWith(
       "candidate-dbs",
       1,
-      "Another Bank",
+      "DBS Everyday",
       "bank",
+      "money-source-dbs",
     );
   });
 
@@ -263,6 +271,7 @@ describe("App source confirmation", () => {
       1,
       "DBS",
       "bank",
+      null,
     );
   });
 

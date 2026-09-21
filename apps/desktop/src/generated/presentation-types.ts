@@ -105,7 +105,11 @@ export type SourceConfirmationPromptStatus = "pending" | "kept_unassigned";
 
 export type SourceConfirmationScopeKind = "provider_singleton" | "provider_root_id";
 
-export type ConfirmSourceCandidateRequest = { candidateId: string, displayName: string, expectedVersion: number, sourceType: string, };
+export type ConfirmSourceCandidateRequest = { candidateId: string, displayName: string, expectedVersion: number, sourceType: string,
+/**
+ * The existing Money Source the user picked; `null` creates a new source.
+ */
+targetMoneySourceId: string | null, };
 
 export type ParkSourceCandidateRequest = { candidateId: string, expectedVersion: number, };
 

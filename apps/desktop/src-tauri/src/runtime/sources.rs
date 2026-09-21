@@ -219,7 +219,7 @@ impl VaultRuntime {
     }
 }
 
-fn valid_money_source_display_name(display_name: &str) -> bool {
+pub(super) fn valid_money_source_display_name(display_name: &str) -> bool {
     !display_name.is_empty()
         && display_name.len() <= MAX_MONEY_SOURCE_DISPLAY_NAME_BYTES
         && !display_name.chars().any(char::is_control)
