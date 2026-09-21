@@ -11,6 +11,7 @@ import {
   parseRecordLocator,
   validateStructuredProposal,
 } from "./validate-structured-proposal";
+import { normalizeDisplayAmount, twoDecimalMinorUnits } from "./amount-normalization";
 
 const rawKeys = new Set([
   "kind",
@@ -60,12 +61,16 @@ export function createStatementRecordContract(input: {
       const balance = requiredString(raw, "balance");
 
       if (kind === "opening_balance" || kind === "closing_balance") {
+        const normalizedBalance = normalizeDisplayAmount(balance);
+        if (normalizedBalance === undefined) {
+          throw new Error("unsupported statement amount");
+        }
         return {
           groundingValues: [date, balance],
-          identityProjection: { date, balance },
+          identityProjection: { date, balance: normalizedBalance },
           canonical: {
             postedOn: date,
-            balanceAfter: { value: balance, currency: "SGD" },
+            balanceAfter: { value: normalizedBalance, currency: "SGD" },
           },
         };
       }
@@ -80,7 +85,14 @@ export function createStatementRecordContract(input: {
         throw new Error("invalid posted statement row");
       }
       const side = debit ? "debit" : "credit";
-      const amount = debit ?? (credit as string);
+      const displayAmount = debit ?? (credit as string);
+      const amount = normalizeDisplayAmount(displayAmount);
+      const normalizedBalance = normalizeDisplayAmount(balance);
+      // Debit/Credit columns are magnitudes; a leading sign is malformed here
+      // and would corrupt the side-sign prefix below (`--1234.56`).
+      if (amount === undefined || amount.startsWith("-") || normalizedBalance === undefined) {
+        throw new Error("unsupported statement amount");
+      }
       const sign = side === "debit" ? input.debitBalanceSign : input.creditBalanceSign;
       const repayment = input.repaymentMappings.find(
         (mapping) =>
@@ -92,7 +104,7 @@ export function createStatementRecordContract(input: {
         groundingValues: [
           date,
           description,
-          amount,
+          displayAmount,
           balance,
         ],
         identityProjection: {
@@ -111,7 +123,7 @@ export function createStatementRecordContract(input: {
             value: sign === -1 ? `-${amount}` : amount,
             currency: "SGD",
           },
-          balanceAfter: { value: balance, currency: "SGD" },
+          balanceAfter: { value: normalizedBalance, currency: "SGD" },
         },
       };
     },
@@ -124,16 +136,6 @@ function validDate(value: string): boolean {
   }
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
-}
-
-function twoDecimalMinorUnits(value: string): bigint | undefined {
-  const match = /^(-?)(0|[1-9]\d*)\.(\d{2})$/.exec(value);
-  if (!match) {
-    return undefined;
-  }
-  const [, sign, whole, fraction] = match;
-  const minorUnits = BigInt(`${whole}${fraction}`);
-  return sign === "-" ? -minorUnits : minorUnits;
 }
 
 function fullProviderAccountId(value: string | undefined): value is string {

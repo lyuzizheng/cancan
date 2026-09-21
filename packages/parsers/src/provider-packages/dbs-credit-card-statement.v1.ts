@@ -33,7 +33,7 @@ export const dbsCreditCardStatementV1: ProviderDocumentPackage = {
     validator: "1.0.0",
   },
   normalizationPrompt:
-    "Extract only posted DBS SGD credit-card statement rows. Preserve the full provider card ID, statement Debit/Credit side, exact two-decimal values, raw row, opening liability, and closing liability. Map only an explicit Credit row labelled PAYMENT - THANK YOU as a credit-card repayment. Never infer identity from a masked card number.",
+    "Extract only posted DBS SGD credit-card statement rows. Preserve the full provider card ID, statement Debit/Credit side, raw row display amounts exactly as printed (including thousands separators), exact two-decimal values, opening liability, and closing liability. Map only an explicit Credit row labelled PAYMENT - THANK YOU as a credit-card repayment. Never infer identity from a masked card number.",
   reviewOnly: true,
   fingerprint: {
     requiredAnchors: ["DBS", "CREDIT LIMIT", "PAYMENT DUE DATE", "PREVIOUS BALANCE"],

@@ -4,6 +4,7 @@ export const MAX_RAW_RECORD_JSON_BYTES = 16_384;
 /** Byte cap for the semantic document key. */
 export const MAX_SEMANTIC_KEY_BYTES = 256;
 
+import { normalizeDisplayAmount } from "./amount-normalization";
 import type {
   CanonicalExternalRecordInput,
   ExtractionBundle,
@@ -185,12 +186,51 @@ export function groundingRegionObservations(
     locatorMatchesObservation(locator, observation),
   );
 }
+/**
+ * Whole numeric tokens inside grounding text: optional `-`, digits with
+ * optional thousands grouping, optional fraction. Token boundaries reuse the
+ * same adjacency rules as `containsNumericToken` so fragments of a grouped
+ * amount never match on their own.
+ */
+function numericTokens(text: string): string[] {
+  const tokens: string[] = [];
+  const pattern = /-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
+  let match = pattern.exec(text);
+  while (match) {
+    const token = match[0];
+    const start = match.index;
+    const end = start + token.length;
+    if (
+      numericBoundaryIsValid(text, start - 1, start - 2) &&
+      numericBoundaryIsValid(text, end, end + 1)
+    ) {
+      tokens.push(token);
+    }
+    match = pattern.exec(text);
+  }
+  return tokens;
+}
+
+/**
+ * Amount-aware observation hit: the expected display amount also grounds when
+ * an observation in the same text carries its numeric equivalent
+ * (`"1234.56"` grounds `"1,234.56"` and vice versa). Comparison works on
+ * whole numeric tokens, so `"234.56"` never matches inside `"1,234.56"`.
+ */
+function observationMatchesNumericEquivalent(text: string, expected: string): boolean {
+  const canonical = normalizeDisplayAmount(expected);
+  if (canonical === undefined) {
+    return false;
+  }
+  return numericTokens(text).some((token) => normalizeDisplayAmount(token) === canonical);
+}
 
 function observationMatchesValue(observation: SourceObservation, expected: string): boolean {
   const text = normalized(observation.text);
   return (
     text === expected ||
-    (observation.kind !== "table_cell" && nonTableTextGroundsValue(text, expected))
+    (observation.kind !== "table_cell" && nonTableTextGroundsValue(text, expected)) ||
+    observationMatchesNumericEquivalent(text, expected)
   );
 }
 

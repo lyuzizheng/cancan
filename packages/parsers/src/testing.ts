@@ -121,12 +121,12 @@ export const syntheticBankRecordContract: ProviderRecordContract = {
     };
   },
 };
-
-export function createSyntheticTransferFixture(): {
+export interface SyntheticStatementFixture {
   semanticDocumentKey: string;
   extractionBundle: ExtractionBundle;
   proposal: StructuredParseProposal;
-} {
+}
+export function createSyntheticTransferFixture(): SyntheticStatementFixture {
   const observations = [
     ["balance", "2026-06-30", "checking-001", "1000.00", "SGD"],
     ["2026-07-01", "Transfer to savings", "250.00", "SGD", "750.00"],
@@ -349,11 +349,7 @@ export function createSyntheticProviderStatementFixture(
   postings: readonly SyntheticProviderStatementPosting[] = defaultProviderStatementPostings(
     providerPackage,
   ),
-): {
-  semanticDocumentKey: string;
-  extractionBundle: ExtractionBundle;
-  proposal: StructuredParseProposal;
-} {
+): SyntheticStatementFixture {
   const providerAccountId = `${providerPackage.providerKey.toUpperCase()}-123456789`;
   const accountId = "statement-account";
   const statementId = `${providerPackage.providerKey}-${providerPackage.documentType}-2026-07`;

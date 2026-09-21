@@ -13,6 +13,7 @@ export type {
   StructuredProposalValidation,
   ValidatedExternalRecord,
 } from "./contracts";
+export { normalizeDisplayAmount, twoDecimalMinorUnits } from "./amount-normalization";
 export {
   semanticDocumentKey,
   validateStructuredProposal,
