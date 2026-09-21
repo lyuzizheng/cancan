@@ -3,7 +3,27 @@ use super::{
     SourceDocumentRoutingOutcome, StoreResult, TrustedDocumentClassification,
 };
 use rusqlite::{OptionalExtension, params};
+use std::path::Path;
 use zeroize::Zeroizing;
+
+/// The manual-import input for a test that needs one registered document: the
+/// same shape the intake path builds for a user-picked file.
+pub(super) fn import_source<'a>(
+    source_path: &'a Path,
+    document_id: &'a str,
+    audit_id: &'a str,
+) -> SourceDocumentImport<'a> {
+    SourceDocumentImport {
+        audit_actor: "user",
+        audit_id,
+        audit_policy_version: "manual-import-v1",
+        audit_reason: "manual_import",
+        document_id,
+        mime_type: "application/pdf",
+        original_filename: "DBS-July-2026.pdf",
+        source_path,
+    }
+}
 
 #[cfg(test)]
 #[derive(Debug, Eq, PartialEq)]

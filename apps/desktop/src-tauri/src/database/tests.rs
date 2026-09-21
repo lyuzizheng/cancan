@@ -1552,6 +1552,154 @@ pub(super) fn prepared_repayment() -> CorePreparedReviewEvent {
     }
 }
 
+/// The transfer fixture: two deposit accounts whose staged deltas are the only
+/// thing the store trusts about the pair, so a caller can stage any move —
+/// balanced or not — and watch the commit preflight decide.
+///
+/// `incoming_delta` is the receiving account's staged delta, so a test can
+/// stage an unbalanced move and still hand the commit the exact proposal the
+/// records describe; that echo is what `event_matches_group` checks, and the
+/// relation between the two legs is what the store has to check itself.
+pub(super) fn seed_review_transfer(store: &mut ManualImportStore, incoming_delta: &str) {
+    store
+        .seed_money_source("source-hsbc", "hsbc", "HSBC", "bank")
+        .expect("seed HSBC source");
+    store
+        .connection
+        .execute(
+            "INSERT INTO accounts( \
+               id, money_source_id, provider_key, provider_account_id, account_type, \
+               display_name, currency, status \
+             ) VALUES \
+               ('account-hsbc-cash', 'source-hsbc', 'hsbc', 'cash-1', 'deposit_account', \
+                'HSBC Everyday', 'SGD', 'confirmed'), \
+               ('account-dbs-savings', 'source-dbs', 'dbs', 'savings-1', 'deposit_account', \
+                'DBS Multiplier', 'SGD', 'confirmed')",
+            [],
+        )
+        .expect("seed accounts");
+    store
+        .connection
+        .execute(
+            "INSERT INTO instruments(id, instrument_type, symbol, currency, display_name) \
+             VALUES ('instrument-sgd', 'fiat_currency', 'SGD', 'SGD', 'Singapore Dollar')",
+            [],
+        )
+        .expect("seed instrument");
+    for (id, source_id, sha, semantic_key) in [
+        (
+            "document-hsbc-august",
+            "source-hsbc",
+            "h".repeat(64),
+            "hsbc:cash:2026-08",
+        ),
+        (
+            "document-dbs-august",
+            "source-dbs",
+            "d".repeat(64),
+            "dbs:savings:2026-08",
+        ),
+    ] {
+        store
+            .connection
+            .execute(
+                "INSERT INTO source_documents( \
+                   id, money_source_id, file_sha256, semantic_document_key, \
+                   original_filename, mime_type, byte_size, file_state \
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'text/csv', 1, 'missing')",
+                params![id, source_id, sha, semantic_key, format!("{id}.csv")],
+            )
+            .expect("seed statement document");
+        store
+            .connection
+            .execute(
+                "INSERT INTO parse_runs( \
+                   id, source_document_id, normalization_profile_id, logical_run_key, profile_json, input_hash, status \
+                 ) VALUES (?1, ?2, 'synthetic-review-v1', ?1, '{}', '', 'validated')",
+                params![format!("parse-{id}"), id],
+            )
+            .expect("seed parse run");
+    }
+    for (id, document_id, account_id, stable_key, posted_on, delta) in [
+        (
+            "record-hsbc-transfer",
+            "document-hsbc-august",
+            "account-hsbc-cash",
+            "hsbc-savings-move",
+            "2026-08-02",
+            "-250.00",
+        ),
+        (
+            "record-dbs-savings",
+            "document-dbs-august",
+            "account-dbs-savings",
+            "dbs-savings-move",
+            "2026-08-03",
+            incoming_delta,
+        ),
+    ] {
+        store
+            .connection
+            .execute(
+                "INSERT INTO external_records( \
+                   id, parse_run_id, source_document_id, account_id, stable_record_key, version, \
+                   status, record_type, event_type, posted_on, amount_value, currency, \
+                   account_balance_delta, raw_json, validation_json \
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 1, 'review', 'transaction', \
+                           'same_currency_transfer', ?6, '250.00', 'SGD', ?7, \
+                           '{\"private\":\"must-not-leak\"}', '{\"internal\":true}')",
+                params![
+                    id,
+                    format!("parse-{document_id}"),
+                    document_id,
+                    account_id,
+                    stable_key,
+                    posted_on,
+                    delta
+                ],
+            )
+            .expect("seed review record");
+        store
+            .connection
+            .execute(
+                "INSERT INTO review_items(id, external_record_id, reason_code, status) \
+                 VALUES (?1, ?2, 'possible_transfer', 'open')",
+                params![format!("review-{id}"), id],
+            )
+            .expect("seed review item");
+    }
+}
+
+/// The transfer event the staged records describe. It echoes `incoming_delta`,
+/// so the proposal always matches its group and only the amount relation
+/// between the two legs is under test.
+pub(super) fn prepared_transfer(incoming_delta: &str) -> CorePreparedReviewEvent {
+    CorePreparedReviewEvent {
+        event_class: "posting".to_owned(),
+        event_date: "2026-08-02".to_owned(),
+        event_type: "same_currency_transfer".to_owned(),
+        source_record_ids: vec![
+            "record-dbs-savings".to_owned(),
+            "record-hsbc-transfer".to_owned(),
+        ],
+        legs: vec![
+            CoreReviewLeg {
+                account_id: "account-dbs-savings".to_owned(),
+                instrument_id: "instrument-sgd".to_owned(),
+                currency: "SGD".to_owned(),
+                amount_value: incoming_delta.to_owned(),
+            },
+            CoreReviewLeg {
+                account_id: "account-hsbc-cash".to_owned(),
+                instrument_id: "instrument-sgd".to_owned(),
+                currency: "SGD".to_owned(),
+                amount_value: "-250.00".to_owned(),
+            },
+        ],
+        spending: false,
+    }
+}
+
 #[test]
 fn limits_relationship_candidates_within_the_supported_window_before_capping_results() {
     let root = tempfile::tempdir().expect("temporary Vault");
@@ -1824,6 +1972,129 @@ fn prepares_both_groups_when_two_relationships_share_a_record() {
             ],
         ]
     );
+}
+
+/// The store writes the two legs of a transfer into an immutable ledger event,
+/// so it re-checks the amount relation the proposal claims instead of trusting
+/// the sidecar that built it: `packages/core` is a proposal source, not the
+/// authority for committed money.
+#[test]
+fn rejects_a_transfer_that_is_not_an_exact_equal_and_opposite_move() {
+    for (staged_delta, shape) in [
+        // Both accounts decrease, so there is no incoming side at all.
+        ("-250.00", "same sign"),
+        // The magnitudes differ, and only in digits a zero-stripping
+        // comparison would drop, so this pins the exact comparison.
+        ("10", "unequal magnitude"),
+    ] {
+        let root = tempfile::tempdir().expect("temporary Vault");
+        let mut store = open_store(root.path());
+        seed_review_transfer(&mut store, staged_delta);
+        let accepted = store
+            .accept_review_relationship(
+                "review-record-hsbc-transfer",
+                1,
+                "record-dbs-savings",
+                1,
+                &prepared_transfer(staged_delta),
+            )
+            .expect("accept staged transfer relationship");
+        assert_eq!(
+            (accepted.status, accepted.reason),
+            (ReviewMutationStatus::RelationshipAccepted, None),
+        );
+        let job = store
+            .enqueue_commit_review_batch(&[
+                "review-record-hsbc-transfer".to_owned(),
+                "review-record-dbs-savings".to_owned(),
+            ])
+            .expect("enqueue selected relationship");
+        let claimed = store
+            .claim_review_batch(&job.job_id, "test-worker")
+            .expect("claim batch")
+            .expect("queued job");
+        let (groups, outcomes) = store
+            .prepare_commit_review_groups(&claimed)
+            .expect("prepare selected relationship");
+        assert!(outcomes.is_empty(), "{shape}: {outcomes:?}");
+        assert_eq!(groups.len(), 1, "{shape}");
+
+        let refused = store
+            .commit_prepared_review_group(&claimed, &groups[0], &prepared_transfer(staged_delta))
+            .expect("refuse the unbalanced transfer");
+
+        assert_eq!(
+            refused.status,
+            ReviewBatchGroupStatus::StillNeedsReview,
+            "{shape}"
+        );
+        assert_eq!(
+            refused.reason.as_deref(),
+            Some("relationship_amounts_unbalanced"),
+            "{shape}"
+        );
+        let events: i64 = store
+            .connection
+            .query_row("SELECT count(*) FROM ledger_events", [], |row| row.get(0))
+            .expect("count ledger events");
+        assert_eq!(events, 0, "an unbalanced transfer writes no ledger event");
+    }
+}
+
+/// The same fixture with a balanced pair still commits, so the invariant guards
+/// the ledger without refusing a real transfer — including a magnitude the two
+/// statements wrote at different scales, which is still one magnitude.
+#[test]
+fn commits_a_transfer_whose_legs_are_an_exact_equal_and_opposite_move() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    seed_review_transfer(&mut store, "250.0");
+    let accepted = store
+        .accept_review_relationship(
+            "review-record-hsbc-transfer",
+            1,
+            "record-dbs-savings",
+            1,
+            &prepared_transfer("250.0"),
+        )
+        .expect("accept transfer relationship");
+    assert_eq!(
+        (accepted.status, accepted.reason),
+        (ReviewMutationStatus::RelationshipAccepted, None),
+    );
+    let job = store
+        .enqueue_commit_review_batch(&[
+            "review-record-hsbc-transfer".to_owned(),
+            "review-record-dbs-savings".to_owned(),
+        ])
+        .expect("enqueue selected relationship");
+    let claimed = store
+        .claim_review_batch(&job.job_id, "test-worker")
+        .expect("claim batch")
+        .expect("queued job");
+    let (groups, outcomes) = store
+        .prepare_commit_review_groups(&claimed)
+        .expect("prepare selected relationship");
+    assert!(outcomes.is_empty(), "{outcomes:?}");
+    assert_eq!(groups.len(), 1);
+
+    let committed = store
+        .commit_prepared_review_group(&claimed, &groups[0], &prepared_transfer("250.0"))
+        .expect("commit the balanced transfer");
+
+    assert_eq!(
+        (committed.status, committed.reason),
+        (ReviewBatchGroupStatus::Committed, None)
+    );
+    let (events, legs): (i64, i64) = store
+        .connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM ledger_events), (SELECT count(*) FROM ledger_legs)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("count the committed event and its legs");
+    assert_eq!((events, legs), (1, 2));
 }
 
 #[test]

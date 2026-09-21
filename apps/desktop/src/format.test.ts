@@ -137,6 +137,9 @@ describe("batch outcome labels", () => {
     expect(batchGroupReasonLabel("core_preflight_failed")).toBe(
       "its details aren’t complete",
     );
+    expect(batchGroupReasonLabel("relationship_amounts_unbalanced")).toBe(
+      "its two amounts don’t balance",
+    );
     expect(batchGroupReasonLabel(null)).toBe("check its details");
   });
 });

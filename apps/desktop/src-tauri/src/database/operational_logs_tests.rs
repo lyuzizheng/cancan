@@ -1,3 +1,4 @@
+use super::database_test_support::import_source;
 use super::tests::{KEY, open_store};
 use super::*;
 use crate::diagnostics::{
@@ -5,23 +6,6 @@ use crate::diagnostics::{
 };
 use std::io;
 use zeroize::Zeroizing;
-
-fn import_source<'a>(
-    source_path: &'a Path,
-    document_id: &'a str,
-    audit_id: &'a str,
-) -> SourceDocumentImport<'a> {
-    SourceDocumentImport {
-        audit_actor: "user",
-        audit_id,
-        audit_policy_version: "manual-import-v1",
-        audit_reason: "manual_import",
-        document_id,
-        mime_type: "application/pdf",
-        original_filename: "DBS-July-2026.pdf",
-        source_path,
-    }
-}
 
 #[test]
 fn retention_purges_entries_older_than_the_window_and_keeps_the_rest() {

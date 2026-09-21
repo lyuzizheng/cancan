@@ -131,6 +131,65 @@ pub(super) fn valid_core_review_event(event: &CorePreparedReviewEvent) -> bool {
         })
 }
 
+/// The amount relation `0005-review-and-commit-policy.md` requires of a
+/// committed relationship, re-derived from the two legs themselves.
+///
+/// An exact decimal as its sign and its magnitude with trailing zeros removed,
+/// so `750.0` and `750.00` are one magnitude without a float ever seeing the
+/// value. `None` means the value is not an exact decimal at all.
+fn signed_magnitude(value: &str) -> Option<(i8, String)> {
+    let magnitude = decimal_magnitude(value)?;
+    let normalized = match magnitude.split_once('.') {
+        // An integer magnitude keeps its zeros: `100` is not `1`.
+        None => magnitude,
+        Some((integer, fraction)) => match fraction.trim_end_matches('0') {
+            "" => integer.to_owned(),
+            fraction => format!("{integer}.{fraction}"),
+        },
+    };
+    let sign = if normalized.bytes().all(|byte| byte == b'0' || byte == b'.') {
+        0
+    } else if value.starts_with('-') {
+        -1
+    } else {
+        1
+    };
+    Some((sign, normalized))
+}
+
+/// Whether the two legs are a real, balanced move of the same amount.
+///
+/// `valid_core_review_event` only checks shape and `event_matches_group` only
+/// proves each leg echoes its staged record, so neither says anything about the
+/// relation *between* the legs. That relation is what stops an unbalanced event
+/// from becoming an immutable ledger entry: the core checked it in
+/// `packages/core/src/review-events.ts`, and the store re-checks it here
+/// because the package is a proposal source, not the authority for money the
+/// store writes.
+pub(super) fn review_legs_balance(event: &CorePreparedReviewEvent) -> bool {
+    let [first, second] = event.legs.as_slice() else {
+        return false;
+    };
+    let (Some((first_sign, first_magnitude)), Some((second_sign, second_magnitude))) = (
+        signed_magnitude(&first.amount_value),
+        signed_magnitude(&second.amount_value),
+    ) else {
+        return false;
+    };
+    // Exact equal magnitude, and neither side may be zero: a zero pair moves no
+    // money and has no outgoing/incoming or cash/liability direction to report.
+    if first_sign == 0 || second_sign == 0 || first_magnitude != second_magnitude {
+        return false;
+    }
+    match event.event_type.as_str() {
+        // The outgoing account decreases and the incoming account increases.
+        "same_currency_transfer" => first_sign != second_sign,
+        // Cash decreases and the card liability decreases.
+        "credit_card_repayment" => first_sign < 0 && second_sign < 0,
+        _ => false,
+    }
+}
+
 pub(super) fn valid_core_review_reversal(event: &CorePreparedReversalEvent) -> bool {
     matches!(
         event.event_type.as_str(),
