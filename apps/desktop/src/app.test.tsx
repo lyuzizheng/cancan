@@ -188,6 +188,26 @@ describe("SourcesView", () => {
     expect(markup).toContain("1 document");
   });
 
+  it("labels every evidence month group with the shared English month names", () => {
+    const fullMonths = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ];
+    const monthlyDocuments = fullMonths.map((name, index) => ({
+      ...document,
+      documentId: `document-${index + 1}`,
+      originalFilename: `${name} statement.pdf`,
+      receivedAt: `2026-${String(index + 1).padStart(2, "0")}-05T00:00:00Z`,
+    }));
+
+    const markup = render({ unassignedDocuments: monthlyDocuments });
+
+    fullMonths.forEach((name) => {
+      expect(markup).toContain(`${name} 2026`);
+      expect(markup).toContain(`Added 5 ${name.slice(0, 3)} 2026`);
+    });
+  });
+
   it("keeps available processing and failed evidence viewable", () => {
     const processing = {
       ...document,

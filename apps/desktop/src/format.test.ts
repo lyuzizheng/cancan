@@ -55,6 +55,17 @@ describe("formatLedgerDate", () => {
     expect(formatLedgerDate("2026-01-01")).toBe("1 Jan 2026");
   });
 
+  it("renders every month with its three-letter English label", () => {
+    const shortMonths = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    shortMonths.forEach((shortMonth, index) => {
+      const iso = `2026-${String(index + 1).padStart(2, "0")}-15`;
+      expect(formatLedgerDate(iso)).toBe(`15 ${shortMonth} 2026`);
+    });
+  });
+
   it("passes through unexpected values", () => {
     expect(formatLedgerDate("2026-13-40")).toBe("2026-13-40");
     expect(formatLedgerDate("yesterday")).toBe("yesterday");
