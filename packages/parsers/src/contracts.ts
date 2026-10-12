@@ -82,11 +82,6 @@ export interface StructuredParseProposal {
   closingSnapshots: CanonicalExternalRecordInput[];
 }
 
-export interface DocumentRoutingProposal {
-  document: StructuredDocumentIdentity;
-  accounts: StructuredAccountCandidate[];
-}
-
 export interface ProviderRecordInspection {
   groundingValues: string[];
   identityProjection: Record<string, unknown>;
