@@ -290,12 +290,12 @@ The setup command:
 
 `scripts/dev-toolchain.env` is the setup version source. `.node-version`, `rust-toolchain.toml`, and package-manager/Tauri pins must match it, and `scripts/test-setup-dev.sh` enforces that invariant. Versions are intentionally pinned for reproducibility rather than floating to an unreviewed future `latest` on each machine.
 
-Latest supported stable pins verified against official upstreams on 2026-07-13. Node uses the latest LTS line rather than the short-lived Current line; the remaining tools use their latest stable release:
+Latest supported stable pins verified against official upstreams on 2026-08-06. Node uses the latest LTS line rather than the short-lived Current line; the remaining tools use their latest stable release:
 
 ```text
 Node.js 24.18.0 LTS
 Corepack 0.35.0
-pnpm 11.12.0
+pnpm 11.18.0
 Rust 1.97.0 stable
 Tauri CLI 2.11.4 (project-local)
 ```
