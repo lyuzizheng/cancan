@@ -1,10 +1,13 @@
 const EXACT_DECIMAL = /^(-?)(0|[1-9]\d*)(?:\.(\d+))?$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-const LEDGER_MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+/** English month names shared by every date presenter in the renderer. */
+export const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ] as const;
+
+const LEDGER_MONTHS = MONTH_NAMES.map((name) => name.slice(0, 3));
 
 /**
  * Groups the integer part of a host-supplied exact decimal string without

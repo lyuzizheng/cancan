@@ -1,6 +1,7 @@
 import { Button, StatusPoint, type StatusPointTone } from "@cancan/ui";
 
 import type { SourceDocumentSummary } from "./command-contracts";
+import { MONTH_NAMES } from "./format";
 import type { SourcesViewProps } from "./sources-view";
 
 /**
@@ -136,11 +137,6 @@ function documentStatusLabel(document: SourceDocumentSummary) {
       return "Ready";
   }
 }
-
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-] as const;
 
 const BYTE_UNIT = 1024;
 
