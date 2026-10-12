@@ -12,6 +12,8 @@ on:
       - .node-version
       - rust-toolchain.toml
       - scripts/dev-toolchain.env
+      - scripts/check-source-file-size.mjs
+      - scripts/check-tailwind-discipline.mjs
       - .github/workflows/application.yml
       - .github/workflows/application-native.yml
   push:
@@ -27,6 +29,8 @@ on:
       - .node-version
       - rust-toolchain.toml
       - scripts/dev-toolchain.env
+      - scripts/check-source-file-size.mjs
+      - scripts/check-tailwind-discipline.mjs
       - .github/workflows/application.yml
       - .github/workflows/application-native.yml
 

@@ -86,6 +86,8 @@ application_paths = [
   ".node-version",
   "rust-toolchain.toml",
   "scripts/dev-toolchain.env",
+  "scripts/check-source-file-size.mjs",
+  "scripts/check-tailwind-discipline.mjs",
   application_path,
   ".github/workflows/application-native.yml"
 ]

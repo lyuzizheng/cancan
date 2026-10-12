@@ -428,6 +428,14 @@ cp "$application_workflow" "$application_workflow.bak"
 sed 's#      - apps/desktop/[*][*]#      - apps/**#' "$application_workflow.bak" > "$application_workflow"
 restore_expect "$application_workflow" "fast application CI regains isolated website trigger" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
 
+cp "$application_workflow" "$application_workflow.bak"
+grep -v 'scripts/check-source-file-size[.]mjs' "$application_workflow.bak" > "$application_workflow"
+restore_expect "$application_workflow" "fast application CI loses file-size checker trigger" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
+cp "$application_workflow" "$application_workflow.bak"
+grep -v 'scripts/check-tailwind-discipline[.]mjs' "$application_workflow.bak" > "$application_workflow"
+restore_expect "$application_workflow" "fast application CI loses UI-discipline checker trigger" env CANCAN_ROOT="$TEST_ROOT" "$TEST_ROOT/.agents/scripts/check-ci-workflow.sh"
+
 native_workflow="$TEST_ROOT/.github/workflows/application-native.yml"
 cp "$native_workflow" "$native_workflow.bak"
 grep -v '^        run: pnpm verify:native$' "$native_workflow.bak" > "$native_workflow"
