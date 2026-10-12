@@ -1627,7 +1627,34 @@ impl ManualImportStore {
         {
             return Ok(review_conflict("relationship_changed"));
         }
-        let Some(ref candidate_review_item_id) = candidate.review_item_id else {
+        // The same financial contract the commit enforces: only an accepted
+        // currency, distinct accounts, in-window, account-kind, and exact
+        // non-zero magnitude pair may become `accepted`. The legs echo the
+        // sides, so a bypassing caller cannot pass one check while smuggling
+        // a different pair through the other.
+        let (primary_side, candidate_side) = (
+            RelationshipSide {
+                account_id: &primary.account_id,
+                account_type: &primary.account_type,
+                currency: &primary.currency,
+                posted_on: &primary.posted_on,
+                delta: &primary.account_balance_delta,
+            },
+            RelationshipSide {
+                account_id: &candidate.account_id,
+                account_type: &candidate.account_type,
+                currency: &candidate.currency,
+                posted_on: &candidate.posted_on,
+                delta: &candidate.account_balance_delta,
+            },
+        );
+        if !review_relationship_holds(&event.event_type, &primary_side, &candidate_side)
+            || !event_legs_echo_relationship_sides(event, [&primary_side, &candidate_side])
+            || !review_legs_balance(event)
+        {
+            return Ok(review_conflict("invalid_relationship_request"));
+        }
+        let Some(candidate_review_item_id) = &candidate.review_item_id else {
             return Ok(review_conflict("relationship_needs_review"));
         };
         let (first, second) = ordered_relationship_records(&primary, &candidate);
@@ -1871,10 +1898,30 @@ impl ManualImportStore {
                 status: ReviewBatchGroupStatus::StillNeedsReview,
             });
         }
-        // The two legs carry the amount relation the store is about to write
-        // into an immutable ledger event, so it is verified here and not taken
-        // on trust from the proposal.
-        if !review_legs_balance(event) {
+        // The stored sides carry the full relationship contract the commit is
+        // about to write into an immutable ledger event, so it is verified
+        // here and not taken on trust from the proposal. The group records
+        // are the current staged sides; the legs echo them through
+        // `event_matches_group` above.
+        let (first_side, second_side) = (
+            RelationshipSide {
+                account_id: &group.records[0].account_id,
+                account_type: &group.records[0].account_type,
+                currency: &group.records[0].currency,
+                posted_on: &group.records[0].posted_on,
+                delta: &group.records[0].account_balance_delta,
+            },
+            RelationshipSide {
+                account_id: &group.records[1].account_id,
+                account_type: &group.records[1].account_type,
+                currency: &group.records[1].currency,
+                posted_on: &group.records[1].posted_on,
+                delta: &group.records[1].account_balance_delta,
+            },
+        );
+        if !review_legs_balance(event)
+            || !review_relationship_holds(&event.event_type, &first_side, &second_side)
+        {
             return Ok(ReviewBatchGroupOutcome {
                 reason: Some("relationship_amounts_unbalanced".to_owned()),
                 record_ids: fallback_record_ids,
@@ -2573,6 +2620,8 @@ mod review_batches;
 mod review_records;
 #[cfg(test)]
 mod review_records_tests;
+#[cfg(test)]
+mod review_relationship_guards_tests;
 mod rows;
 mod sources;
 #[cfg(test)]

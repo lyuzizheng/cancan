@@ -166,10 +166,26 @@ fn signed_magnitude(value: &str) -> Option<(i8, String)> {
 /// `packages/core/src/review-events.ts`, and the store re-checks it here
 /// because the package is a proposal source, not the authority for money the
 /// store writes.
+///
+/// The legs carry their own account and currency, so the leg-level check also
+/// requires one shared currency and two distinct accounts: a cross-currency
+/// pair of equal magnitudes is not a same-currency move, and a pair against
+/// itself moves nothing. The window and account-kind predicates need the
+/// staged records' `posted_on` and `account_type`, which legs do not carry;
+/// `review_relationship_holds` enforces those on the stored sides at
+/// acceptance and commit alongside this check.
 pub(super) fn review_legs_balance(event: &CorePreparedReviewEvent) -> bool {
     let [first, second] = event.legs.as_slice() else {
         return false;
     };
+    // One shared currency for the two legs.
+    if first.currency.is_empty() || first.currency != second.currency {
+        return false;
+    }
+    // Two distinct accounts.
+    if first.account_id.is_empty() || first.account_id == second.account_id {
+        return false;
+    }
     let (Some((first_sign, first_magnitude)), Some((second_sign, second_magnitude))) = (
         signed_magnitude(&first.amount_value),
         signed_magnitude(&second.amount_value),
@@ -188,6 +204,138 @@ pub(super) fn review_legs_balance(event: &CorePreparedReviewEvent) -> bool {
         "credit_card_repayment" => first_sign < 0 && second_sign < 0,
         _ => false,
     }
+}
+
+/// One side of a proposed relationship, borrowed from the staged records the
+/// store is about to link. Legs do not carry `account_type` or `posted_on`,
+/// so the window and kind predicates can only be enforced on these sides.
+pub(super) struct RelationshipSide<'a> {
+    pub account_id: &'a str,
+    pub account_type: &'a str,
+    pub currency: &'a str,
+    pub posted_on: &'a str,
+    pub delta: &'a str,
+}
+
+/// The accepted per-type window from `packages/core/src/review-events.ts` and
+/// spec 0005: transfers pair within three calendar days, repayments within
+/// seven. `None` rejects unknown event types without inventing a new rule.
+pub(super) fn relationship_window_days(event_type: &str) -> Option<i64> {
+    match event_type {
+        "same_currency_transfer" => Some(3),
+        "credit_card_repayment" => Some(7),
+        _ => None,
+    }
+}
+
+/// Days since a fixed civil epoch (Howard Hinnant's `days_from_civil`), so the
+/// host can compare ISO calendar dates without a date crate or float math.
+fn days_from_civil(year: i32, month: u32, day: u32) -> i32 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let yoe = year - era * 400;
+    let month_offset = if month > 2 { month - 3 } else { month + 9 };
+    let doy = (153 * month_offset + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy as i32;
+    era * 146097 + doe - 719468
+}
+
+/// Absolute calendar-day distance between two `YYYY-MM-DD` dates. `None` for
+/// unparsable dates, which the guard rejects like the core's infinite window.
+pub(super) fn days_between_posted_on(first: &str, second: &str) -> Option<i64> {
+    let (first_year, first_month, first_day) = parse_iso_date(first)?;
+    let (second_year, second_month, second_day) = parse_iso_date(second)?;
+    Some(
+        (days_from_civil(first_year, first_month, first_day)
+            - days_from_civil(second_year, second_month, second_day))
+        .abs() as i64,
+    )
+}
+
+/// The cash-like side of a repayment, matching the core's `isCardRepayment`:
+/// exactly `deposit_account`, `currency_balance`, or `cash_balance`. No other
+/// type participates; extending the set is a product decision, not this guard.
+fn is_cash_like_account_type(account_type: &str) -> bool {
+    matches!(
+        account_type,
+        "deposit_account" | "currency_balance" | "cash_balance"
+    )
+}
+
+/// Whether two staged sides form the relationship `event_type` claims, under
+/// the accepted contract from spec 0005 and
+/// `packages/core/src/review-events.ts`: shared currency, distinct accounts,
+/// per-type window, exact non-zero equal magnitude, and the per-type sign/kind
+/// shape (opposite signs for transfers; two decreases with one card side and
+/// one cash-like side for repayments).
+///
+/// Both acceptance and commit enforce this on the stored sides; the legs-only
+/// `review_legs_balance` check runs alongside it for proposals that bypass
+/// the sidecar.
+pub(super) fn review_relationship_holds(
+    event_type: &str,
+    first: &RelationshipSide<'_>,
+    second: &RelationshipSide<'_>,
+) -> bool {
+    let Some(window) = relationship_window_days(event_type) else {
+        return false;
+    };
+    if first.currency.is_empty() || first.currency != second.currency {
+        return false;
+    }
+    if first.account_id.is_empty() || first.account_id == second.account_id {
+        return false;
+    }
+    let Some(days) = days_between_posted_on(first.posted_on, second.posted_on) else {
+        return false;
+    };
+    if days > window {
+        return false;
+    }
+    let (Some((first_sign, first_magnitude)), Some((second_sign, second_magnitude))) = (
+        signed_magnitude(first.delta),
+        signed_magnitude(second.delta),
+    ) else {
+        return false;
+    };
+    if first_sign == 0 || second_sign == 0 || first_magnitude != second_magnitude {
+        return false;
+    }
+    match event_type {
+        // The outgoing account decreases and the incoming account increases.
+        "same_currency_transfer" => first_sign != second_sign,
+        // Cash decreases and the card liability decreases, with one card side
+        // and one cash-like side.
+        "credit_card_repayment" => {
+            first_sign < 0
+                && second_sign < 0
+                && ((first.account_type == "credit_card"
+                    && is_cash_like_account_type(second.account_type))
+                    || (second.account_type == "credit_card"
+                        && is_cash_like_account_type(first.account_type)))
+        }
+        _ => false,
+    }
+}
+
+/// Whether the proposal's legs describe the two stored sides: each side's
+/// account, currency, and delta must appear on some leg, so a proposal that
+/// passes the leg-level check cannot smuggle in a different pair than the
+/// records under review.
+pub(super) fn event_legs_echo_relationship_sides(
+    event: &CorePreparedReviewEvent,
+    sides: [&RelationshipSide<'_>; 2],
+) -> bool {
+    if event.legs.len() != 2 {
+        return false;
+    }
+    sides.iter().all(|side| {
+        event.legs.iter().any(|leg| {
+            leg.account_id == side.account_id
+                && leg.currency == side.currency
+                && leg.amount_value == side.delta
+        })
+    })
 }
 
 pub(super) fn valid_core_review_reversal(event: &CorePreparedReversalEvent) -> bool {

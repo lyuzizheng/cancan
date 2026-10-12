@@ -1886,7 +1886,9 @@ fn prepares_both_groups_when_two_relationships_share_a_record() {
     let mut store = open_store(root.path());
     seed_review_repayment(&mut store, false);
     // One source record may carry more than one open review item, so a second
-    // accepted relationship can share `record-hsbc-cash` with the first.
+    // accepted relationship can share `record-hsbc-cash` with the first. The
+    // savings side echoes the shared 750.00 magnitude so the pair satisfies
+    // the host guard.
     store
         .connection
         .execute(
@@ -1896,7 +1898,7 @@ fn prepares_both_groups_when_two_relationships_share_a_record() {
                account_balance_delta, raw_json, validation_json \
              ) VALUES ('record-dbs-savings', 'parse-document-dbs-july', 'document-dbs-july', \
                        'account-dbs-card', 'dbs-savings-payment', 1, 'review', 'transaction', \
-                       'credit_card_repayment', '2026-07-02', '250.00', 'SGD', '-250.00', \
+                       'credit_card_repayment', '2026-07-02', '750.00', 'SGD', '-750.00', \
                        '{}', '{}')",
             [],
         )
@@ -1925,6 +1927,22 @@ fn prepares_both_groups_when_two_relationships_share_a_record() {
     second_event.source_record_ids = vec![
         "record-dbs-savings".to_owned(),
         "record-hsbc-cash".to_owned(),
+    ];
+    // The second pair moves 750.00 between the shared cash side and the
+    // savings side: equal magnitude, two decreases, SGD on both legs.
+    second_event.legs = vec![
+        CoreReviewLeg {
+            account_id: "account-dbs-card".to_owned(),
+            instrument_id: "instrument-sgd".to_owned(),
+            currency: "SGD".to_owned(),
+            amount_value: "-750.00".to_owned(),
+        },
+        CoreReviewLeg {
+            account_id: "account-hsbc-cash".to_owned(),
+            instrument_id: "instrument-sgd".to_owned(),
+            currency: "SGD".to_owned(),
+            amount_value: "-750.00".to_owned(),
+        },
     ];
     store
         .accept_review_relationship(
@@ -1990,7 +2008,10 @@ fn rejects_a_transfer_that_is_not_an_exact_equal_and_opposite_move() {
         let root = tempfile::tempdir().expect("temporary Vault");
         let mut store = open_store(root.path());
         seed_review_transfer(&mut store, staged_delta);
-        let accepted = store
+        // Q06 (BRAWUKA-557): the unbalanced proposal is refused at acceptance
+        // with no partial row, so it can never strand an `accepted` pair that
+        // every later commit rejects.
+        let refused = store
             .accept_review_relationship(
                 "review-record-hsbc-transfer",
                 1,
@@ -1998,46 +2019,30 @@ fn rejects_a_transfer_that_is_not_an_exact_equal_and_opposite_move() {
                 1,
                 &prepared_transfer(staged_delta),
             )
-            .expect("accept staged transfer relationship");
+            .expect("refuse the unbalanced transfer at acceptance");
         assert_eq!(
-            (accepted.status, accepted.reason),
-            (ReviewMutationStatus::RelationshipAccepted, None),
+            (refused.status, refused.reason),
+            (
+                ReviewMutationStatus::Conflict,
+                Some("invalid_relationship_request")
+            ),
+            "{shape}",
         );
-        let job = store
-            .enqueue_commit_review_batch(&[
-                "review-record-hsbc-transfer".to_owned(),
-                "review-record-dbs-savings".to_owned(),
-            ])
-            .expect("enqueue selected relationship");
-        let claimed = store
-            .claim_review_batch(&job.job_id, "test-worker")
-            .expect("claim batch")
-            .expect("queued job");
-        let (groups, outcomes) = store
-            .prepare_commit_review_groups(&claimed)
-            .expect("prepare selected relationship");
-        assert!(outcomes.is_empty(), "{shape}: {outcomes:?}");
-        assert_eq!(groups.len(), 1, "{shape}");
-
-        let refused = store
-            .commit_prepared_review_group(&claimed, &groups[0], &prepared_transfer(staged_delta))
-            .expect("refuse the unbalanced transfer");
-
-        assert_eq!(
-            refused.status,
-            ReviewBatchGroupStatus::StillNeedsReview,
-            "{shape}"
-        );
-        assert_eq!(
-            refused.reason.as_deref(),
-            Some("relationship_amounts_unbalanced"),
-            "{shape}"
-        );
+        let relationships: i64 = store
+            .connection
+            .query_row("SELECT count(*) FROM review_relationships", [], |row| {
+                row.get(0)
+            })
+            .expect("count relationships");
+        assert_eq!(relationships, 0, "{shape}: no partial relationship write");
         let events: i64 = store
             .connection
             .query_row("SELECT count(*) FROM ledger_events", [], |row| row.get(0))
             .expect("count ledger events");
-        assert_eq!(events, 0, "an unbalanced transfer writes no ledger event");
+        assert_eq!(
+            events, 0,
+            "{shape}: an unbalanced transfer writes no ledger event"
+        );
     }
 }
 
