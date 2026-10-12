@@ -13,8 +13,9 @@ export function PrivacyPage() {
 
       <h2 id="local-first">Your Vault is local</h2>
       <ul>
-        <li>Documents and financial data live in a SQLCipher-encrypted Vault on your Mac, unlocked only by your password.</li>
+        <li>Documents and financial data live in a SQLCipher-encrypted Vault on your Mac, unlocked by your password or by Touch ID if you opt in on this Mac.</li>
         <li>Secrets — Vault keys, statement passwords, OAuth tokens — are stored in the macOS Keychain, never in plain files.</li>
+        <li>Your recovery file is the one deliberate exception: a bearer secret CanCan generates for you and you choose where to save. Anyone holding it can recover compatible Vault data, so store it privately; without it or your password there is no recovery.</li>
         <li>Capture, encryption, extraction, validation, and ledger writes happen locally. Structured parsing uses the AI provider you configure, as disclosed below.</li>
         <li>CanCan has no hosted backend, no account system, and no sync service. There is nothing to breach on our side because nothing leaves your Mac by default.</li>
         <li>Neither the app nor this website collects analytics, behavioral telemetry, or tracking data. Crash reporting is separate, opt-in, and off by default.</li>
