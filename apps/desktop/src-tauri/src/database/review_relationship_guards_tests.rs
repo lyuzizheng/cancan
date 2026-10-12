@@ -19,10 +19,20 @@ fn refuses_invalid_relationships_at_acceptance_without_partial_writes() {
     // current sides whose full attributes the forged proposal violates.
     let shapes: Vec<(&str, InvalidShapeBuilder)> = vec![
         // Cross-currency pair: one leg spends USD while the staged records
-        // and the other leg stay SGD; equal magnitudes must not pass.
+        // and the other leg stay SGD; equal magnitudes must not pass. The USD
+        // fiat instrument is seeded so the accept loaders resolve the staged
+        // side and only the shared-currency guard decides.
         (
             "mixed currency",
             Box::new(|store| {
+                store
+                    .connection
+                    .execute(
+                        "INSERT INTO instruments(id, instrument_type, symbol, currency, display_name) \
+                         VALUES ('instrument-usd', 'fiat_currency', 'USD', 'USD', 'US Dollar')",
+                        [],
+                    )
+                    .expect("seed USD instrument");
                 store
                     .connection
                     .execute(
@@ -33,6 +43,7 @@ fn refuses_invalid_relationships_at_acceptance_without_partial_writes() {
                     .expect("stage cross-currency candidate");
                 let mut event = prepared_transfer("250.00");
                 event.legs[0].currency = "USD".to_owned();
+                event.legs[0].instrument_id = "instrument-usd".to_owned();
                 event
             }),
         ),
@@ -290,6 +301,43 @@ fn refuses_a_relationship_that_left_contract_between_accept_and_commit() {
         status, "accepted",
         "the accepted row stays for a valid retry"
     );
+}
+
+/// Q06 (BRAWUKA-903 follow-up): the acceptance echo binds the stored fiat
+/// instrument, mirroring the commit's `event_matches_group`. A proposal whose
+/// leg carries a wrong instrument but the right account, currency, and amount
+/// is refused at acceptance with `invalid_relationship_request` — not stranded
+/// as `accepted` and refused later at commit with `core_preflight_failed`.
+#[test]
+fn refuses_a_proposal_whose_leg_carries_the_wrong_instrument() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    seed_review_transfer(&mut store, "250.00");
+    let mut forged = prepared_transfer("250.00");
+    forged.legs[0].instrument_id = "instrument-stranger".to_owned();
+    let refused = store
+        .accept_review_relationship(
+            "review-record-hsbc-transfer",
+            1,
+            "record-dbs-savings",
+            1,
+            &forged,
+        )
+        .expect("refuse the instrument-mismatched proposal");
+    assert_eq!(
+        (refused.status, refused.reason),
+        (
+            ReviewMutationStatus::Conflict,
+            Some("invalid_relationship_request")
+        ),
+    );
+    let relationships: i64 = store
+        .connection
+        .query_row("SELECT count(*) FROM review_relationships", [], |row| {
+            row.get(0)
+        })
+        .expect("count relationships");
+    assert_eq!(relationships, 0, "no partial relationship write");
 }
 
 /// Q06: legs that disagree with the stored sides are refused at acceptance.

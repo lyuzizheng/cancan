@@ -209,10 +209,13 @@ pub(super) fn review_legs_balance(event: &CorePreparedReviewEvent) -> bool {
 /// One side of a proposed relationship, borrowed from the staged records the
 /// store is about to link. Legs do not carry `account_type` or `posted_on`,
 /// so the window and kind predicates can only be enforced on these sides.
+/// The instrument is the stored fiat instrument the commit's
+/// `event_matches_group` already requires, so acceptance binds it too.
 pub(super) struct RelationshipSide<'a> {
     pub account_id: &'a str,
     pub account_type: &'a str,
     pub currency: &'a str,
+    pub instrument_id: &'a str,
     pub posted_on: &'a str,
     pub delta: &'a str,
 }
@@ -319,9 +322,11 @@ pub(super) fn review_relationship_holds(
 }
 
 /// Whether the proposal's legs describe the two stored sides: each side's
-/// account, currency, and delta must appear on some leg, so a proposal that
-/// passes the leg-level check cannot smuggle in a different pair than the
-/// records under review.
+/// account, instrument, currency, and delta must appear on some leg, so a
+/// proposal that passes the leg-level check cannot smuggle in a different
+/// pair than the records under review. The instrument binding mirrors the
+/// commit's `event_matches_group`: a leg with a wrong instrument must fail
+/// here at acceptance, not later at commit.
 pub(super) fn event_legs_echo_relationship_sides(
     event: &CorePreparedReviewEvent,
     sides: [&RelationshipSide<'_>; 2],
@@ -332,6 +337,7 @@ pub(super) fn event_legs_echo_relationship_sides(
     sides.iter().all(|side| {
         event.legs.iter().any(|leg| {
             leg.account_id == side.account_id
+                && leg.instrument_id == side.instrument_id
                 && leg.currency == side.currency
                 && leg.amount_value == side.delta
         })

@@ -76,6 +76,7 @@ pub(super) struct ReviewRelationshipRecord {
     pub(super) account_type: String,
     pub(super) currency: String,
     pub(super) event_type: Option<String>,
+    pub(super) instrument_id: String,
     pub(super) posted_on: String,
     pub(super) record_id: String,
     pub(super) review_item_id: Option<String>,
@@ -221,10 +222,13 @@ pub(super) fn open_review_record_for_relationship(
         .query_row(
             "SELECT external_records.id, external_records.event_type, \
                     external_records.account_balance_delta, external_records.currency, \
-                    external_records.account_id, accounts.account_type, external_records.posted_on \
+                    external_records.account_id, accounts.account_type, external_records.posted_on, \
+                    instruments.id \
              FROM review_items \
              JOIN external_records ON external_records.id = review_items.external_record_id \
              JOIN accounts ON accounts.id = external_records.account_id \
+             JOIN instruments ON instruments.currency = external_records.currency \
+                AND instruments.instrument_type = 'fiat_currency' \
              WHERE review_items.id = ?1 AND review_items.status = 'open' \
                AND external_records.version = ?2 \
                AND external_records.status IN ('staged', 'review')",
@@ -238,6 +242,7 @@ pub(super) fn open_review_record_for_relationship(
                     account_id: row.get(4)?,
                     account_type: row.get(5)?,
                     posted_on: row.get(6)?,
+                    instrument_id: row.get(7)?,
                     review_item_id: Some(review_item_id.to_owned()),
                 })
             },
@@ -256,9 +261,11 @@ pub(super) fn open_review_record_by_id(
             "SELECT external_records.id, external_records.event_type, \
                     external_records.account_balance_delta, external_records.currency, \
                     external_records.account_id, accounts.account_type, external_records.posted_on, \
-                    review_items.id \
+                    instruments.id, review_items.id \
              FROM external_records \
              JOIN accounts ON accounts.id = external_records.account_id \
+             JOIN instruments ON instruments.currency = external_records.currency \
+                AND instruments.instrument_type = 'fiat_currency' \
              LEFT JOIN review_items ON review_items.external_record_id = external_records.id \
                 AND review_items.status = 'open' \
              WHERE external_records.id = ?1 AND external_records.version = ?2 \
@@ -274,7 +281,8 @@ pub(super) fn open_review_record_by_id(
                     account_id: row.get(4)?,
                     account_type: row.get(5)?,
                     posted_on: row.get(6)?,
-                    review_item_id: row.get(7)?,
+                    instrument_id: row.get(7)?,
+                    review_item_id: row.get(8)?,
                 })
             },
         )
