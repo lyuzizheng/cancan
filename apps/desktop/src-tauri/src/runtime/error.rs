@@ -52,6 +52,13 @@ pub(crate) struct RuntimeError {
     /// The component the failure came from, for the entry a scope that held the
     /// store guard writes once it has released it.
     reporter: Option<&'static str>,
+    /// Whether the failure's operational-log entry is already recorded.
+    /// [`store_failure`] and [`runtime_failure`] set this when they log at the
+    /// failure site, so the owning boundary ([`log_boundary_failure`]) does not
+    /// record the same failure again: one failure leaves one entry. Deferred
+    /// failures ([`deferred_failure`] and [`guard_held_failure`]) carry no entry
+    /// yet and stay `false` until a boundary records them.
+    entry_recorded: bool,
 }
 
 impl RuntimeError {
@@ -60,7 +67,15 @@ impl RuntimeError {
             code,
             detail: None,
             reporter: None,
+            entry_recorded: false,
         }
+    }
+
+    /// Marks the failure as already recorded in the operational log, so the
+    /// owning boundary does not log it a second time.
+    fn already_recorded(mut self) -> Self {
+        self.entry_recorded = true;
+        self
     }
 
     /// Attaches the technical layer of the failure to the static code.
@@ -119,7 +134,9 @@ pub(super) fn store_failure(
     error: &(dyn Error + Send + Sync + 'static),
 ) -> RuntimeError {
     let _ = store.record_operational_log(&OperationalLogEntry::failure(component, code, error));
-    RuntimeError::new(code).with_detail(JobFailureDetail::from_error(None, error))
+    RuntimeError::new(code)
+        .with_detail(JobFailureDetail::from_error(None, error))
+        .already_recorded()
 }
 
 /// [`store_failure`] for a step that runs without a store handle in scope, for
@@ -148,7 +165,9 @@ pub(super) fn runtime_failure(
     {
         let _ = store.record_operational_log(&OperationalLogEntry::failure(component, code, error));
     }
-    RuntimeError::new(code).with_detail(JobFailureDetail::from_error(None, error))
+    RuntimeError::new(code)
+        .with_detail(JobFailureDetail::from_error(None, error))
+        .already_recorded()
 }
 
 /// [`runtime_failure`] for a scope that holds the store guard but has no store
@@ -195,6 +214,13 @@ pub(super) fn log_boundary_failure(
         !store_guard_is_held(),
         "log_boundary_failure({component}) would deadlock on this thread's store guard"
     );
+    // The failure site already recorded its entry (for example a store step
+    // inside the Gmail persist path): recording again would leave two entries
+    // for one failure. Deferred failures carry no entry yet, so the boundary
+    // remains their single record.
+    if error.entry_recorded {
+        return;
+    }
     let entry = match error.detail() {
         Some(detail) => OperationalLogEntry::from_detail(component, error.code, detail),
         None => OperationalLogEntry::failure_code(component, error.code),

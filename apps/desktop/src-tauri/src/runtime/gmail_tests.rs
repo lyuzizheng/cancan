@@ -384,3 +384,44 @@ fn a_failed_authorization_step_records_one_redacted_entry() {
         "{lines}"
     );
 }
+
+#[test]
+fn a_connector_persist_failure_records_exactly_one_entry() {
+    let parent = tempfile::tempdir().expect("temporary app data");
+    let tokens = Arc::new(MemoryGmailRefreshTokenStore::default());
+    let runtime = gmail_runtime(&parent.path().join("vault"), tokens.clone());
+
+    // The connector's persist step reports through the same authorization
+    // boundary as transport failures: a store-backed failure must not log at
+    // the site and again at the boundary. The surviving entry is the site's,
+    // which keeps the real reason instead of the static code alone.
+    tokens.fail_save.store(true, Ordering::SeqCst);
+    let error = runtime
+        .persist_gmail_mailbox("owner@example.com", b"token")
+        .expect_err("surface Keychain save failure");
+    assert_eq!(error.code(), "gmail_connection_save_failed");
+    log_boundary_failure(&runtime, GMAIL_AUTHORIZATION_COMPONENT, &error);
+
+    let preview = runtime
+        .operational_diagnostics_preview()
+        .expect("preview recorded failures");
+    assert_eq!(
+        preview.entry_count, 1,
+        "one persist failure leaves one entry"
+    );
+    assert!(
+        preview
+            .components
+            .iter()
+            .any(|category| category.label == "gmail_refresh_token_save"),
+        "{:?}",
+        preview.components
+    );
+    let lines = preview.sample_lines.join("\n");
+    assert!(
+        lines.contains("code=gmail_connection_save_failed"),
+        "{lines}"
+    );
+    assert!(lines.contains("kind=unknown"), "{lines}");
+    assert!(lines.contains("test keychain failure"), "{lines}");
+}
