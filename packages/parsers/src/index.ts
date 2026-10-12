@@ -1,6 +1,5 @@
 export type {
   CanonicalExternalRecordInput,
-  DocumentRoutingProposal,
   ExactDecimalString,
   ExactMoneyInput,
   ExtractionBundle,
