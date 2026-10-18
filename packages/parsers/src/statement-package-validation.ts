@@ -177,18 +177,37 @@ function rawString(record: CanonicalExternalRecordInput, field: string): string 
 
 /**
  * Foreign-currency tripwire for statement rows. Only SG-plausible settlement
- * codes count, and only when the code sits next to an amount-like number, so
- * ordinary description words (TOP-UP, ANG MO KIO, SDN BHD) never trip it.
- * A region with no such code inherits document-level SGD grounding.
+ * codes and their unambiguous symbol aliases count, and only when the marker
+ * sits next to an amount-like number, so ordinary description words (TOP-UP,
+ * ANG MO KIO, SDN BHD) never trip it.
+ * A region with no such marker inherits document-level SGD grounding.
  */
-const FOREIGN_SETTLEMENT_CURRENCIES: ReadonlySet<string> = new Set([
+const FOREIGN_SETTLEMENT_CURRENCIES = [
   "USD", "EUR", "GBP", "JPY", "AUD", "HKD", "CNY", "MYR", "THB", "IDR",
   "INR", "PHP", "VND", "KRW", "TWD", "NZD", "CAD", "CHF",
-]);
+] as const;
+
+/**
+ * Unambiguous foreign symbol aliases. A bare `$` is absent on purpose: it is
+ * also the supported `S$` suffix, and its SGD/USD reading has no accepted rule
+ * yet, so the tripwire leaves it on its existing silent path.
+ */
+const FOREIGN_SETTLEMENT_SYMBOLS = [String.raw`US\$`, "£", "€"] as const;
+
+/** Amount-like number: optional sign, optional thousands grouping, optional cents. */
+const AMOUNT_LIKE = String.raw`[-+]?[\d,]*\d(?:\.\d+)?`;
+
+/**
+ * One settlement marker: a foreign code delimited from any longer word yet
+ * allowed to touch the amount (`USD 20.00`, `20.00 USD`, `USD20.00`), or one
+ * of the symbol aliases (`US$20.00`, `£20.00`, `€20.00`).
+ */
+const CURRENCY_MARKER =
+  String.raw`(?:(?<![A-Za-z0-9_])(?:${FOREIGN_SETTLEMENT_CURRENCIES.join("|")})(?![A-Za-z_])` +
+  String.raw`|(?:${FOREIGN_SETTLEMENT_SYMBOLS.join("|")}))`;
 
 const AMOUNT_ADJACENT_CURRENCY = new RegExp(
-  String.raw`\b(${[...FOREIGN_SETTLEMENT_CURRENCIES].join("|")})\b\s*[-+]?[\d,]*\d(?:\.\d+)?` +
-    String.raw`|\b[-+]?[\d,]*\d(?:\.\d+)?\s*\b(${[...FOREIGN_SETTLEMENT_CURRENCIES].join("|")})\b`,
+  String.raw`${CURRENCY_MARKER}\s*${AMOUNT_LIKE}|${AMOUNT_LIKE}\s*${CURRENCY_MARKER}`,
 );
 
 function groundingRegionHasForeignCurrency(text: string): boolean {

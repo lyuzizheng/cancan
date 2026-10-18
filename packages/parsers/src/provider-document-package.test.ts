@@ -8,6 +8,7 @@ import { semanticDocumentKey } from "./validate-structured-proposal";
 import {
   createSyntheticProviderStatementFixture,
   type SyntheticProviderStatementPosting,
+  type SyntheticStatementFixture,
 } from "./testing";
 
 type Posting = SyntheticProviderStatementPosting;
@@ -52,8 +53,26 @@ function decimal(value: bigint): string {
 function fixture(
   providerPackage: ProviderDocumentPackage,
   postings: readonly Posting[],
-): ReturnType<typeof createSyntheticProviderStatementFixture> {
+): SyntheticStatementFixture {
   return createSyntheticProviderStatementFixture(providerPackage, postings);
+}
+
+/** Adds one extra grounded cell to `row`, outside the record's own columns. */
+function withRowText(
+  input: SyntheticStatementFixture,
+  row: number,
+  text: string,
+): SyntheticStatementFixture {
+  input.extractionBundle.observations.push({
+    id: `row-${row}-text-${input.extractionBundle.observations.length}`,
+    kind: "table_cell",
+    row,
+    column: 6,
+    text,
+    engine: "synthetic-provider-fixture",
+    engineVersion: "1",
+  });
+  return input;
 }
 
 function namedCases(providerPackage: ProviderDocumentPackage) {
@@ -84,6 +103,42 @@ function namedCases(providerPackage: ProviderDocumentPackage) {
           ],
     },
   ] satisfies readonly { name: string; postings: readonly Posting[] }[];
+}
+
+/**
+ * Confirmed unsupported currency forms under the accepted SGD contract: a
+ * spaced code on either side of the amount, a code glued to the amount, and
+ * the unambiguous foreign symbol aliases. A bare `$` is deliberately absent —
+ * it is also the supported `S$` suffix and has no accepted rule yet.
+ */
+const FOREIGN_CURRENCY_ROW_TEXTS = [
+  "USD 20.00",
+  "20.00 USD",
+  "GBP 20.00",
+  "EUR 20.00",
+  "USD20.00",
+  "US$20.00",
+  "£20.00",
+  "€20.00",
+] as const;
+
+/** Supported forms: the document-level SGD contract, code and symbol alike. */
+const SUPPORTED_ROW_TEXTS = ["SGD 20.00", "S$20.00"] as const;
+
+/** Foreign codes with no amount-like number beside them carry no trip. */
+const DETACHED_CODE_ROW_TEXTS = [
+  "PAYMENT USD PROCESSED 20.00",
+  "RATE GBP NOTED",
+] as const;
+
+/** The unresolved bare-dollar reading, pinned to today's silent path. */
+const UNRESOLVED_BARE_DOLLAR_ROW_TEXTS = ["$20.00", "$ 20.00", "AMOUNT $20.00"] as const;
+
+function rowTextCases(
+  providerPackage: ProviderDocumentPackage,
+  texts: readonly string[],
+): Array<{ packageId: string; providerPackage: ProviderDocumentPackage; text: string }> {
+  return texts.map((text) => ({ packageId: providerPackage.packageId, providerPackage, text }));
 }
 
 describe("provider document packages", () => {
@@ -368,23 +423,18 @@ describe("provider document packages", () => {
     },
   );
 
-  it.each(packages)(
-    "$packageId rejects a foreign currency code inside the grounded row",
-    async (providerPackage) => {
-      const input = fixture(providerPackage, [
-        { description: "GROCERIES", side: "debit", amount: "20.00" },
-      ]);
-      input.extractionBundle.observations.push({
-        id: "foreign-currency",
-        kind: "table_cell",
-        row: 2,
-        column: 6,
-        text: "USD 20.00",
-        engine: "synthetic-provider-fixture",
-        engineVersion: "1",
-      });
-
-      const result = await providerPackage.validate(input);
+  it.each(
+    packages.flatMap((providerPackage) => rowTextCases(providerPackage, FOREIGN_CURRENCY_ROW_TEXTS)),
+  )(
+    "$packageId rejects foreign currency row text $text",
+    async ({ providerPackage, text }) => {
+      const result = await providerPackage.validate(
+        withRowText(
+          fixture(providerPackage, [{ description: "GROCERIES", side: "debit", amount: "20.00" }]),
+          2,
+          text,
+        ),
+      );
 
       expect(result).toMatchObject({
         status: "invalid",
@@ -392,6 +442,80 @@ describe("provider document packages", () => {
           { proposalRecordId: "posting-1", code: "currency_or_precision_unsupported" },
         ]),
       });
+    },
+  );
+
+  it.each(
+    packages.flatMap((providerPackage) => rowTextCases(providerPackage, SUPPORTED_ROW_TEXTS)),
+  )(
+    "$packageId keeps supported SGD row text $text silent",
+    async ({ providerPackage, text }) => {
+      const result = await providerPackage.validate(
+        withRowText(
+          fixture(providerPackage, [{ description: "GROCERIES", side: "debit", amount: "20.00" }]),
+          2,
+          text,
+        ),
+      );
+
+      expect(result.status).toBe("valid");
+    },
+  );
+
+  it.each(
+    packages.flatMap((providerPackage) => rowTextCases(providerPackage, DETACHED_CODE_ROW_TEXTS)),
+  )(
+    "$packageId keeps detached foreign code row text $text silent",
+    async ({ providerPackage, text }) => {
+      const result = await providerPackage.validate(
+        withRowText(
+          fixture(providerPackage, [{ description: "GROCERIES", side: "debit", amount: "20.00" }]),
+          2,
+          text,
+        ),
+      );
+
+      expect(result.status).toBe("valid");
+    },
+  );
+
+  it.each(
+    packages.flatMap((providerPackage) =>
+    rowTextCases(providerPackage, UNRESOLVED_BARE_DOLLAR_ROW_TEXTS),
+    ),
+  )(
+    "$packageId keeps unresolved bare-dollar row text $text on its accepted silent path",
+    async ({ providerPackage, text }) => {
+    const result = await providerPackage.validate(
+      withRowText(
+        fixture(providerPackage, [{ description: "GROCERIES", side: "debit", amount: "20.00" }]),
+        2,
+        text,
+      ),
+    );
+
+    expect(result.status).toBe("valid");
+    },
+  );
+
+  it.each(packages)(
+    "$packageId scopes a foreign symbol to the row that carries it",
+    async (providerPackage) => {
+      const input = fixture(providerPackage, [
+        { description: "GROCERIES", side: "debit", amount: "20.00" },
+        { description: "COFFEE", side: "debit", amount: "5.00" },
+      ]);
+      withRowText(input, 2, "€20.00");
+
+      const result = await providerPackage.validate(input);
+
+      expect(result).toMatchObject({ status: "invalid" });
+      if (result.status !== "invalid") {
+        throw new Error("expected an invalid package");
+      }
+      expect(
+        result.errors.filter(({ code }) => code === "currency_or_precision_unsupported"),
+      ).toEqual([{ proposalRecordId: "posting-1", code: "currency_or_precision_unsupported" }]);
     },
   );
 

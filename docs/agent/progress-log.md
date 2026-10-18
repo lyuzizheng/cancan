@@ -4,6 +4,19 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-10-19 (parsers)
+
+### Completed
+
+- Hardened the statement-row foreign-currency tripwire in `packages/parsers/src/statement-package-validation.ts`. The old pattern recognized only a spaced settlement code bounded by word boundaries, so four confirmed foreign forms passed as SGD: a code glued to its amount (`USD20.00`) and the unambiguous symbol aliases (`US$20.00`, `£20.00`, `€20.00`). A marker is now either a foreign settlement code delimited from any longer word but free to touch the amount, or one of `US$`/`£`/`€`; the amount-adjacency requirement on either side of the number is unchanged, so a detached code (`PAYMENT USD PROCESSED 20.00`) and merchant words (`TOP-UP EZLINK`, `ANG MO KIO HUB`, `ACME SDN BHD`) stay silent.
+- Supported `SGD`/`S$` forms never trip, and a bare `$` keeps its existing silent path because its SGD/USD reading is unresolved; that choice is now registered in `docs/alignment-temp/alignment-progress.md` instead of being guessed, and symbols outside the confirmed set (`¥`, `₩`, `AUD$`) stay untripped and explicitly out of scope.
+- Extended the tripwire regression coverage in `packages/parsers/src/provider-document-package.test.ts` across all three shipped packages: eight foreign row forms (spaced on either side, glued code, `US$`/`£`/`€`), supported `SGD 20.00`/`S$20.00`, two detached-code negatives, three unresolved bare-dollar forms, and a mixed-input case proving one row's symbol trips only that record. The base run on `9e0fdd2` failed exactly the four confirmed foreign forms in every package plus the three mixed-row cases (15 failing, 93 passing); the supported, detached, and bare-dollar cases were already green.
+- Gates: focused vitest 108/108, `pnpm test:unit` 498/498, `pnpm --filter @cancan/parsers typecheck`, `cargo check --locked`, `cargo test --locked` (348 passed, 1 ignored), `pnpm verify`, and `.agents/scripts/agent-preflight.sh` — pass.
+
+### Next
+
+- BRAWUKA-909 is open for its two non-author approvals on the frozen head; the bare-`$` reading stays an unresolved choice with no implementation dependency.
+
 ## 2026-10-19
 
 ### Completed
