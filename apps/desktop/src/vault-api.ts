@@ -679,6 +679,8 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t update the recovery file status.";
     case "diagnostics_unavailable":
       return "CanCan couldn’t read the operational log. Try again.";
+    case "diagnostics_export_location_invalid":
+      return "Save the diagnostics file somewhere outside your CanCan Vault.";
     case "diagnostics_export_failed":
       return "CanCan couldn’t write the diagnostics file to that location.";
     default:

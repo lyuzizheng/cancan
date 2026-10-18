@@ -95,6 +95,7 @@ fn saving_diagnostics_writes_the_redacted_export_and_reports_an_unwritable_targe
     let export = fs::read_to_string(&destination).expect("read export");
     assert!(export.contains("CanCan operational diagnostics export"));
     assert!(export.contains("diagnostics_export_failed"), "{export}");
+    assert!(no_temporary_export_file(parent.path()));
     assert!(
         export.contains("operational_diagnostics_export"),
         "the export is described in the export itself"
@@ -112,6 +113,136 @@ fn saving_diagnostics_writes_the_redacted_export_and_reports_an_unwritable_targe
         "{:?}",
         preview.error_codes
     );
+}
+
+/// The export is a share artifact like a source copy: it belongs outside the
+/// Vault, and the destination's own bytes survive every rejection.
+#[test]
+fn rejects_a_diagnostics_export_inside_the_vault() {
+    let (parent, runtime) = runtime_fixture();
+    let contained = parent.path().join("vault").join("CanCan Diagnostics.txt");
+
+    assert_eq!(
+        runtime
+            .save_operational_diagnostics(&contained)
+            .expect_err("reject an export inside the Vault")
+            .code,
+        "diagnostics_export_location_invalid"
+    );
+    assert!(!contained.exists());
+}
+
+/// A link is the same destination: the export has to reject the path the
+/// destination resolves to, not the text the user typed.
+#[cfg(unix)]
+#[test]
+fn rejects_a_diagnostics_export_that_links_into_the_vault() {
+    let (parent, runtime) = runtime_fixture();
+    let vault_file = parent.path().join("vault").join("evidence.txt");
+    fs::write(&vault_file, b"financial evidence").expect("write Vault file");
+    let link = parent.path().join("CanCan Diagnostics.txt");
+    std::os::unix::fs::symlink(&vault_file, &link).expect("link the export into the Vault");
+
+    assert_eq!(
+        runtime
+            .save_operational_diagnostics(&link)
+            .expect_err("reject a link into the Vault")
+            .code,
+        "diagnostics_export_location_invalid"
+    );
+    assert_eq!(
+        fs::read(&vault_file).expect("read Vault file"),
+        b"financial evidence"
+    );
+    assert!(
+        fs::symlink_metadata(&link)
+            .expect("link metadata")
+            .file_type()
+            .is_symlink()
+    );
+
+    // A link whose Vault target does not exist yet is still a destination that
+    // must not create that file: the complete export replaces the link itself.
+    let missing = parent.path().join("vault").join("not-created.txt");
+    let broken = parent.path().join("broken-link.txt");
+    std::os::unix::fs::symlink(&missing, &broken).expect("link the export to a Vault path");
+    runtime
+        .save_operational_diagnostics(&broken)
+        .expect("write the export over the link");
+    assert!(!missing.exists());
+    assert!(
+        fs::read_to_string(&broken)
+            .expect("read export")
+            .contains("CanCan operational diagnostics export")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn preserves_the_existing_destination_when_the_diagnostics_export_fails() {
+    let (parent, runtime) = runtime_fixture();
+    let exports = parent.path().join("exports");
+    fs::create_dir(&exports).expect("create export directory");
+    let destination = exports.join("CanCan Diagnostics.txt");
+    fs::write(&destination, b"existing diagnostics").expect("write existing destination");
+    let original_permissions = fs::metadata(&exports)
+        .expect("read export directory permissions")
+        .permissions();
+    fs::set_permissions(&exports, fs::Permissions::from_mode(0o500))
+        .expect("make the export directory unwritable");
+
+    let result = runtime.save_operational_diagnostics(&destination);
+    fs::set_permissions(&exports, original_permissions).expect("restore export directory");
+
+    assert_eq!(
+        result.expect_err("surface the failed export").code,
+        "diagnostics_export_failed"
+    );
+    assert_eq!(
+        fs::read(&destination).expect("read preserved destination"),
+        b"existing diagnostics"
+    );
+    assert!(no_temporary_export_file(&exports));
+
+    let directory_destination = exports.join("existing-directory");
+    fs::create_dir(&directory_destination).expect("create directory destination");
+    assert_eq!(
+        runtime
+            .save_operational_diagnostics(&directory_destination)
+            .expect_err("rename over a directory must fail")
+            .code,
+        "diagnostics_export_failed"
+    );
+    assert!(directory_destination.is_dir());
+    assert!(no_temporary_export_file(&exports));
+}
+
+#[test]
+fn rejects_the_diagnostics_export_while_the_vault_is_locked() {
+    let (parent, runtime) = runtime_fixture();
+    let destination = parent.path().join("CanCan Diagnostics.txt");
+    runtime.test_support_lock().expect("lock Vault");
+
+    assert_eq!(
+        runtime
+            .save_operational_diagnostics(&destination)
+            .expect_err("reject the export while locked")
+            .code,
+        "vault_locked"
+    );
+    assert!(!destination.exists());
+}
+
+fn no_temporary_export_file(directory: &std::path::Path) -> bool {
+    fs::read_dir(directory)
+        .expect("list export directory")
+        .all(|entry| {
+            !entry
+                .expect("directory entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".cancan-export-")
+        })
 }
 
 #[test]
