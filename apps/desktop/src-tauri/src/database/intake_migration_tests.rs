@@ -67,7 +67,7 @@ fn upgrades_a_populated_v10_vault_through_the_production_registry() {
             row.get(0)
         })
         .expect("read schema version");
-    assert_eq!(schema_version, 15);
+    assert_eq!(schema_version, 16);
     assert_eq!(
         connection
             .query_row(
@@ -164,7 +164,7 @@ fn upgrades_a_populated_v14_vault_with_content_fingerprint_columns() {
             row.get(0)
         })
         .expect("read schema version");
-    assert_eq!(schema_version, 15);
+    assert_eq!(schema_version, 16);
     let (fingerprint, fingerprint_version, match_document_id): (
         Option<String>,
         Option<i64>,

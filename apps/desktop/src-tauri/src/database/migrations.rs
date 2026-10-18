@@ -94,6 +94,11 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         ),
         foreign_keys_off: false,
     },
+    Migration {
+        version: 16,
+        sql: include_str!("../../../../../packages/db/migrations/0016_committed_update_final.sql"),
+        foreign_keys_off: false,
+    },
 ];
 
 pub(super) fn open_encrypted_database(
