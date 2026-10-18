@@ -27,6 +27,7 @@ import type {
   SavedStatementPasswordResult,
   SourceConfirmationPrompt,
   SourceDocumentPreview,
+  StatementPasswordUnlockContext,
   SourceDocumentSummary,
   TaskRow,
   Tasks,
@@ -301,6 +302,13 @@ export function createApi(overrides: Partial<VaultApi> = {}) {
     createMoneySource: vi.fn(async (): Promise<MoneySourceSummary> => moneySource),
     editMoneySource: vi.fn(async (): Promise<MoneySourceSummary> => moneySource),
     listStatementPasswordSources: vi.fn(async () => []),
+    statementPasswordDocumentContext: vi.fn(
+      async (): Promise<StatementPasswordUnlockContext> => ({
+        hasSavedPassword: false,
+        moneySourceDisplayName: null,
+        moneySourceId: null,
+      }),
+    ),
     listTasks: vi.fn(async (): Promise<Tasks> => ({ needsActionCount: 0, rows: [] })),
     listUnassignedSourceDocuments: vi.fn(
       async (): Promise<SourceDocumentSummary[]> => [],

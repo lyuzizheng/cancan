@@ -53,7 +53,9 @@ import type {
   DocumentStatementPasswordArgs,
   RestoreDismissedCandidateAccountArgs,
   SetIntakeNotificationsEnabledArgs,
+  StatementPasswordDocumentContextArgs,
   StatementPasswordSourceSummary,
+  StatementPasswordUnlockContext,
   SupportedMoneySourceProviderSummary,
   TrySavedStatementPasswordArgs,
   UndoCommittedEventArgs,
@@ -181,12 +183,15 @@ export interface VaultApi {
     enabled: boolean,
   ): Promise<IntakeNotificationSettings>;
   takeBackgroundIntakeRoute(): Promise<TaskRow | null>;
+  statementPasswordDocumentContext(
+    documentId: string,
+  ): Promise<StatementPasswordUnlockContext>;
   trySavedStatementPasswords(
     documentId: string,
   ): Promise<SavedStatementPasswordResult>;
   unlockSourceDocument(
     documentId: string,
-    moneySourceId: string,
+    moneySourceId: string | null,
     password: string,
     updateSavedPassword: boolean,
   ): Promise<void>;
@@ -336,6 +341,13 @@ export function createVaultApi(
     listTasks: (filter: TaskFilter) => {
       const args: ListTasksArgs = { filter };
       return call<Tasks, ListTasksArgs>("list_tasks", args);
+    },
+    statementPasswordDocumentContext: (documentId) => {
+      const args: StatementPasswordDocumentContextArgs = { documentId };
+      return call<StatementPasswordUnlockContext, StatementPasswordDocumentContextArgs>(
+        "statement_password_document_context",
+        args,
+      );
     },
     trySavedStatementPasswords: (documentId) => {
       const args: TrySavedStatementPasswordArgs = { documentId };
@@ -535,6 +547,10 @@ export function commandErrorMessage(error: unknown): string {
       return "CanCan couldn’t access the saved statement password in this Mac’s Keychain.";
     case "statement_password_invalid":
       return "That password did not unlock this statement.";
+    case "statement_password_source_unconfirmed":
+      return "Confirm this statement’s Money Source before saving its password.";
+    case "statement_password_source_mismatch":
+      return "This statement belongs to a different Money Source. Refresh and try again.";
     case "statement_password_remove_failed":
       return "CanCan couldn’t remove that statement password from this Mac’s Keychain.";
     case "vault_locked":

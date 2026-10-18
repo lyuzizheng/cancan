@@ -72,6 +72,7 @@ export type {
   OperationalDiagnosticsCategory,
   OperationalDiagnosticsPreview,
   StatementPasswordSourceSummary,
+  StatementPasswordUnlockContext,
   SupportedMoneySourceProviderSummary,
   TaskConsequence,
   TaskDestination,
@@ -95,10 +96,14 @@ export type SaveSourceDocumentCopyArgs = { documentId: string };
 
 export type DocumentStatementPasswordArgs = {
   documentId: string;
-  moneySourceId: string;
+  // `null` for a session-only unlock of a document whose Money Source is not
+  // confirmed yet. The host ignores it unless `updateSavedPassword` is true.
+  moneySourceId: string | null;
   password: string;
   updateSavedPassword: boolean;
 };
+
+export type StatementPasswordDocumentContextArgs = { documentId: string };
 
 export type TrySavedStatementPasswordArgs = { documentId: string };
 

@@ -33,6 +33,7 @@ fn generated_presentation_types() -> String {
         crate::runtime::SourceDocumentStatus::decl(&config),
         crate::runtime::SourceDocumentSummary::decl(&config),
         crate::runtime::StatementPasswordSourceSummary::decl(&config),
+        crate::runtime::StatementPasswordUnlockContext::decl(&config),
         crate::viewer::RenderedDocumentPage::decl(&config),
         // Operational diagnostics.
         crate::diagnostics::OperationalDiagnosticsCategory::decl(&config),

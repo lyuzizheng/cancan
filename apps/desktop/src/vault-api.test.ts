@@ -77,6 +77,7 @@ describe("Vault API", () => {
     await api.rememberVaultOnThisMac();
     await api.forgetVaultOnThisMac();
     await api.listStatementPasswordSources();
+    await api.statementPasswordDocumentContext("document-1");
     await api.trySavedStatementPasswords("document-1");
     await api.unlockSourceDocument(
       "document-1",
@@ -171,6 +172,10 @@ describe("Vault API", () => {
       ["forget_vault_on_this_mac", undefined],
       ["list_statement_password_sources", undefined],
       [
+        "statement_password_document_context",
+        { documentId: "document-1" },
+      ],
+      [
         "try_saved_statement_passwords",
         { documentId: "document-1" },
       ],
@@ -251,6 +256,14 @@ describe("Vault API", () => {
       commandErrorMessage({ code: "statement_password_remove_failed" }),
     ).toBe(
       "CanCan couldn’t remove that statement password from this Mac’s Keychain.",
+    );
+    expect(
+      commandErrorMessage({ code: "statement_password_source_unconfirmed" }),
+    ).toBe("Confirm this statement’s Money Source before saving its password.");
+    expect(
+      commandErrorMessage({ code: "statement_password_source_mismatch" }),
+    ).toBe(
+      "This statement belongs to a different Money Source. Refresh and try again.",
     );
     expect(commandErrorMessage({ code: "recovery_status_failed" })).toBe(
       "The recovery file was saved, but CanCan couldn’t record setup. Keep the file private and try again.",

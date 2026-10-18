@@ -1,3 +1,4 @@
+use super::statement_passwords::confirmed_statement_password_source;
 use super::*;
 
 impl VaultRuntime {
@@ -382,28 +383,37 @@ impl VaultRuntime {
     pub(crate) fn unlock_source_document(
         &self,
         document_id: &str,
-        money_source_id: &str,
+        money_source_id: Option<&str>,
         password: &[u8],
         update_saved_password: bool,
     ) -> Result<(), RuntimeError> {
-        if document_id.is_empty() || money_source_id.is_empty() {
+        if document_id.is_empty() {
             return Err(RuntimeError::new("invalid_document_request"));
         }
         if password.is_empty() {
             return Err(RuntimeError::new("statement_password_required"));
         }
-        {
+        // A save or replacement is allowed only for the Money Source trusted
+        // classification confirmed for exactly this document. Session-only
+        // unlock never reaches this gate and never writes a secret.
+        let saved_password_source = if update_saved_password {
             let store = self.store()?;
             let store = store
                 .as_ref()
                 .ok_or_else(|| RuntimeError::new("vault_locked"))?;
-            ensure_statement_password_source(store, money_source_id)?;
-        }
+            Some(confirmed_statement_password_source(
+                store,
+                document_id,
+                money_source_id,
+            )?)
+        } else {
+            None
+        };
         let input = self.read_source_document(document_id)?;
         if !statement_password_unlocks(&input, password)? {
             return Err(RuntimeError::new("statement_password_invalid"));
         }
-        if update_saved_password {
+        if let Some(money_source_id) = saved_password_source {
             let store = self.store()?;
             let store = store
                 .as_ref()
@@ -620,21 +630,6 @@ pub(super) fn statement_password_unlocks(
     }
 }
 
-pub(super) fn ensure_statement_password_source(
-    store: &ManualImportStore,
-    money_source_id: &str,
-) -> Result<(), RuntimeError> {
-    if store.money_source_exists(money_source_id).map_store_error(
-        store,
-        "money_source_exists",
-        "invalid_source_request",
-    )? {
-        Ok(())
-    } else {
-        Err(RuntimeError::new("invalid_source_request"))
-    }
-}
-
 #[tauri::command]
 pub(crate) async fn remove_statement_password(
     money_source_id: String,
@@ -671,7 +666,7 @@ pub(crate) async fn try_saved_statement_passwords(
 #[tauri::command]
 pub(crate) async fn unlock_source_document(
     document_id: String,
-    money_source_id: String,
+    money_source_id: Option<String>,
     password: String,
     update_saved_password: bool,
     app: AppHandle,
@@ -683,7 +678,7 @@ pub(crate) async fn unlock_source_document(
     run_runtime_task(move || {
         unlock_runtime.unlock_source_document(
             &document_id,
-            &money_source_id,
+            money_source_id.as_deref(),
             password.as_bytes(),
             update_saved_password,
         )
@@ -691,6 +686,19 @@ pub(crate) async fn unlock_source_document(
     .await?;
     schedule_queued_local_inbox_parses(app, runtime);
     Ok(())
+}
+
+/// Returns the confirmed owner of one document for the password prompt.
+///
+/// The payload is presentation-safe by construction: it never carries a
+/// password, a password attempt, or any other document's association.
+#[tauri::command]
+pub(crate) async fn statement_password_document_context(
+    document_id: String,
+    runtime: State<'_, VaultRuntime>,
+) -> Result<StatementPasswordUnlockContext, VaultCommandError> {
+    let runtime = runtime.inner().clone();
+    run_runtime_task(move || runtime.statement_password_document_context(&document_id)).await
 }
 
 #[tauri::command]

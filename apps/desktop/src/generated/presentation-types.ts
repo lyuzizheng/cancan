@@ -31,6 +31,8 @@ export type SourceDocumentSummary = { attentionReason: string | null, byteSize: 
 
 export type StatementPasswordSourceSummary = { displayName: string, hasSavedPassword: boolean, moneySourceId: string, };
 
+export type StatementPasswordUnlockContext = { hasSavedPassword: boolean, moneySourceDisplayName: string | null, moneySourceId: string | null, };
+
 export type RenderedDocumentPage = { pageCount: number, pageNumber: number, pngBase64: string, };
 
 export type OperationalDiagnosticsCategory = { label: string, count: number, };
