@@ -4,7 +4,10 @@
 
 ## Links
 
-<!-- Every PR closes an issue: `Closes #<n>` (except trivial no-behavior fixes — typo, comment, formatting, dead link — per AGENTS.md §10). Behavior changes also link the spec section this PR lands — the first PR of a feature issue lands spec + implementation together. -->
+<!-- Every PR closes an issue. The Multica line below must stay standalone — its own line, no bullet or leading text; `N` = the Multica issue (BRAWUKA-N) this PR delivers, and the PR title must start with `BRAWUKA-N: `. -->
+<!-- The GitHub line `Closes: #<n>` follows the bullets (except trivial no-behavior fixes — typo, comment, formatting, dead link — per AGENTS.md §10). Behavior changes also link the spec section this PR lands — the first PR of a feature issue lands spec + implementation together. -->
+
+Closes BRAWUKA-N
 
 - Closes: #<issue number> <!-- or `trivial — no issue` for a typo/formatting-only PR -->
 - Spec: `docs/specs/<NNNN-….md>` §<section> (required when behavior changes; `No spec change` otherwise)
