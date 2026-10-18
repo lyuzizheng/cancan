@@ -382,8 +382,7 @@ export function App({ api = defaultVaultApi }: { api?: VaultApi }) {
         <DocumentUnlock
           onClose={overlays.closeUnlock}
           onPasswordChange={overlays.setUnlockPassword}
-          onRetrySources={overlays.retryUnlockSources}
-          onSourceChange={overlays.selectUnlockSource}
+          onRetry={overlays.retryUnlockContext}
           onSubmit={overlays.submitDocumentPassword}
           state={overlays.unlockingDocument}
         />

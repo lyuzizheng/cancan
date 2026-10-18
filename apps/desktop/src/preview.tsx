@@ -6,6 +6,7 @@
  * source-create, source-rename, source-remove-password,
  * sources-inbox-disabled, sources-inbox-enabled,
  * sources-inbox-reauth, document-viewer, document-preview, document-unlock,
+ * document-unlock-update, document-unlock-unconfirmed,
  * delete-confirm, vault-gate-loading, vault-gate-create,
  * vault-gate-locked, primitives, primitives-dialog).
  * Not part of the shipped bundle: `vite build` only bundles index.html.
@@ -312,12 +313,14 @@ const inboxReauth: LocalInboxStatus = {
 
 const noop = () => undefined;
 
-const documentModalStates = new Set([
-  "delete-confirm",
-  "document-preview",
-  "document-unlock",
-  "document-viewer",
-]);
+const documentModalStates: Record<string, true> = {
+  "delete-confirm": true,
+  "document-preview": true,
+  "document-unlock": true,
+  "document-unlock-unconfirmed": true,
+  "document-unlock-update": true,
+  "document-viewer": true,
+};
 
 
 /**
@@ -446,7 +449,7 @@ function Preview() {
         : inboxDisabled;
     content = renderSourcesView(status, "none", sourcePrompts);
   } else if (state === "sources" || state === "source-detail" || state === "source-detail-empty"
-    || sourceDialogStates[state] === true || documentModalStates.has(state)) {
+    || sourceDialogStates[state] === true || documentModalStates[state] === true) {
     activeView = "sources";
     content = renderSourcesView(
       inboxEnabled,
@@ -511,7 +514,7 @@ function Preview() {
     );
   }
 
-  const modalPreview = state === "source-confirm" || sourceDialogStates[state] === true || documentModalStates.has(state);
+  const modalPreview = state === "source-confirm" || sourceDialogStates[state] === true || documentModalStates[state] === true;
   return (
     <AppShell>
       <VaultSpine
@@ -570,25 +573,27 @@ function Preview() {
           }}
         />
       ) : null}
-      {state === "document-unlock" ? (
+      {state === "document-unlock" || state === "document-unlock-update"
+        || state === "document-unlock-unconfirmed" ? (
         <DocumentUnlock
           onClose={noop}
           onPasswordChange={noop}
-          onRetrySources={noop}
-          onSourceChange={noop}
+          onRetry={noop}
           onSubmit={noop}
           state={{
             busy: false,
+            context: state === "document-unlock-unconfirmed"
+              ? { hasSavedPassword: false, moneySourceDisplayName: null, moneySourceId: null }
+              : {
+                hasSavedPassword: state === "document-unlock-update",
+                moneySourceDisplayName: "DBS",
+                moneySourceId: "source-dbs",
+              },
             documentId: "document-2",
             documentTitle: "May statement.pdf",
             error: null,
             password: "",
             savedPasswordStatus: null,
-            selectedMoneySourceId: "",
-            sources: [
-              { displayName: "DBS", hasSavedPassword: true, moneySourceId: "source-dbs" },
-              { displayName: "Wise", hasSavedPassword: false, moneySourceId: "source-wise" },
-            ],
           }}
         />
       ) : null}
