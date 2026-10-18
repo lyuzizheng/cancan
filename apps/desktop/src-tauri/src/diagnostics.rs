@@ -26,9 +26,20 @@ pub(crate) const OPERATIONAL_LOG_RETENTION_DAYS: i64 = 30;
 /// The app version recorded on every entry.
 pub(crate) const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The longest redacted technical text kept per entry or error layer.
-const MAX_REDACTED_CHARS: usize = 320;
+pub(crate) const MAX_REDACTED_CHARS: usize = 320;
 /// A quoted span longer than this counts as unterminated, not as a value.
 const MAX_QUOTED_SPAN_CHARS: usize = 120;
+/// The shortest token treated as a credential or opaque identifier. A short
+/// statement password or an account fragment (`secret42`) is exactly this shape,
+/// while the technical words a report has to keep — `sha256`, `utf8`, `xlsx` —
+/// are shorter or carry no digits.
+const MIN_SECRET_CHARS: usize = 8;
+/// The shortest unbroken digit run read as an account or reference number.
+const MIN_DIGIT_RUN: u32 = 8;
+/// The digits a separated number needs in total. Eight digits with separators
+/// are date- or phone-shaped context (`2026-10-18`), so a token below this bar
+/// only counts as a number through an unbroken run of [`MIN_DIGIT_RUN`].
+const MIN_SEPARATED_DIGITS: u32 = 9;
 /// Suffixes that make a bare token a document name rather than prose.
 const DOCUMENT_SUFFIXES: &[&str] = &[
     "csv", "dat", "db", "doc", "docx", "eml", "heic", "htm", "html", "jpeg", "jpg", "json", "msg",
@@ -536,11 +547,13 @@ fn redact_token(token: &str) -> Cow<'_, str> {
     if is_document_name(core) {
         return Cow::Borrowed("<file>");
     }
-    if is_opaque_identifier(core) || is_dot_separated_token(core) {
-        return Cow::Borrowed("<token>");
-    }
+    // The most specific shape wins the placeholder: an NRIC-style identifier is
+    // also a letter-and-digit token, so it is matched before the generic rules.
     if is_national_id(core) {
         return Cow::Borrowed("<id>");
+    }
+    if is_opaque_identifier(core) || is_dot_separated_token(core) {
+        return Cow::Borrowed("<token>");
     }
     if is_bare_number(core) {
         return Cow::Borrowed("<number>");
@@ -581,10 +594,14 @@ fn is_document_name(core: &str) -> bool {
         .is_some_and(|(stem, suffix)| !stem.is_empty() && DOCUMENT_SUFFIXES.contains(&suffix))
 }
 
-/// A credential, content hash, or other opaque identifier: long, unbroken, and
-/// mixing letters with digits.
+/// A credential, content hash, or other opaque identifier: at least
+/// [`MIN_SECRET_CHARS`] characters, unbroken, and mixing letters with digits.
+///
+/// The length bar is what keeps ordinary technical words readable, so it is set
+/// where a statement password or an account fragment starts — not a full signed
+/// token. `secret42` is a synthetic example of that shape.
 fn is_opaque_identifier(core: &str) -> bool {
-    if core.len() < 24 {
+    if core.len() < MIN_SECRET_CHARS {
         return false;
     }
     let mut has_digit = false;
@@ -604,11 +621,13 @@ fn is_opaque_identifier(core: &str) -> bool {
 /// segments drawn from the base64 alphabet, one of them long and mixing letters
 /// with digits.
 ///
-/// The overall length bar and the mixed long segment are what keep version and
+/// The mixed long segment and the three-segment shape are what keep version and
 /// host text such as `1.2.3` or `docs.example.com` readable, while a signed
-/// token — whose every segment is an encoded value — is replaced whole.
+/// token — whose every segment is an encoded value — is replaced whole. The
+/// overall bar is the short-secret one, so a signed token shorter than a full
+/// JWT is not read as context.
 fn is_dot_separated_token(core: &str) -> bool {
-    if core.len() < 24 {
+    if core.len() < MIN_SECRET_CHARS {
         return false;
     }
     let mut segments = 0_u32;
@@ -636,8 +655,9 @@ fn is_dot_separated_token(core: &str) -> bool {
 /// A national-ID-style identifier: one letter, seven to nine digits, one
 /// letter, as in a Singapore NRIC/FIN (`S1234567A`).
 ///
-/// The shape is too short for [`is_opaque_identifier`] and too lettered for
-/// [`is_bare_number`], so without this rule the identifier travels verbatim.
+/// The shape is also a letter-and-digit token, so the token rules match it
+/// first: the specific `<id>` placeholder explains the report better than the
+/// generic `<token>` one.
 fn is_national_id(core: &str) -> bool {
     let bytes = core.as_bytes();
     if !(9..=11).contains(&bytes.len()) {
@@ -649,41 +669,85 @@ fn is_national_id(core: &str) -> bool {
 }
 
 /// An account, card, or reference number: digits with separators only.
+///
+/// Two shapes count: an unbroken run of [`MIN_DIGIT_RUN`] digits, or
+/// [`MIN_SEPARATED_DIGITS`] digits in total when separators split them. The
+/// second bar stays above the first so that an eight-digit date such as
+/// `2026-10-18` is context rather than a number, while an ungrouped
+/// eight-digit account number — `12345678` — is still a number.
 fn is_bare_number(core: &str) -> bool {
     let mut digits = 0_u32;
+    let mut run = 0_u32;
+    let mut longest_run = 0_u32;
     for byte in core.bytes() {
         match byte {
-            b'0'..=b'9' => digits += 1,
-            b'-' | b'_' | b'.' => {}
+            b'0'..=b'9' => {
+                digits += 1;
+                run += 1;
+                longest_run = longest_run.max(run);
+            }
+            b'-' | b'_' | b'.' => run = 0,
             _ => return false,
         }
     }
-    digits >= 9
+    longest_run >= MIN_DIGIT_RUN || digits >= MIN_SEPARATED_DIGITS
 }
 
+/// A monetary amount: an optional sign, whole-number digits, a decimal
+/// separator, and at least one fractional digit.
+///
+/// The fraction is any scale, not a fixed two digits: a statement carries whole
+/// cents, three-decimal market prices, and fractional fund units. The whole part
+/// may repeat the decimal separator only as three-digit grouping, which is what
+/// keeps a version (`1.2.3`), an address (`192.168.1.1`), and a dotted date
+/// readable while `1.23` and `12.345` are amounts.
 fn is_amount(core: &str) -> bool {
-    let Some(separator) = core.rfind(['.', ',']) else {
+    let Some(separator_at) = core.rfind(['.', ',']) else {
         return false;
     };
-    let (whole, fraction) = (&core[..separator], &core[separator + 1..]);
-    if fraction.len() != 2 || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+    let decimal = core.as_bytes()[separator_at] as char;
+    let (whole, fraction) = (&core[..separator_at], &core[separator_at + 1..]);
+    if fraction.is_empty() || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
         return false;
     }
-    let mut whole = whole.chars();
-    match whole.next() {
-        Some('-' | '+') => {}
-        Some(first) if first.is_ascii_digit() => {}
-        _ => return false,
-    }
     let mut digits = 0_u32;
-    for character in whole {
+    for (index, character) in whole.char_indices() {
         if character.is_ascii_digit() {
             digits += 1;
+        } else if index == 0 && matches!(character, '-' | '+') {
+            // A leading sign carries no value of its own.
         } else if !matches!(character, ',' | '_' | '.') {
             return false;
         }
     }
-    digits > 0
+    if digits == 0 {
+        return false;
+    }
+    // A whole part drawn from digits and the decimal separator alone is money
+    // only when the separator groups three digits at a time. A part that also
+    // carries the other separator character keeps the permissive reading, so
+    // `1.234,56` and `1.234.567,89` stay amounts.
+    let signless = whole.strip_prefix(['-', '+']).unwrap_or(whole);
+    let separator_only = signless
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || byte == decimal as u8);
+    !separator_only || is_three_digit_grouping(signless, decimal)
+}
+
+/// Whether a separator inside a whole-number part reads as three-digit grouping
+/// rather than as the next part of a version, address, or date: `1.234.567`
+/// groups, `1.2.3` and `192.168.1.1` do not. A part without the separator has
+/// nothing to group.
+fn is_three_digit_grouping(digits: &str, separator: char) -> bool {
+    if !digits.contains(separator) {
+        return true;
+    }
+    let mut groups = digits.split(separator);
+    let first = groups.next().unwrap_or_default();
+    if !(1..=3).contains(&first.len()) || !first.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    groups.all(|group| group.len() == 3 && group.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn truncate(text: String) -> String {
