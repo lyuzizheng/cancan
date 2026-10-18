@@ -214,6 +214,12 @@ impl ManualImportStore {
                          )",
                         [&decision.account_id],
                     )?;
+                    // The dismissed account retires its live records, so any
+                    // accepted pair naming them retires here too.
+                    super::relationship_lifecycle::invalidate_pairs_retired_by_account_removal(
+                        &transaction,
+                        &decision.account_id,
+                    )?;
                 }
                 transaction.execute(
                     "INSERT INTO audit_log( \

@@ -1660,15 +1660,18 @@ impl ManualImportStore {
             return Ok(review_conflict("relationship_needs_review"));
         };
         let (first, second) = ordered_relationship_records(&primary, &candidate);
-        let existing = transaction
-            .query_row(
-                "SELECT id FROM review_relationships \
-                 WHERE first_external_record_id = ?1 AND second_external_record_id = ?2",
-                params![first.record_id, second.record_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?;
-        if existing.is_some() {
+        if relationship_lifecycle::settle_existing_pair(
+            &transaction,
+            first.record_id.as_str(),
+            second.record_id.as_str(),
+            first.review_item_id.as_deref().unwrap_or(review_item_id),
+            second
+                .review_item_id
+                .as_deref()
+                .unwrap_or(candidate_review_item_id),
+            event.event_type.as_str(),
+        )? {
+            transaction.commit()?;
             return Ok(ReviewMutationOutcome {
                 reason: None,
                 record_version: None,
@@ -1697,17 +1700,11 @@ impl ManualImportStore {
                 primary.currency,
             ],
         )?;
-        transaction.execute(
-            "INSERT INTO audit_log( \
-               id, entity_type, entity_id, action, actor, reason, source_ref, policy_version \
-             ) VALUES (?1, 'review_relationship', ?2, 'review_relationship_accepted', \
-                       'user', 'confirmed_relationship', ?3, ?4)",
-            params![
-                new_audit_id(),
-                format!("{}:{}", first.record_id, second.record_id),
-                event.event_type,
-                REVIEW_POLICY_VERSION,
-            ],
+        relationship_lifecycle::record_acceptance(
+            &transaction,
+            first.record_id.as_str(),
+            second.record_id.as_str(),
+            event.event_type.as_str(),
         )?;
         transaction.commit()?;
         Ok(ReviewMutationOutcome {
@@ -2617,6 +2614,9 @@ mod operational_logs;
 #[cfg(test)]
 mod operational_logs_tests;
 mod parse_jobs;
+mod relationship_lifecycle;
+#[cfg(test)]
+mod relationship_lifecycle_tests;
 #[cfg(test)]
 mod reparse_tests;
 pub(crate) mod restore_decisions;

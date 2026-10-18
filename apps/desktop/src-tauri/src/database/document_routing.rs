@@ -452,6 +452,12 @@ fn persist_validated_structured_parse_in_transaction(
                      ) AND status = 'open'",
                 [&record.stable_record_key],
             )?;
+            // A retired version can still be one side of an accepted pair, so
+            // the reparse retires that pair in the same transaction.
+            super::relationship_lifecycle::invalidate_pairs_retired_by_supersede(
+                transaction,
+                &record.stable_record_key,
+            )?;
         }
         let dismissed: bool = transaction.query_row(
             "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1 AND status = 'dismissed')",
