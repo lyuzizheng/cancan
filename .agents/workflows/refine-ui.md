@@ -2,7 +2,7 @@
 
 Use this when the user asks to improve visual quality, interaction quality, or UI design.
 
-Advanced UX direction, visual design, and the final designer-level review of customer-facing UI stay in-house (AGENTS.md item 9): the agent making the change works the workspace skill `cancan-ui-and-design-system` against the visual design specs and returns the design-level review verdict. The former Kimi Code CLI route is retired — that runtime has been offline since 2026-10-17.
+Kimi Code CLI leads UX direction, advanced visual design, and the final designer-level review of customer-facing UI (AGENTS.md item 9). Other agents may make UI changes with this workflow, but route advanced visual/UX work and its final visual review through Kimi Code CLI.
 
 ## Steps
 

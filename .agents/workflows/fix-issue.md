@@ -20,7 +20,7 @@ Use when the user asks to fix a filed issue. The issue text is a hypothesis, not
 
 1. Add a regression test where the project has tests (markup/static assertions via `renderToStaticMarkup` for a11y phrasing, interaction tests for behavior). A fix without a regression test is a fix without a witness.
 2. Run the issue's own verification steps plus the repo gate: `pnpm verify:fast` (or the task-appropriate subset, plus `cargo test`/`clippy` when Rust is touched).
-3. For customer-facing UI, the final designer-level review stays in-house with the implementing agent under the workspace skill `cancan-ui-and-design-system` (AGENTS.md item 9); record the design-level verdict in the PR when the change is visual.
+3. For customer-facing UI, the final designer-level review stays with Kimi Code CLI (AGENTS.md item 9); note the handoff in the PR when the change is visual.
 
 ## Step 4 — Escalate what you find
 
