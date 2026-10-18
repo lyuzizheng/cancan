@@ -1,13 +1,26 @@
 use super::tests::{open_store, prepared_repayment, seed_review_repayment};
 use super::*;
 
-const COMMITTED_VERSION_FINALITY_TRIGGER: &str = "\
+const COMMITTED_VERSION_FINALITY_INSERT_TRIGGER: &str = "\
 CREATE TRIGGER external_record_committed_version_is_final \
 BEFORE INSERT ON external_records \
 WHEN EXISTS( \
   SELECT 1 FROM external_records \
   WHERE stable_record_key = NEW.stable_record_key AND status = 'committed' \
 ) \
+BEGIN \
+  SELECT RAISE(ABORT, 'committed stable_record_key cannot gain a new version'); \
+END;";
+
+const COMMITTED_VERSION_FINALITY_UPDATE_TRIGGER: &str = "\
+CREATE TRIGGER external_record_committed_update_is_final \
+BEFORE UPDATE OF status ON external_records \
+WHEN NEW.status = 'committed' \
+  AND OLD.status <> 'committed' \
+  AND EXISTS( \
+    SELECT 1 FROM external_records \
+    WHERE stable_record_key = NEW.stable_record_key AND status = 'committed' \
+  ) \
 BEGIN \
   SELECT RAISE(ABORT, 'committed stable_record_key cannot gain a new version'); \
 END;";
@@ -42,16 +55,29 @@ fn commit_first_repayment(store: &mut ManualImportStore) {
 }
 
 /// A pre-#134 Vault accepted a successor version even though the key already
-/// had a committed one. Holding the finality trigger back is how the existing
-/// dirty-state tests rebuild that Vault.
+/// had a committed one. Holding both finality triggers back is how the existing
+/// dirty-state tests rebuild that Vault: the insert guard refuses the successor
+/// row and the update guard refuses the `status = 'committed'` write that makes
+/// it a duplicate.
 fn hold_back_committed_version_finality(store: &ManualImportStore) {
     store
         .connection
-        .execute(
-            "DROP TRIGGER external_record_committed_version_is_final",
-            [],
+        .execute_batch(
+            "DROP TRIGGER external_record_committed_version_is_final; \
+             DROP TRIGGER external_record_committed_update_is_final;",
         )
-        .expect("drop finality trigger to simulate a pre-migration dirty Vault");
+        .expect("drop finality triggers to simulate a pre-migration dirty Vault");
+}
+
+fn restore_committed_version_finality(store: &ManualImportStore) {
+    store
+        .connection
+        .execute(COMMITTED_VERSION_FINALITY_INSERT_TRIGGER, [])
+        .expect("re-create insert finality trigger");
+    store
+        .connection
+        .execute(COMMITTED_VERSION_FINALITY_UPDATE_TRIGGER, [])
+        .expect("re-create update finality trigger");
 }
 
 fn stage_reparsed_record(store: &ManualImportStore, id: &str, stable_key: &str, version: i64) {
@@ -192,10 +218,7 @@ fn lists_every_committed_version_of_a_double_committed_key_with_its_reversal_pre
         "event-duplicate",
         &["record-hsbc-cash-v2", "record-dbs-card-v2"],
     );
-    store
-        .connection
-        .execute(COMMITTED_VERSION_FINALITY_TRIGGER, [])
-        .expect("re-create finality trigger");
+    restore_committed_version_finality(&store);
 
     let rows = store
         .audit_duplicate_committed_versions()
@@ -280,10 +303,7 @@ fn reports_a_duplicate_event_that_also_carries_a_canonical_edge_as_unsafe_to_rev
         "event-duplicate",
         &["record-hsbc-cash-v2", "record-dbs-other"],
     );
-    store
-        .connection
-        .execute(COMMITTED_VERSION_FINALITY_TRIGGER, [])
-        .expect("re-create finality trigger");
+    restore_committed_version_finality(&store);
 
     let rows = store
         .audit_duplicate_committed_versions()
@@ -370,10 +390,7 @@ fn refuses_to_report_an_uncommitted_or_already_reversed_duplicate_event_as_rever
         "event-duplicate",
         &["record-hsbc-cash-v2", "record-dbs-card-v2"],
     );
-    store
-        .connection
-        .execute(COMMITTED_VERSION_FINALITY_TRIGGER, [])
-        .expect("re-create finality trigger");
+    restore_committed_version_finality(&store);
 
     store
         .connection
@@ -457,4 +474,251 @@ fn refuses_to_report_an_uncommitted_or_already_reversed_duplicate_event_as_rever
             ("record-hsbc-cash-v2", Some("committed"), true, false),
         ]
     );
+}
+
+fn finality_statuses(store: &ManualImportStore, stable_key: &str) -> Vec<(String, String)> {
+    let mut statement = store
+        .connection
+        .prepare(
+            "SELECT id, status FROM external_records \
+             WHERE stable_record_key = ?1 ORDER BY version",
+        )
+        .expect("prepare status read");
+    statement
+        .query_map([stable_key], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("read statuses")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect statuses")
+}
+
+fn assert_finality_rejection(result: rusqlite::Result<usize>, action: &str) {
+    let error = result.expect_err(action);
+    let rendered = error.to_string();
+    assert!(
+        rendered.contains("committed stable_record_key cannot gain a new version"),
+        "unexpected error: {rendered}"
+    );
+}
+
+/// Migration 0013 guarded only `INSERT`, while both commit paths flip the
+/// record to `committed` with `UPDATE`. The direct write that used to create a
+/// second committed version of one key must now fail at the schema boundary.
+#[test]
+fn schema_migration_16_blocks_a_direct_update_to_a_second_committed_version() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    seed_review_repayment(&mut store, false);
+    stage_reparsed_record(&store, "record-hsbc-cash-v2", "hsbc-card-payment", 2);
+    store
+        .connection
+        .execute(
+            "UPDATE external_records SET status = 'committed' WHERE id = 'record-hsbc-cash'",
+            [],
+        )
+        .expect("commit the first version");
+
+    assert_finality_rejection(
+        store.connection.execute(
+            "UPDATE external_records SET status = 'committed' WHERE id = 'record-hsbc-cash-v2'",
+            [],
+        ),
+        "a second committed version must be rejected",
+    );
+
+    assert_eq!(
+        finality_statuses(&store, "hsbc-card-payment"),
+        vec![
+            ("record-hsbc-cash".to_owned(), "committed".to_owned()),
+            ("record-hsbc-cash-v2".to_owned(), "review".to_owned()),
+        ]
+    );
+    let (version, amount, currency): (i64, Option<String>, Option<String>) = store
+        .connection
+        .query_row(
+            "SELECT version, amount_value, currency FROM external_records \
+             WHERE id = 'record-hsbc-cash-v2'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("read rejected row");
+    assert_eq!(version, 2);
+    assert_eq!(amount.as_deref(), Some("750.00"));
+    assert_eq!(currency.as_deref(), Some("SGD"));
+}
+
+/// One statement that commits both versions of a key is the same duplicate
+/// through a different shape; the rejected write must leave both rows in their
+/// pre-update state, so the statement rolls back as a whole.
+#[test]
+fn schema_migration_16_rejects_one_statement_that_commits_two_versions() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    seed_review_repayment(&mut store, false);
+    stage_reparsed_record(&store, "record-hsbc-cash-v2", "hsbc-card-payment", 2);
+
+    assert_finality_rejection(
+        store.connection.execute(
+            "UPDATE external_records SET status = 'committed' \
+             WHERE id IN ('record-hsbc-cash', 'record-hsbc-cash-v2')",
+            [],
+        ),
+        "committing two versions in one statement must be rejected",
+    );
+
+    assert_eq!(
+        finality_statuses(&store, "hsbc-card-payment"),
+        vec![
+            ("record-hsbc-cash".to_owned(), "review".to_owned()),
+            ("record-hsbc-cash-v2".to_owned(), "review".to_owned()),
+        ]
+    );
+}
+
+/// The guard is specific to gaining committed status: a first commit and every
+/// non-committed transition on a key with a committed sibling stay legal.
+#[test]
+fn schema_migration_16_permits_a_first_commit_and_uncommitted_transitions() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    seed_review_repayment(&mut store, false);
+    stage_reparsed_record(&store, "record-hsbc-cash-v2", "hsbc-card-payment", 2);
+
+    store
+        .connection
+        .execute(
+            "UPDATE external_records SET status = 'committed' WHERE id = 'record-dbs-card'",
+            [],
+        )
+        .expect("commit a first version");
+    store
+        .connection
+        .execute(
+            "UPDATE external_records SET status = 'committed' WHERE id = 'record-hsbc-cash'",
+            [],
+        )
+        .expect("commit another key's first version");
+    store
+        .connection
+        .execute(
+            "UPDATE external_records SET status = 'superseded' WHERE id = 'record-hsbc-cash-v2'",
+            [],
+        )
+        .expect("supersede an uncommitted sibling");
+
+    assert_eq!(
+        finality_statuses(&store, "hsbc-card-payment"),
+        vec![
+            ("record-hsbc-cash".to_owned(), "committed".to_owned()),
+            ("record-hsbc-cash-v2".to_owned(), "superseded".to_owned()),
+        ]
+    );
+}
+
+/// A Vault written before this guard can already hold two committed versions
+/// of one key. The forward migration must apply over that populated state and
+/// leave both rows untouched; it cannot repair history.
+#[test]
+fn schema_migration_16_upgrades_a_populated_vault_without_rewriting_legacy_duplicates() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let database_path = root.path().join(DATABASE_FILE_NAME);
+    let mut connection = open_encrypted_database(
+        &database_path,
+        &super::tests::KEY,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+    )
+    .expect("open encrypted database");
+    let fix_position = MIGRATIONS
+        .iter()
+        .position(|migration| migration.version == 16)
+        .expect("migration 16 is registered");
+    apply_migration_set(&mut connection, &MIGRATIONS[..fix_position])
+        .expect("apply the pre-fix schema");
+
+    connection
+        .execute(
+            "INSERT INTO money_sources(id, provider_key, display_name, source_type) \
+             VALUES ('source-legacy', 'dbs', 'DBS', 'bank')",
+            [],
+        )
+        .expect("seed money source");
+    connection
+        .execute(
+            "INSERT INTO source_documents( \
+               id, money_source_id, file_sha256, semantic_document_key, \
+               original_filename, mime_type, byte_size, file_state \
+             ) VALUES ('document-legacy', 'source-legacy', ?1, 'legacy:doc', \
+                       'legacy.csv', 'text/csv', 1, 'missing')",
+            ["a".repeat(64)],
+        )
+        .expect("seed source document");
+    connection
+        .execute(
+            "INSERT INTO parse_runs( \
+               id, source_document_id, normalization_profile_id, logical_run_key, \
+               profile_json, input_hash, status \
+             ) VALUES ('parse-legacy', 'document-legacy', 'synthetic-review-v1', \
+                       'legacy-run', '{}', '', 'validated')",
+            [],
+        )
+        .expect("seed parse run");
+    for version in 1..=2 {
+        connection
+            .execute(
+                "INSERT INTO external_records( \
+                   id, parse_run_id, source_document_id, stable_record_key, version, \
+                   status, record_type, amount_value, currency, raw_json, validation_json \
+                 ) VALUES (?1, 'parse-legacy', 'document-legacy', 'legacy-key', ?2, \
+                           'review', 'transaction', '100.00', 'SGD', '{}', '{}')",
+                params![format!("record-legacy-v{version}"), version],
+            )
+            .expect("seed legacy version");
+    }
+    for version in 1..=2 {
+        connection
+            .execute(
+                "UPDATE external_records SET status = 'committed' WHERE id = ?1",
+                [format!("record-legacy-v{version}")],
+            )
+            .expect("pre-fix commit of a legacy version");
+    }
+
+    apply_migration_set(&mut connection, MIGRATIONS).expect("apply the forward migration");
+
+    let applied: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM schema_migrations WHERE version = 16",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read applied migration");
+    assert_eq!(applied, 1);
+    let legacy_rows: Vec<(String, i64, String)> = {
+        let mut statement = connection
+            .prepare(
+                "SELECT id, version, status FROM external_records \
+                 WHERE stable_record_key = 'legacy-key' ORDER BY version",
+            )
+            .expect("prepare legacy read");
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .expect("read legacy rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect legacy rows")
+    };
+    assert_eq!(
+        legacy_rows,
+        vec![
+            ("record-legacy-v1".to_owned(), 1, "committed".to_owned()),
+            ("record-legacy-v2".to_owned(), 2, "committed".to_owned()),
+        ]
+    );
+    let guard_installed: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_master \
+             WHERE type = 'trigger' AND name = 'external_record_committed_update_is_final'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read trigger registry");
+    assert_eq!(guard_installed, 1);
 }

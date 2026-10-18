@@ -4,6 +4,17 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-10-19
+
+### Completed
+
+- Closed the BRAWUKA-771 schema gap. Migration `0013` guarded committed external-record finality with a `BEFORE INSERT` trigger only, while both commit paths flip a record to `committed` with `UPDATE external_records SET status = 'committed'` (`commit_prepared_review_group` in `database/mod.rs` and the synthetic repository path in `packages/db/src/repository.ts`), so a direct SQL update could still create a second committed version of one `stable_record_key`. Forward migration `packages/db/migrations/0016_committed_update_final.sql` adds `external_record_committed_update_is_final`, a `BEFORE UPDATE OF status` guard that aborts the write when the row's key already has a committed version; the first commit and every non-committed transition stay legal.
+- The migration is defensive only and never repairs history: it applies over a populated Vault that already holds two committed versions of a key and leaves both rows untouched, matching `0005-review-and-commit-policy.md`'s forward-only finality rule. The intentionally guard-free historical audit fixtures now hold back both finality triggers, and the two hardcoded migration-version assertions in `intake_migration_tests.rs` moved to `16`.
+
+### Next
+
+- BRAWUKA-771 is open for the two non-author approvals on PR; no owner action pending from it.
+
 ## 2026-09-21
 
 ### Completed
