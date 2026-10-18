@@ -28,10 +28,31 @@ impl VaultRuntime {
     }
 
     /// Writes the redacted export the preview described to a user-chosen path.
+    ///
+    /// The file is a share artifact, so it is written exactly like a source
+    /// copy: outside the Vault, and only as a complete file. A rejected
+    /// destination and a failed write both leave the destination's own bytes
+    /// untouched.
     pub(super) fn save_operational_diagnostics(
         &self,
         destination: &Path,
     ) -> Result<(), RuntimeError> {
+        let vault_root = self.inner.root.canonicalize().map_err(|error| {
+            runtime_failure(
+                self,
+                "resolve_diagnostics_vault_root",
+                "diagnostics_export_location_invalid",
+                &error,
+            )
+        })?;
+        match destination_outside_vault(&vault_root, destination) {
+            Ok(true) => {}
+            Ok(false) => return Err(RuntimeError::new("diagnostics_export_location_invalid")),
+            // The parent does not resolve, so containment cannot be shown — and
+            // nothing can be written there either: the export below fails for
+            // the same reason and records the real error.
+            Err(_) => {}
+        }
         let export = {
             let store = self.store()?;
             let store = store
@@ -43,7 +64,7 @@ impl VaultRuntime {
                 "diagnostics_unavailable",
             )?
         };
-        fs::write(destination, export.as_bytes()).map_err(|error| {
+        write_export_atomically(destination, export.as_bytes()).map_err(|error| {
             runtime_failure(
                 self,
                 "operational_diagnostics_export",

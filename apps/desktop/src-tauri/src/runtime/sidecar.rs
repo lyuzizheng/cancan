@@ -719,6 +719,26 @@ pub(super) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     result
 }
 
+/// Whether an export may be written to `destination` without touching the
+/// Vault: `vault_root` is already resolved.
+///
+/// An export is a share artifact, so it never lands inside the Vault — not
+/// through the directory that would hold the file, and not through a link that
+/// resolves into it. `Err` means the destination's parent could not be
+/// resolved, so containment cannot be shown; a write there fails for the same
+/// reason and reports the real error.
+pub(super) fn destination_outside_vault(vault_root: &Path, destination: &Path) -> io::Result<bool> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing parent directory"))?;
+    if fs::canonicalize(parent)?.starts_with(vault_root) {
+        return Ok(false);
+    }
+    Ok(!destination
+        .canonicalize()
+        .is_ok_and(|path| path.starts_with(vault_root)))
+}
+
 pub(super) fn ensure_copy_outside_vault(
     runtime: &VaultRuntime,
     vault_root: &Path,
@@ -729,19 +749,11 @@ pub(super) fn ensure_copy_outside_vault(
     };
     let vault_root =
         fs::canonicalize(vault_root).map_err(|error| failed("resolve_vault_root", &error))?;
-    let parent = destination
-        .parent()
-        .ok_or_else(|| RuntimeError::new("source_copy_location_invalid"))?;
-    let parent =
-        fs::canonicalize(parent).map_err(|error| failed("resolve_copy_destination", &error))?;
-    if parent.starts_with(&vault_root)
-        || destination
-            .canonicalize()
-            .is_ok_and(|path| path.starts_with(&vault_root))
-    {
-        return Err(RuntimeError::new("source_copy_location_invalid"));
+    match destination_outside_vault(&vault_root, destination) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(RuntimeError::new("source_copy_location_invalid")),
+        Err(error) => Err(failed("resolve_copy_destination", &error)),
     }
-    Ok(())
 }
 
 pub(super) fn write_export_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
