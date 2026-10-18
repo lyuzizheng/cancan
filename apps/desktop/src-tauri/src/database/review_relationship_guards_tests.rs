@@ -6,6 +6,73 @@ use super::*;
 /// A forged invalid proposal built against the staged pair it describes.
 type InvalidShapeBuilder = Box<dyn Fn(&mut ManualImportStore) -> CorePreparedReviewEvent>;
 
+/// Enqueues, claims, and prepares the one accepted pair under test, so every
+/// commit-side case starts from the same prepared baseline: one group and no
+/// outcomes.
+fn prepare_single_group(
+    store: &mut ManualImportStore,
+    review_item_ids: [&str; 2],
+) -> (ClaimedReviewBatch, CommitReviewGroup) {
+    let job = store
+        .enqueue_commit_review_batch(&review_item_ids.map(str::to_owned))
+        .expect("enqueue selected relationship");
+    let claimed = store
+        .claim_review_batch(&job.job_id, "test-worker")
+        .expect("claim batch")
+        .expect("queued job");
+    let (mut groups, outcomes) = store
+        .prepare_commit_review_groups(&claimed)
+        .expect("prepare selected relationship");
+    assert!(outcomes.is_empty(), "{outcomes:?}");
+    assert_eq!(groups.len(), 1, "one accepted pair prepares one group");
+    (claimed, groups.remove(0))
+}
+
+/// Everything a successful prepared-group commit writes: the ledger event,
+/// its legs, and its match edges, the two committed record statuses, the
+/// resolved review items, the committed relationship, and the commit audit
+/// entry. Reading it before and after a refused commit proves the failed
+/// attempt left no write of any kind behind.
+#[derive(Debug, PartialEq)]
+struct CommitWriteSurface {
+    ledger_events: i64,
+    ledger_legs: i64,
+    match_edges: i64,
+    committed_records: i64,
+    resolved_review_items: i64,
+    relationship_status: String,
+    commit_audits: i64,
+}
+
+impl CommitWriteSurface {
+    fn read(store: &ManualImportStore) -> Self {
+        store
+            .connection
+            .query_row(
+                "SELECT (SELECT count(*) FROM ledger_events), \
+                        (SELECT count(*) FROM ledger_legs), \
+                        (SELECT count(*) FROM match_edges), \
+                        (SELECT count(*) FROM external_records WHERE status = 'committed'), \
+                        (SELECT count(*) FROM review_items WHERE status = 'resolved'), \
+                        (SELECT status FROM review_relationships), \
+                        (SELECT count(*) FROM audit_log WHERE action = 'review_batch_committed')",
+                [],
+                |row| {
+                    Ok(Self {
+                        ledger_events: row.get(0)?,
+                        ledger_legs: row.get(1)?,
+                        match_edges: row.get(2)?,
+                        committed_records: row.get(3)?,
+                        resolved_review_items: row.get(4)?,
+                        relationship_status: row.get(5)?,
+                        commit_audits: row.get(6)?,
+                    })
+                },
+            )
+            .expect("read the commit write surface")
+    }
+}
+
 /// Q06: the host enforces the full relationship contract at acceptance and
 /// commit — shared currency, distinct accounts, per-type window, valid
 /// account kinds, and exact non-zero equal magnitude — instead of trusting a
@@ -259,25 +326,14 @@ fn refuses_a_relationship_that_left_contract_between_accept_and_commit() {
             [],
         )
         .expect("move the staged side out of contract");
-    let job = store
-        .enqueue_commit_review_batch(&[
-            "review-record-hsbc-transfer".to_owned(),
-            "review-record-dbs-savings".to_owned(),
-        ])
-        .expect("enqueue selected relationship");
-    let claimed = store
-        .claim_review_batch(&job.job_id, "test-worker")
-        .expect("claim batch")
-        .expect("queued job");
-    let (groups, outcomes) = store
-        .prepare_commit_review_groups(&claimed)
-        .expect("prepare selected relationship");
-    assert!(outcomes.is_empty(), "{outcomes:?}");
-    assert_eq!(groups.len(), 1);
+    let (claimed, group) = prepare_single_group(
+        &mut store,
+        ["review-record-hsbc-transfer", "review-record-dbs-savings"],
+    );
     let mut forged = prepared_transfer("250.00");
     forged.legs[0].account_id = "account-hsbc-cash".to_owned();
     let refused = store
-        .commit_prepared_review_group(&claimed, &groups[0], &forged)
+        .commit_prepared_review_group(&claimed, &group, &forged)
         .expect("refuse the out-of-contract commit");
     assert_eq!(refused.status, ReviewBatchGroupStatus::StillNeedsReview);
     assert_eq!(
@@ -300,6 +356,126 @@ fn refuses_a_relationship_that_left_contract_between_accept_and_commit() {
     assert_eq!(
         status, "accepted",
         "the accepted row stays for a valid retry"
+    );
+}
+
+/// Q06: the commit re-checks the per-type window on the stored sides, so a
+/// transfer that was accepted while valid but whose candidate date moved
+/// beyond the three-day window before commit stays in Review with no write.
+/// The legs remain valid — distinct accounts, one shared currency, exact
+/// non-zero equal magnitudes with opposite signs — and they carry no date, so
+/// only the commit-side relationship guard can refuse this drift.
+#[test]
+fn refuses_a_relationship_whose_side_left_the_transfer_window_before_commit() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    seed_review_transfer(&mut store, "250.00");
+    let accepted = store
+        .accept_review_relationship(
+            "review-record-hsbc-transfer",
+            1,
+            "record-dbs-savings",
+            1,
+            &prepared_transfer("250.00"),
+        )
+        .expect("accept the in-window transfer");
+    assert_eq!(
+        (accepted.status, accepted.reason),
+        (ReviewMutationStatus::RelationshipAccepted, None),
+    );
+    // Ten days after the anchor, beyond the three-day transfer window; the
+    // accounts, deltas, signs, and currency stay exactly as accepted.
+    store
+        .connection
+        .execute(
+            "UPDATE external_records SET posted_on = '2026-08-12' \
+             WHERE id = 'record-dbs-savings'",
+            [],
+        )
+        .expect("move the staged side out of the transfer window");
+    let (claimed, group) = prepare_single_group(
+        &mut store,
+        ["review-record-hsbc-transfer", "review-record-dbs-savings"],
+    );
+    let baseline = CommitWriteSurface::read(&store);
+    assert_eq!(
+        baseline.relationship_status, "accepted",
+        "the prepared baseline is the accepted pair"
+    );
+    let refused = store
+        .commit_prepared_review_group(&claimed, &group, &prepared_transfer("250.00"))
+        .expect("refuse the out-of-window commit");
+    assert_eq!(
+        (refused.status, refused.reason.as_deref()),
+        (
+            ReviewBatchGroupStatus::StillNeedsReview,
+            Some("relationship_amounts_unbalanced")
+        ),
+    );
+    assert_eq!(
+        CommitWriteSurface::read(&store),
+        baseline,
+        "an out-of-window commit writes nothing"
+    );
+}
+
+/// Q06: the commit re-checks the repayment kind shape on the stored sides, so
+/// a repayment that was accepted while valid but whose card account was
+/// reclassified out of `credit_card` before commit stays in Review with no
+/// write. Both legs keep two distinct accounts, two equal decreases, and one
+/// shared currency, so only the commit-side relationship guard can refuse
+/// this drift.
+#[test]
+fn refuses_a_relationship_whose_side_left_the_repayment_kind_contract_before_commit() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let mut store = open_store(root.path());
+    seed_review_repayment(&mut store, false);
+    let accepted = store
+        .accept_review_relationship(
+            "review-record-hsbc-cash",
+            1,
+            "record-dbs-card",
+            1,
+            &prepared_repayment(),
+        )
+        .expect("accept the valid repayment");
+    assert_eq!(
+        (accepted.status, accepted.reason),
+        (ReviewMutationStatus::RelationshipAccepted, None),
+    );
+    // Both sides become cash-like once the card side is reclassified; the
+    // accounts, deltas, signs, and currency stay exactly as accepted.
+    store
+        .connection
+        .execute(
+            "UPDATE accounts SET account_type = 'deposit_account' \
+             WHERE id = 'account-dbs-card'",
+            [],
+        )
+        .expect("reclassify the card side out of the repayment contract");
+    let (claimed, group) = prepare_single_group(
+        &mut store,
+        ["review-record-hsbc-cash", "review-record-dbs-card"],
+    );
+    let baseline = CommitWriteSurface::read(&store);
+    assert_eq!(
+        baseline.relationship_status, "accepted",
+        "the prepared baseline is the accepted pair"
+    );
+    let refused = store
+        .commit_prepared_review_group(&claimed, &group, &prepared_repayment())
+        .expect("refuse the kind-invalid commit");
+    assert_eq!(
+        (refused.status, refused.reason.as_deref()),
+        (
+            ReviewBatchGroupStatus::StillNeedsReview,
+            Some("relationship_amounts_unbalanced")
+        ),
+    );
+    assert_eq!(
+        CommitWriteSurface::read(&store),
+        baseline,
+        "a kind-invalid commit writes nothing"
     );
 }
 

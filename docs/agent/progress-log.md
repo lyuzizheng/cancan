@@ -4,6 +4,19 @@ Use this file to keep future AI coding agents oriented. Add a dated entry whenev
 
 Entries for 2026-07-30 and earlier live in [`progress-log-archive.md`](./progress-log-archive.md).
 
+## 2026-10-19 (review)
+
+### Completed
+
+- Closed the commit-side relationship-guard coverage gap in `apps/desktop/src-tauri/src/database/review_relationship_guards_tests.rs`. The only commit-side refusal case was the same-account drift whose legs fail `review_legs_balance`; two leg-valid drift cases now prove `review_relationship_holds` decides on the stored sides by itself: a transfer whose candidate date moves from `2026-08-03` to `2026-08-12` after acceptance (ten days, beyond the three-day transfer window) and a repayment whose card account is reclassified out of `credit_card` after acceptance. Both keep distinct accounts, one shared currency, and exact non-zero equal magnitudes with the per-type sign shape, and legs carry neither date nor account type.
+- Both tests read one `CommitWriteSurface` before and after the refused commit — `ledger_events`, `ledger_legs`, `match_edges`, committed record statuses, resolved review items, the relationship row, and the commit audit entry — and assert it is unchanged while the pair stays `accepted` for a valid retry. A shared `prepare_single_group` helper gives all three commit-side cases the same prepared baseline.
+- Guard isolation: with only the commit-side `review_relationship_holds` call disabled (leg checks and every other guard active), exactly the two new tests failed with `left: (Committed, None)` — the invalid drift committed — while the six existing guard tests, including the same-account drift case, stayed green. The temporary mutation was reverted and `git diff` on `database/mod.rs` is empty.
+- Gates: focused `cargo test --locked --lib database::review_relationship_guards_tests` 8/8, `cargo check --locked`, `cargo test --locked` (350 passed, 1 ignored, was 348), `pnpm verify`, `.agents/scripts/agent-preflight.sh` — pass. Spec 0005 already owns the window and kind rules, so the change is test-only.
+
+### Next
+
+- BRAWUKA-910 is open for its two non-author approvals on the frozen head.
+
 ## 2026-10-19 (parsers)
 
 ### Completed
