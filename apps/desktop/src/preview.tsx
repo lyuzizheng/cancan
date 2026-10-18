@@ -8,6 +8,7 @@
  * sources-inbox-reauth, document-viewer, document-preview, document-unlock,
  * document-unlock-update, document-unlock-unconfirmed,
  * document-unlock-async, document-unlock-async-saved,
+ * document-unlock-async-unconfirmed,
  * delete-confirm, vault-gate-loading, vault-gate-create,
  * vault-gate-locked, primitives, primitives-dialog).
  * Not part of the shipped bundle: `vite build` only bundles index.html.
@@ -411,7 +412,8 @@ interface PreviewStatementUnlockCall {
  * arguments the renderer sent. The recorder keeps only the password's length;
  * the walkthrough never retains the typed value.
  */
-function asyncUnlockPreviewApi(saved: boolean) {
+function asyncUnlockPreviewApi(mode: "confirmed" | "saved" | "unconfirmed") {
+  const saved = mode === "saved";
   const calls: PreviewStatementUnlockCall[] = [];
   (
     window as typeof window & { __previewStatementUnlockCalls?: PreviewStatementUnlockCall[] }
@@ -442,7 +444,9 @@ function asyncUnlockPreviewApi(saved: boolean) {
           : [];
       case "statement_password_document_context":
         await delay(1_500);
-        return { hasSavedPassword: saved, moneySourceDisplayName: "DBS", moneySourceId: "source-dbs" };
+        return mode === "unconfirmed"
+          ? { hasSavedPassword: false, moneySourceDisplayName: null, moneySourceId: null }
+          : { hasSavedPassword: saved, moneySourceDisplayName: "DBS", moneySourceId: "source-dbs" };
       case "try_saved_statement_passwords":
         await delay(1_500);
         return "invalid";
@@ -497,8 +501,19 @@ function Preview() {
     return <App api={offerPreviewApi(remembered)} />;
   }
 
-  if (state === "document-unlock-async" || state === "document-unlock-async-saved") {
-    return <App api={asyncUnlockPreviewApi(state === "document-unlock-async-saved")} />;
+  if (state === "document-unlock-async" || state === "document-unlock-async-saved"
+    || state === "document-unlock-async-unconfirmed") {
+    return (
+      <App
+        api={asyncUnlockPreviewApi(
+          state === "document-unlock-async-saved"
+            ? "saved"
+            : state === "document-unlock-async-unconfirmed"
+              ? "unconfirmed"
+              : "confirmed",
+        )}
+      />
+    );
   }
 
   let content = null;
