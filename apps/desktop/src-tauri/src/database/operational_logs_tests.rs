@@ -2,7 +2,8 @@ use super::database_test_support::import_source;
 use super::tests::{KEY, open_store};
 use super::*;
 use crate::diagnostics::{
-    JobFailureDetail, OPERATIONAL_LOG_RETENTION_DAYS, OperationalLogEntry, redact,
+    JobFailureDetail, MAX_REDACTED_CHARS, OPERATIONAL_LOG_RETENTION_DAYS, OperationalLogEntry,
+    redact,
 };
 use std::io;
 use zeroize::Zeroizing;
@@ -226,6 +227,170 @@ fn redaction_removes_dot_separated_tokens_and_national_id_style_identifiers() {
     let versioned = redact("connector protocol 1.2.3 on docs.example.com");
     assert!(versioned.contains("1.2.3"), "{versioned}");
     assert!(versioned.contains("docs.example.com"), "{versioned}");
+}
+
+#[test]
+fn redaction_removes_one_digit_amounts_and_every_decimal_scale() {
+    // 888-F02: the whole part's first digit was never counted and the fraction
+    // had to be exactly two digits, so `1.23` and `12.345` were written verbatim
+    // into the stored row, the preview, and the export.
+    for amount in [
+        "1.23",
+        "12.345",
+        "0.000001",
+        "0.1234567",
+        "-7.5",
+        "+0.25",
+        "0.5",
+        "1,234.567",
+    ] {
+        let redacted = redact(&format!("balance {amount} on the statement"));
+        assert!(!redacted.contains(amount), "{amount}: {redacted}");
+        assert!(redacted.contains("<amount>"), "{amount}: {redacted}");
+        assert!(
+            redacted.contains("on the statement"),
+            "{amount}: {redacted}"
+        );
+    }
+
+    // A scale long enough that the digits form a reference number on their own
+    // is redacted through the number placeholder instead.
+    let long_scale = redact("fund units 0.1234567890123456");
+    assert!(!long_scale.contains("0.1234567890123456"), "{long_scale}");
+    assert!(long_scale.ends_with("<number>"), "{long_scale}");
+}
+
+#[test]
+fn redaction_removes_eight_digit_account_numbers_and_short_secrets() {
+    // 888-F02: eight digits were below the nine-digit bar and `secret42` was
+    // below the length bar of every rule, so both travelled verbatim.
+    let redacted = redact("account 12345678 password secret42 reference 1234567890");
+    for secret in ["12345678", "secret42", "1234567890"] {
+        assert!(!redacted.contains(secret), "{redacted}");
+    }
+    assert!(redacted.contains("<number>"), "{redacted}");
+    assert!(redacted.contains("<token>"), "{redacted}");
+    assert!(redacted.contains("account"), "{redacted}");
+    assert!(redacted.contains("password"), "{redacted}");
+}
+
+#[test]
+fn redaction_keeps_versions_addresses_dates_and_counts_readable() {
+    // Over-redaction would make the export useless without protecting
+    // anything: a version, a host, an address, a date, and a retry count are
+    // context the user needs to read the report.
+    let context = redact(
+        "connector protocol 1.2.3 on docs.example.com, host 192.168.1.1, \
+         statement dated 2026-10-18 or 2026.10.18, retried 3 times",
+    );
+    for readable in [
+        "1.2.3",
+        "docs.example.com",
+        "192.168.1.1",
+        "2026-10-18",
+        "2026.10.18",
+        "retried 3 times",
+    ] {
+        assert!(context.contains(readable), "{readable} in {context}");
+    }
+}
+
+#[test]
+fn redaction_handles_unicode_and_the_maximum_length() {
+    // Unicode prose stays and the values around it are redacted like ASCII
+    // ones: the predicates never split a multibyte character, they just do not
+    // recognise one as a digit.
+    let redacted = redact("转账失败 账户 12345678 余额 1.23 口令 secret42");
+    for secret in ["1.23", "12345678", "secret42"] {
+        assert!(!redacted.contains(secret), "{redacted}");
+    }
+    assert!(redacted.contains("转账失败"), "{redacted}");
+
+    // A multibyte word is context, not a value, even though its byte length is
+    // above the credential bar.
+    let multibyte = redact("口令 密码密码密码密码 12345678");
+    assert!(multibyte.contains("密码密码密码密码"), "{multibyte}");
+    assert!(!multibyte.contains("12345678"), "{multibyte}");
+
+    // A value longer than the cap is replaced whole rather than truncated.
+    let long_value = redact(&format!("1.{}", "0".repeat(400)));
+    assert!(!long_value.contains('0'), "{long_value}");
+
+    // Prose longer than the cap ends on a character boundary, not a byte one.
+    let capped = redact(&"数据表".repeat(200));
+    assert_eq!(capped.chars().count(), MAX_REDACTED_CHARS + 1);
+    assert!(capped.ends_with('…'), "{capped}");
+    assert!(
+        capped.trim_end_matches('…').ends_with('据'),
+        "the cap cuts between characters: {capped}"
+    );
+}
+
+#[test]
+fn the_q08_gap_values_never_reach_a_stored_row_a_preview_or_an_export() {
+    let root = tempfile::tempdir().expect("temporary Vault");
+    let store = open_store(root.path());
+    let failure = io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "statement rejected at 08:15: balance 1.23 EUR, then 12.345 SGD, \
+         account 12345678, password secret42, fund units 0.000001, \
+         long scale 1.234567890123, 金额 9.87",
+    );
+    store
+        .record_operational_log(&OperationalLogEntry::failure(
+            "documents.store_prepared",
+            "import_failed",
+            &failure,
+        ))
+        .expect("record failure");
+    let secrets = [
+        "1.23",
+        "12.345",
+        "12345678",
+        "secret42",
+        "0.000001",
+        "1.234567890123",
+        "9.87",
+    ];
+
+    // The stored row: redaction runs at write, so the durable column never held
+    // the values in the first place.
+    let (detail, cause): (String, Option<String>) = store
+        .connection
+        .query_row(
+            "SELECT detail, cause FROM operational_logs ORDER BY id DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read the stored row");
+    for secret in secrets {
+        assert!(!detail.contains(secret), "{secret} in {detail}");
+        if let Some(cause) = &cause {
+            assert!(!cause.contains(secret), "{secret} in {cause}");
+        }
+    }
+    assert!(detail.contains("<amount>"), "{detail}");
+    assert!(detail.contains("<number>"), "{detail}");
+    assert!(detail.contains("<token>"), "{detail}");
+    assert!(detail.contains("statement rejected"), "{detail}");
+    assert!(detail.contains("08:15"), "{detail}");
+
+    // The preview and the export carry the same redacted lines.
+    let preview = store
+        .operational_diagnostics_preview()
+        .expect("preview recorded failures");
+    let sample = preview.sample_lines.join("\n");
+    let export = store
+        .operational_diagnostics_export()
+        .expect("export the diagnostics");
+    for secret in secrets {
+        assert!(!sample.contains(secret), "{secret} in {sample}");
+        assert!(!export.contains(secret), "{secret} in {export}");
+    }
+    assert!(sample.contains("import_failed"), "{sample}");
+    assert!(sample.contains("statement rejected"), "{sample}");
+    assert!(export.contains("amounts, filenames"), "{export}");
+    assert!(export.contains("statement rejected"), "{export}");
 }
 
 #[test]
