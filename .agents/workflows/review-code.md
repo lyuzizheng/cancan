@@ -2,6 +2,12 @@
 
 Use this when the user asks for review, risk analysis, or PR feedback.
 
+## Review authority
+
+- Designated reviewer: **CanCan Explorer & Reviewer** (Multica agent id `bf742a12-fa35-4276-897f-bc20a7542d6a`).
+- When that reviewer is unavailable or authored the patch, the substitute is the workspace reviewer-of-record: **General Manager** (Multica agent id `9b38f599-2246-442c-9399-e7b1301acc05`; renamed from `CEO` and absorbed Chief of Staff on 2026-10-18).
+- This designation is authority-critical: when it changes, update this section in the same commit as the change it records.
+
 ## Inputs and readiness
 
 1. Identify the implementation slice ID and review base.

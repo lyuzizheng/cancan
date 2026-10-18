@@ -165,8 +165,7 @@ stays the local narrative log; the issue is the canonical status.
   against it. For a new spec use `.agents/scripts/new-spec.sh`; keep the
   required spec format (Goal / Stable decisions / Data-API-UI behavior /
   Edge cases / Tests-acceptance criteria).
-- Frontend behavior governed by the visual design specs is routed through
-  Kimi Code CLI (AGENTS.md §9) — the issue tracks it, the executor is Kimi.
+- Frontend behavior governed by the visual design specs is executed in-house by the implementing agent (AGENTS.md §9) under the workspace skill `cancan-ui-and-design-system` — the issue tracks it, the same agent delivers it and returns the design-level review verdict.
 - Follow `development-cycle.md` verification order sized to the tier; run
   focused checks while editing, freeze the cumulative diff before required
   review, run the final app gate once after review passes.
@@ -185,9 +184,14 @@ stays the local narrative log; the issue is the canonical status.
 ### Stage 4 — Pull request
 
 - Open the PR with the template (`.github/PULL_REQUEST_TEMPLATE.md`):
-  `Closes #<n>` in the Links section plus the spec section the PR changes.
-  Keep the PR draft until the final CI evidence is green.
-- Conventional title matching the issue: `feat(…)` / `fix(…)` / `refactor(…)` …
+  a standalone `Closes BRAWUKA-N` line (own line, no bullet or leading
+  text; `N` = the Multica issue this PR delivers) plus `Closes: #<n>` for
+  the GitHub issue, plus the spec section the PR changes. Keep the PR
+  draft until the final CI evidence is green.
+- Title: `BRAWUKA-N: <type>(<area>): <subject>` — the Multica identifier
+  prefix followed by the conventional subject matching the issue
+  (`feat(…)` / `fix(…)` / `refactor(…)` …). Multica links the PR by that
+  title, and the standalone body line closes the issue on merge.
 - The spec change is in this PR — never a separate spec-only PR before code.
 
 ### Stage 5 — Merge and close
