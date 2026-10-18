@@ -3,7 +3,10 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SavedStatementPasswordResult } from "./command-contracts";
+import type {
+  SavedStatementPasswordResult,
+  StatementPasswordUnlockContext,
+} from "./command-contracts";
 import {
   bodyDialog,
   click,
@@ -11,6 +14,7 @@ import {
   container,
   createApi,
   deferred,
+  dialogButton,
   dialogInput,
   enterDialogInput,
   installAppHarness,
@@ -346,6 +350,132 @@ describe("App statement-unlock orchestration", () => {
       "Confirm this statement’s Money Source before saving its password.",
     );
     expect(container.textContent).not.toContain("Statement unlocked");
+  });
+
+  it("moves focus into the password field once the deferred confirmed context resolves", async () => {
+    const context = deferred<StatementPasswordUnlockContext>();
+    const unlockSourceDocument = vi.fn(async (): Promise<void> => undefined);
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [protectedDocument]),
+      statementPasswordDocumentContext: vi.fn(() => context.promise),
+      unlockSourceDocument,
+    });
+
+    await mount(api, "sources");
+    await click("Unlock");
+
+    // While the host confirms the owner there is no password field yet. The
+    // prompt holds focus on its own panel, never on Close, whose Enter would
+    // silently cancel the unlock.
+    expect(bodyDialog().querySelector("#statement-password")).toBeNull();
+    expect(document.activeElement).not.toBe(dialogButton("Close"));
+    expect(bodyDialog().contains(document.activeElement)).toBe(true);
+
+    await act(async () => {
+      context.resolve(confirmedDbs);
+      await settle();
+    });
+
+    expect(document.activeElement).toBe(dialogInput("#statement-password"));
+
+    // Immediate typing reaches the field, and Enter runs the form's implicit
+    // submission: one session-only unlock, no Keychain write.
+    await enterDialogInput("#statement-password", "current-password");
+    await act(async () => {
+      dialogInput("#statement-password").closest("form")!.requestSubmit();
+      await settle();
+    });
+
+    expect(unlockSourceDocument).toHaveBeenCalledTimes(1);
+    expect(unlockSourceDocument).toHaveBeenLastCalledWith(
+      "document-1",
+      null,
+      "current-password",
+      false,
+    );
+    noBodyDialog();
+    expect(container.textContent).toContain("Statement unlocked");
+  });
+
+  it("moves focus into the password field once the deferred unconfirmed context resolves", async () => {
+    const context = deferred<StatementPasswordUnlockContext>();
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [protectedDocument]),
+      statementPasswordDocumentContext: vi.fn(() => context.promise),
+    });
+
+    await mount(api, "sources");
+    await click("Unlock");
+
+    await act(async () => {
+      context.resolve({
+        hasSavedPassword: false,
+        moneySourceDisplayName: null,
+        moneySourceId: null,
+      });
+      await settle();
+    });
+
+    expect(document.activeElement).toBe(dialogInput("#statement-password"));
+    expect(dialogButtonLabels()).toContain("Use once");
+    expect(dialogButtonLabels()).not.toContain("Save for this source");
+  });
+
+  it("claims the password field once the in-flight saved-password pass finishes", async () => {
+    const savedPassword = deferred<SavedStatementPasswordResult>();
+    const api = createApi({
+      listStatementPasswordSources: vi.fn(async () => [{
+        displayName: "DBS",
+        hasSavedPassword: true,
+        moneySourceId: "source-dbs",
+      }]),
+      listUnassignedSourceDocuments: vi.fn(async () => [protectedDocument]),
+      statementPasswordDocumentContext: vi.fn(async () => ({
+        ...confirmedDbs,
+        hasSavedPassword: true,
+      })),
+      trySavedStatementPasswords: vi.fn(() => savedPassword.promise),
+    });
+
+    await mount(api, "sources");
+    await click("Unlock");
+
+    // While the host owns the pass the field is mounted but disabled, so focus
+    // is not parked on a control that cannot take a password.
+    expect(dialogInput("#statement-password").disabled).toBe(true);
+    expect(document.activeElement).not.toBe(dialogInput("#statement-password"));
+
+    await act(async () => {
+      savedPassword.resolve("invalid");
+      await settle();
+    });
+
+    expect(dialogInput("#statement-password").disabled).toBe(false);
+    expect(document.activeElement).toBe(dialogInput("#statement-password"));
+  });
+
+  it("keeps a dismissed prompt closed and never steals focus when its context resolves late", async () => {
+    const context = deferred<StatementPasswordUnlockContext>();
+    const api = createApi({
+      listUnassignedSourceDocuments: vi.fn(async () => [protectedDocument]),
+      statementPasswordDocumentContext: vi.fn(() => context.promise),
+    });
+
+    await mount(api, "sources");
+    await click("Unlock");
+    await clickDialogButton("Close");
+    noBodyDialog();
+
+    await act(async () => {
+      context.resolve(confirmedDbs);
+      await settle();
+    });
+
+    // The late resolution exits on the request fence: no prompt, no field, and
+    // no focus claim — the page keeps the focus the dismissal left it with.
+    noBodyDialog();
+    expect(document.body.querySelector("#statement-password")).toBeNull();
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("ignores a cancelled prompt's in-flight saved-password pass", async () => {

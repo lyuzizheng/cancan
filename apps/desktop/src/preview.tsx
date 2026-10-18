@@ -7,6 +7,7 @@
  * sources-inbox-disabled, sources-inbox-enabled,
  * sources-inbox-reauth, document-viewer, document-preview, document-unlock,
  * document-unlock-update, document-unlock-unconfirmed,
+ * document-unlock-async, document-unlock-async-saved,
  * delete-confirm, vault-gate-loading, vault-gate-create,
  * vault-gate-locked, primitives, primitives-dialog).
  * Not part of the shipped bundle: `vite build` only bundles index.html.
@@ -389,6 +390,96 @@ function navigate(view: AppView) {
   window.location.search = `?state=${state}`;
 }
 
+/** Records the unlock calls the synthetic host observed, for browser probes. */
+interface PreviewStatementUnlockCall {
+  documentId: string;
+  moneySourceId: string | null;
+  /** Only the length: the walkthrough never retains the typed value. */
+  passwordLength: number;
+  updateSavedPassword: boolean;
+}
+
+/**
+ * Interactive asynchronous unlock walkthrough. The real `App` runs against a
+ * synthetic host whose statement-password context — and, for `-saved`, the
+ * host-owned saved-password pass — resolves on a timer, so the prompt's
+ * deferred-focus path is inspectable in a browser instead of a static
+ * fixture. `?state=document-unlock-async` covers a host-confirmed owner with
+ * no saved password; `-saved` adds the delayed pass whose field stays disabled
+ * until it finishes. Every unlock call lands on
+ * `window.__previewStatementUnlockCalls` so keyboard probes can read the exact
+ * arguments the renderer sent. The recorder keeps only the password's length;
+ * the walkthrough never retains the typed value.
+ */
+function asyncUnlockPreviewApi(saved: boolean) {
+  const calls: PreviewStatementUnlockCall[] = [];
+  (
+    window as typeof window & { __previewStatementUnlockCalls?: PreviewStatementUnlockCall[] }
+  ).__previewStatementUnlockCalls = calls;
+  const delay = (ms: number) =>
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+
+  const respond = async (
+    command: string,
+    args?: Record<string, unknown>,
+  ): Promise<unknown> => {
+    switch (command) {
+      case "vault_access_status":
+        return { recoveryConfigured: true, rememberedOnThisMac: false, status: "unlocked" };
+      case "vault_status":
+        return "unlocked";
+      case "lock_vault":
+        return "locked";
+      case "list_unassigned_source_documents":
+        return dbsDocuments.filter((document) => document.documentId === "document-2");
+      case "list_money_sources":
+        return previewMoneySources;
+      case "list_statement_password_sources":
+        return saved
+          ? [{ displayName: "DBS", hasSavedPassword: true, moneySourceId: "source-dbs" }]
+          : [];
+      case "statement_password_document_context":
+        await delay(1_500);
+        return { hasSavedPassword: saved, moneySourceDisplayName: "DBS", moneySourceId: "source-dbs" };
+      case "try_saved_statement_passwords":
+        await delay(1_500);
+        return "invalid";
+      case "unlock_source_document":
+        calls.push({
+          documentId: String(args?.documentId ?? ""),
+          moneySourceId: typeof args?.moneySourceId === "string" ? args.moneySourceId : null,
+          passwordLength: typeof args?.password === "string" ? args.password.length : 0,
+          updateSavedPassword: args?.updateSavedPassword === true,
+        });
+        return undefined;
+      case "list_review_items":
+        return reviewItems;
+      case "get_money_overview":
+        return moneyOverview;
+      case "list_recent_activity":
+        return recentActivity;
+      case "list_tasks":
+        return commandCenterTasks;
+      case "intake_notification_settings":
+        return { enabled: false, permission: "not_determined" };
+      case "local_inbox_status":
+        return inboxDisabled;
+      case "take_background_intake_route":
+        return null;
+      default:
+        return [];
+    }
+  };
+
+  return createVaultApi(
+    ((command: string, args?: Record<string, unknown>) =>
+      respond(command, args)) as TauriInvoke,
+    async () => () => undefined,
+  );
+}
+
 function Preview() {
   const params = new URLSearchParams(window.location.search);
   const state = params.get("state") ?? "overview";
@@ -404,6 +495,10 @@ function Preview() {
         ? null
         : false;
     return <App api={offerPreviewApi(remembered)} />;
+  }
+
+  if (state === "document-unlock-async" || state === "document-unlock-async-saved") {
+    return <App api={asyncUnlockPreviewApi(state === "document-unlock-async-saved")} />;
   }
 
   let content = null;

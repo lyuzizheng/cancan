@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 import {
   Button,
   Dialog,
@@ -60,6 +62,31 @@ export function DocumentUnlock({
   // host confirmed for this document; the renderer never picks an owner.
   const canSaveForSource = context?.moneySourceId != null;
   const sourceLabel = confirmedSourceName ?? "this statement’s Money Source";
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  // The host context — and the bounded saved-password pass behind it — arrives
+  // asynchronously, so this dialog first paints without a usable password
+  // field. Once the field exists and is enabled, the prompt claims focus for
+  // it exactly once: immediate typing reaches the password and Enter runs the
+  // form's session-only submission instead of dismissing the prompt from a
+  // control the person never chose. A context reset (retry) re-arms the claim;
+  // a dismissed prompt unmounts this component, so a late resolution can
+  // neither steal focus nor reopen anything.
+  const passwordFocusClaimed = useRef(false);
+  useEffect(() => {
+    if (context === null) {
+      passwordFocusClaimed.current = false;
+      return;
+    }
+    if (state.busy || passwordFocusClaimed.current) {
+      return;
+    }
+    const input = passwordInputRef.current;
+    if (input === null) {
+      return;
+    }
+    passwordFocusClaimed.current = true;
+    input.focus();
+  }, [context, state.busy]);
 
   return (
     <Dialog
@@ -70,7 +97,16 @@ export function DocumentUnlock({
       }}
       open
     >
-      <DialogContent onPointerDownOutside={(event) => event.preventDefault()}>
+      <DialogContent
+        onOpenAutoFocus={(event) => {
+          // Radix would focus the only mounted control (Close) while the
+          // context is still loading; hold focus on the panel itself so a
+          // stray Enter can never cancel the prompt before the field exists.
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.focus();
+        }}
+        onPointerDownOutside={(event) => event.preventDefault()}
+      >
         <p className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
           Protected statement
         </p>
@@ -113,6 +149,7 @@ export function DocumentUnlock({
                 disabled={state.busy}
                 id="statement-password"
                 onChange={(event) => onPasswordChange(event.target.value)}
+                ref={passwordInputRef}
                 type="password"
                 value={state.password}
               />
