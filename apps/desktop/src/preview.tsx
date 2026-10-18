@@ -6,6 +6,9 @@
  * source-create, source-rename, source-remove-password,
  * sources-inbox-disabled, sources-inbox-enabled,
  * sources-inbox-reauth, document-viewer, document-preview, document-unlock,
+ * document-unlock-update, document-unlock-unconfirmed,
+ * document-unlock-async, document-unlock-async-saved,
+ * document-unlock-async-unconfirmed,
  * delete-confirm, vault-gate-loading, vault-gate-create,
  * vault-gate-locked, primitives, primitives-dialog).
  * Not part of the shipped bundle: `vite build` only bundles index.html.
@@ -312,12 +315,14 @@ const inboxReauth: LocalInboxStatus = {
 
 const noop = () => undefined;
 
-const documentModalStates = new Set([
-  "delete-confirm",
-  "document-preview",
-  "document-unlock",
-  "document-viewer",
-]);
+const documentModalStates: Record<string, true> = {
+  "delete-confirm": true,
+  "document-preview": true,
+  "document-unlock": true,
+  "document-unlock-unconfirmed": true,
+  "document-unlock-update": true,
+  "document-viewer": true,
+};
 
 
 /**
@@ -386,6 +391,99 @@ function navigate(view: AppView) {
   window.location.search = `?state=${state}`;
 }
 
+/** Records the unlock calls the synthetic host observed, for browser probes. */
+interface PreviewStatementUnlockCall {
+  documentId: string;
+  moneySourceId: string | null;
+  /** Only the length: the walkthrough never retains the typed value. */
+  passwordLength: number;
+  updateSavedPassword: boolean;
+}
+
+/**
+ * Interactive asynchronous unlock walkthrough. The real `App` runs against a
+ * synthetic host whose statement-password context — and, for `-saved`, the
+ * host-owned saved-password pass — resolves on a timer, so the prompt's
+ * deferred-focus path is inspectable in a browser instead of a static
+ * fixture. `?state=document-unlock-async` covers a host-confirmed owner with
+ * no saved password; `-saved` adds the delayed pass whose field stays disabled
+ * until it finishes. Every unlock call lands on
+ * `window.__previewStatementUnlockCalls` so keyboard probes can read the exact
+ * arguments the renderer sent. The recorder keeps only the password's length;
+ * the walkthrough never retains the typed value.
+ */
+function asyncUnlockPreviewApi(mode: "confirmed" | "saved" | "unconfirmed") {
+  const saved = mode === "saved";
+  const calls: PreviewStatementUnlockCall[] = [];
+  (
+    window as typeof window & { __previewStatementUnlockCalls?: PreviewStatementUnlockCall[] }
+  ).__previewStatementUnlockCalls = calls;
+  const delay = (ms: number) =>
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+
+  const respond = async (
+    command: string,
+    args?: Record<string, unknown>,
+  ): Promise<unknown> => {
+    switch (command) {
+      case "vault_access_status":
+        return { recoveryConfigured: true, rememberedOnThisMac: false, status: "unlocked" };
+      case "vault_status":
+        return "unlocked";
+      case "lock_vault":
+        return "locked";
+      case "list_unassigned_source_documents":
+        return dbsDocuments.filter((document) => document.documentId === "document-2");
+      case "list_money_sources":
+        return previewMoneySources;
+      case "list_statement_password_sources":
+        return saved
+          ? [{ displayName: "DBS", hasSavedPassword: true, moneySourceId: "source-dbs" }]
+          : [];
+      case "statement_password_document_context":
+        await delay(1_500);
+        return mode === "unconfirmed"
+          ? { hasSavedPassword: false, moneySourceDisplayName: null, moneySourceId: null }
+          : { hasSavedPassword: saved, moneySourceDisplayName: "DBS", moneySourceId: "source-dbs" };
+      case "try_saved_statement_passwords":
+        await delay(1_500);
+        return "invalid";
+      case "unlock_source_document":
+        calls.push({
+          documentId: String(args?.documentId ?? ""),
+          moneySourceId: typeof args?.moneySourceId === "string" ? args.moneySourceId : null,
+          passwordLength: typeof args?.password === "string" ? args.password.length : 0,
+          updateSavedPassword: args?.updateSavedPassword === true,
+        });
+        return undefined;
+      case "list_review_items":
+        return reviewItems;
+      case "get_money_overview":
+        return moneyOverview;
+      case "list_recent_activity":
+        return recentActivity;
+      case "list_tasks":
+        return commandCenterTasks;
+      case "intake_notification_settings":
+        return { enabled: false, permission: "not_determined" };
+      case "local_inbox_status":
+        return inboxDisabled;
+      case "take_background_intake_route":
+        return null;
+      default:
+        return [];
+    }
+  };
+
+  return createVaultApi(
+    ((command: string, args?: Record<string, unknown>) =>
+      respond(command, args)) as TauriInvoke,
+    async () => () => undefined,
+  );
+}
+
 function Preview() {
   const params = new URLSearchParams(window.location.search);
   const state = params.get("state") ?? "overview";
@@ -401,6 +499,21 @@ function Preview() {
         ? null
         : false;
     return <App api={offerPreviewApi(remembered)} />;
+  }
+
+  if (state === "document-unlock-async" || state === "document-unlock-async-saved"
+    || state === "document-unlock-async-unconfirmed") {
+    return (
+      <App
+        api={asyncUnlockPreviewApi(
+          state === "document-unlock-async-saved"
+            ? "saved"
+            : state === "document-unlock-async-unconfirmed"
+              ? "unconfirmed"
+              : "confirmed",
+        )}
+      />
+    );
   }
 
   let content = null;
@@ -446,7 +559,7 @@ function Preview() {
         : inboxDisabled;
     content = renderSourcesView(status, "none", sourcePrompts);
   } else if (state === "sources" || state === "source-detail" || state === "source-detail-empty"
-    || sourceDialogStates[state] === true || documentModalStates.has(state)) {
+    || sourceDialogStates[state] === true || documentModalStates[state] === true) {
     activeView = "sources";
     content = renderSourcesView(
       inboxEnabled,
@@ -511,7 +624,7 @@ function Preview() {
     );
   }
 
-  const modalPreview = state === "source-confirm" || sourceDialogStates[state] === true || documentModalStates.has(state);
+  const modalPreview = state === "source-confirm" || sourceDialogStates[state] === true || documentModalStates[state] === true;
   return (
     <AppShell>
       <VaultSpine
@@ -570,25 +683,27 @@ function Preview() {
           }}
         />
       ) : null}
-      {state === "document-unlock" ? (
+      {state === "document-unlock" || state === "document-unlock-update"
+        || state === "document-unlock-unconfirmed" ? (
         <DocumentUnlock
           onClose={noop}
           onPasswordChange={noop}
-          onRetrySources={noop}
-          onSourceChange={noop}
+          onRetry={noop}
           onSubmit={noop}
           state={{
             busy: false,
+            context: state === "document-unlock-unconfirmed"
+              ? { hasSavedPassword: false, moneySourceDisplayName: null, moneySourceId: null }
+              : {
+                hasSavedPassword: state === "document-unlock-update",
+                moneySourceDisplayName: "DBS",
+                moneySourceId: "source-dbs",
+              },
             documentId: "document-2",
             documentTitle: "May statement.pdf",
             error: null,
             password: "",
             savedPasswordStatus: null,
-            selectedMoneySourceId: "",
-            sources: [
-              { displayName: "DBS", hasSavedPassword: true, moneySourceId: "source-dbs" },
-              { displayName: "Wise", hasSavedPassword: false, moneySourceId: "source-wise" },
-            ],
           }}
         />
       ) : null}

@@ -1,14 +1,16 @@
 import type { Dispatch, SetStateAction } from "react";
 
-import type { SourceDocumentSummary } from "./command-contracts";
+import type {
+  SourceDocumentSummary,
+  StatementPasswordUnlockContext,
+} from "./command-contracts";
 import type { DocumentUnlockState } from "./document-modals";
 import type { Notice } from "./feedback";
 import { commandErrorMessage, type VaultApi } from "./vault-api";
 
 export interface StatementUnlockActions {
-  loadUnlockSources(documentId: string, documentTitle: string): void;
+  loadUnlockContext(documentId: string, documentTitle: string): void;
   openDocumentUnlock(document: SourceDocumentSummary): void;
-  selectUnlockSource(moneySourceId: string): void;
   submitDocumentPassword(updateSavedPassword: boolean): void;
 }
 
@@ -72,44 +74,41 @@ export function createStatementUnlockActions(
     }
   };
 
-  const selectUnlockSource = (moneySourceId: string) => {
-    const current = unlockingDocument;
-    if (!current) {
-      return;
-    }
-    const requestId = unlockRequestId.current + 1;
-    unlockRequestId.current = requestId;
-    setUnlockingDocument({
-      ...current,
-      busy: false,
-      error: null,
-      password: "",
-      savedPasswordStatus: null,
-      selectedMoneySourceId: moneySourceId,
-    });
-  };
-
-  const loadUnlockSources = (documentId: string, documentTitle: string) => {
+  /**
+   * Reads the document's host-confirmed owner and saved-password state, then
+   * runs the host's bounded saved-password pass when the Vault holds one.
+   *
+   * The confirmed owner is the only source this prompt may offer to save or
+   * replace for. The Vault-wide source list is read solely as the existence
+   * probe that decides whether the host pass is worth running: it never
+   * informs ownership or the save target.
+   */
+  const loadUnlockContext = (documentId: string, documentTitle: string) => {
     const requestId = unlockRequestId.current + 1;
     unlockRequestId.current = requestId;
     setUnlockingDocument({
       busy: true,
+      context: null,
       documentId,
       documentTitle,
       error: null,
       password: "",
       savedPasswordStatus: null,
-      selectedMoneySourceId: "",
-      sources: null,
     });
     void (async () => {
-      let sources;
+      let context: StatementPasswordUnlockContext;
+      let hasAnySavedPassword: boolean;
       try {
-        sources = await api.listStatementPasswordSources();
+        const [confirmed, sources] = await Promise.all([
+          api.statementPasswordDocumentContext(documentId),
+          api.listStatementPasswordSources(),
+        ]);
+        context = confirmed;
+        hasAnySavedPassword = sources.some((source) => source.hasSavedPassword);
       } catch (nextError) {
         if (unlockRequestId.current === requestId) {
           setUnlockingDocument((current) => current?.documentId === documentId
-            ? { ...current, busy: false, error: commandErrorMessage(nextError), sources: [] }
+            ? { ...current, busy: false, error: commandErrorMessage(nextError) }
             : current);
         }
         return;
@@ -117,18 +116,10 @@ export function createStatementUnlockActions(
       if (unlockRequestId.current !== requestId) {
         return;
       }
-      const onlySource = sources.length === 1 ? sources[0] : undefined;
-      const hasSavedPassword = sources.some((source) => source.hasSavedPassword);
       setUnlockingDocument((current) => current?.documentId === documentId
-        ? {
-          ...current,
-          busy: hasSavedPassword,
-          savedPasswordStatus: null,
-          selectedMoneySourceId: onlySource?.moneySourceId ?? "",
-          sources,
-        }
+        ? { ...current, busy: hasAnySavedPassword, context, savedPasswordStatus: null }
         : current);
-      if (!hasSavedPassword) {
+      if (!hasAnySavedPassword) {
         return;
       }
       // The host owns the bounded pass: it tries each distinct saved password
@@ -144,16 +135,12 @@ export function createStatementUnlockActions(
   };
 
   const openDocumentUnlock = (document: SourceDocumentSummary) => {
-    loadUnlockSources(document.documentId, document.originalFilename);
+    loadUnlockContext(document.documentId, document.originalFilename);
   };
 
   const submitDocumentPassword = (updateSavedPassword: boolean) => {
     const current = unlockingDocument;
     if (!current) {
-      return;
-    }
-    if (!current.selectedMoneySourceId) {
-      setUnlockingDocument({ ...current, error: "Choose the Money Source for this statement." });
       return;
     }
     if (!current.password) {
@@ -163,10 +150,17 @@ export function createStatementUnlockActions(
     const requestId = unlockRequestId.current + 1;
     unlockRequestId.current = requestId;
     const password = current.password;
+    // A save or replacement targets only the owner the host confirmed for this
+    // document — never a renderer choice — and a session-only unlock claims no
+    // ownership at all, so it passes `null`. The host re-checks the document's
+    // confirmed owner before writing or replacing any secret.
+    const moneySourceId = updateSavedPassword ? current.context?.moneySourceId ?? null : null;
+    const replacesSavedPassword =
+      updateSavedPassword && current.context?.hasSavedPassword === true;
     setUnlockingDocument({ ...current, busy: true, error: null, password: "" });
     void api.unlockSourceDocument(
       current.documentId,
-      current.selectedMoneySourceId,
+      moneySourceId,
       password,
       updateSavedPassword,
     ).then(async () => {
@@ -174,13 +168,12 @@ export function createStatementUnlockActions(
         return;
       }
       setUnlockingDocument(null);
-      setNotice({
-        body: updateSavedPassword
+      const body = !updateSavedPassword
+        ? "This statement is ready to view and route until the Vault locks."
+        : replacesSavedPassword
           ? "The verified password replaced this Money Source’s saved password. This statement is ready to view and route."
-          : "This statement is ready to view and route until the Vault locks.",
-        tone: "success",
-        title: "Statement unlocked",
-      });
+          : "The verified password is saved for this Money Source. This statement is ready to view and route.";
+      setNotice({ body, tone: "success", title: "Statement unlocked" });
       await loadDocuments();
     }).catch((nextError) => {
       if (unlockRequestId.current === requestId) {
@@ -192,9 +185,8 @@ export function createStatementUnlockActions(
   };
 
   return {
-    loadUnlockSources,
+    loadUnlockContext,
     openDocumentUnlock,
-    selectUnlockSource,
     submitDocumentPassword,
   };
 }

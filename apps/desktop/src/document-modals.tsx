@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 import {
   Button,
   Dialog,
@@ -6,14 +8,13 @@ import {
   DialogDescription,
   DialogTitle,
   Input,
-  Select,
 } from "@cancan/ui";
 
 import type {
   RenderedDocumentPage,
   SourceDocumentPreview,
   SourceDocumentSummary,
-  StatementPasswordSourceSummary,
+  StatementPasswordUnlockContext,
 } from "./command-contracts";
 import { Feedback } from "./feedback";
 
@@ -31,13 +32,13 @@ export interface DocumentPreviewState {
 
 export interface DocumentUnlockState {
   busy: boolean;
+  /** The host-confirmed owner of this document; `null` while unconfirmed or loading. */
+  context: StatementPasswordUnlockContext | null;
   documentId: string;
   documentTitle: string;
   error: string | null;
   password: string;
   savedPasswordStatus: "invalid" | "unavailable" | null;
-  selectedMoneySourceId: string;
-  sources: StatementPasswordSourceSummary[] | null;
 }
 
 const fieldLabelClass = "mb-1 block text-xs font-medium text-ledger-text-muted";
@@ -45,19 +46,47 @@ const fieldLabelClass = "mb-1 block text-xs font-medium text-ledger-text-muted";
 export function DocumentUnlock({
   onClose,
   onPasswordChange,
-  onRetrySources,
-  onSourceChange,
+  onRetry,
   onSubmit,
   state,
 }: {
   onClose: () => void;
   onPasswordChange: (password: string) => void;
-  onRetrySources: () => void;
-  onSourceChange: (moneySourceId: string) => void;
+  onRetry: () => void;
   onSubmit: (updateSavedPassword: boolean) => void;
   state: DocumentUnlockState;
 }) {
-  const hasSources = state.sources !== null && state.sources.length > 0;
+  const { context } = state;
+  const confirmedSourceName = context?.moneySourceDisplayName ?? null;
+  // Saving or replacing a password is offered only for the Money Source the
+  // host confirmed for this document; the renderer never picks an owner.
+  const canSaveForSource = context?.moneySourceId != null;
+  const sourceLabel = confirmedSourceName ?? "this statement’s Money Source";
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  // The host context — and the bounded saved-password pass behind it — arrives
+  // asynchronously, so this dialog first paints without a usable password
+  // field. Once the field exists and is enabled, the prompt claims focus for
+  // it exactly once: immediate typing reaches the password and Enter runs the
+  // form's session-only submission instead of dismissing the prompt from a
+  // control the person never chose. A context reset (retry) re-arms the claim;
+  // a dismissed prompt unmounts this component, so a late resolution can
+  // neither steal focus nor reopen anything.
+  const passwordFocusClaimed = useRef(false);
+  useEffect(() => {
+    if (context === null) {
+      passwordFocusClaimed.current = false;
+      return;
+    }
+    if (state.busy || passwordFocusClaimed.current) {
+      return;
+    }
+    const input = passwordInputRef.current;
+    if (input === null) {
+      return;
+    }
+    passwordFocusClaimed.current = true;
+    input.focus();
+  }, [context, state.busy]);
 
   return (
     <Dialog
@@ -68,7 +97,16 @@ export function DocumentUnlock({
       }}
       open
     >
-      <DialogContent onPointerDownOutside={(event) => event.preventDefault()}>
+      <DialogContent
+        onOpenAutoFocus={(event) => {
+          // Radix would focus the only mounted control (Close) while the
+          // context is still loading; hold focus on the panel itself so a
+          // stray Enter can never cancel the prompt before the field exists.
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.focus();
+        }}
+        onPointerDownOutside={(event) => event.preventDefault()}
+      >
         <p className="font-mono text-xs uppercase tracking-mono-label text-ledger-text-muted">
           Protected statement
         </p>
@@ -77,50 +115,41 @@ export function DocumentUnlock({
           The password decrypts this statement locally in your Vault. It never leaves this Mac.
         </DialogDescription>
         <div className="mt-4">
-          {state.sources === null ? (
-            <p className="text-sm text-ledger-text-muted" role="status">Loading Money Sources…</p>
+          {context === null && !state.error ? (
+            <p className="text-sm text-ledger-text-muted" role="status">
+              Checking this statement’s Money Source…
+            </p>
           ) : null}
-          {state.sources?.length === 0 && state.error ? (
+          {context === null && state.error ? (
             <>
               <Feedback
                 body={state.error}
-                title="Money Sources couldn’t be loaded"
+                title="Statement password details couldn’t be loaded"
                 tone="attention"
               />
               <div className="mt-3">
-                <Button onClick={onRetrySources} variant="quiet">Try again</Button>
+                <Button onClick={onRetry} variant="quiet">Try again</Button>
               </div>
             </>
           ) : null}
-          {state.sources?.length === 0 && !state.error ? (
-            <Feedback
-              body="Set up a Money Source before unlocking this protected statement. CanCan needs the source to scope saved passwords safely."
-              title="No Money Source is configured"
-              tone="attention"
-            />
-          ) : null}
-          {hasSources ? (
+          {context ? (
             <form onSubmit={(event) => { event.preventDefault(); onSubmit(false); }}>
-              <span className={fieldLabelClass}>Money Source</span>
-              <Select
-                ariaLabel="Money Source for this statement"
-                disabled={state.busy}
-                onValueChange={onSourceChange}
-                options={(state.sources ?? []).map((source) => ({
-                  label: `${source.displayName}${source.hasSavedPassword ? " — saved password" : ""}`,
-                  value: source.moneySourceId,
-                }))}
-                placeholder="Choose a Money Source"
-                value={state.selectedMoneySourceId}
-              />
+              <p className="text-sm text-ledger-text-muted">
+                {canSaveForSource
+                  ? confirmedSourceName
+                    ? `This statement belongs to ${confirmedSourceName}.`
+                    : "This statement belongs to a confirmed Money Source."
+                  : "This statement’s Money Source isn’t confirmed yet, so CanCan can’t save its password. Use once still unlocks it for this Vault session."}
+              </p>
               <label className={`${fieldLabelClass} mt-3`} htmlFor="statement-password">
                 Statement password
               </label>
               <Input
                 autoComplete="off"
-                disabled={state.busy || !state.selectedMoneySourceId}
+                disabled={state.busy}
                 id="statement-password"
                 onChange={(event) => onPasswordChange(event.target.value)}
+                ref={passwordInputRef}
                 type="password"
                 value={state.password}
               />
@@ -146,18 +175,23 @@ export function DocumentUnlock({
                 <Button disabled={state.busy || !state.password} type="submit" variant="quiet">
                   Use once
                 </Button>
-                <Button
-                  disabled={state.busy || !state.password}
-                  onClick={() => onSubmit(true)}
-                  type="button"
-                >
-                  Update saved password
-                </Button>
+                {canSaveForSource ? (
+                  <Button
+                    disabled={state.busy || !state.password}
+                    onClick={() => onSubmit(true)}
+                    type="button"
+                  >
+                    {context.hasSavedPassword ? "Update saved password" : "Save for this source"}
+                  </Button>
+                ) : null}
               </DialogActions>
-              <p className="mt-3 text-xs text-ledger-text-muted">
-                Use once is forgotten when the Vault locks. Updating saves one verified password
-                for this Money Source in this Mac’s Keychain.
-              </p>
+              {canSaveForSource ? (
+                <p className="mt-3 text-xs text-ledger-text-muted">
+                  Use once is forgotten when the Vault locks.{" "}
+                  {context.hasSavedPassword ? "Updating saves" : "Saving stores"} one verified
+                  password for {sourceLabel} in this Mac’s Keychain.
+                </p>
+              ) : null}
             </form>
           ) : null}
         </div>

@@ -16,14 +16,12 @@ export interface EvidenceOverlays {
   clearViewer(restoreFocus?: boolean): void;
   closeUnlock(): void;
   loadDocumentPreview(documentId: string, documentTitle: string): void;
-  loadUnlockSources(documentId: string, documentTitle: string): void;
   loadViewerPage(documentId: string, documentTitle: string, pageNumber: number): void;
   openDocumentUnlock(document: SourceDocumentSummary): void;
   readonly preview: DocumentPreviewState | null;
   /** Drops every session-scoped overlay; the gate's reset half. */
   reset(): void;
-  retryUnlockSources(): void;
-  selectUnlockSource(moneySourceId: string): void;
+  retryUnlockContext(): void;
   setUnlockPassword(password: string): void;
   submitDocumentPassword(updateSavedPassword: boolean): void;
   readonly unlockingDocument: DocumentUnlockState | null;
@@ -146,9 +144,9 @@ export function useEvidenceOverlays({
     unlockRequestId,
   }), [api, loadDocuments, setNotice, unlockingDocument]);
 
-  const retryUnlockSources = useCallback(() => {
+  const retryUnlockContext = useCallback(() => {
     if (unlockingDocument) {
-      unlockActions.loadUnlockSources(
+      unlockActions.loadUnlockContext(
         unlockingDocument.documentId,
         unlockingDocument.documentTitle,
       );
@@ -160,13 +158,11 @@ export function useEvidenceOverlays({
     clearViewer,
     closeUnlock,
     loadDocumentPreview: viewerActions.loadDocumentPreview,
-    loadUnlockSources: unlockActions.loadUnlockSources,
     loadViewerPage: viewerActions.loadViewerPage,
     openDocumentUnlock: unlockActions.openDocumentUnlock,
     preview,
     reset,
-    retryUnlockSources,
-    selectUnlockSource: unlockActions.selectUnlockSource,
+    retryUnlockContext,
     setUnlockPassword,
     submitDocumentPassword: unlockActions.submitDocumentPassword,
     unlockingDocument,
