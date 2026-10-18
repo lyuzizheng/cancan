@@ -553,6 +553,8 @@ mod source_confirmation;
 mod sources;
 #[cfg(test)]
 mod sources_tests;
+#[cfg(test)]
+mod statement_password_ownership_tests;
 mod statement_passwords;
 mod tasks;
 #[cfg(test)]
@@ -584,6 +586,7 @@ use sidecar::*;
 use sidecar_failure::*;
 pub(crate) use source_confirmation::*;
 pub(crate) use sources::*;
+pub(crate) use statement_passwords::StatementPasswordUnlockContext;
 pub(crate) use tasks::*;
 pub(crate) use undo::*;
 pub(crate) use vault_lifecycle::*;

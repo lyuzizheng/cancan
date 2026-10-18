@@ -23,6 +23,20 @@ pub(crate) struct CreateMoneySourceInput<'a> {
     pub(crate) source_type: &'a str,
 }
 
+/// The current owner of one evidence document, as the password surface needs
+/// it: the Money Source trusted classification confirmed, its display name,
+/// and whether a verified password is already stored for it.
+///
+/// `money_source_id` stays `None` while a document is unclassified or its
+/// source-candidate confirmation is still pending. That is the state in which
+/// a statement password may be entered for the session but never saved.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct SourceDocumentPasswordOwner {
+    pub(crate) display_name: Option<String>,
+    pub(crate) has_saved_password: bool,
+    pub(crate) money_source_id: Option<String>,
+}
+
 impl ManualImportStore {
     /// Creates the one configured Money Source for a provider.
     ///
@@ -189,6 +203,46 @@ impl ManualImportStore {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
         Ok(rows.collect::<Result<HashMap<_, _>, _>>()?)
+    }
+
+    /// Reads the one document/source association the password surface may act
+    /// on, together with the display name and saved-password state of that
+    /// source.
+    ///
+    /// The row's `money_source_id` is written only by trusted classification
+    /// or an accepted first-source confirmation, so it is the authority a
+    /// statement-password save must match. A missing document is an error;
+    /// an existing document without a confirmed source is `Ok` with
+    /// `money_source_id: None`.
+    pub(crate) fn statement_password_document_owner(
+        &self,
+        document_id: &str,
+    ) -> StoreResult<SourceDocumentPasswordOwner> {
+        let owner = self
+            .connection
+            .query_row(
+                "SELECT sd.money_source_id, ms.display_name, \
+                        EXISTS( \
+                          SELECT 1 FROM statement_secret_refs ssr \
+                          WHERE ssr.money_source_id = sd.money_source_id \
+                            AND ssr.status = 'saved' \
+                        ) \
+                 FROM source_documents sd \
+                 LEFT JOIN money_sources ms ON ms.id = sd.money_source_id \
+                 WHERE sd.id = ?1",
+                [document_id],
+                |row| {
+                    Ok(SourceDocumentPasswordOwner {
+                        display_name: row.get(1)?,
+                        has_saved_password: row.get(2)?,
+                        money_source_id: row.get(0)?,
+                    })
+                },
+            )
+            .optional()?;
+        owner.ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "source document not found").into()
+        })
     }
 
     /// Whether this source has a statement password stored as `saved`.

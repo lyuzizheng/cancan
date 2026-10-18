@@ -31,9 +31,9 @@ use runtime::{
     render_source_document_page, reparse_source_document, rescan_local_inbox,
     restore_dismissed_candidate_account, save_operational_diagnostics, save_recovery_file,
     save_source_document_copy, set_intake_notifications_enabled, setup_background_window,
-    take_background_intake_route, test_phone_shortcut_inbox, try_saved_statement_passwords,
-    undo_committed_event, unlock_source_document, unlock_vault, unlock_vault_with_keychain,
-    vault_access_status, vault_status,
+    statement_password_document_context, take_background_intake_route, test_phone_shortcut_inbox,
+    try_saved_statement_passwords, undo_committed_event, unlock_source_document, unlock_vault,
+    unlock_vault_with_keychain, vault_access_status, vault_status,
 };
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
@@ -109,6 +109,7 @@ pub fn run() {
             install_phone_shortcut,
             test_phone_shortcut_inbox,
             try_saved_statement_passwords,
+            statement_password_document_context,
             unlock_source_document,
             lock_vault,
             operational_diagnostics_preview,

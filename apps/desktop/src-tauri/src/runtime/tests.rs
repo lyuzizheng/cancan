@@ -80,7 +80,7 @@ fn local_inbox_bookmark_is_paused_while_locked_and_disable_removes_it() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
+fn unlocks_a_protected_pdf_for_one_session_without_saving_a_secret() {
     let parent = tempfile::tempdir().expect("temporary app data");
     let statement_passwords = Arc::new(MemoryStatementPasswordStore::default());
     let runtime =
@@ -115,20 +115,20 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
     );
     assert_eq!(
         runtime
-            .unlock_source_document(&outcome.document_id, "source-dbs", b"wrong-password", true,)
-            .expect_err("wrong password must not save")
+            .unlock_source_document(
+                &outcome.document_id,
+                Some("source-dbs"),
+                b"wrong-password",
+                false,
+            )
+            .expect_err("wrong password must not unlock")
             .code(),
         "statement_password_invalid"
     );
     assert_eq!(statement_password_state(&runtime), None);
 
     runtime
-        .unlock_source_document(
-            &outcome.document_id,
-            "source-dbs",
-            b"statement-password",
-            false,
-        )
+        .unlock_source_document(&outcome.document_id, None, b"statement-password", false)
         .expect("use password once");
     assert_eq!(
         runtime
@@ -167,66 +167,11 @@ fn protects_pdf_passwords_inside_the_unlocked_vault_session() {
         SourceDocumentStatus::Processing
     );
 
+    // The session password did not survive the lock; re-entering it unlocks
+    // the document for this session without saving a secret.
     runtime
-        .unlock_source_document(
-            &outcome.document_id,
-            "source-dbs",
-            b"statement-password",
-            true,
-        )
-        .expect("verify and save password");
-    assert_eq!(
-        statement_passwords
-            .load("money-source:source-dbs")
-            .expect("load saved password")
-            .expect("saved password exists")
-            .as_slice(),
-        b"statement-password"
-    );
-    runtime
-        .test_support_lock()
-        .expect("lock saved-password session");
-    runtime
-        .unlock(b"synthetic-vault-password")
-        .expect("reopen saved-password Vault");
-    assert_eq!(
-        runtime
-            .try_saved_statement_passwords(&outcome.document_id)
-            .expect("try saved password"),
-        SavedStatementPasswordResult::Unlocked
-    );
-    assert_eq!(
-        runtime
-            .list_unassigned_source_documents()
-            .expect("list saved-password statement")[0]
-            .document_status,
-        SourceDocumentStatus::Processing
-    );
-
-    statement_passwords
-        .delete("money-source:source-dbs")
-        .expect("remove device-local saved password");
-    assert_eq!(
-        runtime
-            .try_saved_statement_passwords(&outcome.document_id)
-            .expect("report unavailable saved password"),
-        SavedStatementPasswordResult::Unavailable
-    );
-    assert_eq!(
-        statement_password_state(&runtime)
-            .expect("preserve saved-password reference")
-            .status,
-        StatementPasswordStatus::Saved
-    );
-    statement_passwords
-        .save("money-source:source-dbs", b"wrong-password")
-        .expect("save invalid password fixture");
-    assert_eq!(
-        runtime
-            .try_saved_statement_passwords(&outcome.document_id)
-            .expect("report invalid saved password"),
-        SavedStatementPasswordResult::Invalid
-    );
+        .unlock_source_document(&outcome.document_id, None, b"statement-password", false)
+        .expect("use password once per session");
     runtime
         .seed_money_source(
             "source-synthetic",
@@ -2872,7 +2817,7 @@ fn synthetic_normalization_profile() -> NormalizerProfile {
 }
 
 #[cfg(target_os = "macos")]
-fn synthetic_pdf_normalizer_result() -> NormalizerResult {
+pub(super) fn synthetic_pdf_normalizer_result() -> NormalizerResult {
     let mut result = synthetic_normalizer_result();
     let NormalizerResult::Classified { profile, .. } = &mut result else {
         panic!("synthetic result must be classified");

@@ -261,22 +261,9 @@ fn unlocking_a_password_blocked_parse_requeues_the_same_logical_run() {
     );
 
     runtime
-        .unlock_source_document(
-            &imported.document_id,
-            "source-dbs",
-            b"statement-password",
-            true,
-        )
-        .expect("verify cache and save password");
+        .unlock_source_document(&imported.document_id, None, b"statement-password", false)
+        .expect("cache the verified password for this session");
 
-    assert_eq!(
-        statement_passwords
-            .load("money-source:source-dbs")
-            .expect("load saved password")
-            .expect("saved password")
-            .as_slice(),
-        b"statement-password"
-    );
     let requeued = runtime
         .queued_local_inbox_parse_documents()
         .expect("read requeued parse job")
